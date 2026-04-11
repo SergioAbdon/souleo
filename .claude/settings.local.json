@@ -18,7 +18,8 @@
       "Bash(xargs grep:*)",
       "Bash(grep -n \"button\\\\|btn\\\\|drag\" /c/Users/sergi/Desktop/souleo/src/app/laudo/[id]/page.tsx)",
       "WebSearch",
-      "Bash(grep -rn \"window\\\\\\\\.open\\\\|print\\(\\)\\\\|fetch\\\\|Promise\\\\.all\\\\|Promise\\\\.race\" /c/Users/sergi/Desktop/souleo/src --include=\"*.tsx\" --include=\"*.ts\")"
+      "Bash(grep -rn \"window\\\\\\\\.open\\\\|print\\(\\)\\\\|fetch\\\\|Promise\\\\.all\\\\|Promise\\\\.race\" /c/Users/sergi/Desktop/souleo/src --include=\"*.tsx\" --include=\"*.ts\")",
+      "Bash(npm install:*)"
     ]
   }
 }

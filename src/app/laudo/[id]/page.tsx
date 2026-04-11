@@ -26,10 +26,8 @@ export default function LaudoPage() {
   const [exame, setExame] = useState<Record<string, unknown> | null>(null);
   const [popupOpen, setPopupOpen] = useState(false);
   const [emitido, setEmitido] = useState(false);
-  const achadosRef = useRef<EditorLaudoRef>(null);
-  const conclusoesRef = useRef<EditorLaudoRef>(null);
-  const pendingAchados = useRef<string | null>(null);
-  const pendingConclusoes = useRef<string | null>(null);
+  const editorRef = useRef<EditorLaudoRef>(null);
+  const pendingHtml = useRef<string | null>(null);
 
   const exameId = params.id as string;
   const p1 = (workspace?.corPrimaria as string) || '#8B1A1A';
@@ -53,18 +51,15 @@ export default function LaudoPage() {
   const logoB64 = (workspace?.logoB64 as string) || '';
   const sigB64 = (profile?.sigB64 as string) || '';
 
-  // Processar conteúdo pendente — roda continuamente até entregar
+  // Processar conteúdo pendente quando TipTap monta
   useEffect(() => {
     const interval = setInterval(() => {
-      if (pendingAchados.current && achadosRef.current) {
-        achadosRef.current.setContent(pendingAchados.current);
-        pendingAchados.current = null;
+      if (pendingHtml.current && editorRef.current) {
+        editorRef.current.setContent(pendingHtml.current);
+        pendingHtml.current = null;
+        clearInterval(interval);
       }
-      if (pendingConclusoes.current && conclusoesRef.current) {
-        conclusoesRef.current.setContent(pendingConclusoes.current);
-        pendingConclusoes.current = null;
-      }
-    }, 500);
+    }, 300);
     return () => clearInterval(interval);
   }, []);
 
@@ -97,25 +92,17 @@ export default function LaudoPage() {
     w.tog = (id: string) => { const el = document.getElementById(id); if (el) el.classList.toggle('collapsed'); };
 
     // Callbacks TipTap — motor chama estes ao renderizar achados/conclusões
-    // Motor gera achados → atualiza TipTap (só se médico não editou manualmente)
-    w._onAchadosGerados = (linhas: string[]) => {
-      const html = linhas.map(l => `<p>${l}</p>`).join('');
-      if (achadosRef.current) {
-        achadosRef.current.setContent(html);
+    // Motor gera laudo completo → envia para TipTap
+    w._onLaudoGerado = (html: string) => {
+      if (editorRef.current) {
+        editorRef.current.setContent(html);
       } else {
-        pendingAchados.current = html;
+        pendingHtml.current = html;
       }
     };
-    w._onConclusoesGeradas = (concs: string[]) => {
-      const html = concs.map((c, i) => `<p><strong>${i + 1}</strong>  ${c}</p>`).join('');
-      if (conclusoesRef.current) {
-        conclusoesRef.current.setContent(html);
-      } else {
-        pendingConclusoes.current = html;
-      }
-    };
+    // Banco de frases insere no cursor
     w._onInserirFrase = (texto: string) => {
-      if (achadosRef.current) achadosRef.current.insertLine(texto);
+      if (editorRef.current) editorRef.current.insertLine(texto);
     };
 
     const script = document.createElement('script');
@@ -301,36 +288,20 @@ export default function LaudoPage() {
     router.push('/dashboard');
   }
 
-  // ── Coletar achados e conclusões (TipTap ou DOM fallback) ──
+  // ── Coletar achados e conclusões do TipTap ──
   function coletarAchados(): string[] {
-    if (achadosRef.current) return achadosRef.current.getLines();
-    const items: string[] = [];
-    document.querySelectorAll('#achados-body .linha-wrapper').forEach(w => {
-      const ta = w.querySelector('textarea') as HTMLTextAreaElement | null;
-      if (ta && ta.value.trim()) items.push(ta.value.trim());
-    });
-    return items;
+    return editorRef.current?.getAchadosLines() || [];
   }
 
   function coletarConclusoes(): string[] {
-    if (conclusoesRef.current) return conclusoesRef.current.getLines();
-    const items: string[] = [];
-    document.querySelectorAll('#conclusao-list li').forEach(li => {
-      const el = li.querySelector('.conclusao-text') as HTMLElement | null;
-      if (el) {
-        const txt = (el.innerText || el.textContent || '').trim();
-        if (txt) items.push(txt);
-      }
-    });
-    return items;
+    return editorRef.current?.getConclusoesLines() || [];
   }
 
-  // HTML dos editores para o PDF
   function getAchadosHTML(): string {
-    return achadosRef.current?.getHTML() || document.getElementById('achados-body')?.innerHTML || '';
+    return editorRef.current?.getAchadosHTML() || '';
   }
   function getConclusoesHTML(): string {
-    return conclusoesRef.current?.getHTML() || document.getElementById('conclusao-list')?.innerHTML || '';
+    return editorRef.current?.getConclusoesHTML() || '';
   }
 
   // ── PDF via window.open — HTML completamente autônomo ──
@@ -362,7 +333,11 @@ export default function LaudoPage() {
 <th style="background:${p1}!important;color:#fff;padding:2px 5px;font-weight:600;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">Valor</th>
 <th style="background:${p1}!important;color:#fff;padding:2px 5px;font-weight:600;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">Unid.</th>
 <th style="background:${p1}!important;color:#fff;padding:2px 5px;font-weight:600;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">Referência</th>
-</tr></thead><tbody>${paramsRows}</tbody></table>`;
+</tr></thead><tbody>${paramsRows}</tbody></table>
+<div style="font-size:5.5pt;color:#888;line-height:1.4;padding:2px 4px;border-top:0.5px solid #ddd;">
+DDVE= Diâmetro diastólico do VE. DSVE= Diâmetro sistólico do VE. VE= Ventrículo esquerdo. VD= Ventrículo direito.<br/>
+Valores de referência: ASE/EACVI 2015; ASE 2025.
+</div>`;
 
     // Comentários e Conclusão — usar HTML do TipTap se disponível
     const achadosHTMLContent = getAchadosHTML();
@@ -458,16 +433,36 @@ ul{list-style:none;padding:0;margin:0;}
 
   // ── Copiar para Prontuário ──
   function handleCopiarFormatado() {
-    // Copia parâmetros + comentários + conclusão COM formatação
-    const paramsEl = document.querySelector('#laudo-sheet table');
-    const achadosEl = document.getElementById('achados-body');
-    const concEl = document.getElementById('conclusao-list');
+    // Tabela estilo Excel — simples, sem estilos complexos, Word interpreta bem
+    const rows = document.querySelectorAll('#params-tbody tr');
+    const s = 'style="border:1px solid #999;padding:0px 2px;font-size:9px;font-family:Arial;line-height:0.6;"';
+    const h = 'style="border:1px solid #999;padding:0px 2px;font-size:9px;font-family:Arial;font-weight:bold;background:#D9E2F3;line-height:0.6;"';
+    let paramsRows = '';
+    rows.forEach(tr => {
+      const cells = tr.querySelectorAll('td');
+      if (cells.length >= 8) {
+        paramsRows += `<tr><td ${s}>${cells[0]?.textContent || ''}</td><td ${s}>${cells[1]?.textContent || ''}</td><td ${s}>${cells[2]?.textContent || ''}</td><td ${s}>${cells[3]?.textContent || ''}</td><td ${s}>${cells[4]?.textContent || ''}</td><td ${s}>${cells[5]?.textContent || ''}</td><td ${s}>${cells[6]?.textContent || ''}</td><td ${s}>${cells[7]?.textContent || ''}</td></tr>`;
+      }
+    });
 
-    // Criar container temporário com só o corpo
+    const tableHTML = `<table style="border-collapse:collapse;width:50%;font-family:Arial;table-layout:fixed;font-size:6pt;">
+<colgroup><col style="width:7%"/><col style="width:4%"/><col style="width:3%"/><col style="width:5%"/><col style="width:10%"/><col style="width:4%"/><col style="width:3%"/><col style="width:5%"/></colgroup>
+<tr><th ${h}>Parâmetro</th><th ${h}>Valor</th><th ${h}>Un.</th><th ${h}>Ref.</th><th ${h}>Parâmetro</th><th ${h}>Valor</th><th ${h}>Un.</th><th ${h}>Ref.</th></tr>
+${paramsRows}</table>
+<p style="font-size:8pt;color:#666;">Valores de referência: ASE/EACVI 2015; ASE 2025.</p>`;
+
+    const achadosHTML = getAchadosHTML();
+    const concHTML = getConclusoesHTML();
+
     const temp = document.createElement('div');
-    if (paramsEl) temp.appendChild(paramsEl.cloneNode(true));
-    if (achadosEl) temp.appendChild(achadosEl.cloneNode(true));
-    if (concEl) { const ul = concEl.cloneNode(true); temp.appendChild(ul); }
+    temp.style.fontFamily = "'IBM Plex Sans', Arial, sans-serif";
+    temp.innerHTML = `
+      ${tableHTML}
+      <div style="font-weight:bold;font-size:10pt;margin-top:8px;padding:3px 0;border-bottom:2px solid #333;">COMENTÁRIOS</div>
+      <div style="font-size:9pt;line-height:1.7;padding:4px 0;">${achadosHTML}</div>
+      <div style="font-weight:bold;font-size:10pt;margin-top:8px;padding:3px 0;border-bottom:2px solid #333;">CONCLUSÃO</div>
+      <div style="font-size:9pt;line-height:1.7;padding:4px 0;">${concHTML}</div>
+    `;
 
     document.body.appendChild(temp);
     const range = document.createRange();
@@ -478,15 +473,27 @@ ul{list-style:none;padding:0;margin:0;}
     document.execCommand('copy');
     sel?.removeAllRanges();
     temp.remove();
-    toast('Copiado formatado — cole no Tasy, MV ou Word');
+    toast('Copiado formatado — cole no Word, Tasy ou MV');
   }
 
   function handleCopiarTexto() {
-    // Copia só texto sem formatação
     const achados = coletarAchados().join('\n');
     const conclusoes = coletarConclusoes().map((t, i) => `${i + 1}. ${t}`).join('\n');
-    const params = document.getElementById('params-tbody')?.innerText || '';
-    const texto = `MEDIDAS E PARÂMETROS\n${params}\n\nCOMENTÁRIOS\n${achados}\n\nCONCLUSÃO\n${conclusoes}`;
+
+    // Reconstruir tabela com alinhamento por tabulação
+    const rows = document.querySelectorAll('#params-tbody tr');
+    let params = '';
+    rows.forEach(tr => {
+      const cells = tr.querySelectorAll('td');
+      if (cells.length >= 8) {
+        const left = `${(cells[0]?.textContent || '').padEnd(22)}${(cells[1]?.textContent || '').padStart(6)}  ${(cells[2]?.textContent || '').padEnd(4)}${(cells[3]?.textContent || '').padEnd(12)}`;
+        const right = `${(cells[4]?.textContent || '').padEnd(24)}${(cells[5]?.textContent || '').padStart(6)}  ${(cells[6]?.textContent || '').padEnd(6)}${cells[7]?.textContent || ''}`;
+        params += `${left}  │  ${right}\n`;
+      }
+    });
+
+    const ref = 'Valores de referência: ASE/EACVI 2015; ASE 2025.';
+    const texto = `MEDIDAS E PARÂMETROS\n${'─'.repeat(80)}\n${params}${'─'.repeat(80)}\n${ref}\n\nCOMENTÁRIOS\n${achados}\n\nCONCLUSÃO\n${conclusoes}`;
 
     navigator.clipboard.writeText(texto).then(() => {
       toast('Copiado texto simples — cole no prontuário');
@@ -566,23 +573,15 @@ ul{list-style:none;padding:0;margin:0;}
         sigTexto={sigTexto}
         logoB64={logoB64}
         sigB64={sigB64}
-        editorAchados={
+        editorLaudo={
           <EditorLaudo
-            ref={achadosRef}
-            placeholder="Achados do exame..."
-            minHeight="80px"
+            ref={editorRef}
+            placeholder="Achados e conclusões do exame..."
             onAddFrase={() => {
               const w = window as unknown as Record<string, unknown>;
               const fn = w.abrirBanco as ((target: unknown, pos: string) => void);
               if (fn) fn(null, 'top');
             }}
-          />
-        }
-        editorConclusoes={
-          <EditorLaudo
-            ref={conclusoesRef}
-            placeholder="Conclusão..."
-            minHeight="30px"
           />
         }
       />
@@ -603,6 +602,12 @@ ul{list-style:none;padding:0;margin:0;}
         #conclusao-list li{display:flex;align-items:flex-start;gap:6px;padding:3px 0;border-bottom:1px solid #f1f5f9;}
         .conclusao-text{flex:1;font-weight:500;font-size:8pt;line-height:1.5;outline:none;}
         .conclusao-text:focus{background:#FFFBEB;border-radius:2px;}
+
+        /* ── TipTap: heading CONCLUSÃO dentro do editor ── */
+        .tiptap h3{background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;margin:8px -8px 4px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+        .tiptap ol{list-style:decimal;padding-left:18px;margin:0;}
+        .tiptap ol li{font-size:8.5pt;line-height:1.6;padding:1px 0;}
+        .tiptap p{margin:0;padding:1px 0;}
 
         /* ── Botões achados/conclusões: +, ×, ⠿ ── */
         .btn-rm{background:none;border:none;color:#EF4444;font-size:14px;cursor:pointer;padding:0 2px;line-height:1;opacity:.4;transition:opacity .15s;flex-shrink:0;}

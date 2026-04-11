@@ -1198,26 +1198,20 @@ function renderizarLaudo(d){
   });
   document.getElementById('params-tbody').innerHTML=html;
 
-  // Achados + Conclusões — enviar para TipTap via callback React
+  // Achados + Conclusões — gerar HTML e enviar para TipTap
   const linhas=gerarAchados(d);
   const concs=gerarConclusao(d);
 
-  if(window._onAchadosGerados){
-    // Modo TipTap — React controla a renderização
-    window._onAchadosGerados(linhas);
-    window._onConclusoesGeradas(concs);
-  } else if(!userEditedAchados){
-    // Fallback modo antigo (innerHTML) — caso TipTap não esteja montado
-    let ah=`<button class="btn-add-top" onclick="abrirBanco(null,'top')">＋ Adicionar item</button>`;
-    linhas.forEach(l=>{ ah+=renderLinha(l); });
-    document.getElementById('achados-body').innerHTML=ah;
-    document.querySelectorAll('.achado-editable').forEach(ar);
+  // Montar HTML unificado: achados (parágrafos) + heading + conclusões (lista ordenada)
+  let laudoHtml='';
+  linhas.forEach(l=>{ laudoHtml+=`<p>${l}</p>`; });
+  laudoHtml+='<h3>CONCLUSÃO</h3>';
+  laudoHtml+='<ol>';
+  concs.forEach(c=>{ laudoHtml+=`<li>${c}</li>`; });
+  laudoHtml+='</ol>';
 
-    let ch='';
-    concs.forEach((c,i)=>{ ch+=renderConcLinha(c,i+1); });
-    ch+=`<li style="padding:3px 0;"><button class="btn-add-top" style="margin:0;" onclick="addConclusao()">＋ Adicionar item</button></li>`;
-    const cl=document.getElementById('conclusao-list');
-    if(cl) cl.innerHTML=ch;
+  if(window._onLaudoGerado){
+    window._onLaudoGerado(laudoHtml);
   }
 }
 

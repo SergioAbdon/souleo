@@ -8,7 +8,7 @@
 import { ReactNode } from 'react';
 
 type Props = {
-  p1: string;           // Cor primária do local de trabalho
+  p1: string;
   clinicaNome: string;
   clinicaSlogan: string;
   clinicaEnd: string;
@@ -16,11 +16,10 @@ type Props = {
   sigTexto: string;
   logoB64?: string;
   sigB64?: string;
-  editorAchados?: ReactNode;
-  editorConclusoes?: ReactNode;
+  editorLaudo?: ReactNode;
 };
 
-export default function SheetA4({ p1, clinicaNome, clinicaSlogan, clinicaEnd, clinicaTel, sigTexto, logoB64, sigB64, editorAchados, editorConclusoes }: Props) {
+export default function SheetA4({ p1, clinicaNome, clinicaSlogan, clinicaEnd, clinicaTel, sigTexto, logoB64, sigB64, editorLaudo }: Props) {
   const result = <>
     <div className="bg-[#D8DEE8] overflow-y-auto p-5 flex-1">
       <p className="text-[10px] text-[#6B7280] font-semibold uppercase tracking-wider mb-3 text-center">
@@ -80,18 +79,16 @@ export default function SheetA4({ p1, clinicaNome, clinicaSlogan, clinicaEnd, cl
             </thead>
             <tbody id="params-tbody" />
           </table>
+          <div style={{ fontSize: '5.5pt', color: '#888', lineHeight: 1.4, padding: '2px 4px', borderTop: '0.5px solid #ddd' }}>
+            <span>DDVE= Diâmetro diastólico do VE. DSVE= Diâmetro sistólico do VE. VE= Ventrículo esquerdo. VD= Ventrículo direito.</span><br />
+            <span>Valores de referência: ASE/EACVI 2015; ASE 2025.</span>
+          </div>
         </div>
 
-        {/* ═══ COMENTÁRIOS ═══ */}
+        {/* ═══ COMENTÁRIOS + CONCLUSÃO ═══ */}
         <SectionTitle p1={p1} mt>COMENTÁRIOS</SectionTitle>
-        <div id="achados-body" className="border border-[#ddd] border-t-0 px-2 py-1 min-h-[50px]">
-          {editorAchados}
-        </div>
-
-        {/* ═══ CONCLUSÃO ═══ */}
-        <SectionTitle p1={p1} mt>CONCLUSÃO</SectionTitle>
-        <div className="border border-[#ddd] border-t-0 px-2 py-1">
-          {editorConclusoes || <ul id="conclusao-list" className="list-none p-0 m-0" />}
+        <div id="editor-laudo-container" className="border border-[#ddd] border-t-0 px-2 py-1">
+          {editorLaudo}
         </div>
 
         {/* ═══ RODAPÉ ═══ */}
