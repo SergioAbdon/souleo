@@ -1,0 +1,90 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "exames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dataExame", "order": "ASCENDING" },
+        { "fieldPath": "horarioChegada", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "exames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "emitidoEm", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "exames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "dataExame", "order": "ASCENDING" },
+        { "fieldPath": "horarioChegada", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "exames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "medicoUid", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "dataExame", "order": "ASCENDING" },
+        { "fieldPath": "horarioChegada", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "exames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "pacienteId", "order": "ASCENDING" },
+        { "fieldPath": "dataExame", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "exames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "dataExame", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "exames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "medicoUid", "order": "ASCENDING" },
+        { "fieldPath": "dataExame", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "exames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "convenio", "order": "ASCENDING" },
+        { "fieldPath": "dataExame", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "exames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "convenio", "order": "ASCENDING" },
+        { "fieldPath": "emitidoEm", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "exames",
+      "fieldPath": "dataExame",
+      "indexes": [
+        { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    }
+  ]
+}

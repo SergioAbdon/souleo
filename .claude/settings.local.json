@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx next:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:4000)",
+      "Bash(npx firebase:*)",
+      "Bash(curl -s \"http://localhost:4000/api/feegow?action=sala_espera\")",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s \"http://localhost:4000/api/feegow?action=paciente&id=5804\")",
+      "Bash(curl -s \"http://localhost:4000/api/feegow?action=paciente&id=4\")",
+      "Bash(curl -s \"http://localhost:4000/api/feegow?action=convenios\")",
+      "Bash(curl -s -X POST \"http://localhost:4000/api/feegow\" -H \"Content-Type: application/json\" -d '{\"action\":\"atualizar_status\",\"agendamento_id\":64220,\"status_id\":3}')",
+      "Bash(curl -s -X POST \"http://localhost:4000/api/feegow\" -H \"Content-Type: application/json\" -d '{\"action\":\"atualizar_status\",\"agendamento_id\":64221,\"status_id\":3}')",
+      "Bash(curl -s -X GET \"https://api.feegow.com/v1/api/appoints/available\" -H \"x-access-token: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJmZWVnb3ciLCJhdWQiOiJwdWJsaWNhcGkiLCJpYXQiOjE3NzU1MTUyMTIsImxpY2Vuc2VJRCI6NTkzMH0.k9OT8JSlS6d98vUG4mhF11Q8hCYKUwRX1R1tZpKKgfg\" -H \"Content-Type: application/json\")",
+      "Bash(curl -s -X GET \"https://api.feegow.com/v1/api/appoints/available?profissional_id=1&data=2026-04-14&especialidade_id=96\" -H \"x-access-token: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJmZWVnb3ciLCJhdWQiOiJwdWJsaWNhcGkiLCJpYXQiOjE3NzU1MTUyMTIsImxpY2Vuc2VJRCI6NTkzMH0.k9OT8JSlS6d98vUG4mhF11Q8hCYKUwRX1R1tZpKKgfg\" -H \"Content-Type: application/json\")",
+      "Bash(curl -s -X GET \"https://api.feegow.com/v1/api/appoints/slots?profissional_id=1&data_start=2026-04-14&data_end=2026-04-14\" -H \"x-access-token: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJmZWVnb3ciLCJhdWQiOiJwdWJsaWNhcGkiLCJpYXQiOjE3NzU1MTUyMTIsImxpY2Vuc2VJRCI6NTkzMH0.k9OT8JSlS6d98vUG4mhF11Q8hCYKUwRX1R1tZpKKgfg\" -H \"Content-Type: application/json\")",
+      "Bash(grep -E \"\\\\.\\(js|ts\\)$\")",
+      "Bash(xargs grep:*)",
+      "Bash(grep -n \"button\\\\|btn\\\\|drag\" /c/Users/sergi/Desktop/souleo/src/app/laudo/[id]/page.tsx)",
+      "WebSearch",
+      "Bash(grep -rn \"window\\\\\\\\.open\\\\|print\\(\\)\\\\|fetch\\\\|Promise\\\\.all\\\\|Promise\\\\.race\" /c/Users/sergi/Desktop/souleo/src --include=\"*.tsx\" --include=\"*.ts\")"
+    ]
+  }
+}
