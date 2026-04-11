@@ -6,7 +6,7 @@
 // IDs DOM idênticos — compatível DICOM SR
 // ══════════════════════════════════════════════════════════════════
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { getExame, saveExame, emitExame, logAction } from '@/lib/firestore';
@@ -14,6 +14,8 @@ import { dataLocalHoje } from '@/lib/utils';
 import { checkEmissao, consumirEmissao } from '@/lib/billing';
 import SidebarLaudo from '@/components/laudo/SidebarLaudo';
 import SheetA4 from '@/components/laudo/SheetA4';
+import EditorLaudo from '@/components/laudo/EditorLaudo';
+import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
 import { PopupSalvarEmitir, ModoEmitido } from '@/components/laudo/PopupEmitir';
 
 export default function LaudoPage() {
@@ -24,6 +26,10 @@ export default function LaudoPage() {
   const [exame, setExame] = useState<Record<string, unknown> | null>(null);
   const [popupOpen, setPopupOpen] = useState(false);
   const [emitido, setEmitido] = useState(false);
+  const achadosRef = useRef<EditorLaudoRef>(null);
+  const conclusoesRef = useRef<EditorLaudoRef>(null);
+  const pendingAchados = useRef<string | null>(null);
+  const pendingConclusoes = useRef<string | null>(null);
 
   const exameId = params.id as string;
   const p1 = (workspace?.corPrimaria as string) || '#8B1A1A';
@@ -46,6 +52,21 @@ export default function LaudoPage() {
     : '';
   const logoB64 = (workspace?.logoB64 as string) || '';
   const sigB64 = (profile?.sigB64 as string) || '';
+
+  // Processar conteúdo pendente — roda continuamente até entregar
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (pendingAchados.current && achadosRef.current) {
+        achadosRef.current.setContent(pendingAchados.current);
+        pendingAchados.current = null;
+      }
+      if (pendingConclusoes.current && conclusoesRef.current) {
+        conclusoesRef.current.setContent(pendingConclusoes.current);
+        pendingConclusoes.current = null;
+      }
+    }, 500);
+    return () => clearInterval(interval);
+  }, []);
 
   // Carregar exame
   useEffect(() => {
@@ -74,6 +95,28 @@ export default function LaudoPage() {
     w.calcIdade = (dn: string, de?: string) => { if (!dn) return ''; const a = new Date(de || new Date()), b = new Date(dn); let i = a.getFullYear() - b.getFullYear(); if (a.getMonth() < b.getMonth() || (a.getMonth() === b.getMonth() && a.getDate() < b.getDate())) i--; return i; };
     w.uid = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 8);
     w.tog = (id: string) => { const el = document.getElementById(id); if (el) el.classList.toggle('collapsed'); };
+
+    // Callbacks TipTap — motor chama estes ao renderizar achados/conclusões
+    // Motor gera achados → atualiza TipTap (só se médico não editou manualmente)
+    w._onAchadosGerados = (linhas: string[]) => {
+      const html = linhas.map(l => `<p>${l}</p>`).join('');
+      if (achadosRef.current) {
+        achadosRef.current.setContent(html);
+      } else {
+        pendingAchados.current = html;
+      }
+    };
+    w._onConclusoesGeradas = (concs: string[]) => {
+      const html = concs.map((c, i) => `<p><strong>${i + 1}</strong>  ${c}</p>`).join('');
+      if (conclusoesRef.current) {
+        conclusoesRef.current.setContent(html);
+      } else {
+        pendingConclusoes.current = html;
+      }
+    };
+    w._onInserirFrase = (texto: string) => {
+      if (achadosRef.current) achadosRef.current.insertLine(texto);
+    };
 
     const script = document.createElement('script');
     script.src = '/motor/motorv8mp4.js';
@@ -258,8 +301,9 @@ export default function LaudoPage() {
     router.push('/dashboard');
   }
 
-  // ── Coletar achados e conclusões do DOM ──
+  // ── Coletar achados e conclusões (TipTap ou DOM fallback) ──
   function coletarAchados(): string[] {
+    if (achadosRef.current) return achadosRef.current.getLines();
     const items: string[] = [];
     document.querySelectorAll('#achados-body .linha-wrapper').forEach(w => {
       const ta = w.querySelector('textarea') as HTMLTextAreaElement | null;
@@ -269,6 +313,7 @@ export default function LaudoPage() {
   }
 
   function coletarConclusoes(): string[] {
+    if (conclusoesRef.current) return conclusoesRef.current.getLines();
     const items: string[] = [];
     document.querySelectorAll('#conclusao-list li').forEach(li => {
       const el = li.querySelector('.conclusao-text') as HTMLElement | null;
@@ -278,6 +323,14 @@ export default function LaudoPage() {
       }
     });
     return items;
+  }
+
+  // HTML dos editores para o PDF
+  function getAchadosHTML(): string {
+    return achadosRef.current?.getHTML() || document.getElementById('achados-body')?.innerHTML || '';
+  }
+  function getConclusoesHTML(): string {
+    return conclusoesRef.current?.getHTML() || document.getElementById('conclusao-list')?.innerHTML || '';
   }
 
   // ── PDF via window.open — HTML completamente autônomo ──
@@ -311,9 +364,15 @@ export default function LaudoPage() {
 <th style="background:${p1}!important;color:#fff;padding:2px 5px;font-weight:600;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">Referência</th>
 </tr></thead><tbody>${paramsRows}</tbody></table>`;
 
-    // Comentários e Conclusão
-    const achadosHTML = coletarAchados().map(t => `<li style="margin-bottom:2px;font-size:8.5pt;line-height:1.6;">${t.replace(/</g,'&lt;')}</li>`).join('');
-    const concHTML = coletarConclusoes().map((t, i) => `<li style="margin-bottom:2px;font-size:8.5pt;line-height:1.6;"><strong style="color:${p1};margin-right:4px;">${i + 1}</strong> ${t.replace(/</g,'&lt;')}</li>`).join('');
+    // Comentários e Conclusão — usar HTML do TipTap se disponível
+    const achadosHTMLContent = getAchadosHTML();
+    const concHTMLContent = getConclusoesHTML();
+    const achadosHTML = achadosHTMLContent
+      ? `<div style="font-size:8.5pt;line-height:1.6;">${achadosHTMLContent}</div>`
+      : coletarAchados().map(t => `<li style="margin-bottom:2px;font-size:8.5pt;line-height:1.6;">${t}</li>`).join('');
+    const concHTML = concHTMLContent
+      ? `<div style="font-size:8.5pt;line-height:1.6;">${concHTMLContent}</div>`
+      : coletarConclusoes().map((t, i) => `<li style="margin-bottom:2px;font-size:8.5pt;line-height:1.6;"><strong style="color:${p1};margin-right:4px;">${i + 1}</strong> ${t}</li>`).join('');
 
     // Identificação
     const outNome = document.getElementById('out-nome')?.textContent || '—';
@@ -507,6 +566,25 @@ ul{list-style:none;padding:0;margin:0;}
         sigTexto={sigTexto}
         logoB64={logoB64}
         sigB64={sigB64}
+        editorAchados={
+          <EditorLaudo
+            ref={achadosRef}
+            placeholder="Achados do exame..."
+            minHeight="80px"
+            onAddFrase={() => {
+              const w = window as unknown as Record<string, unknown>;
+              const fn = w.abrirBanco as ((target: unknown, pos: string) => void);
+              if (fn) fn(null, 'top');
+            }}
+          />
+        }
+        editorConclusoes={
+          <EditorLaudo
+            ref={conclusoesRef}
+            placeholder="Conclusão..."
+            minHeight="30px"
+          />
+        }
       />
       {/* Popup */}
       <PopupSalvarEmitir

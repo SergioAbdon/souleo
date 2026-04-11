@@ -1198,23 +1198,26 @@ function renderizarLaudo(d){
   });
   document.getElementById('params-tbody').innerHTML=html;
 
-  // Achados + Conclusões — só regenera se o usuário NÃO editou manualmente
-  if(!userEditedAchados){
-    const linhas=gerarAchados(d);
-    let ah=`<div class="undo-redo-bar"><button class="btn-undo" onclick="undo()" title="Desfazer">↩ Desfazer</button><button class="btn-redo" onclick="redo()" title="Refazer">↪ Refazer</button></div>`;
-    ah+=`<button class="btn-add-top" onclick="abrirBanco(null,'top')">＋ Adicionar item</button>`;
+  // Achados + Conclusões — enviar para TipTap via callback React
+  const linhas=gerarAchados(d);
+  const concs=gerarConclusao(d);
+
+  if(window._onAchadosGerados){
+    // Modo TipTap — React controla a renderização
+    window._onAchadosGerados(linhas);
+    window._onConclusoesGeradas(concs);
+  } else if(!userEditedAchados){
+    // Fallback modo antigo (innerHTML) — caso TipTap não esteja montado
+    let ah=`<button class="btn-add-top" onclick="abrirBanco(null,'top')">＋ Adicionar item</button>`;
     linhas.forEach(l=>{ ah+=renderLinha(l); });
     document.getElementById('achados-body').innerHTML=ah;
     document.querySelectorAll('.achado-editable').forEach(ar);
 
-    const concs=gerarConclusao(d);
     let ch='';
     concs.forEach((c,i)=>{ ch+=renderConcLinha(c,i+1); });
     ch+=`<li style="padding:3px 0;"><button class="btn-add-top" style="margin:0;" onclick="addConclusao()">＋ Adicionar item</button></li>`;
-    document.getElementById('conclusao-list').innerHTML=ch;
-
-    // Snapshot inicial para undo
-    if(undoStack.length===0) setTimeout(()=>{ saveUndo(); },100);
+    const cl=document.getElementById('conclusao-list');
+    if(cl) cl.innerHTML=ch;
   }
 }
 
@@ -1488,16 +1491,24 @@ function adicionarFraseBanco(){
 
 function inserirFraseSelecionada(){
   if(!fraseSelecionada) return;
-  saveUndo(); userEditedAchados=true;
   const f=banco.find(x=>x.id===fraseSelecionada);
   if(!f) return;
+
+  // Modo TipTap — inserir via callback React
+  if(window._onInserirFrase){
+    window._onInserirFrase(f.txt);
+    fecharBanco();
+    return;
+  }
+
+  // Fallback modo antigo
+  saveUndo(); userEditedAchados=true;
   const body=document.getElementById('achados-body');
   const novaDiv=document.createElement('div');
   novaDiv.innerHTML=renderLinha(f.txt);
   const nova=novaDiv.firstElementChild;
 
   if(insertTarget&&insertTarget.pos==='top'){
-    // inserir logo após o botão "Adicionar item" no topo
     const addBtn=body.querySelector('.btn-add-top');
     body.insertBefore(nova,addBtn?addBtn.nextSibling:body.firstChild);
   } else if(insertTarget&&insertTarget.target){

@@ -5,6 +5,8 @@
 // IDs DOM idênticos ao motor: out-nome, out-idade, params-tbody, achados-body, conclusao-list
 // ══════════════════════════════════════════════════════════════════
 
+import { ReactNode } from 'react';
+
 type Props = {
   p1: string;           // Cor primária do local de trabalho
   clinicaNome: string;
@@ -14,9 +16,11 @@ type Props = {
   sigTexto: string;
   logoB64?: string;
   sigB64?: string;
+  editorAchados?: ReactNode;
+  editorConclusoes?: ReactNode;
 };
 
-export default function SheetA4({ p1, clinicaNome, clinicaSlogan, clinicaEnd, clinicaTel, sigTexto, logoB64, sigB64 }: Props) {
+export default function SheetA4({ p1, clinicaNome, clinicaSlogan, clinicaEnd, clinicaTel, sigTexto, logoB64, sigB64, editorAchados, editorConclusoes }: Props) {
   const result = <>
     <div className="bg-[#D8DEE8] overflow-y-auto p-5 flex-1">
       <p className="text-[10px] text-[#6B7280] font-semibold uppercase tracking-wider mb-3 text-center">
@@ -80,12 +84,14 @@ export default function SheetA4({ p1, clinicaNome, clinicaSlogan, clinicaEnd, cl
 
         {/* ═══ COMENTÁRIOS ═══ */}
         <SectionTitle p1={p1} mt>COMENTÁRIOS</SectionTitle>
-        <div id="achados-body" className="border border-[#ddd] border-t-0 px-2 py-1 min-h-[50px]" />
+        <div id="achados-body" className="border border-[#ddd] border-t-0 px-2 py-1 min-h-[50px]">
+          {editorAchados}
+        </div>
 
         {/* ═══ CONCLUSÃO ═══ */}
         <SectionTitle p1={p1} mt>CONCLUSÃO</SectionTitle>
         <div className="border border-[#ddd] border-t-0 px-2 py-1">
-          <ul id="conclusao-list" className="list-none p-0 m-0" />
+          {editorConclusoes || <ul id="conclusao-list" className="list-none p-0 m-0" />}
         </div>
 
         {/* ═══ RODAPÉ ═══ */}
