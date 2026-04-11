@@ -92,6 +92,33 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ ok: true, data });
       }
 
+      case 'buscar_cpf': {
+        const cpf = req.nextUrl.searchParams.get('cpf');
+        if (!cpf) return NextResponse.json({ error: 'cpf obrigatório' }, { status: 400 });
+        const cpfLimpo = cpf.replace(/\D/g, '');
+        if (cpfLimpo.length < 11) return NextResponse.json({ error: 'CPF inválido' }, { status: 400 });
+        const data = await feegowFetch(`/patient/search?paciente_cpf=${cpfLimpo}`);
+        const pac = data?.content;
+        if (!pac) return NextResponse.json({ ok: true, encontrado: false });
+        let dtnasc = '';
+        if (pac.nascimento) {
+          const p = pac.nascimento.split('-');
+          if (p.length === 3) dtnasc = `${p[2]}-${p[1]}-${p[0]}`;
+        }
+        return NextResponse.json({
+          ok: true,
+          encontrado: true,
+          paciente: {
+            nome: (pac.nome || '').toUpperCase(),
+            dtnasc,
+            sexo: pac.sexo === 'Masculino' ? 'M' : pac.sexo === 'Feminino' ? 'F' : '',
+            cpf: (pac.documentos?.cpf || '').replace(/\D/g, '') || cpfLimpo,
+            telefone: pac.telefones?.[0] || '',
+            feegowPacienteId: pac.id || null,
+          },
+        });
+      }
+
       case 'importar': {
         // Busca sala de espera + dados completos de cada paciente
         const hoje = dataLocalHoje();
@@ -143,7 +170,7 @@ export async function GET(req: NextRequest) {
       }
 
       default:
-        return NextResponse.json({ error: 'action inválida. Use: teste, sala_espera, paciente, convenios, importar' }, { status: 400 });
+        return NextResponse.json({ error: 'action inválida. Use: teste, sala_espera, paciente, buscar_cpf, convenios, importar' }, { status: 400 });
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Erro desconhecido';

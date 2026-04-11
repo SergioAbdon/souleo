@@ -10,12 +10,15 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { getExame, saveExame, emitExame, logAction } from '@/lib/firestore';
+import { db } from '@/lib/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 import { dataLocalHoje } from '@/lib/utils';
 import { checkEmissao, consumirEmissao } from '@/lib/billing';
 import SidebarLaudo from '@/components/laudo/SidebarLaudo';
 import SheetA4 from '@/components/laudo/SheetA4';
 import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
+import { gerarDocx } from '@/lib/exportDocx';
 import { PopupSalvarEmitir, ModoEmitido } from '@/components/laudo/PopupEmitir';
 
 export default function LaudoPage() {
@@ -66,7 +69,13 @@ export default function LaudoPage() {
   // Carregar exame
   useEffect(() => {
     if (workspace?.id && exameId) {
-      getExame(workspace.id, exameId).then(ex => { if (ex) setExame(ex); });
+      getExame(workspace.id, exameId).then(ex => {
+        if (ex) {
+          setExame(ex);
+          const dados = ex as Record<string, unknown>;
+          if (dados.emitidoEm) setEmitido(true);
+        }
+      });
     }
   }, [workspace?.id, exameId]);
 
@@ -90,6 +99,31 @@ export default function LaudoPage() {
     w.calcIdade = (dn: string, de?: string) => { if (!dn) return ''; const a = new Date(de || new Date()), b = new Date(dn); let i = a.getFullYear() - b.getFullYear(); if (a.getMonth() < b.getMonth() || (a.getMonth() === b.getMonth() && a.getDate() < b.getDate())) i--; return i; };
     w.uid = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 8);
     w.tog = (id: string) => { const el = document.getElementById(id); if (el) el.classList.toggle('collapsed'); };
+    w.alertaIT = () => {
+      const it = parseFloat((document.getElementById('b23') as HTMLInputElement)?.value || '0');
+      const psap = parseFloat((document.getElementById('b37') as HTMLInputElement)?.value || '0');
+      const msg = document.getElementById('alerta-psap');
+      if (msg) msg.style.display = (it > 0 && !psap) ? 'block' : 'none';
+    };
+    // Wrap setDiastModo para atualizar UI dos botões
+    const origSetDiastModo = w.setDiastModo as ((m: string) => void) | undefined;
+    w.setDiastModo = (modo: string) => {
+      if (origSetDiastModo) origSetDiastModo(modo);
+      const btnAuto = document.getElementById('diast-btn-auto');
+      const btnManual = document.getElementById('diast-btn-manual');
+      const panel = document.getElementById('diast-manual-panel');
+      if (btnAuto && btnManual && panel) {
+        if (modo === 'manual') {
+          btnManual.className = 'flex-1 text-[10px] font-semibold py-1 rounded transition bg-[#1E3A5F] text-white';
+          btnAuto.className = 'flex-1 text-[10px] font-semibold py-1 rounded transition bg-transparent text-[#6B7280] hover:bg-white';
+          panel.style.display = 'block';
+        } else {
+          btnAuto.className = 'flex-1 text-[10px] font-semibold py-1 rounded transition bg-[#1E3A5F] text-white';
+          btnManual.className = 'flex-1 text-[10px] font-semibold py-1 rounded transition bg-transparent text-[#6B7280] hover:bg-white';
+          panel.style.display = 'none';
+        }
+      }
+    };
 
     // Callbacks TipTap — motor chama estes ao renderizar achados/conclusões
     // Motor gera laudo completo → envia para TipTap
@@ -155,14 +189,20 @@ export default function LaudoPage() {
     const med = exame.medidas as Record<string, string> | undefined;
     if (med) {
       Object.entries(med).forEach(([id, val]) => { if (val) setVal(id, val); });
-    } else {
-      setVal('nome', exame.pacienteNome as string || '');
-      setVal('dtnasc', exame.pacienteDtnasc as string || '');
-      setVal('dtexame', exame.dataExame as string || dataLocalHoje());
-      setVal('convenio', exame.convenio as string || '');
-      setVal('solicitante', exame.solicitante as string || '');
-      setVal('sexo', exame.sexo as string || '');
     }
+    // Sempre preencher identificação a partir do exame (fallback se medidas não tiver)
+    const idCampos: [string, string][] = [
+      ['nome', exame.pacienteNome as string || ''],
+      ['dtnasc', exame.pacienteDtnasc as string || ''],
+      ['dtexame', exame.dataExame as string || dataLocalHoje()],
+      ['convenio', exame.convenio as string || ''],
+      ['solicitante', exame.solicitante as string || ''],
+      ['sexo', exame.sexo as string || ''],
+    ];
+    idCampos.forEach(([id, val]) => {
+      const el = document.getElementById(id) as HTMLInputElement | null;
+      if (el && !el.value && val) setVal(id, val);
+    });
   }
 
   function setVal(id: string, val: string) {
@@ -239,6 +279,10 @@ export default function LaudoPage() {
     const achados = coletarAchados();
     const conclusoes = coletarConclusoes();
 
+    // IMPORTANTE: gerar PDF HTML ANTES de emitir (DOM ainda está intacto)
+    let pdfHtml = '';
+    try { pdfHtml = gerarPdfHtml(); } catch (e) { console.warn('gerarPdfHtml:', e); }
+
     const ok = await emitExame(workspace.id, exameId, {
       medidas, achados, conclusoes,
       ...coletarIdentificacao(),
@@ -246,15 +290,13 @@ export default function LaudoPage() {
     }, user.uid);
 
     if (ok) {
-      // Billing: cobrar se nunca emitido OU se identificação foi alterada (anti-fraude)
+      // Billing: cobrar SEMPRE (1ª emissão ou reemissão)
       const jaEmitido = !!(exame?.emitidoEm);
       const idMudou = jaEmitido && identificacaoMudou();
-      const deveCobar = !jaEmitido || idMudou;
 
-      if (deveCobar) {
-        const check = await checkEmissao(workspace.id);
-        if (check.pode && check.tipo) await consumirEmissao(workspace.id, check.tipo);
-      }
+      const check = await checkEmissao(workspace.id);
+      if (check.pode && check.tipo) await consumirEmissao(workspace.id, check.tipo);
+
       await logAction('emissao', { exameId, wsId: workspace.id, reemissao: jaEmitido, identificacaoAlterada: idMudou }, user.uid);
 
       try { localStorage.removeItem(`rascunho_${exameId}`); } catch { /* */ }
@@ -270,6 +312,13 @@ export default function LaudoPage() {
         } catch { /* não bloquear emissão se Feegow falhar */ }
       }
 
+      // Salvar PDF HTML separadamente (pode ser grande, não bloqueia emissão)
+      if (pdfHtml) {
+        try {
+          await updateDoc(doc(db, 'workspaces', workspace.id, 'exames', exameId), { pdfHtml });
+        } catch (e) { console.warn('Erro ao salvar pdfHtml:', e); }
+      }
+
       setEmitido(true);
       toast('Laudo emitido e assinado');
       setTimeout(() => handleImprimir(), 500);
@@ -279,6 +328,7 @@ export default function LaudoPage() {
   }
 
   function handleDesbloquear() {
+    if (!confirm('Ao editar e reemitir, será consumido 1 crédito da sua franquia.\n\nDeseja desbloquear para edição?')) return;
     setEmitido(false);
     toast('Laudo desbloqueado para edição');
   }
@@ -304,8 +354,8 @@ export default function LaudoPage() {
     return editorRef.current?.getConclusoesHTML() || '';
   }
 
-  // ── PDF via window.open — HTML completamente autônomo ──
-  function handleImprimir() {
+  // ── Gerar HTML do PDF a partir do DOM ──
+  function gerarPdfHtml(): string {
     const nome = (document.getElementById('nome') as HTMLInputElement)?.value || 'PACIENTE';
     const nomeArq = 'ECOTT ' + nome.trim().toUpperCase();
 
@@ -357,7 +407,7 @@ Valores de referência: ASE/EACVI 2015; ASE 2025.
     const outSolic = document.getElementById('out-solicitante')?.textContent || '—';
     const outDtex = document.getElementById('out-dtexame')?.textContent || '—';
 
-    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>${nomeArq}</title>
+    return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>${nomeArq}</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -422,46 +472,65 @@ ul{list-style:none;padding:0;margin:0;}
   <div style="border:1px solid #ddd;border-top:none;padding:4px 8px;"><ul>${concHTML}</ul></div>
 </td></tr></tbody>
 </table></body></html>`;
+  }
 
+  // ── PDF via window.open ──
+  function handleImprimir() {
+    const html = gerarPdfHtml();
     const win = window.open('', '_blank', 'width=900,height=700');
     if (win) {
       win.document.write(html);
       win.document.close();
-      win.onload = () => setTimeout(() => { win.focus(); win.print(); }, 600);
     }
   }
 
   // ── Copiar para Prontuário ──
   function handleCopiarFormatado() {
-    // Tabela estilo Excel — simples, sem estilos complexos, Word interpreta bem
+    // Usar MESMO HTML do PDF — garantia de formatação idêntica
     const rows = document.querySelectorAll('#params-tbody tr');
-    const s = 'style="border:1px solid #999;padding:0px 2px;font-size:9px;font-family:Arial;line-height:0.6;"';
-    const h = 'style="border:1px solid #999;padding:0px 2px;font-size:9px;font-family:Arial;font-weight:bold;background:#D9E2F3;line-height:0.6;"';
     let paramsRows = '';
     rows.forEach(tr => {
-      const cells = tr.querySelectorAll('td');
-      if (cells.length >= 8) {
-        paramsRows += `<tr><td ${s}>${cells[0]?.textContent || ''}</td><td ${s}>${cells[1]?.textContent || ''}</td><td ${s}>${cells[2]?.textContent || ''}</td><td ${s}>${cells[3]?.textContent || ''}</td><td ${s}>${cells[4]?.textContent || ''}</td><td ${s}>${cells[5]?.textContent || ''}</td><td ${s}>${cells[6]?.textContent || ''}</td><td ${s}>${cells[7]?.textContent || ''}</td></tr>`;
-      }
+      let rowHTML = '<tr>';
+      tr.querySelectorAll('td').forEach((td, idx) => {
+        const divider = idx === 4 ? `border-left:2px solid ${p1};` : '';
+        rowHTML += `<td style="border:0.5px solid #ccc;padding:2px 5px;${divider}">${td.innerHTML}</td>`;
+      });
+      rowHTML += '</tr>';
+      paramsRows += rowHTML;
     });
 
-    const tableHTML = `<table style="border-collapse:collapse;width:50%;font-family:Arial;table-layout:fixed;font-size:6pt;">
-<colgroup><col style="width:7%"/><col style="width:4%"/><col style="width:3%"/><col style="width:5%"/><col style="width:10%"/><col style="width:4%"/><col style="width:3%"/><col style="width:5%"/></colgroup>
-<tr><th ${h}>Parâmetro</th><th ${h}>Valor</th><th ${h}>Un.</th><th ${h}>Ref.</th><th ${h}>Parâmetro</th><th ${h}>Valor</th><th ${h}>Un.</th><th ${h}>Ref.</th></tr>
-${paramsRows}</table>
-<p style="font-size:8pt;color:#666;">Valores de referência: ASE/EACVI 2015; ASE 2025.</p>`;
+    const paramsHTML = `<table style="border-collapse:collapse;width:100%;font-size:7.5pt;table-layout:fixed;">
+<colgroup><col style="width:22%"/><col style="width:8%"/><col style="width:6%"/><col style="width:14%"/><col style="width:22%"/><col style="width:8%"/><col style="width:6%"/><col style="width:14%"/></colgroup>
+<thead><tr>
+<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;">Parâmetro</th>
+<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;">Valor</th>
+<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;">Unid.</th>
+<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;">Referência</th>
+<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;border-left:2px solid #fff;">Parâmetro</th>
+<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;">Valor</th>
+<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;">Unid.</th>
+<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;">Referência</th>
+</tr></thead><tbody>${paramsRows}</tbody></table>
+<div style="font-size:5.5pt;color:#888;padding:2px 4px;">Valores de referência: ASE/EACVI 2015; ASE 2025.</div>`;
 
-    const achadosHTML = getAchadosHTML();
-    const concHTML = getConclusoesHTML();
+    const achadosHTMLContent = getAchadosHTML();
+    const concHTMLContent = getConclusoesHTML();
+    const achadosHTML = achadosHTMLContent
+      ? `<div style="font-size:8.5pt;line-height:1.6;">${achadosHTMLContent}</div>`
+      : coletarAchados().map(t => `<div style="font-size:8.5pt;line-height:1.6;">${t}</div>`).join('');
+    const concHTML = concHTMLContent
+      ? `<div style="font-size:8.5pt;line-height:1.6;">${concHTMLContent}</div>`
+      : coletarConclusoes().map((t, i) => `<div style="font-size:8.5pt;line-height:1.6;"><strong>${i + 1}</strong> ${t}</div>`).join('');
 
     const temp = document.createElement('div');
-    temp.style.fontFamily = "'IBM Plex Sans', Arial, sans-serif";
+    temp.style.cssText = 'font-family:IBM Plex Sans,Arial,sans-serif;font-size:8.5pt;color:#1a1a1a;';
     temp.innerHTML = `
-      ${tableHTML}
-      <div style="font-weight:bold;font-size:10pt;margin-top:8px;padding:3px 0;border-bottom:2px solid #333;">COMENTÁRIOS</div>
-      <div style="font-size:9pt;line-height:1.7;padding:4px 0;">${achadosHTML}</div>
-      <div style="font-weight:bold;font-size:10pt;margin-top:8px;padding:3px 0;border-bottom:2px solid #333;">CONCLUSÃO</div>
-      <div style="font-size:9pt;line-height:1.7;padding:4px 0;">${concHTML}</div>
+      <div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;">MEDIDAS E PARÂMETROS</div>
+      <div style="border:1px solid #ddd;border-top:none;padding:0;">${paramsHTML}</div>
+      <div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;margin-top:4px;">COMENTÁRIOS</div>
+      <div style="border:1px solid #ddd;border-top:none;padding:4px 8px;">${achadosHTML}</div>
+      <div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;margin-top:4px;">CONCLUSÃO</div>
+      <div style="border:1px solid #ddd;border-top:none;padding:4px 8px;">${concHTML}</div>
     `;
 
     document.body.appendChild(temp);
@@ -473,7 +542,7 @@ ${paramsRows}</table>
     document.execCommand('copy');
     sel?.removeAllRanges();
     temp.remove();
-    toast('Copiado formatado — cole no Word, Tasy ou MV');
+    toast('Copiado — cole com Ctrl+V no Word, Tasy ou MV');
   }
 
   function handleCopiarTexto() {
@@ -506,6 +575,36 @@ ${paramsRows}</table>
       ta.remove();
       toast('Copiado texto simples');
     });
+  }
+
+  async function handleBaixarWord() {
+    const rows = document.querySelectorAll('#params-tbody tr');
+    const params: { cells: string[] }[] = [];
+    rows.forEach(tr => {
+      const cells = tr.querySelectorAll('td');
+      if (cells.length >= 8) {
+        params.push({ cells: Array.from(cells).map(c => c.textContent || '') });
+      }
+    });
+
+    const outNome = (document.getElementById('nome') as HTMLInputElement)?.value || 'PACIENTE';
+    const outConv = (document.getElementById('convenio') as HTMLInputElement)?.value || '';
+    const outDtex = (document.getElementById('dtexame') as HTMLInputElement)?.value || '';
+
+    await gerarDocx({
+      clinicaNome,
+      medicoNome: (profile?.nome as string) || '',
+      medicoCrm: `CRM/${profile?.ufCrm || ''} ${profile?.crm || ''}`,
+      pacienteNome: outNome.trim().toUpperCase(),
+      dataExame: outDtex,
+      convenio: outConv,
+      p1,
+      params,
+      achados: coletarAchados(),
+      conclusoes: coletarConclusoes(),
+    });
+
+    toast('Word (.docx) baixado!');
   }
 
   function toast(msg: string) {
@@ -553,14 +652,18 @@ ${paramsRows}</table>
         onLimpar={handleLimpar}
         emitido={emitido}
         readOnlyIdentificacao={!!(exame?.emitidoEm)}
+        readOnlyMotor={emitido}
+        exameOrigem={exame?.origem as string || ''}
+        exameCpf={exame?.cpf as string || ''}
+        feegowPacienteId={exame?.feegowPacienteId as string | number | null || null}
         modoEmitido={
           <ModoEmitido
-            onVoltar={handleVoltar}
             onFinalizar={handleFinalizar}
             onEditar={handleDesbloquear}
             onImprimir={handleImprimir}
             onCopiarFormatado={handleCopiarFormatado}
             onCopiarTexto={handleCopiarTexto}
+            onBaixarWord={handleBaixarWord}
           />
         }
       />

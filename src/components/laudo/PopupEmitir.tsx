@@ -46,15 +46,15 @@ export function PopupSalvarEmitir({ open, onClose, onRascunho, onEmitir }: Props
 }
 
 type ModoEmitidoProps = {
-  onVoltar: () => void;
   onFinalizar: () => void;
   onEditar: () => void;
   onImprimir: () => void;
   onCopiarFormatado: () => void;
   onCopiarTexto: () => void;
+  onBaixarWord?: () => void;
 };
 
-export function ModoEmitido({ onVoltar, onFinalizar, onEditar, onImprimir, onCopiarFormatado, onCopiarTexto }: ModoEmitidoProps) {
+export function ModoEmitido({ onFinalizar, onEditar, onImprimir, onCopiarFormatado, onCopiarTexto, onBaixarWord }: ModoEmitidoProps) {
   const [prontuarioOpen, setProntuarioOpen] = useState(false);
 
   return (
@@ -66,9 +66,6 @@ export function ModoEmitido({ onVoltar, onFinalizar, onEditar, onImprimir, onCop
 
       {/* Botões */}
       <div className="flex flex-col gap-2">
-        <BtnEmitido onClick={onVoltar} cor="navy">📋 Voltar ao Worklist</BtnEmitido>
-        <BtnEmitido onClick={onFinalizar} cor="green">✅ Finalizar Atendimento</BtnEmitido>
-        <BtnEmitido onClick={onEditar} cor="amber">✏️ Editar Laudo</BtnEmitido>
         <BtnEmitido onClick={onImprimir} cor="navy">🖨️ Imprimir / PDF</BtnEmitido>
 
         {/* Copiar para Prontuário */}
@@ -87,15 +84,30 @@ export function ModoEmitido({ onVoltar, onFinalizar, onEditar, onImprimir, onCop
                 </div>
               </button>
               <button onClick={() => { onCopiarTexto(); setProntuarioOpen(false); }}
-                className="w-full flex items-start gap-2.5 px-3.5 py-2.5 cursor-pointer hover:bg-[#F9FAFB] transition text-left">
+                className="w-full flex items-start gap-2.5 px-3.5 py-2.5 cursor-pointer border-b border-[#E5E7EB] hover:bg-[#F9FAFB] transition text-left">
                 <span className="text-[15px] shrink-0 pt-0.5">📋</span>
                 <div>
                   <div className="text-[12px] font-semibold text-[#111827]">Copiar texto simples</div>
                   <div className="text-[10px] text-[#6B7280] mt-0.5">Hapvida · prontuários básicos</div>
                 </div>
               </button>
+              {onBaixarWord && (
+                <button onClick={() => { onBaixarWord(); setProntuarioOpen(false); }}
+                  className="w-full flex items-start gap-2.5 px-3.5 py-2.5 cursor-pointer hover:bg-[#F9FAFB] transition text-left">
+                  <span className="text-[15px] shrink-0 pt-0.5">📄</span>
+                  <div>
+                    <div className="text-[12px] font-semibold text-[#111827]">Baixar Word (.docx)</div>
+                    <div className="text-[10px] text-[#6B7280] mt-0.5">Formatação perfeita · Word · LibreOffice</div>
+                  </div>
+                </button>
+              )}
             </div>
           )}
+        </div>
+
+        <div className="border-t border-[#E5E7EB] mt-2 pt-2 flex flex-col gap-2">
+          <BtnEmitido onClick={onEditar} cor="amber">✏️ Editar Laudo</BtnEmitido>
+          <BtnEmitido onClick={onFinalizar} cor="green">✅ Finalizar Atendimento</BtnEmitido>
         </div>
       </div>
     </div>

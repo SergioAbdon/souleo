@@ -7,7 +7,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { savePaciente, saveExame, listenWorklist } from '@/lib/firestore';
+import { savePaciente, saveExame, listenWorklist, getExame } from '@/lib/firestore';
+import { abrirPdfSalvo } from '@/lib/pdfUtils';
 import { dataLocalHoje } from '@/lib/utils';
 import { db } from '@/lib/firebase';
 import { doc, deleteDoc } from 'firebase/firestore';
@@ -52,6 +53,8 @@ export default function Worklist() {
   const [pacLoading, setPacLoading] = useState(false);
   const [pacErro, setPacErro] = useState('');
   const [feegowLoading, setFeegowLoading] = useState(false);
+  const [cpfBuscando, setCpfBuscando] = useState(false);
+  const [cpfFeegow, setCpfFeegow] = useState(false); // indica se dados vieram do Feegow
 
   // Listener worklist (reage à data selecionada e ao workspace)
   const wsId = workspace?.id;
@@ -89,8 +92,29 @@ export default function Worklist() {
     setEditPacId(null); setEditExameId(null);
     setPacNome(''); setPacCpf(''); setPacDtnasc(''); setPacSexo('');
     setPacTel(''); setPacConvenio(''); setPacSolicitante(profile?.nome as string || '');
-    setPacTipoExame('eco_tt'); setPacErro('');
+    setPacTipoExame('eco_tt'); setPacErro(''); setCpfFeegow(false);
     setModalPac(true);
+  }
+
+  async function buscarCpfFeegow(cpfDigitado: string) {
+    const cpfLimpo = cpfDigitado.replace(/\D/g, '');
+    if (cpfLimpo.length < 11) return;
+    setCpfBuscando(true);
+    try {
+      const res = await fetch(`/api/feegow?action=buscar_cpf&cpf=${cpfLimpo}`);
+      const data = await res.json();
+      if (data.ok && data.encontrado && data.paciente) {
+        const p = data.paciente;
+        if (p.nome) setPacNome(p.nome);
+        if (p.dtnasc) setPacDtnasc(p.dtnasc);
+        if (p.sexo) setPacSexo(p.sexo);
+        if (p.telefone) setPacTel(p.telefone);
+        setCpfFeegow(true);
+      }
+    } catch (e) {
+      console.warn('Erro ao buscar CPF no Feegow:', e);
+    }
+    setCpfBuscando(false);
   }
 
   function editarPaciente(item: ExameItem) {
@@ -223,6 +247,23 @@ export default function Worklist() {
       alert('Erro ao conectar com o Feegow.');
     }
     setFeegowLoading(false);
+  }
+
+  async function imprimirPdf(exameId: string) {
+    if (!workspace?.id) return;
+    try {
+      const ex = await getExame(workspace.id, exameId);
+      const pdfHtml = (ex as Record<string, unknown>)?.pdfHtml as string;
+      if (pdfHtml) {
+        abrirPdfSalvo(pdfHtml);
+      } else {
+        // Fallback: abrir o laudo normalmente
+        router.push('/laudo/' + exameId);
+      }
+    } catch (e) {
+      console.error('Erro ao abrir PDF:', e);
+      router.push('/laudo/' + exameId);
+    }
   }
 
   async function abrirLaudo(exameId: string) {
@@ -383,8 +424,7 @@ export default function Worklist() {
                       {item.status === 'emitido' && (
                         <>
                           <Btn cor="green" onClick={() => router.push('/laudo/' + item.id)}>👁 Ver</Btn>
-                          <Btn cor="gray" onClick={() => router.push('/laudo/' + item.id)}>🖨️</Btn>
-                          <Btn cor="amber" onClick={() => router.push('/laudo/' + item.id)}>✏️</Btn>
+                          <Btn cor="gray" onClick={() => imprimirPdf(item.id)}>🖨️</Btn>
                         </>
                       )}
                     </div>
@@ -414,9 +454,15 @@ export default function Worklist() {
 
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">CPF</label>
-                  <input type="text" value={pacCpf} onChange={e => setPacCpf(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">
+                    CPF {cpfBuscando && <span className="text-purple-500 normal-case font-normal animate-pulse">buscando...</span>}
+                    {cpfFeegow && !cpfBuscando && <span className="text-green-500 normal-case font-normal">✓ Feegow</span>}
+                  </label>
+                  <input type="text" value={pacCpf}
+                    onChange={e => { setPacCpf(e.target.value); setCpfFeegow(false); }}
+                    onBlur={e => buscarCpfFeegow(e.target.value)}
+                    placeholder="000.000.000-00"
+                    className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] ${cpfFeegow ? 'border-green-400 bg-green-50' : ''}`} />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Sexo</label>

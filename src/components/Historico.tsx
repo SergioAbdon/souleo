@@ -7,7 +7,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getHistorico, saveExame, logAction } from '@/lib/firestore';
+import { getHistorico, saveExame, logAction, getExame } from '@/lib/firestore';
+import { abrirPdfSalvo } from '@/lib/pdfUtils';
 import { db } from '@/lib/firebase';
 import { doc, deleteDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
@@ -73,6 +74,22 @@ export default function Historico() {
   }
 
   // ── Ações ──
+
+  async function imprimirPdf(exameId: string) {
+    if (!wsIdSel) return;
+    try {
+      const ex = await getExame(wsIdSel, exameId);
+      const pdfHtml = (ex as Record<string, unknown>)?.pdfHtml as string;
+      if (pdfHtml) {
+        abrirPdfSalvo(pdfHtml);
+      } else {
+        router.push('/laudo/' + exameId);
+      }
+    } catch (e) {
+      console.error('Erro ao abrir PDF:', e);
+      router.push('/laudo/' + exameId);
+    }
+  }
 
   async function handleEditar(ex: ExameItem) {
     if (!confirm('Reabrir laudo para edição?\nApenas o corpo do laudo poderá ser alterado.')) return;
@@ -189,13 +206,9 @@ export default function Historico() {
                         className="bg-green-100 text-green-700 px-2.5 py-1 rounded text-xs font-semibold hover:bg-green-200 transition">
                         👁 Ver
                       </button>
-                      <button onClick={() => router.push('/laudo/' + ex.id)}
+                      <button onClick={() => imprimirPdf(ex.id)}
                         className="bg-gray-100 text-gray-600 px-2.5 py-1 rounded text-xs font-semibold hover:bg-gray-200 transition">
                         🖨️
-                      </button>
-                      <button onClick={() => handleEditar(ex)}
-                        className="bg-amber-50 text-amber-600 px-2.5 py-1 rounded text-xs font-semibold hover:bg-amber-100 transition">
-                        ✏️ Editar
                       </button>
                       <button onClick={() => abrirConfirmDelete(ex)}
                         className="bg-red-50 text-red-500 px-2.5 py-1 rounded text-xs font-semibold hover:bg-red-100 transition">

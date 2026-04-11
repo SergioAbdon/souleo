@@ -5,8 +5,16 @@
 // IDs DOM idênticos ao motor (b7-b62, gls_ve, gls_vd, lars, etc.)
 // ══════════════════════════════════════════════════════════════════
 
-import { useState, ReactNode } from 'react';
+import { useState, useEffect, useRef, ReactNode } from 'react';
 import { dataLocalHoje } from '@/lib/utils';
+
+// Helpers para chamar funções do motor (expostas em window.*)
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function motorCall(fn: string, ...args: any[]) {
+  try { const f = (window as any)[fn]; if (typeof f === 'function') f(...args); } catch {}
+}
+function motorCalc() { motorCall('calc'); }
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 type Props = {
   clinicaNome: string;
@@ -18,13 +26,113 @@ type Props = {
   emitido?: boolean;
   modoEmitido?: ReactNode;
   readOnlyIdentificacao?: boolean;
+  readOnlyMotor?: boolean;
+  exameOrigem?: string;
+  exameCpf?: string;
+  feegowPacienteId?: string | number | null;
 };
 
-export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, emitido, modoEmitido, readOnlyIdentificacao }: Props) {
+export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, emitido, modoEmitido, readOnlyIdentificacao, readOnlyMotor, exameOrigem, exameCpf, feegowPacienteId }: Props) {
   const [idDesbloqueado, setIdDesbloqueado] = useState(false);
+  const [motorDesbloqueado, setMotorDesbloqueado] = useState(false);
+  // Detectar quando readOnlyMotor muda de true→false (médico desbloqueou)
+  const prevReadOnlyMotor = useRef(readOnlyMotor);
+  useEffect(() => {
+    if (prevReadOnlyMotor.current && !readOnlyMotor) {
+      setMotorDesbloqueado(true);
+    }
+    prevReadOnlyMotor.current = readOnlyMotor;
+  }, [readOnlyMotor]);
+  const [feegowLoading, setFeegowLoading] = useState(false);
   const idBloqueado = readOnlyIdentificacao && !idDesbloqueado;
+  const motorBloqueado = !!(readOnlyMotor && !motorDesbloqueado);
+  const mb = motorBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : '';
 
-  function handleDesbloquearId() {
+  // Bloquear/desbloquear campos do motor quando estado muda
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const sidebar = document.getElementById('laudo-sidebar');
+      if (!sidebar) return;
+      const camposId = ['nome', 'dtnasc', 'dtexame', 'convenio', 'solicitante'];
+      const campos = sidebar.querySelectorAll('input:not(.hidden), select:not(.hidden)') as NodeListOf<HTMLInputElement | HTMLSelectElement>;
+      if (motorBloqueado) {
+        // Bloquear todos os campos do motor
+        campos.forEach(el => {
+          if (camposId.includes(el.id)) return;
+          el.disabled = true;
+          el.classList.add('bg-gray-100', 'text-gray-400', 'cursor-not-allowed');
+        });
+      } else if (motorDesbloqueado) {
+        // Só desbloqueia se foi explicitamente desbloqueado (evita interferir na montagem)
+        campos.forEach(el => {
+          if (camposId.includes(el.id)) return;
+          el.disabled = false;
+          el.classList.remove('bg-gray-100', 'text-gray-400', 'cursor-not-allowed');
+        });
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [motorBloqueado, motorDesbloqueado]);
+
+  async function handleDesbloquearId() {
+    // Se veio do Feegow, buscar dados atualizados antes de desbloquear
+    if (exameOrigem === 'FEEGOW' && (feegowPacienteId || exameCpf)) {
+      setFeegowLoading(true);
+      try {
+        let url = '';
+        if (feegowPacienteId) {
+          url = `/api/feegow?action=paciente&id=${feegowPacienteId}`;
+        } else if (exameCpf) {
+          url = `/api/feegow?action=buscar_cpf&cpf=${exameCpf}`;
+        }
+
+        if (url) {
+          const res = await fetch(url);
+          const data = await res.json();
+          const pac = feegowPacienteId ? data?.data?.content : data?.paciente;
+
+          if (pac) {
+            const nomeFeegow = (pac.nome || '').toUpperCase();
+            const nomeAtual = (document.getElementById('nome') as HTMLInputElement)?.value?.toUpperCase() || '';
+
+            if (nomeFeegow && nomeFeegow !== nomeAtual) {
+              const atualizar = confirm(
+                `O Feegow mostra o nome atualizado:\n\n"${nomeFeegow}"\n\nNome atual no laudo:\n"${nomeAtual}"\n\nDeseja atualizar para o nome do Feegow?`
+              );
+              if (atualizar) {
+                const nomeEl = document.getElementById('nome') as HTMLInputElement;
+                if (nomeEl) {
+                  nomeEl.value = nomeFeegow;
+                  nomeEl.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+                // Atualizar também nascimento e sexo se disponíveis
+                if (pac.dtnasc || pac.nascimento) {
+                  let dtnasc = pac.dtnasc || '';
+                  if (!dtnasc && pac.nascimento) {
+                    const p = pac.nascimento.split('-');
+                    if (p.length === 3) dtnasc = `${p[2]}-${p[1]}-${p[0]}`;
+                  }
+                  if (dtnasc) {
+                    const dtEl = document.getElementById('dtnasc') as HTMLInputElement;
+                    if (dtEl) { dtEl.value = dtnasc; dtEl.dispatchEvent(new Event('input', { bubbles: true })); }
+                  }
+                }
+                if (pac.sexo) {
+                  const sexVal = pac.sexo === 'Masculino' ? 'M' : pac.sexo === 'Feminino' ? 'F' : pac.sexo;
+                  const sexEl = document.getElementById('sexo') as HTMLSelectElement;
+                  if (sexEl) { sexEl.value = sexVal; sexEl.dispatchEvent(new Event('change', { bubbles: true })); }
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Erro ao buscar Feegow:', e);
+      }
+      setFeegowLoading(false);
+    }
+
+    // Confirmar consumo de crédito
     if (confirm('Ao alterar a identificação (nome, data, convênio), será consumido 1 crédito da sua franquia ao emitir.\n\nDeseja desbloquear?')) {
       setIdDesbloqueado(true);
     }
@@ -50,20 +158,35 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
 
       {/* ═══ IDENTIFICAÇÃO ═══ */}
       <Sec id="sec-id" title="👤 Identificação" defaultOpen single>
-        {idBloqueado && (
-          <div className="flex items-center justify-between mb-2 px-1">
-            <span className="text-[10px] text-amber-600 font-semibold">🔒 Campos bloqueados (reemissão)</span>
-            <button onClick={handleDesbloquearId}
-              className="text-[10px] text-[#2563EB] font-semibold hover:underline">Desbloquear</button>
+        {idBloqueado && exameOrigem === 'FEEGOW' && (
+          <div className="mb-2 rounded-lg border border-purple-300 bg-purple-50 p-2.5">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-purple-600 text-sm">🔗</span>
+              <span className="text-[10.5px] text-purple-700 font-semibold flex-1">Identificação sincronizada com Feegow</span>
+            </div>
+            <p className="text-[9.5px] text-purple-600">Para corrigir dados do paciente, edite no Feegow. O LEO atualiza automaticamente ao editar o laudo.</p>
           </div>
         )}
-        <F label="Nome completo"><input type="text" id="nome" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-500' : ''}`} disabled={idBloqueado} /></F>
+        {idBloqueado && exameOrigem !== 'FEEGOW' && (
+          <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-amber-600 text-sm">🔒</span>
+              <span className="text-[10.5px] text-amber-700 font-semibold flex-1">Campos bloqueados — laudo já emitido</span>
+            </div>
+            <p className="text-[9.5px] text-amber-600 mb-2">Para corrigir dados, desbloqueie os campos. Alterações consomem 1 crédito.</p>
+            <button onClick={handleDesbloquearId} disabled={feegowLoading}
+              className="w-full py-1.5 rounded-md bg-amber-500 text-white text-[10.5px] font-semibold hover:bg-amber-600 transition disabled:opacity-50">
+              {feegowLoading ? '⏳ Consultando Feegow...' : '🔓 Desbloquear campos'}
+            </button>
+          </div>
+        )}
+        <F label={idBloqueado ? '🔒 Nome completo' : 'Nome completo'}><input type="text" id="nome" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
         <div className="grid grid-cols-2 gap-x-3 gap-y-[7px] mt-[7px]">
-          <F label="Data de nascimento"><input type="date" id="dtnasc" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-500' : ''}`} disabled={idBloqueado} /></F>
-          <F label="Data do exame"><input type="date" id="dtexame" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-500' : ''}`} defaultValue={dataLocalHoje()} disabled={idBloqueado} /></F>
+          <F label={idBloqueado ? '🔒 Data de nascimento' : 'Data de nascimento'}><input type="date" id="dtnasc" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
+          <F label={idBloqueado ? '🔒 Data do exame' : 'Data do exame'}><input type="date" id="dtexame" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} defaultValue={dataLocalHoje()} disabled={idBloqueado} /></F>
         </div>
-        <F label="Convênio"><input type="text" id="convenio" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-500' : ''}`} disabled={idBloqueado} /></F>
-        <F label="Médico solicitante"><input type="text" id="solicitante" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-500' : ''}`} disabled={idBloqueado} /></F>
+        <F label={idBloqueado ? '🔒 Convênio' : 'Convênio'}><input type="text" id="convenio" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
+        <F label={idBloqueado ? '🔒 Médico solicitante' : 'Médico solicitante'}><input type="text" id="solicitante" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
       </Sec>
 
       {/* ═══ MEDIDAS GERAIS ═══ */}
@@ -103,6 +226,36 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
 
       {/* ═══ DIASTÓLICA ═══ */}
       <Sec id="sec-diast" title="📊 Função Diastólica" defaultOpen>
+        {/* Toggle Auto/Manual */}
+        <div className="col-span-2 mb-1">
+          <div className="flex items-center gap-1.5 bg-[#F3F4F6] rounded-md p-1">
+            <button type="button" id="diast-btn-auto"
+              onClick={() => { motorCall('setDiastModo', 'auto'); motorCalc(); }}
+              className="flex-1 text-[10px] font-semibold py-1 rounded transition bg-[#1E3A5F] text-white">
+              Automático
+            </button>
+            <button type="button" id="diast-btn-manual"
+              onClick={() => { motorCall('setDiastModo', 'manual'); motorCalc(); }}
+              className="flex-1 text-[10px] font-semibold py-1 rounded transition bg-transparent text-[#6B7280] hover:bg-white">
+              Manual
+            </button>
+          </div>
+          {/* Seletor manual — aparece só no modo manual (motor controla via DOM) */}
+          <div id="diast-manual-panel" className="hidden mt-1.5">
+            <select id="diast-manual-sel"
+              onChange={e => { motorCall('setDiastManual', parseInt(e.target.value)); motorCalc(); }}
+              className="sf w-full text-[10px]">
+              <option value="-1">— Selecione —</option>
+              <option value="0">Índices diastólicos preservados</option>
+              <option value="1">Disfunção diastólica grau I (alt. relaxamento)</option>
+              <option value="2">Disfunção diastólica grau II (pseudonormal)</option>
+              <option value="3">Disfunção diastólica grau III (restritivo)</option>
+              <option value="4">Função diastólica indeterminada</option>
+              <option value="5">Avaliação limitada (arritmia)</option>
+              <option value="6">Não avaliar</option>
+            </select>
+          </div>
+        </div>
         <F label="Onda E" u="cm/s"><input type="number" id="b19" step="0.1" className="sf" /></F>
         <F label="Relação E/A"><input type="number" id="b20" step="0.01" className="sf" /></F>
         <F label="e' septal" u="cm/s"><input type="number" id="b21" step="0.1" className="sf" /></F>
@@ -111,6 +264,9 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
         <F label="LA strain" u="% · VR≥18"><input type="number" id="lars" step="0.1" className="sf" placeholder="reservoir" /></F>
         <F label="Vel. IT" u="m/s"><input type="number" id="b23" step="0.01" className="sf" /></F>
         <F label="PSAP" u="mmHg"><input type="number" id="b37" step="1" className="sf" /></F>
+        <div id="alerta-psap" className="col-span-2 text-[9px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1 font-medium" style={{ display: 'none' }}>
+          ⚠️ Vel. IT preenchida sem PSAP — informe a PSAP estimada
+        </div>
         <F label="≥2 sinais indiretos de HP?"><select id="b38" className="sf"><option value="">Não</option><option value="S">Sim</option></select></F>
       </Sec>
 
@@ -123,7 +279,21 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
         <F label="V. Aórtica"><VSel id="b39" /></F>
         <F label="Refluxo Aórtico"><RSel id="b40" /></F>
         <F label="V. Pulmonar"><VSel id="b39p" /></F>
-        <F label="Refluxo Pulmonar"><RSel id="b40p" /></F>
+        <F label="Refluxo Pulmonar">
+          <select id="b40p" className="sf"
+            onChange={() => motorCall('refluxoPulmonar')}>
+            <option value="">— Ausente —</option>
+            <option value="L">L — Leve</option>
+            <option value="LM">LM — Leve-Mod</option>
+            <option value="M">M — Moderado</option>
+            <option value="MI">MI — Mod-Imp</option>
+            <option value="I">I — Importante</option>
+          </select>
+        </F>
+        {/* Campo condicional PSMAP — aparece quando Refluxo Pulmonar preenchido */}
+        <div id="field-psmap" className="col-span-2" style={{ display: 'none' }}>
+          <F label="Pressão Sist. Art. Pulm." u="mmHg"><input type="number" id="psmap" step="1" className="sf" /></F>
+        </div>
         <F label="Derrame Pericárdico"><RSel id="b41" /></F>
         <F label="Placas Arco Aórtico"><select id="b42" className="sf"><option value="">— Não —</option><option value="s">Sim — Calcificadas</option></select></F>
         <div className="col-span-2 border-t border-dashed border-[#E5E7EB] mt-1 pt-1.5">
@@ -141,13 +311,34 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
             <F label="Grad. máx. pulm." u="mmHg"><input type="number" id="b50p" step="0.1" className="sf" /></F>
           </div>
         </div>
-        {/* Wilkins hidden */}
-        <input type="checkbox" id="wilkins-toggle" className="hidden" />
-        <select id="wk-mob" className="hidden"><option value="0">0</option></select>
-        <select id="wk-esp" className="hidden"><option value="0">0</option></select>
-        <select id="wk-cal" className="hidden"><option value="0">0</option></select>
-        <select id="wk-sub" className="hidden"><option value="0">0</option></select>
-        <div id="calc-wilkins" className="hidden" />
+        {/* Wilkins Score */}
+        <div className="col-span-2 border-t border-dashed border-[#E5E7EB] mt-1 pt-1.5">
+          <label className="flex items-center gap-2 cursor-pointer mb-1">
+            <input type="checkbox" id="wilkins-toggle"
+              onChange={() => motorCall('toggleWilkins')}
+              className="accent-[#1E3A5F]" />
+            <span className="text-[10.5px] font-semibold text-[#1E3A5F]">Escore de Wilkins</span>
+          </label>
+          <div id="wilkins-fields" className="grid grid-cols-4 gap-2" style={{ display: 'none' }}>
+            <div className="flex flex-col gap-[2px]">
+              <label className="text-[9px] text-[#6B7280]">Mobilidade</label>
+              <WkSel id="wk-mob" />
+            </div>
+            <div className="flex flex-col gap-[2px]">
+              <label className="text-[9px] text-[#6B7280]">Espessura</label>
+              <WkSel id="wk-esp" />
+            </div>
+            <div className="flex flex-col gap-[2px]">
+              <label className="text-[9px] text-[#6B7280]">Calcificação</label>
+              <WkSel id="wk-cal" />
+            </div>
+            <div className="flex flex-col gap-[2px]">
+              <label className="text-[9px] text-[#6B7280]">Subvalvar</label>
+              <WkSel id="wk-sub" />
+            </div>
+          </div>
+          <div id="calc-wilkins" className="text-[10px] text-[#1E3A5F] font-semibold mt-1" />
+        </div>
       </Sec>
 
       {/* ═══ SISTÓLICA ═══ */}
@@ -163,19 +354,18 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
       <Sec id="sec-seg" title="🗺️ Contratilidade Segmentar" collapsed>
         <div className="col-span-2 text-[10px] text-[#6B7280] italic pb-1">H=Hipocin · A=Acin · D=Discin · B=basal · M=média · A=apical</div>
         <F label="Região Apical"><select id="b55" className="sf"><option value="">— Normal —</option><option value="H">Hipocinesia</option><option value="A">Acinesia</option><option value="D">Discinesia</option></select></F>
-        <F label="P. Anterior"><select id="b56" className="sf"><option value="">— Normal —</option></select></F>
-        <F label="P. Septalanterior"><select id="b57" className="sf"><option value="">— Normal —</option></select></F>
-        <F label="P. Septalinferior"><select id="b58" className="sf"><option value="">— Normal —</option></select></F>
-        <F label="P. Lateral"><select id="b59" className="sf"><option value="">— Normal —</option></select></F>
-        <F label="P. Inferior"><select id="b60" className="sf"><option value="">— Normal —</option></select></F>
-        <F label="P. Inferolateral"><select id="b61" className="sf"><option value="">— Normal —</option></select></F>
+        <F label="P. Anterior"><WallSel id="b56" /></F>
+        <F label="P. Septal anterior"><WallSel id="b57" /></F>
+        <F label="P. Septal inferior"><WallSel id="b58" /></F>
+        <F label="P. Lateral"><WallSel id="b59" /></F>
+        <F label="P. Inferior"><WallSel id="b60" /></F>
+        <F label="P. Inferolateral"><WallSel id="b61" /></F>
         <F label="Demais paredes"><select id="b62" className="sf"><option value="NL">NL — Preservadas</option><option value="HD">Hipocin. difusa</option><option value="HR">Hipocin. demais</option><option value="AD">Acinesia difusa</option><option value="DD">Discinesia difusa</option></select></F>
       </Sec>
 
       {/* Hidden fields */}
       <input type="number" id="b46t" className="hidden" />
       <input type="number" id="b47t" className="hidden" />
-      <input type="number" id="psmap" className="hidden" />
 
       {/* ═══ BOTÕES ═══ */}
       {emitido ? (
@@ -260,6 +450,44 @@ function RSel({ id }: { id: string }) {
       <option value="M">M — Moderado</option>
       <option value="MI">MI — Mod-Imp</option>
       <option value="I">I — Importante</option>
+    </select>
+  );
+}
+
+function WkSel({ id }: { id: string }) {
+  return (
+    <select id={id} className="sf text-[10px]">
+      <option value="0">0</option>
+      <option value="1">1</option>
+      <option value="2">2</option>
+      <option value="3">3</option>
+      <option value="4">4</option>
+    </select>
+  );
+}
+
+function WallSel({ id }: { id: string }) {
+  return (
+    <select id={id} className="sf">
+      <option value="">— Normal —</option>
+      <option value="HB">HB — Hipocin. basal</option>
+      <option value="HMB">HMB — Hipocin. médiobasal</option>
+      <option value="HM">HM — Hipocin. média</option>
+      <option value="HMA">HMA — Hipocin. médioapical</option>
+      <option value="HA">HA — Hipocin. apical</option>
+      <option value="H">H — Hipocinesia difusa</option>
+      <option value="AB">AB — Acinesia basal</option>
+      <option value="AMB">AMB — Acinesia médiobasal</option>
+      <option value="AM">AM — Acinesia média</option>
+      <option value="AMA">AMA — Acinesia médioapical</option>
+      <option value="AA">AA — Acinesia apical</option>
+      <option value="A">A — Acinesia difusa</option>
+      <option value="DB">DB — Discinesia basal</option>
+      <option value="DMB">DMB — Discinesia médiobasal</option>
+      <option value="DM">DM — Discinesia média</option>
+      <option value="DMA">DMA — Discinesia médioapical</option>
+      <option value="DA">DA — Discinesia apical</option>
+      <option value="D">D — Discinesia difusa</option>
     </select>
   );
 }
