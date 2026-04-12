@@ -11,7 +11,7 @@ import { ajustarCreditos, getConfigPlanos, type PlanoConfig } from '@/lib/billin
 import { useDirexAuth } from '@/contexts/DirexAuthContext';
 
 type WsData = { id: string; nomeClinica?: string; ownerUid?: string; [k: string]: unknown };
-type SubData = { id: string; workspaceId?: string; planoId?: string; tipo?: string; franquiaMensal?: number; franquiaUsada?: number; creditosExtras?: number; maxLocais?: number; localAdicional?: number; extratosFranquia?: number; extratoValor?: number; excedente?: number; cicloFim?: Timestamp; [k: string]: unknown };
+type SubData = { id: string; workspaceId?: string; planoId?: string; tipo?: string; tipoPlano?: string; franquiaMensal?: number; franquiaUsada?: number; creditosExtras?: number; maxLocais?: number; localAdicional?: number; extratosFranquia?: number; extratoValor?: number; excedente?: number; maxUsuarios?: number; usuarioAdicional?: number; cicloFim?: Timestamp; [k: string]: unknown };
 type ProfData = { id: string; uid?: string; nome?: string; [k: string]: unknown };
 
 type ModalState = {
@@ -27,6 +27,8 @@ type ModalState = {
   extratosFranquia: number;
   extratoValor: number;
   excedente: number;
+  maxUsuarios: number;
+  usuarioAdicional: number;
 };
 
 export default function LicencasPage() {
@@ -42,6 +44,7 @@ export default function LicencasPage() {
     open: false, wsId: '', subId: '', wsNome: '', planoId: 'trial',
     franquia: 100, creditos: 0, maxLocais: 1, localAdicional: 0,
     extratosFranquia: 2, extratoValor: 0, excedente: 0,
+    maxUsuarios: 1, usuarioAdicional: 0,
   });
   const [creditosModal, setCreditosModal] = useState(false);
   const [creditosQtd, setCreditosQtd] = useState('');
@@ -77,6 +80,8 @@ export default function LicencasPage() {
       extratosFranquia: sub?.extratosFranquia ?? 2,
       extratoValor: sub?.extratoValor || 0,
       excedente: sub?.excedente || 0,
+      maxUsuarios: sub?.maxUsuarios || 1,
+      usuarioAdicional: sub?.usuarioAdicional || 0,
     });
   }
 
@@ -91,6 +96,8 @@ export default function LicencasPage() {
       extratosFranquia: plano.extratosFranquia,
       extratoValor: plano.extratoValor,
       excedente: plano.excedente,
+      maxUsuarios: plano.maxUsuarios,
+      usuarioAdicional: plano.usuarioAdicional,
     }));
   }
 
@@ -98,15 +105,19 @@ export default function LicencasPage() {
     if (!modal.subId) return;
     setSaving(true);
     try {
+      const planoSel = planos.find(p => p.id === modal.planoId);
       await updateDoc(doc(db, 'subscriptions', modal.subId), {
         planoId: modal.planoId,
         tipo: modal.planoId === 'trial' ? 'trial' : 'paid',
+        tipoPlano: planoSel?.tipo || 'PF',
         franquiaMensal: modal.franquia,
         maxLocais: modal.maxLocais,
         localAdicional: modal.localAdicional,
         extratosFranquia: modal.extratosFranquia,
         extratoValor: modal.extratoValor,
         excedente: modal.excedente,
+        maxUsuarios: modal.maxUsuarios,
+        usuarioAdicional: modal.usuarioAdicional,
       });
       setModal(m => ({ ...m, open: false }));
       await carregarDados();
@@ -147,7 +158,7 @@ export default function LicencasPage() {
         <table className="w-full text-[13px]">
           <thead>
             <tr className="border-b border-[#334155]">
-              {['Cliente', 'Plano', 'Laudos', 'Locais', 'Extratos', 'Creditos', 'Expira', 'Acoes'].map(h => (
+              {['Cliente', 'Plano', 'Laudos', 'Usuarios', 'Locais', 'Creditos', 'Expira', 'Acoes'].map(h => (
                 <th key={h} className="text-left px-4 py-2.5 text-[11px] text-[#94A3B8] uppercase tracking-wider font-semibold">{h}</th>
               ))}
             </tr>
@@ -170,8 +181,8 @@ export default function LicencasPage() {
                     }`}>{planoNome}</span>
                   </td>
                   <td className="px-4 py-2.5 text-[#CBD5E1]">{sub?.franquiaUsada || 0}/{sub?.franquiaMensal || 0}</td>
-                  <td className="px-4 py-2.5 text-[#CBD5E1]">{sub?.maxLocais || 1}</td>
-                  <td className="px-4 py-2.5 text-[#CBD5E1]">{(sub?.extratosFranquia ?? 0) === -1 ? 'Ilim.' : sub?.extratosFranquia || 0}</td>
+                  <td className="px-4 py-2.5 text-[#CBD5E1]">{sub?.maxUsuarios || 1}</td>
+                  <td className="px-4 py-2.5 text-[#CBD5E1]">{(sub?.maxLocais ?? 1) === -1 ? 'Ilim.' : sub?.maxLocais || 1}</td>
                   <td className="px-4 py-2.5 text-[#CBD5E1]">{sub?.creditosExtras || 0}</td>
                   <td className="px-4 py-2.5 text-[#CBD5E1]">
                     {sub?.cicloFim?.toDate ? sub.cicloFim.toDate().toLocaleDateString('pt-BR') : '\u2014'}
@@ -242,6 +253,19 @@ export default function LicencasPage() {
               <div>
                 <label className="text-[12px] text-[#94A3B8] block mb-1">Extrato adicional (R$)</label>
                 <input type="number" step="0.01" value={modal.extratoValor} onChange={e => setModal(m => ({ ...m, extratoValor: parseFloat(e.target.value) || 0 }))}
+                  className="w-full px-3 py-2 bg-[#0F172A] border border-[#334155] rounded-md text-[#E2E8F0] text-sm outline-none" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="text-[12px] text-[#94A3B8] block mb-1">Usuarios inclusos</label>
+                <input type="number" value={modal.maxUsuarios} onChange={e => setModal(m => ({ ...m, maxUsuarios: parseInt(e.target.value) || 1 }))}
+                  className="w-full px-3 py-2 bg-[#0F172A] border border-[#334155] rounded-md text-[#E2E8F0] text-sm outline-none" />
+              </div>
+              <div>
+                <label className="text-[12px] text-[#94A3B8] block mb-1">Usuario adicional (R$)</label>
+                <input type="number" step="0.01" value={modal.usuarioAdicional} onChange={e => setModal(m => ({ ...m, usuarioAdicional: parseFloat(e.target.value) || 0 }))}
                   className="w-full px-3 py-2 bg-[#0F172A] border border-[#334155] rounded-md text-[#E2E8F0] text-sm outline-none" />
               </div>
             </div>

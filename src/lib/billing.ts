@@ -13,15 +13,18 @@ import {
 // ══ TIPOS ════════════════════════════════════════════════════════
 
 export type PlanoConfig = {
-  id: string;              // 'trial', 'basic', 'profissional', 'expert'
+  id: string;              // 'trial', 'basic', 'profissional', 'expert', 'pj_starter', etc.
   nome: string;
+  tipo: 'PF' | 'PJ';      // segmento do plano
   preco: number;           // R$/mes
   franquia: number;        // laudos/mes
   excedente: number;       // R$/laudo excedente
-  maxLocais: number;       // locais de trabalho inclusos
+  maxLocais: number;       // locais de trabalho inclusos (-1 = ilimitado)
   localAdicional: number;  // R$/local extra
   extratosFranquia: number; // extratos gratis/mes (-1 = ilimitado)
   extratoValor: number;    // R$/extrato extra
+  maxUsuarios: number;     // usuarios inclusos no plano (PJ)
+  usuarioAdicional: number; // R$/usuario extra (PJ)
 };
 
 export type ConfigPlanos = {
@@ -62,11 +65,16 @@ export type DadosPagamento = {
 
 // ── Planos defaults ──
 const PLANOS_DEFAULT: PlanoConfig[] = [
-  { id: 'trial',        nome: 'Trial',        preco: 0,      franquia: 600, excedente: 0,    maxLocais: 5, localAdicional: 0,  extratosFranquia: -1, extratoValor: 0 },
-  { id: 'remido',       nome: 'Remido',       preco: 0,      franquia: 9999, excedente: 0,   maxLocais: 99, localAdicional: 0, extratosFranquia: -1, extratoValor: 0 },
-  { id: 'basic',        nome: 'Basic',        preco: 99.99,  franquia: 100, excedente: 1.50, maxLocais: 1, localAdicional: 50, extratosFranquia: 2,  extratoValor: 10 },
-  { id: 'profissional', nome: 'Profissional', preco: 199.99, franquia: 350, excedente: 0.75, maxLocais: 3, localAdicional: 25, extratosFranquia: 10, extratoValor: 5 },
-  { id: 'expert',       nome: 'Expert',       preco: 249.99, franquia: 600, excedente: 0.50, maxLocais: 5, localAdicional: 10, extratosFranquia: -1, extratoValor: 0 },
+  // ── PF ──
+  { id: 'trial',        nome: 'Trial',        tipo: 'PF', preco: 0,      franquia: 600,  excedente: 0,    maxLocais: 5,  localAdicional: 0,  extratosFranquia: -1, extratoValor: 0,  maxUsuarios: 1,  usuarioAdicional: 0 },
+  { id: 'remido',       nome: 'Remido',       tipo: 'PF', preco: 0,      franquia: 9999, excedente: 0,    maxLocais: 99, localAdicional: 0,  extratosFranquia: -1, extratoValor: 0,  maxUsuarios: 99, usuarioAdicional: 0 },
+  { id: 'basic',        nome: 'Basic',        tipo: 'PF', preco: 99.99,  franquia: 100,  excedente: 1.50, maxLocais: 1,  localAdicional: 50, extratosFranquia: 2,  extratoValor: 10, maxUsuarios: 1,  usuarioAdicional: 0 },
+  { id: 'profissional', nome: 'Profissional', tipo: 'PF', preco: 199.99, franquia: 350,  excedente: 0.75, maxLocais: 3,  localAdicional: 25, extratosFranquia: 10, extratoValor: 5,  maxUsuarios: 1,  usuarioAdicional: 0 },
+  { id: 'expert',       nome: 'Expert',       tipo: 'PF', preco: 249.99, franquia: 600,  excedente: 0.50, maxLocais: 5,  localAdicional: 10, extratosFranquia: -1, extratoValor: 0,  maxUsuarios: 1,  usuarioAdicional: 0 },
+  // ── PJ ──
+  { id: 'pj_starter',   nome: 'Clinica Starter', tipo: 'PJ', preco: 299.99, franquia: 300,  excedente: 1.50, maxLocais: -1, localAdicional: 0, extratosFranquia: -1, extratoValor: 0, maxUsuarios: 3,  usuarioAdicional: 66.99 },
+  { id: 'pj_pro',       nome: 'Clinica Pro',     tipo: 'PJ', preco: 349.99, franquia: 720,  excedente: 0.75, maxLocais: -1, localAdicional: 0, extratosFranquia: -1, extratoValor: 0, maxUsuarios: 6,  usuarioAdicional: 50.00 },
+  { id: 'pj_enterprise',nome: 'Enterprise',      tipo: 'PJ', preco: 599.99, franquia: 1500, excedente: 0.50, maxLocais: -1, localAdicional: 0, extratosFranquia: -1, extratoValor: 0, maxUsuarios: 9,  usuarioAdicional: 10.00 },
 ];
 
 // ══ CONFIG PLANOS (configuracao editavel) ═══════════════════════
@@ -111,12 +119,17 @@ export async function createSubscription(wsId: string, planoId = 'trial') {
     const extratoValor = plano?.extratoValor || 0;
     const excedente = plano?.excedente || 0;
 
+    const maxUsuarios = plano?.maxUsuarios || 1;
+    const usuarioAdicional = plano?.usuarioAdicional || 0;
+    const tipoPlano = plano?.tipo || 'PF';
+
     const ref = doc(collection(db, 'subscriptions'));
     await setDoc(ref, {
       id: ref.id,
       workspaceId: wsId,
       planoId,
       tipo: planoId === 'trial' ? 'trial' : 'paid',
+      tipoPlano, // PF ou PJ
       // Laudos
       franquiaMensal: franquia,
       franquiaUsada: 0,
@@ -128,6 +141,9 @@ export async function createSubscription(wsId: string, planoId = 'trial') {
       // Extratos
       extratosFranquia,
       extratoValor,
+      // Usuarios (PJ)
+      maxUsuarios,
+      usuarioAdicional,
       // Ciclo
       cicloInicio: Timestamp.fromDate(agora),
       cicloFim: Timestamp.fromDate(fimTrial),
