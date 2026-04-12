@@ -320,10 +320,6 @@ export default function LaudoPage() {
     const achados = coletarAchados();
     const conclusoes = coletarConclusoes();
 
-    // IMPORTANTE: gerar PDF HTML ANTES de emitir (DOM ainda está intacto)
-    let pdfHtml = '';
-    try { pdfHtml = gerarPdfHtml(); } catch (e) { console.warn('gerarPdfHtml:', e); }
-
     const ok = await emitExame(workspace.id, exameId, {
       medidas, achados, conclusoes,
       ...coletarIdentificacao(),
@@ -353,16 +349,22 @@ export default function LaudoPage() {
         } catch { /* não bloquear emissão se Feegow falhar */ }
       }
 
-      // Salvar PDF HTML separadamente (pode ser grande, não bloqueia emissão)
-      if (pdfHtml) {
-        try {
-          await updateDoc(doc(db, 'workspaces', workspace.id, 'exames', exameId), { pdfHtml });
-        } catch (e) { console.warn('Erro ao salvar pdfHtml:', e); }
-      }
-
       setEmitido(true);
       toast('Laudo emitido e assinado');
-      setTimeout(() => handleImprimir(), 500);
+
+      // Salvar pdfHtml + abrir PDF (dentro do timeout, DOM já está pronto)
+      setTimeout(async () => {
+        try {
+          const pdfHtml = gerarPdfHtml();
+          // Abrir PDF
+          const win = window.open('', '_blank', 'width=900,height=700');
+          if (win) { win.document.write(pdfHtml); win.document.close(); }
+          // Salvar no Firestore pra impressão rápida futura
+          if (pdfHtml && workspace?.id) {
+            await updateDoc(doc(db, 'workspaces', workspace.id, 'exames', exameId), { pdfHtml });
+          }
+        } catch (e) { console.warn('pdfHtml:', e); }
+      }, 800);
     } else {
       toast('Erro ao emitir laudo');
     }
