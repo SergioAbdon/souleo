@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.88.0",
     "@tiptap/extension-bullet-list": "^3.22.3",
     "@tiptap/extension-list-item": "^3.22.3",
     "@tiptap/extension-ordered-list": "^3.22.3",

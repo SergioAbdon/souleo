@@ -20,6 +20,8 @@ const NAV_ITEMS = [
   { href: '/direx/painel/financeiro',    label: 'Financeiro',     icon: '\uD83D\uDCC8' },
   { href: '/direx/painel/auditoria',     label: 'Auditoria',      icon: '\uD83D\uDD0D' },
   { href: '/direx/painel/configuracoes', label: 'Configuracoes',  icon: '\u2699\uFE0F' },
+  { href: '__sep__' ,                    label: '',               icon: ''              },
+  { href: '/direx/painel/marina',       label: 'Marina IA',      icon: '\uD83E\uDDE0' },
 ];
 
 function isActive(pathname: string, href: string) {
