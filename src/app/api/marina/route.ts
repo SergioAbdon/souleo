@@ -24,9 +24,24 @@ const dbAdmin = getFirestore();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // ── System Prompt ──
-const SYSTEM_PROMPT = `Voce e a Marina, assistente administrativa do LEO — Sistema de Laudos Medicos.
+const SYSTEM_PROMPT = `Voce e a Marina, assistente administrativa do LEO — Sistema de Laudos Medicos de Ecocardiografia.
 
 Voce ajuda a diretoria a gerenciar o sistema: consultar dados de clientes, verificar planos, analisar consumo, dar creditos, e gerar relatorios.
+
+PLANOS DO SISTEMA:
+PF (Pessoa Fisica):
+- Trial: Gratis/30 dias, 600 laudos, 5 locais, extratos ilimitados (= Expert por 30 dias)
+- Remido: Gratis, tudo ilimitado (uso interno/VIP)
+- Basic: R$99,99/mes, 100 laudos, 1 local (+R$50/extra), 2 extratos (+R$10), excedente R$1,50/laudo
+- Profissional: R$199,99/mes, 350 laudos, 3 locais (+R$25), 10 extratos (+R$5), excedente R$0,75
+- Expert: R$249,99/mes, 600 laudos, 5 locais (+R$10), extratos ilimitados, excedente R$0,50
+
+PJ (Pessoa Juridica):
+- Clinica Starter: R$299,99/mes, 3 usuarios (+R$66,99/extra), 300 laudos, locais ilimitados, extratos gratis, excedente R$1,50
+- Clinica Pro: R$349,99/mes, 6 usuarios (+R$50/extra), 720 laudos, locais ilimitados, extratos gratis, excedente R$0,75
+- Enterprise: R$599,99/mes, 9 usuarios (+R$10/extra), 1500 laudos, locais ilimitados, extratos gratis, excedente R$0,50
+
+ESTRATEGIA: O Starter PJ e decoy (ancoragem). O Pro e o ancora (70% dos PJ). No Enterprise, usuario adicional barato (R$10) nao aumenta franquia de laudos — a monetizacao real vem do excedente.
 
 Regras:
 - Responda SEMPRE em portugues brasileiro
@@ -35,7 +50,8 @@ Regras:
 - Nunca invente dados — sempre consulte as ferramentas
 - Formate valores em reais (R$) e datas no formato brasileiro (DD/MM/AAAA)
 - Quando listar dados, use formato organizado e legivel
-- Se o admin pedir uma acao destrutiva, confirme antes de executar`;
+- Se o admin pedir uma acao destrutiva, confirme antes de executar
+- Ao mostrar dados de subscription, sempre informe: plano, tipo (PF/PJ), laudos, usuarios, locais`;
 
 // ── Tools Definition ──
 const TOOLS: Anthropic.Tool[] = [
@@ -153,13 +169,13 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'editar_licenca',
-    description: 'Altera o tipo (trial/paid) e/ou a franquia mensal de um workspace.',
+    description: 'Altera o plano de um workspace. Pode informar planoId (trial, remido, basic, profissional, expert, pj_starter, pj_pro, pj_enterprise) para auto-preencher todos os campos, ou alterar campos individuais.',
     input_schema: {
       type: 'object' as const,
       properties: {
         workspace_nome: { type: 'string', description: 'Nome do workspace.' },
-        tipo: { type: 'string', description: 'Novo tipo: trial ou paid.' },
-        franquia_mensal: { type: 'number', description: 'Nova franquia mensal de laudos.' },
+        plano_id: { type: 'string', description: 'ID do plano: trial, remido, basic, profissional, expert, pj_starter, pj_pro, pj_enterprise.' },
+        franquia_mensal: { type: 'number', description: 'Nova franquia mensal de laudos (opcional se plano_id informado).' },
       },
       required: ['workspace_nome'],
     },
@@ -269,14 +285,17 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         return JSON.stringify({
           workspace: ws.data().nomeClinica,
           plano: sub.planoId || sub.tipo,
+          tipoPlano: sub.tipoPlano || 'PF',
           tipo: sub.tipo,
           franquiaMensal: sub.franquiaMensal, franquiaUsada: sub.franquiaUsada,
           creditosExtras: sub.creditosExtras,
-          maxLocais: sub.maxLocais || 1,
+          maxLocais: sub.maxLocais === -1 ? 'Ilimitado' : (sub.maxLocais || 1),
           localAdicional: sub.localAdicional || 0,
-          extratosFranquia: sub.extratosFranquia ?? 2,
+          extratosFranquia: sub.extratosFranquia === -1 ? 'Ilimitado' : (sub.extratosFranquia ?? 2),
           extratoValor: sub.extratoValor || 0,
           excedente: sub.excedente || 0,
+          maxUsuarios: sub.maxUsuarios || 1,
+          usuarioAdicional: sub.usuarioAdicional || 0,
           expira: fim?.toLocaleDateString('pt-BR'),
           status: fim && Date.now() <= fim.getTime() ? 'Ativo' : 'Expirado',
         });
@@ -364,25 +383,38 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const agora = Date.now();
         const inicioMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
         const subs = subSnap.docs.map(d => d.data());
+        const wsDocs = wsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const wsPF = wsDocs.filter((w: Record<string, unknown>) => w.tipo === 'PF');
+        const wsPJ = wsDocs.filter((w: Record<string, unknown>) => w.tipo === 'PJ');
 
         const ativas = subs.filter(s => { const f = s.cicloFim ? (s.cicloFim as Timestamp).toDate() : null; return f && agora <= f.getTime(); });
         const pagas = ativas.filter(s => s.tipo === 'paid');
         const trials = ativas.filter(s => s.tipo === 'trial');
         const expiradas = subs.length - ativas.length;
+        const cancelamentos = subs.filter(s => s.tipo === 'paid' && s.cicloFim && agora > (s.cicloFim as Timestamp).toDate().getTime()).length;
+
+        // Separar PF/PJ
+        const ativasPF = pagas.filter(s => wsPF.some((w: Record<string, unknown>) => w.id === s.workspaceId));
+        const ativasPJ = pagas.filter(s => wsPJ.some((w: Record<string, unknown>) => w.id === s.workspaceId));
 
         const pagsMes = pagSnap.docs.filter(d => {
           const ts = d.data().criadoEm ? (d.data().criadoEm as Timestamp).toDate() : null;
           return ts && ts >= inicioMes && d.data().status === 'confirmado';
         });
         const receitaMes = pagsMes.reduce((a, d) => a + (d.data().valor || 0), 0);
+        const receitaPF = pagsMes.filter(d => wsPF.some((w: Record<string, unknown>) => w.id === d.data().workspaceId)).reduce((a, d) => a + (d.data().valor || 0), 0);
+        const receitaPJ = pagsMes.filter(d => wsPJ.some((w: Record<string, unknown>) => w.id === d.data().workspaceId)).reduce((a, d) => a + (d.data().valor || 0), 0);
 
         const totalFranquia = subs.reduce((a, s) => a + (s.franquiaMensal || 0), 0);
         const totalUsada = subs.reduce((a, s) => a + (s.franquiaUsada || 0), 0);
 
         return JSON.stringify({
-          totalWorkspaces: wsSnap.size, totalProfissionais: profSnap.size,
+          totalWorkspaces: wsSnap.size, totalWorkspacesPF: wsPF.length, totalWorkspacesPJ: wsPJ.length,
+          totalProfissionais: profSnap.size,
           subsAtivas: ativas.length, subsPagas: pagas.length, subsTrials: trials.length,
-          subsExpiradas: expiradas, receitaMes: `R$ ${receitaMes.toFixed(2)}`,
+          assinantesPF: ativasPF.length, assinantesPJ: ativasPJ.length,
+          subsExpiradas: expiradas, cancelamentos,
+          receitaMes: `R$ ${receitaMes.toFixed(2)}`, receitaPF: `R$ ${receitaPF.toFixed(2)}`, receitaPJ: `R$ ${receitaPJ.toFixed(2)}`,
           totalPagamentosMes: pagsMes.length,
           franquiaTotal: totalFranquia, franquiaUsada: totalUsada,
           percentualUso: totalFranquia > 0 ? `${Math.round((totalUsada / totalFranquia) * 100)}%` : '0%',
@@ -464,18 +496,35 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         if (subSnap.empty) return JSON.stringify({ erro: 'Sem subscription' });
 
         const updates: Record<string, unknown> = {};
-        if (input.tipo) updates.tipo = input.tipo;
-        if (input.franquia_mensal) updates.franquiaMensal = input.franquia_mensal;
 
-        if (Object.keys(updates).length === 0) return JSON.stringify({ erro: 'Nenhuma alteracao informada' });
+        // Se plano_id informado, auto-preenche todos os campos do plano
+        const planoId = input.plano_id as string;
+        if (planoId) {
+          const planosMap: Record<string, Record<string, unknown>> = {
+            trial: { planoId: 'trial', tipo: 'trial', tipoPlano: 'PF', franquiaMensal: 600, excedente: 0, maxLocais: 5, localAdicional: 0, extratosFranquia: -1, extratoValor: 0, maxUsuarios: 1, usuarioAdicional: 0 },
+            remido: { planoId: 'remido', tipo: 'paid', tipoPlano: 'PF', franquiaMensal: 9999, excedente: 0, maxLocais: 99, localAdicional: 0, extratosFranquia: -1, extratoValor: 0, maxUsuarios: 99, usuarioAdicional: 0 },
+            basic: { planoId: 'basic', tipo: 'paid', tipoPlano: 'PF', franquiaMensal: 100, excedente: 1.50, maxLocais: 1, localAdicional: 50, extratosFranquia: 2, extratoValor: 10, maxUsuarios: 1, usuarioAdicional: 0 },
+            profissional: { planoId: 'profissional', tipo: 'paid', tipoPlano: 'PF', franquiaMensal: 350, excedente: 0.75, maxLocais: 3, localAdicional: 25, extratosFranquia: 10, extratoValor: 5, maxUsuarios: 1, usuarioAdicional: 0 },
+            expert: { planoId: 'expert', tipo: 'paid', tipoPlano: 'PF', franquiaMensal: 600, excedente: 0.50, maxLocais: 5, localAdicional: 10, extratosFranquia: -1, extratoValor: 0, maxUsuarios: 1, usuarioAdicional: 0 },
+            pj_starter: { planoId: 'pj_starter', tipo: 'paid', tipoPlano: 'PJ', franquiaMensal: 300, excedente: 1.50, maxLocais: -1, localAdicional: 0, extratosFranquia: -1, extratoValor: 0, maxUsuarios: 3, usuarioAdicional: 66.99 },
+            pj_pro: { planoId: 'pj_pro', tipo: 'paid', tipoPlano: 'PJ', franquiaMensal: 720, excedente: 0.75, maxLocais: -1, localAdicional: 0, extratosFranquia: -1, extratoValor: 0, maxUsuarios: 6, usuarioAdicional: 50 },
+            pj_enterprise: { planoId: 'pj_enterprise', tipo: 'paid', tipoPlano: 'PJ', franquiaMensal: 1500, excedente: 0.50, maxLocais: -1, localAdicional: 0, extratosFranquia: -1, extratoValor: 0, maxUsuarios: 9, usuarioAdicional: 10 },
+          };
+          const planoConfig = planosMap[planoId];
+          if (!planoConfig) return JSON.stringify({ erro: `Plano ${planoId} nao encontrado. Opcoes: ${Object.keys(planosMap).join(', ')}` });
+          Object.assign(updates, planoConfig);
+        } else {
+          if (input.franquia_mensal) updates.franquiaMensal = input.franquia_mensal;
+          if (Object.keys(updates).length === 0) return JSON.stringify({ erro: 'Informe plano_id ou franquia_mensal' });
+        }
 
         await subSnap.docs[0].ref.update(updates);
         await dbAdmin.collection('logs').add({
-          tipo: 'edicao_licenca', wsId: ws.id, alteracoes: updates,
+          tipo: 'edicao_licenca', wsId: ws.id, planoId: planoId || 'manual', alteracoes: updates,
           ts: Timestamp.now(), medicoUid: 'marina-ia',
         });
 
-        return JSON.stringify({ sucesso: true, workspace: ws.data().nomeClinica, alteracoes: updates });
+        return JSON.stringify({ sucesso: true, workspace: ws.data().nomeClinica, plano: planoId || 'manual', alteracoes: updates });
       }
 
       case 'registrar_pagamento': {
