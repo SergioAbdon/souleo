@@ -99,39 +99,43 @@ export default function LaudoPage() {
     w.calcIdade = (dn: string, de?: string) => { if (!dn) return ''; const a = new Date(de || new Date()), b = new Date(dn); let i = a.getFullYear() - b.getFullYear(); if (a.getMonth() < b.getMonth() || (a.getMonth() === b.getMonth() && a.getDate() < b.getDate())) i--; return i; };
     w.uid = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 8);
     w.tog = (id: string) => { const el = document.getElementById(id); if (el) el.classList.toggle('collapsed'); };
-    w.alertaIT = () => {
-      const it = parseFloat((document.getElementById('b23') as HTMLInputElement)?.value || '0');
-      const psap = parseFloat((document.getElementById('b37') as HTMLInputElement)?.value || '0');
-      const msg = document.getElementById('alerta-psap');
-      if (msg) msg.style.display = (it > 0 && !psap) ? 'block' : 'none';
-    };
-    // Wrap setDiastModo para atualizar UI dos botões
-    const origSetDiastModo = w.setDiastModo as ((m: string) => void) | undefined;
-    w.setDiastModo = (modo: string) => {
-      if (origSetDiastModo) origSetDiastModo(modo);
-      const btnAuto = document.getElementById('diast-btn-auto');
-      const btnManual = document.getElementById('diast-btn-manual');
-      const panel = document.getElementById('diast-manual-panel');
-      if (btnAuto && btnManual && panel) {
-        if (modo === 'manual') {
-          btnManual.className = 'flex-1 text-[10px] font-semibold py-1 rounded transition bg-[#1E3A5F] text-white';
-          btnAuto.className = 'flex-1 text-[10px] font-semibold py-1 rounded transition bg-transparent text-[#6B7280] hover:bg-white';
-          panel.style.display = 'block';
-        } else {
-          btnAuto.className = 'flex-1 text-[10px] font-semibold py-1 rounded transition bg-[#1E3A5F] text-white';
-          btnManual.className = 'flex-1 text-[10px] font-semibold py-1 rounded transition bg-transparent text-[#6B7280] hover:bg-white';
-          panel.style.display = 'none';
-        }
-      }
-    };
+    // alertaIT e setDiastModo wrappers serão aplicados após o motor carregar (ver script.onload)
 
     // Callbacks TipTap — motor chama estes ao renderizar achados/conclusões
     // Motor gera laudo completo → envia para TipTap
+    const WK_DESC: Record<string, string[]> = {
+      mob: ['Normal','Boa mobilidade da valva, com restrição apenas na ponta do folheto','Redução da mobilidade na porção média e na base dos folhetos','Mobilidade somente na base dos folhetos','Nenhum ou mínimo movimento dos folhetos'],
+      esp: ['Normal','Espessura valvar próxima do normal (4–5 mm)','Grande espessamento nas margens do folheto','Espessamento de todo o folheto (5–8 mm)','Grande espessamento de todo o folheto (>8–10 mm)'],
+      sub: ['Normal','Espessamento mínimo da corda tendínea logo abaixo da valva','Espessamento da corda até terço proximal','Espessamento da corda até terço distal','Extenso espessamento e encurtamento de toda corda até músculo papilar'],
+      cal: ['Sem calcificação','Uma única área de calcificação','Calcificações nas margens dos folhetos','Calcificações extensivas à porção média do folheto','Extensa calcificação em todo o folheto'],
+    };
+    const WK_LABELS: Record<string, string> = { mob: 'Mobilidade do folheto', esp: 'Espessamento valvar', sub: 'Espessamento subvalvar', cal: 'Calcificação valvar' };
+
+    function renderWilkinsHtml(json: string): string {
+      const d = JSON.parse(json);
+      let html = '<p><strong>Escore Ecocardiográfico de Wilkins &amp; Block:</strong></p>';
+      for (const key of ['mob', 'esp', 'sub', 'cal']) {
+        const val = d[key] as number;
+        if (val > 0) {
+          html += `<p>• <strong>${WK_LABELS[key]}</strong> (${val} pts): ${WK_DESC[key][val]}</p>`;
+        }
+      }
+      html += `<p><strong>TOTAL: ${d.sc} pontos.</strong> ${d.concFrase}</p>`;
+      return html;
+    }
+
     w._onLaudoGerado = (html: string) => {
+      // Processar __WILKINS__ JSON → HTML formatado com critérios
+      let processed = html.replace(/<p>__WILKINS__(\{.*?\})<\/p>/g, (_match, json) => {
+        try { return renderWilkinsHtml(json); } catch { return ''; }
+      });
+      processed = processed.replace(/__WILKINS__(\{.*?\})/g, (_match, json) => {
+        try { return renderWilkinsHtml(json); } catch { return ''; }
+      });
       if (editorRef.current) {
-        editorRef.current.setContent(html);
+        editorRef.current.setContent(processed);
       } else {
-        pendingHtml.current = html;
+        pendingHtml.current = processed;
       }
     };
     // Banco de frases insere no cursor
@@ -152,9 +156,46 @@ export default function LaudoPage() {
               el.addEventListener('input', sc);
               el.addEventListener('change', sc);
             });
+
+            // Sincronizar b24 (Câmaras) ↔ b24_diast (Diastólica)
+            const b24 = document.getElementById('b24') as HTMLInputElement;
+            const b24d = document.getElementById('b24_diast') as HTMLInputElement;
+            if (b24 && b24d) {
+              b24.addEventListener('input', () => { b24d.value = b24.value; });
+              b24d.addEventListener('input', () => { b24.value = b24d.value; });
+            }
+
             preencherExame();
             sc();
           }
+
+          // Override alertaIT — usar style.display em vez de classList.toggle
+          (window as unknown as Record<string, unknown>).alertaIT = () => {
+            const it = parseFloat((document.getElementById('b23') as HTMLInputElement)?.value || '0');
+            const psap = parseFloat((document.getElementById('b37') as HTMLInputElement)?.value || '0');
+            const msg = document.getElementById('alerta-psap');
+            if (msg) msg.style.display = (it > 0 && !psap) ? 'block' : 'none';
+          };
+
+          // Wrap setDiastModo APÓS motor carregar (motor exporta window.setDiastModo)
+          const origSetDiastModo = (window as unknown as Record<string, unknown>).setDiastModo as ((m: string) => void) | undefined;
+          (window as unknown as Record<string, unknown>).setDiastModo = (modo: string) => {
+            if (origSetDiastModo) origSetDiastModo(modo);
+            const btnAuto = document.getElementById('diast-btn-auto');
+            const btnManual = document.getElementById('diast-btn-manual');
+            const panel = document.getElementById('diast-manual-panel');
+            if (btnAuto && btnManual && panel) {
+              if (modo === 'manual') {
+                btnManual.className = 'flex-1 text-[10px] font-semibold py-1 rounded transition bg-[#1E3A5F] text-white';
+                btnAuto.className = 'flex-1 text-[10px] font-semibold py-1 rounded transition bg-transparent text-[#6B7280] hover:bg-white';
+                panel.style.display = 'block';
+              } else {
+                btnAuto.className = 'flex-1 text-[10px] font-semibold py-1 rounded transition bg-[#1E3A5F] text-white';
+                btnManual.className = 'flex-1 text-[10px] font-semibold py-1 rounded transition bg-transparent text-[#6B7280] hover:bg-white';
+                panel.style.display = 'none';
+              }
+            }
+          };
         } catch (e) { console.warn('motor:', e); }
       }, 500);
     };

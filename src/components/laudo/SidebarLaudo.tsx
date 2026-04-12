@@ -53,19 +53,19 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
     const timer = setTimeout(() => {
       const sidebar = document.getElementById('laudo-sidebar');
       if (!sidebar) return;
-      const camposId = ['nome', 'dtnasc', 'dtexame', 'convenio', 'solicitante'];
+      const ignorar = ['nome', 'dtnasc', 'dtexame', 'convenio', 'solicitante', 'wk-mob', 'wk-esp', 'wk-cal', 'wk-sub', 'wilkins-toggle', 'diast-manual-sel'];
       const campos = sidebar.querySelectorAll('input:not(.hidden), select:not(.hidden)') as NodeListOf<HTMLInputElement | HTMLSelectElement>;
       if (motorBloqueado) {
         // Bloquear todos os campos do motor
         campos.forEach(el => {
-          if (camposId.includes(el.id)) return;
+          if (ignorar.includes(el.id)) return;
           el.disabled = true;
           el.classList.add('bg-gray-100', 'text-gray-400', 'cursor-not-allowed');
         });
       } else if (motorDesbloqueado) {
         // Só desbloqueia se foi explicitamente desbloqueado (evita interferir na montagem)
         campos.forEach(el => {
-          if (camposId.includes(el.id)) return;
+          if (ignorar.includes(el.id)) return;
           el.disabled = false;
           el.classList.remove('bg-gray-100', 'text-gray-400', 'cursor-not-allowed');
         });
@@ -138,7 +138,7 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
     }
   }
   return (
-    <div id="laudo-sidebar" className="bg-white border-r border-[#E5E7EB] overflow-y-auto flex flex-col pb-10">
+    <div id="laudo-sidebar" className="bg-white border-r border-[#E5E7EB] flex flex-col h-screen">
 
       {/* ═══ HEADER ═══ */}
       <div className="sticky top-0 z-10 bg-[#1E3A5F] px-5 py-3.5 shrink-0">
@@ -155,6 +155,27 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
         </div>
         <p id="hdr-subtitulo" className="text-[#93C5FD] text-[10px] mt-0.5">{medicoInfo}</p>
       </div>
+
+      {/* ═══ BOTÕES FIXOS NO TOPO ═══ */}
+      <div className="shrink-0 border-b border-[#E5E7EB] bg-white">
+        {emitido ? (
+          modoEmitido
+        ) : (
+          <div id="modo-edicao" className="flex items-center gap-2 px-5 py-2">
+            <button onClick={onSalvarEmitir}
+              className="flex-1 py-2 rounded-md font-semibold text-white text-[11px] cursor-pointer hover:brightness-110 transition border-none bg-[#1E3A5F]">
+              💾 Salvar / Emitir
+            </button>
+            <button onClick={onLimpar}
+              className="px-3 py-2 rounded-md border border-[#E5E7EB] bg-white text-[#6B7280] text-[11px] font-medium cursor-pointer hover:bg-gray-50 transition">
+              🗑️
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ═══ ÁREA SCROLLÁVEL ═══ */}
+      <div className="flex-1 overflow-y-auto pb-10">
 
       {/* ═══ IDENTIFICAÇÃO ═══ */}
       <Sec id="sec-id" title="👤 Identificação" defaultOpen single>
@@ -296,6 +317,7 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
         </div>
         <F label="Derrame Pericárdico"><RSel id="b41" /></F>
         <F label="Placas Arco Aórtico"><select id="b42" className="sf"><option value="">— Não —</option><option value="s">Sim — Calcificadas</option></select></F>
+        {/* ── Estenose Mitral ── */}
         <div className="col-span-2 border-t border-dashed border-[#E5E7EB] mt-1 pt-1.5">
           <p className="text-[10.5px] font-semibold text-[#1E3A5F] mb-1">Estenose Mitral</p>
           <div className="grid grid-cols-2 gap-x-3 gap-y-[7px]">
@@ -303,41 +325,64 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
             <F label="Grad. médio" u="mmHg"><input type="number" id="b46" step="0.1" className="sf" /></F>
             <F label="Área mitral" u="cm²"><input type="number" id="b47" step="0.01" className="sf" /></F>
           </div>
-          <p className="text-[10.5px] font-semibold text-[#1E3A5F] mt-2 mb-1">Estenose Aórtica</p>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-[7px]">
-            <F label="Grad. máx." u="mmHg"><input type="number" id="b50" step="0.1" className="sf" /></F>
-            <F label="Grad. médio" u="mmHg"><input type="number" id="b51" step="0.1" className="sf" /></F>
-            <F label="Área aórtica" u="cm²"><input type="number" id="b52" step="0.01" className="sf" /></F>
-            <F label="Grad. máx. pulm." u="mmHg"><input type="number" id="b50p" step="0.1" className="sf" /></F>
-          </div>
-        </div>
-        {/* Wilkins Score */}
-        <div className="col-span-2 border-t border-dashed border-[#E5E7EB] mt-1 pt-1.5">
-          <label className="flex items-center gap-2 cursor-pointer mb-1">
-            <input type="checkbox" id="wilkins-toggle"
-              onChange={() => motorCall('toggleWilkins')}
-              className="accent-[#1E3A5F]" />
-            <span className="text-[10.5px] font-semibold text-[#1E3A5F]">Escore de Wilkins</span>
-          </label>
+          {/* Wilkins Score — abaixo da área mitral */}
+          <button type="button"
+            onClick={() => {
+              const cb = document.getElementById('wilkins-toggle') as HTMLInputElement;
+              const fields = document.getElementById('wilkins-fields');
+              if (cb && fields) {
+                cb.checked = !cb.checked;
+                fields.style.display = cb.checked ? 'grid' : 'none';
+                motorCalc();
+              }
+            }}
+            className="flex items-center gap-2 mt-2 mb-1 cursor-pointer text-[10px] font-semibold text-[#6B7280] hover:text-[#1E3A5F] transition">
+            <span id="wilkins-icon">☐</span> Escore de Wilkins
+          </button>
+          <input type="checkbox" id="wilkins-toggle" className="hidden" />
           <div id="wilkins-fields" className="grid grid-cols-4 gap-2" style={{ display: 'none' }}>
             <div className="flex flex-col gap-[2px]">
-              <label className="text-[9px] text-[#6B7280]">Mobilidade</label>
+              <label className="text-[9px] text-[#6B7280]">Mobilid.</label>
               <WkSel id="wk-mob" />
             </div>
             <div className="flex flex-col gap-[2px]">
-              <label className="text-[9px] text-[#6B7280]">Espessura</label>
+              <label className="text-[9px] text-[#6B7280]">Espess.</label>
               <WkSel id="wk-esp" />
             </div>
             <div className="flex flex-col gap-[2px]">
-              <label className="text-[9px] text-[#6B7280]">Calcificação</label>
+              <label className="text-[9px] text-[#6B7280]">Calcif.</label>
               <WkSel id="wk-cal" />
             </div>
             <div className="flex flex-col gap-[2px]">
-              <label className="text-[9px] text-[#6B7280]">Subvalvar</label>
+              <label className="text-[9px] text-[#6B7280]">Subvalv.</label>
               <WkSel id="wk-sub" />
             </div>
           </div>
           <div id="calc-wilkins" className="text-[10px] text-[#1E3A5F] font-semibold mt-1" />
+        </div>
+        {/* ── Estenose Aórtica ── */}
+        <div className="col-span-2 border-t border-dashed border-[#E5E7EB] mt-1 pt-1.5">
+          <p className="text-[10.5px] font-semibold text-[#1E3A5F] mb-1">Estenose Aórtica</p>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-[7px]">
+            <F label="Grad. máx." u="mmHg"><input type="number" id="b50" step="0.1" className="sf" /></F>
+            <F label="Grad. médio" u="mmHg"><input type="number" id="b51" step="0.1" className="sf" /></F>
+            <F label="Área aórtica" u="cm²"><input type="number" id="b52" step="0.01" className="sf" /></F>
+          </div>
+        </div>
+        {/* ── Estenose Tricúspide ── */}
+        <div className="col-span-2 border-t border-dashed border-[#E5E7EB] mt-1 pt-1.5">
+          <p className="text-[10.5px] font-semibold text-[#1E3A5F] mb-1">Estenose Tricúspide</p>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-[7px]">
+            <F label="Grad. médio" u="mmHg"><input type="number" id="b46t" step="0.1" className="sf" /></F>
+            <F label="Área tricúspide" u="cm²"><input type="number" id="b47t" step="0.01" className="sf" /></F>
+          </div>
+        </div>
+        {/* ── Estenose Pulmonar ── */}
+        <div className="col-span-2 border-t border-dashed border-[#E5E7EB] mt-1 pt-1.5">
+          <p className="text-[10.5px] font-semibold text-[#1E3A5F] mb-1">Estenose Pulmonar</p>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-[7px]">
+            <F label="Grad. máx." u="mmHg"><input type="number" id="b50p" step="0.1" className="sf" /></F>
+          </div>
         </div>
       </Sec>
 
@@ -363,26 +408,9 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
         <F label="Demais paredes"><select id="b62" className="sf"><option value="NL">NL — Preservadas</option><option value="HD">Hipocin. difusa</option><option value="HR">Hipocin. demais</option><option value="AD">Acinesia difusa</option><option value="DD">Discinesia difusa</option></select></F>
       </Sec>
 
-      {/* Hidden fields */}
-      <input type="number" id="b46t" className="hidden" />
-      <input type="number" id="b47t" className="hidden" />
+      {/* Hidden fields — nenhum restante */}
 
-      {/* ═══ BOTÕES ═══ */}
-      {emitido ? (
-        modoEmitido
-      ) : (
-        <div id="modo-edicao" className="px-5 pt-3">
-          <button onClick={onSalvarEmitir}
-            className="w-full py-3 rounded-lg font-bold text-white text-[13px] tracking-wide cursor-pointer transition-[filter] hover:brightness-110 border-none"
-            style={{ background: 'linear-gradient(135deg, #1E3A5F, #1E3A5F)' }}>
-            💾 Salvar / Emitir Laudo
-          </button>
-          <button onClick={onLimpar}
-            className="w-full mt-1.5 py-[7px] rounded-lg border border-[#E5E7EB] bg-white text-[#6B7280] text-xs font-medium cursor-pointer hover:bg-gray-50 transition">
-            🗑️ Limpar formulário
-          </button>
-        </div>
-      )}
+      </div>{/* fim área scrollável */}
     </div>
   );
 }

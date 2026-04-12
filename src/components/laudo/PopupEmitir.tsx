@@ -58,71 +58,55 @@ export function ModoEmitido({ onFinalizar, onEditar, onImprimir, onCopiarFormata
   const [prontuarioOpen, setProntuarioOpen] = useState(false);
 
   return (
-    <div className="px-5 py-4">
-      {/* Badge */}
-      <div className="bg-gradient-to-r from-[#059669] to-[#047857] text-white text-center py-2.5 rounded-lg font-bold text-sm tracking-wide mb-3">
-        🔒 Laudo Emitido
+    <div className="px-4 py-2">
+      {/* Badge compacto */}
+      <div className="bg-[#059669] text-white text-center py-1 rounded text-[10px] font-bold tracking-wide mb-2">
+        🔒 Emitido
       </div>
 
-      {/* Botões */}
-      <div className="flex flex-col gap-2">
-        <BtnEmitido onClick={onImprimir} cor="navy">🖨️ Imprimir / PDF</BtnEmitido>
+      {/* Botões em grid compacto */}
+      <div className="grid grid-cols-3 gap-1.5 mb-2">
+        <BtnMini onClick={onImprimir}>🖨️ PDF</BtnMini>
+        <BtnMini onClick={() => setProntuarioOpen(!prontuarioOpen)}>📋 Copiar</BtnMini>
+        <BtnMini onClick={onEditar} cor="amber">✏️ Editar</BtnMini>
+      </div>
 
-        {/* Copiar para Prontuário */}
-        <div className="relative">
-          <BtnEmitido onClick={() => setProntuarioOpen(!prontuarioOpen)} cor="navy">
-            📋 Copiar para Prontuário {prontuarioOpen ? '▴' : '▾'}
-          </BtnEmitido>
-          {prontuarioOpen && (
-            <div className="mt-1 bg-white border border-[#E5E7EB] rounded-lg shadow-lg overflow-hidden">
-              <button onClick={() => { onCopiarFormatado(); setProntuarioOpen(false); }}
-                className="w-full flex items-start gap-2.5 px-3.5 py-2.5 cursor-pointer border-b border-[#E5E7EB] hover:bg-[#F9FAFB] transition text-left">
-                <span className="text-[15px] shrink-0 pt-0.5">📄</span>
-                <div>
-                  <div className="text-[12px] font-semibold text-[#111827]">Copiar formatado</div>
-                  <div className="text-[10px] text-[#6B7280] mt-0.5">Tasy · MV · Soul · Word · Google Docs</div>
-                </div>
-              </button>
-              <button onClick={() => { onCopiarTexto(); setProntuarioOpen(false); }}
-                className="w-full flex items-start gap-2.5 px-3.5 py-2.5 cursor-pointer border-b border-[#E5E7EB] hover:bg-[#F9FAFB] transition text-left">
-                <span className="text-[15px] shrink-0 pt-0.5">📋</span>
-                <div>
-                  <div className="text-[12px] font-semibold text-[#111827]">Copiar texto simples</div>
-                  <div className="text-[10px] text-[#6B7280] mt-0.5">Hapvida · prontuários básicos</div>
-                </div>
-              </button>
-              {onBaixarWord && (
-                <button onClick={() => { onBaixarWord(); setProntuarioOpen(false); }}
-                  className="w-full flex items-start gap-2.5 px-3.5 py-2.5 cursor-pointer hover:bg-[#F9FAFB] transition text-left">
-                  <span className="text-[15px] shrink-0 pt-0.5">📄</span>
-                  <div>
-                    <div className="text-[12px] font-semibold text-[#111827]">Baixar Word (.docx)</div>
-                    <div className="text-[10px] text-[#6B7280] mt-0.5">Formatação perfeita · Word · LibreOffice</div>
-                  </div>
-                </button>
-              )}
-            </div>
+      {/* Submenu copiar */}
+      {prontuarioOpen && (
+        <div className="mb-2 bg-gray-50 border border-[#E5E7EB] rounded overflow-hidden text-[10px]">
+          <button onClick={() => { onCopiarFormatado(); setProntuarioOpen(false); }}
+            className="w-full px-3 py-1.5 text-left hover:bg-white transition border-b border-[#E5E7EB] text-[#333] cursor-pointer">
+            📄 Formatado <span className="text-[#999]">· Tasy, MV, Word</span>
+          </button>
+          <button onClick={() => { onCopiarTexto(); setProntuarioOpen(false); }}
+            className="w-full px-3 py-1.5 text-left hover:bg-white transition border-b border-[#E5E7EB] text-[#333] cursor-pointer">
+            📋 Texto simples <span className="text-[#999]">· Hapvida</span>
+          </button>
+          {onBaixarWord && (
+            <button onClick={() => { onBaixarWord(); setProntuarioOpen(false); }}
+              className="w-full px-3 py-1.5 text-left hover:bg-white transition text-[#333] cursor-pointer">
+              📄 Word (.docx)
+            </button>
           )}
         </div>
+      )}
 
-        <div className="border-t border-[#E5E7EB] mt-2 pt-2 flex flex-col gap-2">
-          <BtnEmitido onClick={onEditar} cor="amber">✏️ Editar Laudo</BtnEmitido>
-          <BtnEmitido onClick={onFinalizar} cor="green">✅ Finalizar Atendimento</BtnEmitido>
-        </div>
-      </div>
+      <button onClick={onFinalizar}
+        className="w-full py-1.5 rounded text-[10px] font-semibold text-[#059669] border border-[#059669] bg-white hover:bg-[#059669]/5 transition cursor-pointer">
+        ✅ Finalizar
+      </button>
     </div>
   );
 }
 
-function BtnEmitido({ onClick, cor, children }: { onClick: () => void; cor: 'navy' | 'green' | 'amber'; children: React.ReactNode }) {
+function BtnMini({ onClick, cor, children }: { onClick: () => void; cor?: 'navy' | 'amber'; children: React.ReactNode }) {
   const cores = {
-    navy: 'border-[#1E3A5F] text-[#1E3A5F] hover:bg-[#1E3A5F]/[.04]',
-    green: 'border-[#059669] text-[#059669] hover:bg-[#059669]/[.06]',
-    amber: 'border-[#D97706] text-[#D97706] hover:bg-[#D97706]/[.06]',
+    navy: 'border-[#E5E7EB] text-[#1E3A5F] hover:bg-gray-50',
+    amber: 'border-[#D97706] text-[#D97706] hover:bg-[#D97706]/5',
   };
   return (
     <button onClick={onClick}
-      className={`w-full py-2.5 px-3.5 rounded-lg border-[1.5px] bg-white cursor-pointer text-left text-xs font-semibold transition ${cores[cor]}`}>
+      className={`py-1.5 px-2 rounded border bg-white cursor-pointer text-center text-[10px] font-semibold transition ${cores[cor || 'navy']}`}>
       {children}
     </button>
   );
