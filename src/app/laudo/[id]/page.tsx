@@ -14,6 +14,7 @@ import { db } from '@/lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { dataLocalHoje } from '@/lib/utils';
 import { checkEmissao, consumirEmissao } from '@/lib/billing';
+import { gerarESalvarPdf } from '@/lib/pdfUtils';
 import SidebarLaudo from '@/components/laudo/SidebarLaudo';
 import SheetA4 from '@/components/laudo/SheetA4';
 import EditorLaudo from '@/components/laudo/EditorLaudo';
@@ -352,18 +353,24 @@ export default function LaudoPage() {
       setEmitido(true);
       toast('Laudo emitido e assinado');
 
-      // Salvar pdfHtml + abrir PDF (dentro do timeout, DOM já está pronto)
+      // Gerar PDF real + salvar no Storage + abrir (dentro do timeout, DOM pronto)
       setTimeout(async () => {
         try {
           const pdfHtml = gerarPdfHtml();
-          // Abrir PDF
+          const nome = (document.getElementById('nome') as HTMLInputElement)?.value || 'PACIENTE';
+          const nomeArq = 'ECOTT ' + nome.trim().toUpperCase();
+
+          // Abrir HTML pra visualização imediata
           const win = window.open('', '_blank', 'width=900,height=700');
           if (win) { win.document.write(pdfHtml); win.document.close(); }
-          // Salvar no Firestore pra impressão rápida futura
+
+          // Gerar PDF real + upload Firebase Storage (em background)
           if (pdfHtml && workspace?.id) {
-            await updateDoc(doc(db, 'workspaces', workspace.id, 'exames', exameId), { pdfHtml });
+            const pdfUrl = await gerarESalvarPdf(pdfHtml, workspace.id, exameId, nomeArq);
+            await updateDoc(doc(db, 'workspaces', workspace.id, 'exames', exameId), { pdfUrl });
+            toast('PDF salvo na nuvem');
           }
-        } catch (e) { console.warn('pdfHtml:', e); }
+        } catch (e) { console.warn('PDF:', e); }
       }, 800);
     } else {
       toast('Erro ao emitir laudo');

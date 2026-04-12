@@ -8,7 +8,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { savePaciente, saveExame, listenWorklist, getExame } from '@/lib/firestore';
-import { abrirPdfSalvo } from '@/lib/pdfUtils';
+import { abrirPdfUrl } from '@/lib/pdfUtils';
 import { dataLocalHoje } from '@/lib/utils';
 import { db } from '@/lib/firebase';
 import { doc, deleteDoc } from 'firebase/firestore';
@@ -253,9 +253,9 @@ export default function Worklist() {
     if (!workspace?.id) return;
     try {
       const ex = await getExame(workspace.id, exameId);
-      const pdfHtml = (ex as Record<string, unknown>)?.pdfHtml as string;
-      if (pdfHtml) {
-        abrirPdfSalvo(pdfHtml);
+      const dados = ex as Record<string, unknown>;
+      if (dados?.pdfUrl) {
+        abrirPdfUrl(dados.pdfUrl as string);
       } else {
         // Fallback: abrir o laudo normalmente
         router.push('/laudo/' + exameId);

@@ -8,7 +8,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getHistorico, saveExame, logAction, getExame } from '@/lib/firestore';
-import { abrirPdfSalvo } from '@/lib/pdfUtils';
+import { abrirPdfUrl } from '@/lib/pdfUtils';
 import { db } from '@/lib/firebase';
 import { doc, deleteDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
@@ -79,9 +79,9 @@ export default function Historico() {
     if (!wsIdSel) return;
     try {
       const ex = await getExame(wsIdSel, exameId);
-      const pdfHtml = (ex as Record<string, unknown>)?.pdfHtml as string;
-      if (pdfHtml) {
-        abrirPdfSalvo(pdfHtml);
+      const dados = ex as Record<string, unknown>;
+      if (dados?.pdfUrl) {
+        abrirPdfUrl(dados.pdfUrl as string);
       } else {
         router.push('/laudo/' + exameId);
       }
