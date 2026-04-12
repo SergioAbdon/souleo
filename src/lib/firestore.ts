@@ -84,6 +84,19 @@ export async function isDirexAuthorized(uid: string): Promise<{ authorized: bool
   } catch { return { authorized: false, profile: null }; }
 }
 
+export async function setAdminRole(uid: string, role: string | null) {
+  try {
+    if (role) {
+      await updateDoc(doc(db, 'profissionais', uid), { adminRole: role, atualizadoEm: now() });
+    } else {
+      // Remover adminRole — importar deleteField
+      const { deleteField } = await import('firebase/firestore');
+      await updateDoc(doc(db, 'profissionais', uid), { adminRole: deleteField(), atualizadoEm: now() });
+    }
+    return true;
+  } catch (e) { console.error('setAdminRole:', e); return false; }
+}
+
 // ══ EMPRESAS ═════════════════════════════════════════════════════
 
 export async function createEmpresa(dados: Record<string, unknown>) {
