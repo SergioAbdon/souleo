@@ -74,6 +74,16 @@ export async function isSuperAdmin(uid: string) {
   } catch { return false; }
 }
 
+export async function isDirexAuthorized(uid: string): Promise<{ authorized: boolean; profile: Record<string, unknown> | null }> {
+  try {
+    const snap = await getDoc(doc(db, 'profissionais', uid));
+    if (!snap.exists()) return { authorized: false, profile: null };
+    const data = snap.data();
+    const authorized = data.superadmin === true || !!data.adminRole;
+    return { authorized, profile: authorized ? { id: snap.id, ...data } : null };
+  } catch { return { authorized: false, profile: null }; }
+}
+
 // ══ EMPRESAS ═════════════════════════════════════════════════════
 
 export async function createEmpresa(dados: Record<string, unknown>) {

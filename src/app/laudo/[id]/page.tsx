@@ -13,7 +13,7 @@ import { getExame, saveExame, emitExame, logAction } from '@/lib/firestore';
 import { db } from '@/lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { dataLocalHoje } from '@/lib/utils';
-import { checkEmissao, consumirEmissao } from '@/lib/billing';
+import { checkEmissao, consumirEmissao, registrarConsumo } from '@/lib/billing';
 import { gerarESalvarPdf } from '@/lib/pdfUtils';
 import SidebarLaudo from '@/components/laudo/SidebarLaudo';
 import SheetA4 from '@/components/laudo/SheetA4';
@@ -333,7 +333,16 @@ export default function LaudoPage() {
       const idMudou = jaEmitido && identificacaoMudou();
 
       const check = await checkEmissao(workspace.id);
-      if (check.pode && check.tipo) await consumirEmissao(workspace.id, check.tipo);
+      if (check.pode && check.tipo) {
+        await consumirEmissao(workspace.id, check.tipo);
+        await registrarConsumo(workspace.id, exameId, user.uid, {
+          pacienteNome: (exame?.pacienteNome as string) || coletarIdentificacao().pacienteNome || '',
+          tipoExame: (exame?.tipoExame as string) || '',
+          convenio: (exame?.convenio as string) || '',
+          tipo: check.tipo === 'franquia' ? 'franquia' : 'credito',
+          reemissao: jaEmitido,
+        });
+      }
 
       await logAction('emissao', { exameId, wsId: workspace.id, reemissao: jaEmitido, identificacaoAlterada: idMudou }, user.uid);
 
