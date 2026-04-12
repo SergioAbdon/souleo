@@ -1,6 +1,6 @@
 'use client';
 // ══════════════════════════════════════════════════════════════════
-// DIREX · Financeiro — MRR, receita, churn, exportacao CSV
+// DIREX · Financeiro — MRR, receita, cancelamentos, exportacao CSV
 // ══════════════════════════════════════════════════════════════════
 
 import { useEffect, useState } from 'react';
@@ -95,8 +95,8 @@ export default function FinanceiroPage() {
   });
   const receitaMes = pagsMes.reduce((a, p) => a + (p.valor || 0), 0);
 
-  // Churn: pagas que expiraram
-  const churn = subsList.filter(s => {
+  // Cancelamentos: pagas que expiraram
+  const cancelamentos = subsList.filter(s => {
     const fim = s.cicloFim?.toDate ? s.cicloFim.toDate() : null;
     return s.tipo === 'paid' && fim && agora > fim.getTime();
   }).length;
@@ -172,7 +172,7 @@ export default function FinanceiroPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 mb-6">
         <MetricCard label="MRR" value={fmtValor(mrr)} sub={`${subsPagasAtivas.length} assinante${subsPagasAtivas.length !== 1 ? 's' : ''}`} />
         <MetricCard label="Receita do mes" value={fmtValor(receitaMes)} sub={`${pagsMes.length} pagamento${pagsMes.length !== 1 ? 's' : ''}`} />
-        <MetricCard label="Churn" value={churn} cor={churn > 0 ? '#F87171' : undefined} sub={`${churn} cancelado${churn !== 1 ? 's' : ''}`} />
+        <MetricCard label="Cancelamentos" value={cancelamentos} cor={cancelamentos > 0 ? '#F87171' : undefined} sub={`${cancelamentos} cancelado${cancelamentos !== 1 ? 's' : ''}`} />
         <MetricCard label="Ticket medio" value={fmtValor(ticketMedio)} />
       </div>
 

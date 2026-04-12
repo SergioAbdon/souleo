@@ -109,7 +109,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'gerar_relatorio',
-    description: 'Gera relatorio financeiro consolidado com MRR, receita, churn, inadimplentes, top clientes.',
+    description: 'Gera relatorio financeiro consolidado com assinaturas ativas, receita, cancelamentos, inadimplentes, top clientes.',
     input_schema: {
       type: 'object' as const,
       properties: {},
