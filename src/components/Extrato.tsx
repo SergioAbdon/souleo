@@ -9,6 +9,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getHistorico, getHonorarios, saveHonorarios, getExtratoContador, incrementarExtrato, logAction } from '@/lib/firestore';
+import { checkExtratoLimit } from '@/lib/billing';
 import type { HonorariosConfig } from '@/lib/firestore';
 
 type ExameItem = Record<string, unknown> & {
@@ -133,9 +134,13 @@ export default function Extrato() {
   async function handleGerarExtrato() {
     if (!wsIdSel || !user?.uid) return;
 
-    // Billing check
-    if (extratoInfo.emitidos >= 1) {
-      if (!confirm(`Você já emitiu ${extratoInfo.emitidos} extrato(s) em ${wsNome} neste mês.\nO próximo será cobrado da sua franquia.\n\nDeseja continuar?`)) return;
+    // Billing check — verifica limite do plano
+    const limiteExtrato = await checkExtratoLimit(wsIdSel);
+    if (!limiteExtrato.gratis) {
+      const msg = limiteExtrato.franquia === -1
+        ? 'Extrato ilimitado no seu plano.'
+        : `Voce ja usou ${limiteExtrato.usados} de ${limiteExtrato.franquia} extrato(s) gratis neste mes.\nO proximo custara R$ ${limiteExtrato.custo.toFixed(2)}.\n\nDeseja continuar?`;
+      if (limiteExtrato.custo > 0 && !confirm(msg)) return;
     }
 
     await incrementarExtrato(wsIdSel, extratoInfo.mes);

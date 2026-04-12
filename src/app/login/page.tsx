@@ -95,7 +95,7 @@ export default function LoginPage() {
       // Criar vínculo
       if (wsId) {
         await createMembership(cred.user.uid, wsId, pfTipo === 'medico' ? 'medico' : 'assistente');
-        await createSubscription(wsId, 'trial', 100);
+        await createSubscription(wsId, 'trial'); // Trial = Expert completo por 30 dias
       }
 
       // Sair (precisa verificar email)

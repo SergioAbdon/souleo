@@ -268,8 +268,16 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const fim = sub.cicloFim ? (sub.cicloFim as Timestamp).toDate() : null;
         return JSON.stringify({
           workspace: ws.data().nomeClinica,
-          tipo: sub.tipo, franquiaMensal: sub.franquiaMensal, franquiaUsada: sub.franquiaUsada,
-          creditosExtras: sub.creditosExtras, expira: fim?.toLocaleDateString('pt-BR'),
+          plano: sub.planoId || sub.tipo,
+          tipo: sub.tipo,
+          franquiaMensal: sub.franquiaMensal, franquiaUsada: sub.franquiaUsada,
+          creditosExtras: sub.creditosExtras,
+          maxLocais: sub.maxLocais || 1,
+          localAdicional: sub.localAdicional || 0,
+          extratosFranquia: sub.extratosFranquia ?? 2,
+          extratoValor: sub.extratoValor || 0,
+          excedente: sub.excedente || 0,
+          expira: fim?.toLocaleDateString('pt-BR'),
           status: fim && Date.now() <= fim.getTime() ? 'Ativo' : 'Expirado',
         });
       }
@@ -411,13 +419,16 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const subSnap = await dbAdmin.collection('subscriptions').where('workspaceId', '==', ws.id).limit(1).get();
         if (subSnap.empty) return JSON.stringify({ erro: 'Sem subscription' });
 
-        // Restaurar franquia default (100) — admin pode ajustar depois
-        await subSnap.docs[0].ref.update({ franquiaMensal: 100 });
+        // Restaurar franquia baseada no plano
+        const planoId = subSnap.docs[0].data().planoId || 'basic';
+        const franquias: Record<string, number> = { trial: 600, remido: 9999, basic: 100, profissional: 350, expert: 600 };
+        const franquiaRestaurada = franquias[planoId] || 100;
+        await subSnap.docs[0].ref.update({ franquiaMensal: franquiaRestaurada });
         await dbAdmin.collection('logs').add({
-          tipo: 'desbloqueio', wsId: ws.id, ts: Timestamp.now(), medicoUid: 'marina-ia',
+          tipo: 'desbloqueio', wsId: ws.id, planoId, ts: Timestamp.now(), medicoUid: 'marina-ia',
         });
 
-        return JSON.stringify({ sucesso: true, workspace: ws.data().nomeClinica, acao: 'desbloqueado', franquiaRestaurada: 100 });
+        return JSON.stringify({ sucesso: true, workspace: ws.data().nomeClinica, acao: 'desbloqueado', plano: planoId, franquiaRestaurada });
       }
 
       case 'renovar_trial': {

@@ -200,26 +200,42 @@ export default function ConfiguracoesPage() {
           <table className="w-full text-[13px]">
             <thead>
               <tr className="border-b border-[#334155]">
-                {['Plano', 'Preco (R$)', 'Franquia', 'Excedente (R$)'].map(h => (
-                  <th key={h} className="text-left px-4 py-2.5 text-[11px] text-[#94A3B8] uppercase tracking-wider font-semibold">{h}</th>
+                {['Plano', 'Preco', 'Laudos', 'Excedente', 'Locais', 'Local Adic.', 'Extratos', 'Extrato Adic.'].map(h => (
+                  <th key={h} className="text-left px-3 py-2.5 text-[10px] text-[#94A3B8] uppercase tracking-wider font-semibold">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {config?.planos.map((p, i) => (
                 <tr key={p.id} className="border-b border-[#0F172A]">
-                  <td className="px-4 py-2 text-[#F8FAFC] font-medium">{p.nome}</td>
-                  <td className="px-4 py-2">
+                  <td className="px-3 py-2 text-[#F8FAFC] font-medium text-[12px]">{p.nome}</td>
+                  <td className="px-3 py-2">
                     <input type="number" step="0.01" value={p.preco} onChange={e => editarPlano(i, 'preco', e.target.value)}
-                      className="w-24 px-2 py-1 bg-[#0F172A] border border-[#334155] rounded text-[#E2E8F0] text-sm outline-none focus:border-[#3B82F6]" />
+                      className="w-20 px-2 py-1 bg-[#0F172A] border border-[#334155] rounded text-[#E2E8F0] text-[11px] outline-none focus:border-[#3B82F6]" />
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-3 py-2">
                     <input type="number" value={p.franquia} onChange={e => editarPlano(i, 'franquia', e.target.value)}
-                      className="w-20 px-2 py-1 bg-[#0F172A] border border-[#334155] rounded text-[#E2E8F0] text-sm outline-none focus:border-[#3B82F6]" />
+                      className="w-16 px-2 py-1 bg-[#0F172A] border border-[#334155] rounded text-[#E2E8F0] text-[11px] outline-none focus:border-[#3B82F6]" />
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-3 py-2">
                     <input type="number" step="0.01" value={p.excedente} onChange={e => editarPlano(i, 'excedente', e.target.value)}
-                      className="w-20 px-2 py-1 bg-[#0F172A] border border-[#334155] rounded text-[#E2E8F0] text-sm outline-none focus:border-[#3B82F6]" />
+                      className="w-16 px-2 py-1 bg-[#0F172A] border border-[#334155] rounded text-[#E2E8F0] text-[11px] outline-none focus:border-[#3B82F6]" />
+                  </td>
+                  <td className="px-3 py-2">
+                    <input type="number" value={(p as Record<string, unknown>).maxLocais as number || 1} onChange={e => editarPlano(i, 'maxLocais' as keyof PlanoConfig, e.target.value)}
+                      className="w-14 px-2 py-1 bg-[#0F172A] border border-[#334155] rounded text-[#E2E8F0] text-[11px] outline-none focus:border-[#3B82F6]" />
+                  </td>
+                  <td className="px-3 py-2">
+                    <input type="number" step="0.01" value={(p as Record<string, unknown>).localAdicional as number || 0} onChange={e => editarPlano(i, 'localAdicional' as keyof PlanoConfig, e.target.value)}
+                      className="w-16 px-2 py-1 bg-[#0F172A] border border-[#334155] rounded text-[#E2E8F0] text-[11px] outline-none focus:border-[#3B82F6]" />
+                  </td>
+                  <td className="px-3 py-2">
+                    <input type="number" value={(p as Record<string, unknown>).extratosFranquia as number ?? 2} onChange={e => editarPlano(i, 'extratosFranquia' as keyof PlanoConfig, e.target.value)}
+                      className="w-14 px-2 py-1 bg-[#0F172A] border border-[#334155] rounded text-[#E2E8F0] text-[11px] outline-none focus:border-[#3B82F6]" />
+                  </td>
+                  <td className="px-3 py-2">
+                    <input type="number" step="0.01" value={(p as Record<string, unknown>).extratoValor as number || 0} onChange={e => editarPlano(i, 'extratoValor' as keyof PlanoConfig, e.target.value)}
+                      className="w-16 px-2 py-1 bg-[#0F172A] border border-[#334155] rounded text-[#E2E8F0] text-[11px] outline-none focus:border-[#3B82F6]" />
                   </td>
                 </tr>
               ))}
