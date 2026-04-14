@@ -76,12 +76,14 @@ async function resolverToken(req: NextRequest): Promise<string> {
 }
 
 // Procedimentos Feegow → tipo de exame LEO
+// IDs confirmados via /procedures/list em 14/04/2026
 const PROC_MAP: Record<number, string> = {
-  6: 'eco_tt',              // ECOCARDIOGRAMA TRANSTORÁCICO
-  9: 'eco_tt',              // Eco TT (ID alternativo)
-  285: 'doppler_carotidas', // US ECODOPPLER DE CARÓTIDAS
-  8: 'doppler_carotidas',   // Doppler Carótidas (ID alternativo)
+  6: 'eco_tt',              // Ecocardiograma Transtorácico
+  67: 'doppler_carotidas',  // Doppler colorido de vasos cervicais (carótidas e vertebrais)
+  285: 'doppler_carotidas', // US Ecodoppler de carótidas (código alternativo)
 };
+// IDs que NÃO são exames do LEO (ignorar na importação):
+// 5=ECG, 8=MAPA 24h, 9=Holter 24h, 224=Consulta Cardio, 225=Consulta Infecto, 253=Cirurgia
 
 async function feegowFetch(endpoint: string, token: string) {
   const controller = new AbortController();
@@ -218,8 +220,62 @@ export async function GET(req: NextRequest) {
         });
       }
 
+      // Listar procedimentos do Feegow (para mapeamento no LocalModal)
+      case 'procedimentos': {
+        const procRes = await feegowFetch('/procedures/list', token);
+        const todos = procRes?.content || [];
+        // Filtrar só exames relevantes (contêm "Exame -" ou "Eco" ou "Doppler" no nome)
+        const filtrados = todos
+          .filter((p: Record<string, unknown>) => {
+            const nome = ((p.nome as string) || '').toLowerCase();
+            return nome.includes('exame -') || nome.includes('eco') || nome.includes('doppler');
+          })
+          .map((p: Record<string, unknown>) => ({
+            procedimento_id: p.procedimento_id,
+            nome: p.nome,
+          }));
+        return NextResponse.json({ ok: true, total: filtrados.length, procedimentos: filtrados });
+      }
+
+      // DEBUG: ver dados brutos do Feegow para diagnosticar mapeamento de procedimentos
+      case 'debug_sala': {
+        const hoje2 = dataLocalHoje();
+        const raw = await feegowFetch(`/appoints/search?data_start=${hoje2}&data_end=${hoje2}&status_id=4`, token);
+        const ags = raw?.content || [];
+        // Retornar só os campos relevantes de cada agendamento
+        const debug = ags.map((ag: Record<string, unknown>) => ({
+          agendamento_id: ag.agendamento_id,
+          paciente_id: ag.paciente_id,
+          procedimento_id: ag.procedimento_id,
+          procedimentos: ag.procedimentos,
+          compromisso: ag.compromisso,
+          compromisso_id: ag.compromisso_id,
+          tipo_compromisso: ag.tipo_compromisso,
+          horario: ag.horario,
+          // Mostrar TODAS as chaves do objeto para descobrir o campo correto
+          _todas_chaves: Object.keys(ag),
+        }));
+        return NextResponse.json({ ok: true, total: ags.length, agendamentos: debug });
+      }
+
       case 'importar': {
         const hoje = dataLocalHoje();
+
+        // Resolver mapa de procedimentos: workspace (configurável) ou fallback hardcoded
+        let procMap: Record<number, string> = PROC_MAP;
+        const wsId = req.nextUrl.searchParams.get('wsId');
+        if (wsId) {
+          const wsDoc = await dbAdmin.doc(`workspaces/${wsId}`).get();
+          const wsProcMap = wsDoc.data()?.feegowProcMap as Record<string, string> | undefined;
+          if (wsProcMap && Object.keys(wsProcMap).length > 0) {
+            // Converter chaves string→number (Firestore salva chaves de objeto como string)
+            procMap = {};
+            for (const [k, v] of Object.entries(wsProcMap)) {
+              procMap[Number(k)] = v;
+            }
+          }
+        }
+
         const salaRes = await feegowFetch(`/appoints/search?data_start=${hoje}&data_end=${hoje}&status_id=4`, token);
         const agendamentos = salaRes?.content || [];
 
@@ -231,6 +287,9 @@ export async function GET(req: NextRequest) {
 
         const pacientes = [];
         for (const ag of agendamentos) {
+          // Pular procedimentos que não são exames do LEO
+          if (!procMap[ag.procedimento_id]) continue;
+
           try {
             const pacRes = await feegowFetch(`/patient/search?paciente_id=${ag.paciente_id}`, token);
             const pac = pacRes?.content;
@@ -250,7 +309,7 @@ export async function GET(req: NextRequest) {
                 telefone: pac.telefones?.[0] || '',
                 convenio: convMap[ag.convenio_id] || '',
                 convenioId: ag.convenio_id,
-                tipoExame: PROC_MAP[ag.procedimento_id] || 'eco_tt',
+                tipoExame: procMap[ag.procedimento_id],
                 procedimentoId: ag.procedimento_id,
                 horarioChegada: ag.horario ? ag.horario.slice(0, 5) : '',
                 dataExame: hoje,

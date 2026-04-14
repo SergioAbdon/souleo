@@ -45,6 +45,9 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
   const [logoB64, setLogoB64] = useState('');
   const [feegowToken, setFeegowToken] = useState('');
   const [feegowStatus, setFeegowStatus] = useState<'none' | 'testing' | 'ok' | 'error'>('none');
+  const [feegowProcs, setFeegowProcs] = useState<Array<{ procedimento_id: number; nome: string }>>([]);
+  const [feegowProcMap, setFeegowProcMap] = useState<Record<number, string>>({});
+  const [procsLoading, setProcsLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
 
@@ -67,8 +70,53 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
       setLogoB64(workspace.logoB64 as string || '');
       setFeegowToken(workspace.feegowToken as string || '');
       setFeegowStatus(workspace.feegowToken ? 'ok' : 'none');
+      const savedMap = workspace.feegowProcMap as Record<string, string> | undefined;
+      if (savedMap && Object.keys(savedMap).length > 0) {
+        const parsed: Record<number, string> = {};
+        for (const [k, v] of Object.entries(savedMap)) parsed[Number(k)] = v;
+        setFeegowProcMap(parsed);
+      } else {
+        setFeegowProcMap({});
+      }
+      setFeegowProcs([]);
     }
   }, [workspace, open]);
+
+  function detectarTipo(nome: string): string {
+    const n = nome.toLowerCase();
+    if (n.includes('transesof')) return 'eco_te';
+    if (n.includes('estresse') || n.includes('stress')) return 'eco_stress';
+    if (n.includes('car\u00f3tida') || n.includes('carotida') || n.includes('cervicais')) return 'doppler_carotidas';
+    if (n.includes('transtor') || n.includes('trastor')) return 'eco_tt';
+    if (n.includes('ecocardiograma') && !n.includes('sincronismo') && !n.includes('marcapasso')) return 'eco_tt';
+    return 'ignorar';
+  }
+
+  async function carregarProcedimentos() {
+    if (!feegowToken.trim()) return;
+    setProcsLoading(true);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/feegow?action=procedimentos', {
+        headers: { 'Authorization': `Bearer ${idToken || ''}`, 'X-Feegow-Token': feegowToken.trim() },
+      });
+      const data = await res.json();
+      if (data.ok && data.procedimentos?.length) {
+        setFeegowProcs(data.procedimentos);
+        // Só aplicar smart defaults se não tem mapa salvo
+        if (Object.keys(feegowProcMap).length === 0) {
+          const defaults: Record<number, string> = {};
+          for (const p of data.procedimentos) {
+            defaults[p.procedimento_id] = detectarTipo(p.nome);
+          }
+          setFeegowProcMap(defaults);
+        }
+      }
+    } catch {
+      setErro('Erro ao carregar procedimentos do Feegow.');
+    }
+    setProcsLoading(false);
+  }
 
   async function handleSalvar() {
     setErro('');
@@ -86,6 +134,9 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
       corPrimaria: p1, corSecundaria: p2,
       logoB64,
       feegowToken: feegowToken.trim() || null,
+      feegowProcMap: Object.fromEntries(
+        Object.entries(feegowProcMap).filter(([, v]) => v !== 'ignorar')
+      ),
     });
 
     if (ok) {
@@ -242,6 +293,54 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
               {feegowStatus === 'none' && !feegowToken && <span className="text-gray-400">Sem integracao configurada</span>}
               {feegowStatus === 'none' && feegowToken && <span className="text-gray-400">Token salvo — clique em testar pra verificar</span>}
             </div>
+
+            {/* Mapeamento de procedimentos */}
+            {feegowStatus === 'ok' && (
+              <div className="mt-3 pt-3 border-t border-gray-200">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-semibold text-gray-500 uppercase">Procedimentos</label>
+                  <button onClick={carregarProcedimentos} disabled={procsLoading}
+                    className="px-3 py-1 text-xs font-semibold rounded-lg border border-purple-500 text-purple-600 hover:bg-purple-50 transition disabled:opacity-50">
+                    {procsLoading ? 'Carregando...' : feegowProcs.length > 0 ? 'Recarregar' : 'Carregar procedimentos'}
+                  </button>
+                </div>
+
+                {feegowProcs.length > 0 && (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {feegowProcs.map(p => (
+                      <div key={p.procedimento_id} className="flex items-center gap-2 text-xs">
+                        <span className="flex-1 text-gray-600 truncate" title={p.nome}>
+                          {p.nome.replace('Exame - ', '')}
+                        </span>
+                        <select
+                          value={feegowProcMap[p.procedimento_id] || 'ignorar'}
+                          onChange={e => setFeegowProcMap(prev => ({ ...prev, [p.procedimento_id]: e.target.value }))}
+                          className={`w-32 border rounded px-2 py-1 text-xs focus:outline-none focus:border-[#1E3A5F] ${
+                            (feegowProcMap[p.procedimento_id] || 'ignorar') === 'ignorar'
+                              ? 'text-gray-400 bg-gray-50'
+                              : 'text-[#1E3A5F] bg-blue-50 font-semibold'
+                          }`}>
+                          <option value="ignorar">Ignorar</option>
+                          <option value="eco_tt">Eco TT</option>
+                          <option value="doppler_carotidas">Carotidas</option>
+                          <option value="eco_te">Eco TE</option>
+                          <option value="eco_stress">Eco Stress</option>
+                        </select>
+                      </div>
+                    ))}
+                    <p className="text-[10px] text-gray-400 mt-2 pt-2 border-t">
+                      Selecione o tipo de exame LEO para cada procedimento. &quot;Ignorar&quot; = nao importar para a worklist.
+                    </p>
+                  </div>
+                )}
+
+                {feegowProcs.length === 0 && Object.keys(feegowProcMap).length > 0 && (
+                  <p className="text-xs text-green-600">
+                    {Object.keys(feegowProcMap).length} procedimento(s) mapeado(s). Clique em &quot;Carregar&quot; para editar.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Paleta de cores */}
