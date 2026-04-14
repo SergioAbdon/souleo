@@ -61,24 +61,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const prof = await getProfile(fbUser.uid);
         setProfile(prof as Profile | null);
 
-        // Carregar contextos (workspaces)
+        // v3: Carregar contextos (workspaces) em PARALELO
         if (prof) {
           const memberships = await getMemberships(fbUser.uid);
-          const ctxs: Contexto[] = [];
-          for (const mem of memberships) {
-            const wsId = (mem as Membership).workspaceId;
-            if (wsId) {
-              const ws = await getWorkspace(wsId as string);
-              const sub = await getSubscription(wsId as string);
-              if (ws) {
-                ctxs.push({
+          const ctxResults = await Promise.all(
+            memberships
+              .filter(mem => (mem as Membership).workspaceId)
+              .map(async (mem) => {
+                const wsId = (mem as Membership).workspaceId as string;
+                const [ws, sub] = await Promise.all([
+                  getWorkspace(wsId),
+                  getSubscription(wsId),
+                ]);
+                if (!ws) return null;
+                return {
                   membership: mem as Membership,
                   workspace: ws as Workspace,
-                  subscription: sub as Subscription | null
-                });
-              }
-            }
-          }
+                  subscription: sub as Subscription | null,
+                };
+              })
+          );
+          const ctxs = ctxResults.filter((c): c is Contexto => c !== null);
           setContextos(ctxs);
 
           // Auto-selecionar se só tem 1 contexto

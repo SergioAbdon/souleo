@@ -67,8 +67,8 @@ export default function Extrato() {
     if (!wsIdSel || !dateFrom || !dateTo) return;
     setLoading(true);
     setGerado(false);
-    const items = await getHistorico(wsIdSel, { dateFrom, dateTo });
-    setExames(items as ExameItem[]);
+    const result = await getHistorico(wsIdSel, { dateFrom, dateTo, limitN: 500 });
+    setExames(result.items as ExameItem[]);
     setLoading(false);
     setGerado(true);
   }

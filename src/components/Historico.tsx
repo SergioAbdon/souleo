@@ -7,10 +7,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getHistorico, saveExame, logAction, getExame } from '@/lib/firestore';
+import { getHistorico, saveExame, logAction, getExame, type HistoricoResult } from '@/lib/firestore';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
 import { db } from '@/lib/firebase';
-import { doc, deleteDoc } from 'firebase/firestore';
+import { doc, deleteDoc, DocumentSnapshot } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 
 type ExameItem = Record<string, unknown> & {
@@ -37,6 +37,9 @@ export default function Historico() {
   const [busca, setBusca] = useState('');
   const [exames, setExames] = useState<ExameItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [cursor, setCursor] = useState<DocumentSnapshot | null>(null);
+  const [hasMore, setHasMore] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteNome, setDeleteNome] = useState('');
 
@@ -45,19 +48,37 @@ export default function Historico() {
     if (workspace?.id && !wsIdSel) setWsIdSel(workspace.id);
   }, [workspace?.id, wsIdSel]);
 
-  // Buscar dados
+  // v3: Buscar dados com paginacao
   const fetchData = useCallback(async () => {
     if (!wsIdSel) return;
     setLoading(true);
-    const filtros: Record<string, unknown> = {};
+    setCursor(null);
+    const filtros: Record<string, unknown> = { limitN: 50 };
     if (dateFrom) filtros.dateFrom = dateFrom;
     if (dateTo) filtros.dateTo = dateTo;
     if (convenioSel) filtros.convenio = convenioSel;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const items = await getHistorico(wsIdSel, filtros as any);
-    setExames(items as ExameItem[]);
+    const result: HistoricoResult = await getHistorico(wsIdSel, filtros as any);
+    setExames(result.items as ExameItem[]);
+    setCursor(result.lastDoc as DocumentSnapshot | null);
+    setHasMore(result.hasMore);
     setLoading(false);
   }, [wsIdSel, dateFrom, dateTo, convenioSel]);
+
+  async function carregarMais() {
+    if (!wsIdSel || !cursor || loadingMore) return;
+    setLoadingMore(true);
+    const filtros: Record<string, unknown> = { limitN: 50, cursor };
+    if (dateFrom) filtros.dateFrom = dateFrom;
+    if (dateTo) filtros.dateTo = dateTo;
+    if (convenioSel) filtros.convenio = convenioSel;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result: HistoricoResult = await getHistorico(wsIdSel, filtros as any);
+    setExames(prev => [...prev, ...(result.items as ExameItem[])]);
+    setCursor(result.lastDoc as DocumentSnapshot | null);
+    setHasMore(result.hasMore);
+    setLoadingMore(false);
+  }
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -222,6 +243,12 @@ export default function Historico() {
           </table>
           <div className="text-center text-xs text-gray-400 py-2">
             {filtrados.length} laudo{filtrados.length !== 1 ? 's' : ''} encontrado{filtrados.length !== 1 ? 's' : ''}
+            {hasMore && (
+              <button onClick={carregarMais} disabled={loadingMore}
+                className="ml-3 px-4 py-1 bg-[#1E3A5F] text-white text-xs rounded-lg hover:bg-[#2563EB] transition disabled:opacity-50">
+                {loadingMore ? 'Carregando...' : 'Carregar mais'}
+              </button>
+            )}
           </div>
         </div>
       )}

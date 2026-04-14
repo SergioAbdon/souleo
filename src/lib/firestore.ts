@@ -9,7 +9,7 @@ import { dataLocalHoje } from './utils';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc,
   query, where, orderBy, limit, onSnapshot, serverTimestamp,
-  increment, Unsubscribe
+  increment, startAfter, Unsubscribe, DocumentSnapshot
 } from 'firebase/firestore';
 
 // ── Helpers ──
@@ -339,10 +339,18 @@ export type FiltrosHistorico = {
   dateTo?: string;
   convenio?: string;
   limitN?: number;
+  cursor?: DocumentSnapshot | null; // v3: cursor pra paginacao
 };
 
-export async function getHistorico(wsId: string, filtros?: FiltrosHistorico) {
+export type HistoricoResult = {
+  items: Record<string, unknown>[];
+  lastDoc: unknown; // DocumentSnapshot — ultimo doc pra proxima pagina
+  hasMore: boolean;
+};
+
+export async function getHistorico(wsId: string, filtros?: FiltrosHistorico): Promise<HistoricoResult> {
   try {
+    const pageSize = filtros?.limitN || 50;
     const constraints = [
       collection(db, 'workspaces', wsId, 'exames'),
       where('status', '==', 'emitido'),
@@ -361,12 +369,26 @@ export async function getHistorico(wsId: string, filtros?: FiltrosHistorico) {
     }
 
     constraints.push(orderBy(hasDateRange ? 'dataExame' : 'emitidoEm', 'desc'));
-    constraints.push(limit(filtros?.limitN || 200));
+
+    // v3: cursor-based pagination
+    if (filtros?.cursor) {
+      constraints.push(startAfter(filtros.cursor));
+    }
+
+    constraints.push(limit(pageSize + 1)); // +1 pra saber se tem mais
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const snap = await getDocs(query(...constraints as [any, ...any[]]));
-    return snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
-  } catch (e) { console.error('getHistorico:', e); return []; }
+    const hasMore = snap.docs.length > pageSize;
+    const docs = hasMore ? snap.docs.slice(0, pageSize) : snap.docs;
+    const lastDoc = docs.length > 0 ? docs[docs.length - 1] : null;
+
+    return {
+      items: docs.map(d => Object.assign({ id: d.id }, d.data())),
+      lastDoc,
+      hasMore,
+    };
+  } catch (e) { console.error('getHistorico:', e); return { items: [], lastDoc: null, hasMore: false }; }
 }
 
 // ══ HONORÁRIOS (valores por convênio por workspace) ═════════════
