@@ -10,10 +10,19 @@ import { useAuth } from '@/contexts/AuthContext';
 import { savePaciente, saveExame, listenWorklist, getExame } from '@/lib/firestore';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
 import { dataLocalHoje } from '@/lib/utils';
-import { db } from '@/lib/firebase';
+import { db, auth } from '@/lib/firebase';
 import { doc, deleteDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { checkEmissao } from '@/lib/billing';
+
+// v3: helper pra enviar token Firebase nas chamadas Feegow
+async function feegowAuthFetch(url: string, options?: RequestInit) {
+  const token = await auth.currentUser?.getIdToken();
+  return fetch(url, {
+    ...options,
+    headers: { ...options?.headers, 'Authorization': `Bearer ${token || ''}` },
+  });
+}
 
 type ExameItem = Record<string, unknown> & {
   id: string; pacienteId?: string; pacienteNome?: string; pacienteDtnasc?: string;
@@ -101,7 +110,7 @@ export default function Worklist() {
     if (cpfLimpo.length < 11) return;
     setCpfBuscando(true);
     try {
-      const res = await fetch(`/api/feegow?action=buscar_cpf&cpf=${cpfLimpo}`);
+      const res = await feegowAuthFetch(`/api/feegow?action=buscar_cpf&cpf=${cpfLimpo}&wsId=${workspace?.id || ''}`);
       const data = await res.json();
       if (data.ok && data.encontrado && data.paciente) {
         const p = data.paciente;
@@ -194,7 +203,7 @@ export default function Worklist() {
     if (!workspace?.id || !profile?.id) return;
     setFeegowLoading(true);
     try {
-      const res = await fetch('/api/feegow?action=importar');
+      const res = await feegowAuthFetch(`/api/feegow?action=importar&wsId=${workspace?.id || ''}`);
       const data = await res.json();
       if (!data.ok || !data.pacientes?.length) {
         alert(data.pacientes?.length === 0 ? 'Nenhum paciente aguardando no Feegow.' : (data.error || 'Erro ao buscar Feegow'));

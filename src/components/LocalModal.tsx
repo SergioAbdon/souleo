@@ -8,6 +8,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { updateWorkspace } from '@/lib/firestore';
+import { auth } from '@/lib/firebase';
 
 const PALETAS = [
   { name: 'Azul LEO', p1: '#1E3A5F', p2: '#2563EB' },
@@ -42,6 +43,8 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
   const [p1, setP1] = useState('#1E3A5F');
   const [p2, setP2] = useState('#2563EB');
   const [logoB64, setLogoB64] = useState('');
+  const [feegowToken, setFeegowToken] = useState('');
+  const [feegowStatus, setFeegowStatus] = useState<'none' | 'testing' | 'ok' | 'error'>('none');
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
 
@@ -62,6 +65,8 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
       setP1(workspace.corPrimaria as string || '#1E3A5F');
       setP2(workspace.corSecundaria as string || '#2563EB');
       setLogoB64(workspace.logoB64 as string || '');
+      setFeegowToken(workspace.feegowToken as string || '');
+      setFeegowStatus(workspace.feegowToken ? 'ok' : 'none');
     }
   }, [workspace, open]);
 
@@ -79,7 +84,8 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
       endereco: endCompleto,
       telefone: tel, telefone2: tel2,
       corPrimaria: p1, corSecundaria: p2,
-      logoB64
+      logoB64,
+      feegowToken: feegowToken.trim() || null,
     });
 
     if (ok) {
@@ -200,6 +206,42 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
             {logoB64 && (
               <button onClick={() => setLogoB64('')} className="text-xs text-red-500 mt-1 hover:underline">Remover logo</button>
             )}
+          </div>
+
+          {/* Integracao Feegow */}
+          <div className="border rounded-lg p-3 bg-gray-50">
+            <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Integracao Feegow</label>
+            <div className="flex gap-2 items-end">
+              <div className="flex-1">
+                <input type="text" value={feegowToken} onChange={e => { setFeegowToken(e.target.value); setFeegowStatus('none'); }}
+                  placeholder="Cole seu token da API Feegow aqui"
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] font-mono text-xs" />
+              </div>
+              <button
+                onClick={async () => {
+                  if (!feegowToken.trim()) { setErro('Cole o token Feegow primeiro.'); return; }
+                  setFeegowStatus('testing');
+                  try {
+                    const idToken = await auth.currentUser?.getIdToken();
+                    const res = await fetch('/api/feegow?action=teste', {
+                      headers: { 'Authorization': `Bearer ${idToken || ''}`, 'X-Feegow-Token': feegowToken.trim() },
+                    });
+                    const data = await res.json();
+                    setFeegowStatus(data.ok ? 'ok' : 'error');
+                    if (!data.ok) setErro('Token Feegow invalido ou sem permissao.');
+                  } catch { setFeegowStatus('error'); setErro('Erro ao testar conexao Feegow.'); }
+                }}
+                disabled={feegowStatus === 'testing'}
+                className="px-3 py-2 text-xs font-semibold rounded-lg border border-[#1E3A5F] text-[#1E3A5F] hover:bg-[#1E3A5F] hover:text-white transition disabled:opacity-50">
+                {feegowStatus === 'testing' ? 'Testando...' : 'Testar conexao'}
+              </button>
+            </div>
+            <div className="mt-2 text-xs">
+              {feegowStatus === 'ok' && <span className="text-green-600 font-semibold">Conectado ao Feegow</span>}
+              {feegowStatus === 'error' && <span className="text-red-600 font-semibold">Falha na conexao</span>}
+              {feegowStatus === 'none' && !feegowToken && <span className="text-gray-400">Sem integracao configurada</span>}
+              {feegowStatus === 'none' && feegowToken && <span className="text-gray-400">Token salvo — clique em testar pra verificar</span>}
+            </div>
           </div>
 
           {/* Paleta de cores */}

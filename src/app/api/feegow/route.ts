@@ -1,12 +1,79 @@
 // ══════════════════════════════════════════════════════════════════
-// SOULEO · API Route — Feegow proxy seguro
+// SOULEO v3 · API Route — Feegow proxy seguro
 // Token fica no servidor (env), nunca exposto ao browser
+// v3: + rate limit + timeout + auth via Firebase token
 // ══════════════════════════════════════════════════════════════════
 
 import { NextRequest, NextResponse } from 'next/server';
+import { initializeApp, getApps, cert } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore } from 'firebase-admin/firestore';
+
+// ── Firebase Admin (pra verificar auth token) ──
+if (!getApps().length) {
+  initializeApp({
+    credential: cert({
+      projectId: 'leo-sistema-laudos',
+      clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL!,
+      privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    }),
+  });
+}
+const fbAuth = getAuth();
+const dbAdmin = getFirestore();
 
 const FEEGOW_BASE = 'https://api.feegow.com/v1/api';
-const TOKEN = process.env.FEEGOW_API_TOKEN || '';
+const FALLBACK_TOKEN = process.env.FEEGOW_API_TOKEN || ''; // fallback pra migracao
+const TIMEOUT_MS = 10000; // 10 segundos timeout por request Feegow
+
+// ── Rate Limiter (em memoria, por IP) ──
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_MAX = 30;      // max 30 requests
+const RATE_LIMIT_WINDOW = 60000; // por minuto
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW });
+    return true;
+  }
+  if (entry.count >= RATE_LIMIT_MAX) return false;
+  entry.count++;
+  return true;
+}
+
+// ── Auth: verificar token Firebase do usuario ──
+async function verificarAuth(req: NextRequest): Promise<string | null> {
+  const authHeader = req.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) return null;
+  const token = authHeader.slice(7);
+  try {
+    const decoded = await fbAuth.verifyIdToken(token);
+    return decoded.uid;
+  } catch {
+    return null;
+  }
+}
+
+// ── Resolver token Feegow (por workspace ou fallback) ──
+async function resolverToken(req: NextRequest): Promise<string> {
+  // 1. Header X-Feegow-Token (usado no teste de conexao do LocalModal)
+  const headerToken = req.headers.get('x-feegow-token');
+  if (headerToken) return headerToken;
+
+  // 2. Buscar do workspace via query param wsId
+  const wsId = req.nextUrl.searchParams.get('wsId');
+  if (wsId) {
+    const wsDoc = await dbAdmin.doc(`workspaces/${wsId}`).get();
+    if (wsDoc.exists && wsDoc.data()?.feegowToken) {
+      return wsDoc.data()!.feegowToken as string;
+    }
+  }
+
+  // 3. Fallback: token do .env (migracao, vai ser removido depois)
+  return FALLBACK_TOKEN;
+}
 
 // Procedimentos Feegow → tipo de exame LEO
 const PROC_MAP: Record<number, string> = {
@@ -16,12 +83,19 @@ const PROC_MAP: Record<number, string> = {
   8: 'doppler_carotidas',   // Doppler Carótidas (ID alternativo)
 };
 
-async function feegowFetch(endpoint: string) {
-  const res = await fetch(`${FEEGOW_BASE}${endpoint}`, {
-    headers: { 'x-access-token': TOKEN, 'Content-Type': 'application/json' },
-  });
-  if (!res.ok) throw new Error(`Feegow ${res.status}: ${res.statusText}`);
-  return res.json();
+async function feegowFetch(endpoint: string, token: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(`${FEEGOW_BASE}${endpoint}`, {
+      headers: { 'x-access-token': token, 'Content-Type': 'application/json' },
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`Feegow ${res.status}: ${res.statusText}`);
+    return res.json();
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function dataLocalHoje(): string {
@@ -29,11 +103,32 @@ function dataLocalHoje(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// ── Middleware: auth + rate limit ──
+async function proteger(req: NextRequest): Promise<NextResponse | null> {
+  // Rate limit por IP
+  const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown';
+  if (!checkRateLimit(ip)) {
+    return NextResponse.json({ ok: false, error: 'Rate limit excedido. Tente novamente em 1 minuto.' }, { status: 429 });
+  }
+
+  // Auth: verificar token Firebase
+  const uid = await verificarAuth(req);
+  if (!uid) {
+    return NextResponse.json({ ok: false, error: 'Nao autorizado. Token Firebase invalido ou ausente.' }, { status: 401 });
+  }
+
+  return null; // passou
+}
+
 // POST /api/feegow — atualizar status no Feegow
 export async function POST(req: NextRequest) {
-  if (!TOKEN) {
-    return NextResponse.json({ error: 'FEEGOW_API_TOKEN não configurado' }, { status: 500 });
-  }
+  // v3: protecao
+  const blocked = await proteger(req);
+  if (blocked) return blocked;
+
+  // v3: resolver token do workspace
+  const token = await resolverToken(req);
+  if (!token) return NextResponse.json({ error: 'Token Feegow nao configurado. Va em Local de Trabalho > Integracao Feegow.' }, { status: 400 });
 
   try {
     const body = await req.json();
@@ -41,63 +136,68 @@ export async function POST(req: NextRequest) {
     if (body.action === 'atualizar_status') {
       const { agendamento_id, status_id } = body;
       if (!agendamento_id || !status_id) {
-        return NextResponse.json({ error: 'agendamento_id e status_id obrigatórios' }, { status: 400 });
+        return NextResponse.json({ error: 'agendamento_id e status_id obrigatorios' }, { status: 400 });
       }
 
       const res = await fetch(`${FEEGOW_BASE}/appoints/statusUpdate`, {
         method: 'POST',
-        headers: { 'x-access-token': TOKEN, 'Content-Type': 'application/json' },
+        headers: { 'x-access-token': token, 'Content-Type': 'application/json' },
         body: JSON.stringify({ AgendamentoID: agendamento_id, StatusID: status_id }),
       });
       const data = await res.json();
       return NextResponse.json({ ok: true, data });
     }
 
-    return NextResponse.json({ error: 'action inválida' }, { status: 400 });
+    return NextResponse.json({ error: 'action invalida' }, { status: 400 });
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Erro desconhecido';
+    if (msg.includes('aborted')) return NextResponse.json({ ok: false, error: 'Timeout na comunicacao com Feegow' }, { status: 504 });
     return NextResponse.json({ ok: false, error: msg }, { status: 502 });
   }
 }
 
 export async function GET(req: NextRequest) {
-  if (!TOKEN) {
-    return NextResponse.json({ error: 'FEEGOW_API_TOKEN não configurado' }, { status: 500 });
-  }
+  // v3: protecao
+  const blocked = await proteger(req);
+  if (blocked) return blocked;
+
+  // v3: resolver token do workspace
+  const token = await resolverToken(req);
+  if (!token) return NextResponse.json({ error: 'Token Feegow nao configurado. Va em Local de Trabalho > Integracao Feegow.' }, { status: 400 });
 
   const action = req.nextUrl.searchParams.get('action');
 
   try {
     switch (action) {
       case 'teste': {
-        const data = await feegowFetch('/professional/list');
-        return NextResponse.json({ ok: true, message: 'Conexão Feegow OK!', data });
+        const data = await feegowFetch('/professional/list', token);
+        return NextResponse.json({ ok: true, message: 'Conexao Feegow OK!', data });
       }
 
       case 'sala_espera': {
         const hoje = dataLocalHoje();
-        const data = await feegowFetch(`/appoints/search?data_start=${hoje}&data_end=${hoje}&status_id=4`);
+        const data = await feegowFetch(`/appoints/search?data_start=${hoje}&data_end=${hoje}&status_id=4`, token);
         return NextResponse.json({ ok: true, data });
       }
 
       case 'paciente': {
         const id = req.nextUrl.searchParams.get('id');
-        if (!id) return NextResponse.json({ error: 'id obrigatório' }, { status: 400 });
-        const data = await feegowFetch(`/patient/search?paciente_id=${id}`);
+        if (!id) return NextResponse.json({ error: 'id obrigatorio' }, { status: 400 });
+        const data = await feegowFetch(`/patient/search?paciente_id=${id}`, token);
         return NextResponse.json({ ok: true, data });
       }
 
       case 'convenios': {
-        const data = await feegowFetch('/insurance/list');
+        const data = await feegowFetch('/insurance/list', token);
         return NextResponse.json({ ok: true, data });
       }
 
       case 'buscar_cpf': {
         const cpf = req.nextUrl.searchParams.get('cpf');
-        if (!cpf) return NextResponse.json({ error: 'cpf obrigatório' }, { status: 400 });
+        if (!cpf) return NextResponse.json({ error: 'cpf obrigatorio' }, { status: 400 });
         const cpfLimpo = cpf.replace(/\D/g, '');
-        if (cpfLimpo.length < 11) return NextResponse.json({ error: 'CPF inválido' }, { status: 400 });
-        const data = await feegowFetch(`/patient/search?paciente_cpf=${cpfLimpo}`);
+        if (cpfLimpo.length < 11) return NextResponse.json({ error: 'CPF invalido' }, { status: 400 });
+        const data = await feegowFetch(`/patient/search?paciente_cpf=${cpfLimpo}`, token);
         const pac = data?.content;
         if (!pac) return NextResponse.json({ ok: true, encontrado: false });
         let dtnasc = '';
@@ -106,8 +206,7 @@ export async function GET(req: NextRequest) {
           if (p.length === 3) dtnasc = `${p[2]}-${p[1]}-${p[0]}`;
         }
         return NextResponse.json({
-          ok: true,
-          encontrado: true,
+          ok: true, encontrado: true,
           paciente: {
             nome: (pac.nome || '').toUpperCase(),
             dtnasc,
@@ -120,32 +219,27 @@ export async function GET(req: NextRequest) {
       }
 
       case 'importar': {
-        // Busca sala de espera + dados completos de cada paciente
         const hoje = dataLocalHoje();
-        const salaRes = await feegowFetch(`/appoints/search?data_start=${hoje}&data_end=${hoje}&status_id=4`);
+        const salaRes = await feegowFetch(`/appoints/search?data_start=${hoje}&data_end=${hoje}&status_id=4`, token);
         const agendamentos = salaRes?.content || [];
 
-        // Buscar convênios para resolver nomes
-        const convRes = await feegowFetch('/insurance/list');
+        const convRes = await feegowFetch('/insurance/list', token);
         const convMap: Record<number, string> = {};
         for (const c of convRes?.content || []) {
           convMap[c.convenio_id] = c.nome;
         }
 
-        // Buscar dados de cada paciente
         const pacientes = [];
         for (const ag of agendamentos) {
           try {
-            const pacRes = await feegowFetch(`/patient/search?paciente_id=${ag.paciente_id}`);
+            const pacRes = await feegowFetch(`/patient/search?paciente_id=${ag.paciente_id}`, token);
             const pac = pacRes?.content;
             if (pac) {
-              // Converter nascimento DD-MM-YYYY → YYYY-MM-DD
               let dtnasc = '';
               if (pac.nascimento) {
                 const p = pac.nascimento.split('-');
                 if (p.length === 3) dtnasc = `${p[2]}-${p[1]}-${p[0]}`;
               }
-
               pacientes.push({
                 feegowAppointId: ag.agendamento_id,
                 feegowPacienteId: ag.paciente_id,
@@ -170,10 +264,11 @@ export async function GET(req: NextRequest) {
       }
 
       default:
-        return NextResponse.json({ error: 'action inválida. Use: teste, sala_espera, paciente, buscar_cpf, convenios, importar' }, { status: 400 });
+        return NextResponse.json({ error: 'action invalida. Use: teste, sala_espera, paciente, buscar_cpf, convenios, importar' }, { status: 400 });
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Erro desconhecido';
+    if (msg.includes('aborted')) return NextResponse.json({ ok: false, error: 'Timeout na comunicacao com Feegow' }, { status: 504 });
     return NextResponse.json({ ok: false, error: msg }, { status: 502 });
   }
 }

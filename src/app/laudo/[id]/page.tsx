@@ -9,11 +9,11 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { getExame, saveExame, emitExame, logAction } from '@/lib/firestore';
-import { db } from '@/lib/firebase';
+import { getExame, saveExame } from '@/lib/firestore';
+import { db, auth } from '@/lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { dataLocalHoje } from '@/lib/utils';
-import { checkEmissao, consumirEmissao, registrarConsumo } from '@/lib/billing';
+// v3: billing agora e server-side via /api/emitir
 import { gerarESalvarPdf } from '@/lib/pdfUtils';
 import SidebarLaudo from '@/components/laudo/SidebarLaudo';
 import SheetA4 from '@/components/laudo/SheetA4';
@@ -321,39 +321,58 @@ export default function LaudoPage() {
     const achados = coletarAchados();
     const conclusoes = coletarConclusoes();
 
-    const ok = await emitExame(workspace.id, exameId, {
+    // v3: Emissao atomica server-side (exame + billing numa transacao)
+    const jaEmitido = !!(exame?.emitidoEm);
+    const idMudou = jaEmitido && identificacaoMudou();
+    const identificacao = coletarIdentificacao();
+
+    const dadosFinais = {
       medidas, achados, conclusoes,
-      ...coletarIdentificacao(),
+      ...identificacao,
       cfgSnapshot: { clinica: clinicaNome, slogan: clinicaSlogan, localEnd: clinicaEnd, localTel: clinicaTel, medNome: profile?.nome, medCrm: profile?.crm, medUf: profile?.ufCrm, p1 },
-    }, user.uid);
+      // Dados extras pra consumo/log (server usa)
+      pacienteNome: (exame?.pacienteNome as string) || identificacao.pacienteNome || '',
+      tipoExame: (exame?.tipoExame as string) || '',
+      convenio: (exame?.convenio as string) || '',
+      reemissao: jaEmitido,
+      identificacaoAlterada: idMudou,
+    };
 
-    if (ok) {
-      // Billing: cobrar SEMPRE (1ª emissão ou reemissão)
-      const jaEmitido = !!(exame?.emitidoEm);
-      const idMudou = jaEmitido && identificacaoMudou();
+    let resultado: { ok: boolean; tipo?: string; motivo?: string };
+    try {
+      const res = await fetch('/api/emitir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wsId: workspace.id, exameId, dadosFinais, medicoUid: user.uid }),
+      });
+      resultado = await res.json();
+    } catch {
+      toast('Erro de conexao ao emitir. Tente novamente.');
+      return;
+    }
 
-      const check = await checkEmissao(workspace.id);
-      if (check.pode && check.tipo) {
-        await consumirEmissao(workspace.id, check.tipo);
-        await registrarConsumo(workspace.id, exameId, user.uid, {
-          pacienteNome: (exame?.pacienteNome as string) || coletarIdentificacao().pacienteNome || '',
-          tipoExame: (exame?.tipoExame as string) || '',
-          convenio: (exame?.convenio as string) || '',
-          tipo: check.tipo === 'franquia' ? 'franquia' : 'credito',
-          reemissao: jaEmitido,
-        });
-      }
+    if (!resultado.ok) {
+      const msgs: Record<string, string> = {
+        sem_plano: 'Sem plano ativo. Assine um plano para emitir laudos.',
+        expirado: 'Seu plano expirou. Renove para continuar emitindo.',
+        sem_saldo: 'Franquia esgotada e sem creditos extras.',
+        erro: 'Erro ao emitir. Tente novamente.',
+      };
+      toast(msgs[resultado.motivo || 'erro'] || 'Erro ao emitir.');
+      return;
+    }
 
-      await logAction('emissao', { exameId, wsId: workspace.id, reemissao: jaEmitido, identificacaoAlterada: idMudou }, user.uid);
+    if (resultado.ok) {
 
       try { localStorage.removeItem(`rascunho_${exameId}`); } catch { /* */ }
 
       // Atualizar status no Feegow se veio de lá
       if (exame?.feegowAppointId) {
         try {
-          await fetch('/api/feegow', {
+          const fToken = await auth.currentUser?.getIdToken();
+          await fetch(`/api/feegow?wsId=${workspace.id}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${fToken || ''}` },
             body: JSON.stringify({ action: 'atualizar_status', agendamento_id: exame.feegowAppointId, status_id: 3 }),
           });
         } catch { /* não bloquear emissão se Feegow falhar */ }
