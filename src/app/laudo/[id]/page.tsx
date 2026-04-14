@@ -238,6 +238,23 @@ export default function LaudoPage() {
   function preencherExame() {
     if (!exame) return;
 
+    // v3: limpar rascunhos orfaos (mais de 7 dias)
+    try {
+      const SETE_DIAS = 7 * 24 * 60 * 60 * 1000;
+      const agora = Date.now();
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith('rascunho_')) {
+          try {
+            const r = JSON.parse(localStorage.getItem(key) || '{}');
+            if (r.timestamp && agora - r.timestamp > SETE_DIAS) {
+              localStorage.removeItem(key);
+            }
+          } catch { localStorage.removeItem(key!); }
+        }
+      }
+    } catch { /* */ }
+
     // Verificar rascunho local
     try {
       const raw = localStorage.getItem(`rascunho_${exameId}`);
