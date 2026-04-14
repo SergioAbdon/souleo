@@ -11,7 +11,7 @@ import { savePaciente, saveExame, listenWorklist, getExame } from '@/lib/firesto
 import { abrirPdfUrl } from '@/lib/pdfUtils';
 import { dataLocalHoje } from '@/lib/utils';
 import { db, auth } from '@/lib/firebase';
-import { doc, deleteDoc } from 'firebase/firestore';
+import { doc, deleteDoc, collection, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { checkEmissao } from '@/lib/billing';
 
@@ -221,35 +221,47 @@ export default function Worklist() {
         return;
       }
 
-      // Criar exames para cada paciente novo
+      // v3: writeBatch — tudo ou nada (atomico)
+      const batch = writeBatch(db);
       let criados = 0;
+
       for (const pac of novos) {
-        const pacId = await savePaciente(workspace.id, {
+        // Criar paciente
+        const pacRef = doc(collection(db, 'workspaces', workspace.id, 'pacientes'));
+        batch.set(pacRef, {
+          id: pacRef.id,
           nome: pac.pacienteNome,
           cpf: pac.cpf,
           dtnasc: pac.pacienteDtnasc,
           sexo: pac.sexo,
           telefone: pac.telefone,
+          criadoEm: serverTimestamp(),
         });
-        if (pacId) {
-          await saveExame(workspace.id, {
-            pacienteId: pacId,
-            pacienteNome: pac.pacienteNome,
-            pacienteDtnasc: pac.pacienteDtnasc,
-            tipoExame: pac.tipoExame,
-            dataExame: pac.dataExame,
-            horarioChegada: pac.horarioChegada,
-            status: 'aguardando',
-            convenio: pac.convenio,
-            solicitante: profile?.nome as string || '',
-            sexo: pac.sexo,
-            origem: 'FEEGOW',
-            feegowAppointId: pac.feegowAppointId,
-          }, profile.id as string);
-          criados++;
-        }
+
+        // Criar exame vinculado
+        const exameRef = doc(collection(db, 'workspaces', workspace.id, 'exames'));
+        batch.set(exameRef, {
+          id: exameRef.id,
+          pacienteId: pacRef.id,
+          pacienteNome: pac.pacienteNome,
+          pacienteDtnasc: pac.pacienteDtnasc,
+          tipoExame: pac.tipoExame,
+          dataExame: pac.dataExame,
+          horarioChegada: pac.horarioChegada,
+          status: 'aguardando',
+          convenio: pac.convenio,
+          solicitante: profile?.nome as string || '',
+          sexo: pac.sexo,
+          origem: 'FEEGOW',
+          feegowAppointId: pac.feegowAppointId,
+          medicoUid: profile.id as string,
+          versao: 1,
+          criadoEm: serverTimestamp(),
+        });
+        criados++;
       }
 
+      await batch.commit();
       alert(`${criados} paciente(s) importado(s) do Feegow!`);
     } catch (e) {
       console.error('importarFeegow:', e);

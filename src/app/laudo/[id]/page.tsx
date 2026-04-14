@@ -27,6 +27,7 @@ export default function LaudoPage() {
   const router = useRouter();
   const { user, profile, workspace } = useAuth();
   const [motorLoaded, setMotorLoaded] = useState(false);
+  const [motorErro, setMotorErro] = useState(false);
   const [exame, setExame] = useState<Record<string, unknown> | null>(null);
   const [popupOpen, setPopupOpen] = useState(false);
   const [emitido, setEmitido] = useState(false);
@@ -144,9 +145,28 @@ export default function LaudoPage() {
       if (editorRef.current) editorRef.current.insertLine(texto);
     };
 
-    const script = document.createElement('script');
-    script.src = '/motor/motorv8mp4.js';
-    script.onload = () => {
+    // v3: carregar motor com retry e error handling
+    let retryCount = 0;
+    function carregarScript() {
+      const s = document.createElement('script');
+      s.src = `/motor/motorv8mp4.js?v=${Date.now()}`; // cache bust no retry
+      s.onerror = () => {
+        try { document.body.removeChild(s); } catch {}
+        if (retryCount < 1) {
+          retryCount++;
+          console.warn('Motor: falha ao carregar, tentando novamente...');
+          setTimeout(carregarScript, 2000);
+        } else {
+          console.error('Motor: falha definitiva apos retry');
+          setMotorErro(true);
+        }
+      };
+      s.onload = () => motorInicializar();
+      document.body.appendChild(s);
+    }
+
+    const script = { remove: () => {} }; // ref pra cleanup
+    function motorInicializar() {
       setMotorLoaded(true);
       setTimeout(() => {
         try {
@@ -197,16 +217,22 @@ export default function LaudoPage() {
               }
             }
           };
-        } catch (e) { console.warn('motor:', e); }
+        } catch (e) { console.warn('motor:', e); setMotorErro(true); }
       }, 500);
-    };
-    document.body.appendChild(script);
-    return () => { try { document.body.removeChild(script); } catch {} };
+    }
+
+    carregarScript();
+    return () => { try { document.querySelectorAll('script[src*="motorv8mp4"]').forEach(s => s.remove()); } catch {} };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function safeCalc() {
-    try { const c = (window as unknown as Record<string, unknown>).calc as (() => void); if (c) c(); } catch (e) { console.warn('calc:', e); }
+    if (motorErro) return; // v3: nao tentar calcular se motor falhou
+    try {
+      const c = (window as unknown as Record<string, unknown>).calc as (() => void);
+      if (c) c();
+      else if (motorLoaded) { console.warn('calc: funcao nao encontrada no window'); }
+    } catch (e) { console.warn('calc:', e); }
   }
 
   function preencherExame() {
@@ -721,6 +747,12 @@ ul{list-style:none;padding:0;margin:0;}
 
   return (
     <div className={`h-screen grid grid-cols-[390px_1fr] overflow-hidden font-[family-name:var(--font-ibm-plex)] ${emitido ? 'laudo-locked' : ''}`}>
+      {/* v3: alerta se motor falhou */}
+      {motorErro && (
+        <div className="fixed top-0 left-0 right-0 z-[9999] bg-red-600 text-white text-center py-2 text-sm font-semibold">
+          Motor de calculos indisponivel. <button onClick={() => window.location.reload()} className="underline ml-2">Recarregar pagina</button>
+        </div>
+      )}
       <SidebarLaudo
         clinicaNome={clinicaNome}
         medicoNome={profile?.nome as string || ''}
