@@ -48,6 +48,10 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
   const [feegowProcs, setFeegowProcs] = useState<Array<{ procedimento_id: number; nome: string }>>([]);
   const [feegowProcMap, setFeegowProcMap] = useState<Record<number, string>>({});
   const [procsLoading, setProcsLoading] = useState(false);
+  const [ortancAtivo, setOrtancAtivo] = useState(false);
+  const [ortancUrl, setOrtancUrl] = useState('');
+  const [ortancStatus, setOrtancStatus] = useState<'none' | 'testing' | 'ok' | 'error'>('none');
+  const [ortancVersion, setOrtancVersion] = useState('');
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
 
@@ -79,6 +83,10 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
         setFeegowProcMap({});
       }
       setFeegowProcs([]);
+      setOrtancAtivo(!!workspace.ortancAtivo);
+      setOrtancUrl(workspace.ortancUrl as string || '');
+      setOrtancStatus(workspace.ortancUrl ? 'ok' : 'none');
+      setOrtancVersion('');
     }
   }, [workspace, open]);
 
@@ -137,6 +145,8 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
       feegowProcMap: Object.fromEntries(
         Object.entries(feegowProcMap).filter(([, v]) => v !== 'ignorar')
       ),
+      ortancAtivo,
+      ortancUrl: ortancUrl.trim() || null,
     });
 
     if (ok) {
@@ -340,6 +350,73 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
                   </p>
                 )}
               </div>
+            )}
+          </div>
+
+          {/* Integracao DICOM (Orthanc) */}
+          <div className="border rounded-lg p-3 bg-gray-50">
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-semibold text-gray-500 uppercase">Integracao DICOM (Orthanc)</label>
+              <button
+                onClick={() => setOrtancAtivo(!ortancAtivo)}
+                className={`relative w-10 h-5 rounded-full transition ${ortancAtivo ? 'bg-[#2563EB]' : 'bg-gray-300'}`}>
+                <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition ${ortancAtivo ? 'left-5' : 'left-0.5'}`} />
+              </button>
+            </div>
+
+            {ortancAtivo && (
+              <>
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <input type="text" value={ortancUrl}
+                      onChange={e => { setOrtancUrl(e.target.value); setOrtancStatus('none'); }}
+                      placeholder="http://192.168.1.100:8042"
+                      className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] font-mono text-xs" />
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!ortancUrl.trim()) { setErro('Informe a URL do Orthanc.'); return; }
+                      setOrtancStatus('testing');
+                      try {
+                        const idToken = await auth.currentUser?.getIdToken();
+                        const res = await fetch('/api/orthanc?action=teste', {
+                          headers: { 'Authorization': `Bearer ${idToken || ''}`, 'X-Orthanc-Url': ortancUrl.trim() },
+                        });
+                        const data = await res.json();
+                        if (data.ok) {
+                          setOrtancStatus('ok');
+                          setOrtancVersion(data.version || '');
+                        } else {
+                          setOrtancStatus('error');
+                          setErro(data.error || 'Falha ao conectar ao Orthanc.');
+                        }
+                      } catch { setOrtancStatus('error'); setErro('Erro ao testar conexao Orthanc.'); }
+                    }}
+                    disabled={ortancStatus === 'testing'}
+                    className="px-3 py-2 text-xs font-semibold rounded-lg border border-[#1E3A5F] text-[#1E3A5F] hover:bg-[#1E3A5F] hover:text-white transition disabled:opacity-50">
+                    {ortancStatus === 'testing' ? 'Testando...' : 'Testar conexao'}
+                  </button>
+                </div>
+                <div className="mt-2 text-xs">
+                  {ortancStatus === 'ok' && (
+                    <span className="text-green-600 font-semibold">
+                      Orthanc conectado{ortancVersion ? ` (v${ortancVersion})` : ''}
+                    </span>
+                  )}
+                  {ortancStatus === 'error' && <span className="text-red-600 font-semibold">Falha na conexao</span>}
+                  {ortancStatus === 'none' && !ortancUrl && <span className="text-gray-400">Informe o IP do servidor Orthanc da clinica</span>}
+                  {ortancStatus === 'none' && ortancUrl && <span className="text-gray-400">URL salva — clique em testar pra verificar</span>}
+                </div>
+                <div className="mt-2 p-2 bg-blue-50 rounded text-[10px] text-blue-700 space-y-0.5">
+                  <p><strong>Configure o Vivid T8 com:</strong></p>
+                  <p>AE Title: <span className="font-mono font-bold">ORTHANC</span> &middot; Porta DICOM: <span className="font-mono font-bold">4242</span></p>
+                  <p>IP: o mesmo endereco acima (sem a porta 8042)</p>
+                </div>
+              </>
+            )}
+
+            {!ortancAtivo && (
+              <p className="text-xs text-gray-400">Ative para conectar ao servidor DICOM e receber medidas do Vivid T8 automaticamente.</p>
             )}
           </div>
 
