@@ -31,6 +31,8 @@ export default function LaudoPage() {
   const [exame, setExame] = useState<Record<string, unknown> | null>(null);
   const [popupOpen, setPopupOpen] = useState(false);
   const [emitido, setEmitido] = useState(false);
+  const [dicomLoading, setDicomLoading] = useState(false);
+  const [dicomImportado, setDicomImportado] = useState(false);
   const editorRef = useRef<EditorLaudoRef>(null);
   const pendingHtml = useRef<string | null>(null);
 
@@ -337,6 +339,36 @@ export default function LaudoPage() {
     if (!workspace?.id || !exameId || !user?.uid) return false;
     const dados = { id: exameId, medidas: coletarMedidas(), ...coletarIdentificacao(), status, ...extras };
     return await saveExame(workspace.id, dados, user.uid);
+  }
+
+  async function handleImportarDicom() {
+    if (!workspace?.id || dicomLoading) return;
+    setDicomLoading(true);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch(`/api/orthanc?action=buscar_sr&wsId=${workspace.id}&accession=${exameId}`, {
+        headers: { 'Authorization': `Bearer ${token || ''}` },
+      });
+      const data = await res.json();
+      if (data.ok && data.encontrado && data.medidas) {
+        const w = window as unknown as Record<string, (...args: unknown[]) => unknown>;
+        const importFn = w.importarDICOM as ((d: unknown) => { ok: boolean; count: number; msg: string }) | undefined;
+        if (importFn) {
+          const result = importFn({ measurements: data.medidas, patientName: data.patientName, studyDate: data.studyDate });
+          setDicomImportado(true);
+          alert(`${result.count} medidas importadas do Vivid T8!`);
+        } else {
+          alert('Motor nao carregado. Tente recarregar a pagina.');
+        }
+      } else if (data.ok && !data.encontrado) {
+        alert(data.message || 'Nenhum DICOM SR encontrado para este exame.');
+      } else {
+        alert(data.error || 'Erro ao buscar medidas do Orthanc.');
+      }
+    } catch {
+      alert('Orthanc nao disponivel.');
+    }
+    setDicomLoading(false);
   }
 
   function handleVoltar() {
@@ -777,6 +809,10 @@ ul{list-style:none;padding:0;margin:0;}
         onVoltar={handleVoltar}
         onSalvarEmitir={handleSalvarEmitir}
         onLimpar={handleLimpar}
+        onImportarDicom={handleImportarDicom}
+        dicomLoading={dicomLoading}
+        dicomImportado={dicomImportado}
+        ortancAtivo={!!workspace?.ortancAtivo}
         emitido={emitido}
         readOnlyIdentificacao={!!(exame?.emitidoEm)}
         readOnlyMotor={emitido}

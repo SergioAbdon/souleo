@@ -23,6 +23,10 @@ type Props = {
   onVoltar: () => void;
   onSalvarEmitir: () => void;
   onLimpar: () => void;
+  onImportarDicom?: () => void;
+  dicomLoading?: boolean;
+  dicomImportado?: boolean;
+  ortancAtivo?: boolean;
   emitido?: boolean;
   modoEmitido?: ReactNode;
   readOnlyIdentificacao?: boolean;
@@ -32,7 +36,7 @@ type Props = {
   feegowPacienteId?: string | number | null;
 };
 
-export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, emitido, modoEmitido, readOnlyIdentificacao, readOnlyMotor, exameOrigem, exameCpf, feegowPacienteId }: Props) {
+export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, onImportarDicom, dicomLoading, dicomImportado, ortancAtivo, emitido, modoEmitido, readOnlyIdentificacao, readOnlyMotor, exameOrigem, exameCpf, feegowPacienteId }: Props) {
   const [idDesbloqueado, setIdDesbloqueado] = useState(false);
   const [motorDesbloqueado, setMotorDesbloqueado] = useState(false);
   // Detectar quando readOnlyMotor muda de true→false (médico desbloqueou)
@@ -162,6 +166,14 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
           modoEmitido
         ) : (
           <div id="modo-edicao" className="flex items-center gap-2 px-5 py-2">
+            {ortancAtivo && onImportarDicom && (
+              <button onClick={onImportarDicom} disabled={dicomLoading || dicomImportado}
+                className={`px-3 py-2 rounded-md text-[11px] font-semibold cursor-pointer transition border-none whitespace-nowrap ${
+                  dicomImportado ? 'bg-green-100 text-green-700' : 'bg-purple-600 text-white hover:bg-purple-700'
+                } disabled:opacity-50`}>
+                {dicomLoading ? '⏳' : dicomImportado ? '✅ Vivid' : '📡 Vivid'}
+              </button>
+            )}
             <button onClick={onSalvarEmitir}
               className="flex-1 py-2 rounded-md font-semibold text-white text-[11px] cursor-pointer hover:brightness-110 transition border-none bg-[#1E3A5F]">
               💾 Salvar / Emitir

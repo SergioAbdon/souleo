@@ -220,11 +220,117 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ ok: true, total: resultado.length, estudos: resultado });
       }
 
-      // Futuro: Etapa 5 — buscar DICOM SR por Accession Number
-      // case 'buscar_sr': { ... }
+      // Etapa 5 — buscar DICOM SR (medidas) por Accession Number
+      case 'buscar_sr': {
+        const accession = req.nextUrl.searchParams.get('accession');
+        if (!accession) return NextResponse.json({ ok: false, error: 'accession obrigatorio' }, { status: 400 });
+
+        // 1. Buscar Study por AccessionNumber
+        const findResult = await orthancFetch(ortancUrl, '/tools/find', {
+          method: 'POST',
+          body: JSON.stringify({ Level: 'Study', Query: { AccessionNumber: accession }, Expand: true }),
+        });
+
+        if (!findResult?.length) {
+          return NextResponse.json({ ok: true, encontrado: false, message: 'Nenhum estudo encontrado com esse AccessionNumber.' });
+        }
+
+        const study = findResult[0];
+        const studyId = study.ID;
+        const patientName = (study.PatientMainDicomTags as Record<string, string>)?.PatientName || '';
+        const studyDate = (study.MainDicomTags as Record<string, string>)?.StudyDate || '';
+
+        // 2. Listar séries do estudo
+        const series = await orthancFetch(ortancUrl, `/studies/${studyId}/series`);
+        if (!series?.length) {
+          return NextResponse.json({ ok: true, encontrado: false, message: 'Estudo sem series.' });
+        }
+
+        // 3. Procurar série SR (Structured Report)
+        let srInstanceId: string | null = null;
+        for (const seriesId of series) {
+          const sid = typeof seriesId === 'string' ? seriesId : seriesId?.ID;
+          if (!sid) continue;
+          const seriesInfo = await orthancFetch(ortancUrl, `/series/${sid}`);
+          const modality = (seriesInfo?.MainDicomTags as Record<string, string>)?.Modality || '';
+          if (modality === 'SR') {
+            const instances = seriesInfo?.Instances || [];
+            if (instances.length > 0) {
+              srInstanceId = instances[0];
+              break;
+            }
+          }
+        }
+
+        if (!srInstanceId) {
+          // Sem SR, tentar extrair medidas de qualquer série US
+          return NextResponse.json({ ok: true, encontrado: false, message: 'DICOM SR nao encontrado. Medidas manuais necessarias.' });
+        }
+
+        // 4. Extrair tags do DICOM SR
+        const tags = await orthancFetch(ortancUrl, `/instances/${srInstanceId}/simplified-tags`);
+
+        // 5. Parsear medidas do DICOM SR (ContentSequence contém as medidas)
+        const medidas: Record<string, number> = {};
+        function extrairMedidas(content: unknown) {
+          if (!Array.isArray(content)) return;
+          for (const item of content) {
+            const it = item as Record<string, unknown>;
+            // Buscar ConceptNameCodeSequence → código LOINC
+            const conceptSeq = it.ConceptNameCodeSequence as Array<Record<string, string>> | undefined;
+            const codeValue = conceptSeq?.[0]?.CodeValue || '';
+
+            // Buscar MeasuredValueSequence → valor numérico
+            const measuredSeq = it.MeasuredValueSequence as Array<Record<string, string>> | undefined;
+            if (codeValue && measuredSeq?.[0]?.NumericValue) {
+              medidas[codeValue] = parseFloat(measuredSeq[0].NumericValue);
+            }
+
+            // Buscar NumericValue direto (formato alternativo)
+            if (codeValue && it.NumericValue && !medidas[codeValue]) {
+              medidas[codeValue] = parseFloat(it.NumericValue as string);
+            }
+
+            // Recursivo: ContentSequence aninhado
+            if (it.ContentSequence) {
+              extrairMedidas(it.ContentSequence);
+            }
+          }
+        }
+
+        extrairMedidas(tags?.ContentSequence);
+
+        // Fallback: tentar tags diretas se ContentSequence vazio
+        if (Object.keys(medidas).length === 0 && tags) {
+          const directTags = tags as Record<string, string>;
+          // Mapear tags DICOM diretas conhecidas
+          const directMap: Record<string, string> = {
+            'LeftVentricleEndDiastolicDimension': '18083-6',
+            'LeftVentricleEndSystolicDimension': '18085-1',
+            'InterventricularSeptumThickness': '18157-8',
+            'LeftVentricularPosteriorWallThickness': '18159-4',
+            'EjectionFraction': '18043-0',
+            'LeftAtriumDimension': '18010-9',
+            'AorticRootDimension': '18008-3',
+          };
+          for (const [tagName, code] of Object.entries(directMap)) {
+            if (directTags[tagName]) medidas[code] = parseFloat(directTags[tagName]);
+          }
+        }
+
+        return NextResponse.json({
+          ok: true,
+          encontrado: true,
+          medidas,
+          patientName,
+          studyDate,
+          totalMedidas: Object.keys(medidas).length,
+          srInstanceId,
+        });
+      }
 
       default:
-        return NextResponse.json({ ok: false, error: 'action invalida. Use: teste, listar_estudos' }, { status: 400 });
+        return NextResponse.json({ ok: false, error: 'action invalida. Use: teste, listar_estudos, buscar_sr' }, { status: 400 });
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Erro desconhecido';
