@@ -2,7 +2,7 @@
 // SOULEO · API Route — Orthanc (servidor DICOM)
 // Proxy seguro para comunicação com Orthanc REST API
 // Etapa 1: teste de conexão
-// Etapa 3 (futuro): criar MWL, buscar DICOM SR
+// Etapa 3: criar MWL (worklist para Vivid T8), listar estudos
 // ══════════════════════════════════════════════════════════════════
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -24,6 +24,14 @@ const fbAuth = getAuth();
 const dbAdmin = getFirestore();
 
 const TIMEOUT_MS = 5000; // 5s timeout (Orthanc é local, deve ser rápido)
+
+// Mapeamento tipoExame LEO → descrição DICOM
+const EXAM_DICOM_MAP: Record<string, string> = {
+  'eco_tt': 'Ecocardiograma Transtoracico',
+  'doppler_carotidas': 'Doppler Carotidas',
+  'eco_te': 'Ecocardiograma Transesofagico',
+  'eco_stress': 'Ecocardiograma Stress',
+};
 
 // ── Auth: verificar token Firebase do usuario ──
 async function verificarAuth(req: NextRequest): Promise<string | null> {
@@ -74,6 +82,88 @@ async function orthancFetch(baseUrl: string, endpoint: string, options?: Request
   }
 }
 
+// ── POST: criar MWL (worklist para Vivid T8) ──
+export async function POST(req: NextRequest) {
+  const uid = await verificarAuth(req);
+  if (!uid) {
+    return NextResponse.json({ ok: false, error: 'Nao autorizado.' }, { status: 401 });
+  }
+
+  try {
+    const body = await req.json();
+    const { action } = body;
+
+    if (action === 'criar_mwl') {
+      const { wsId, exameId, pacienteNome, pacienteId, pacienteDtnasc, sexo, tipoExame, dataExame, horarioChegada, medicoNome } = body;
+
+      if (!exameId || !pacienteNome) {
+        return NextResponse.json({ ok: false, error: 'exameId e pacienteNome obrigatorios' }, { status: 400 });
+      }
+
+      // Resolver URL do Orthanc via wsId
+      let ortancUrl: string | null = null;
+      if (wsId) {
+        const wsDoc = await dbAdmin.doc(`workspaces/${wsId}`).get();
+        const data = wsDoc.data();
+        if (data?.ortancAtivo && data?.ortancUrl) {
+          ortancUrl = (data.ortancUrl as string).replace(/\/+$/, '');
+        }
+      }
+
+      if (!ortancUrl) {
+        return NextResponse.json({ ok: false, error: 'orthanc_offline', message: 'Orthanc nao configurado ou desativado.' });
+      }
+
+      // Formatar datas para DICOM (YYYYMMDD, HHMM)
+      const dicomDate = dataExame ? dataExame.replace(/-/g, '') : '';
+      const dicomTime = horarioChegada ? horarioChegada.replace(':', '') + '00' : '';
+      const dicomBirthDate = pacienteDtnasc ? pacienteDtnasc.replace(/-/g, '') : '';
+      const studyDescription = EXAM_DICOM_MAP[tipoExame] || tipoExame || 'Echocardiogram';
+
+      // Criar DICOM instance via Orthanc REST API
+      const dicomTags: Record<string, string> = {
+        // Patient tags
+        'PatientName': pacienteNome || '',
+        'PatientID': pacienteId || exameId,
+        'PatientBirthDate': dicomBirthDate,
+        'PatientSex': sexo === 'M' ? 'M' : sexo === 'F' ? 'F' : 'O',
+        // Study tags
+        'AccessionNumber': exameId,
+        'StudyDescription': studyDescription,
+        'Modality': 'US',
+        'ReferringPhysicianName': medicoNome || '',
+        // Scheduled Procedure Step
+        'ScheduledProcedureStepStartDate': dicomDate,
+        'ScheduledProcedureStepStartTime': dicomTime,
+      };
+
+      const result = await orthancFetch(ortancUrl, '/tools/create-dicom', {
+        method: 'POST',
+        body: JSON.stringify({
+          Tags: dicomTags,
+          Content: 'data:application/octet-stream;base64,AA==', // minimal content
+        }),
+      });
+
+      return NextResponse.json({
+        ok: true,
+        orthancId: result?.ID || result?.id || null,
+        accessionNumber: exameId,
+        message: 'Worklist criada no Orthanc',
+      });
+    }
+
+    return NextResponse.json({ ok: false, error: 'action invalida. Use: criar_mwl' }, { status: 400 });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Erro desconhecido';
+    if (msg.includes('aborted') || msg.includes('abort') || msg.includes('ECONNREFUSED') || msg.includes('fetch failed')) {
+      return NextResponse.json({ ok: false, error: 'orthanc_offline', message: 'Orthanc nao respondeu.' });
+    }
+    return NextResponse.json({ ok: false, error: msg }, { status: 502 });
+  }
+}
+
+// ── GET: teste, listar estudos ──
 export async function GET(req: NextRequest) {
   // Auth
   const uid = await verificarAuth(req);
@@ -102,17 +192,39 @@ export async function GET(req: NextRequest) {
         });
       }
 
-      // Futuro: Etapa 3 — criar entrada MWL
-      // case 'criar_mwl': { ... }
+      // Listar estudos no Orthanc (para sincronização)
+      case 'listar_estudos': {
+        const data = req.nextUrl.searchParams.get('data'); // YYYYMMDD ou YYYY-MM-DD
+        const studies = await orthancFetch(ortancUrl, '/studies?expand&since=0&limit=100');
+        // Filtrar por data se fornecida e mapear campos relevantes
+        const dataFiltro = data ? data.replace(/-/g, '') : null;
+        const resultado = (studies || [])
+          .filter((s: Record<string, unknown>) => {
+            if (!dataFiltro) return true;
+            const mt = s.MainDicomTags as Record<string, string> | undefined;
+            return mt?.StudyDate === dataFiltro;
+          })
+          .map((s: Record<string, unknown>) => {
+            const mt = s.MainDicomTags as Record<string, string>;
+            const pt = (s.PatientMainDicomTags as Record<string, string>) || {};
+            return {
+              orthancId: s.ID,
+              pacienteNome: pt.PatientName || '',
+              pacienteId: pt.PatientID || '',
+              accessionNumber: mt?.AccessionNumber || '',
+              studyDate: mt?.StudyDate || '',
+              studyDescription: mt?.StudyDescription || '',
+              modality: mt?.ModalitiesInStudy || '',
+            };
+          });
+        return NextResponse.json({ ok: true, total: resultado.length, estudos: resultado });
+      }
 
       // Futuro: Etapa 5 — buscar DICOM SR por Accession Number
       // case 'buscar_sr': { ... }
 
-      // Futuro: listar estudos de um paciente
-      // case 'studies': { ... }
-
       default:
-        return NextResponse.json({ ok: false, error: 'action invalida. Use: teste' }, { status: 400 });
+        return NextResponse.json({ ok: false, error: 'action invalida. Use: teste, listar_estudos' }, { status: 400 });
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Erro desconhecido';

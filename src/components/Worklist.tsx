@@ -24,6 +24,27 @@ async function feegowAuthFetch(url: string, options?: RequestInit) {
   });
 }
 
+// Enviar worklist (MWL) ao Orthanc — fire-and-forget, falha silenciosa
+async function enviarMwlOrthanc(dados: {
+  wsId: string; exameId: string; pacienteNome: string; pacienteId?: string;
+  pacienteDtnasc?: string; sexo?: string; tipoExame?: string;
+  dataExame?: string; horarioChegada?: string; medicoNome?: string;
+}) {
+  try {
+    const token = await auth.currentUser?.getIdToken();
+    const res = await fetch('/api/orthanc', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token || ''}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'criar_mwl', ...dados }),
+    });
+    const result = await res.json();
+    if (result.ok) console.log(`Orthanc MWL: ${dados.pacienteNome} → ${result.accessionNumber}`);
+    else console.warn('Orthanc MWL falhou:', result.error);
+  } catch {
+    console.warn('Orthanc MWL: nao enviado (offline?)');
+  }
+}
+
 type ExameItem = Record<string, unknown> & {
   id: string; pacienteId?: string; pacienteNome?: string; pacienteDtnasc?: string;
   status?: string; tipoExame?: string; dataExame?: string; horarioChegada?: string;
@@ -172,19 +193,36 @@ export default function Worklist() {
     } else {
       // Novo paciente — criar exame na fila
       const agora2 = new Date();
-      await saveExame(workspace.id, {
+      const horaChegada = agora2.toTimeString().slice(0, 5);
+      const novoExameId = await saveExame(workspace.id, {
         pacienteId: pacId,
         pacienteNome: pacNome.trim().toUpperCase(),
         pacienteDtnasc: pacDtnasc,
         tipoExame: pacTipoExame,
         dataExame: dataLocalHoje(),
-        horarioChegada: agora2.toTimeString().slice(0, 5),
+        horarioChegada: horaChegada,
         status: 'aguardando',
         convenio: pacConvenio,
         solicitante: pacSolicitante,
         sexo: pacSexo,
         origem: 'MANUAL',
       }, profile?.id || '');
+
+      // Enviar MWL ao Orthanc (fire-and-forget)
+      if (novoExameId) {
+        enviarMwlOrthanc({
+          wsId: workspace.id,
+          exameId: novoExameId,
+          pacienteNome: pacNome.trim().toUpperCase(),
+          pacienteId: pacCpf.replace(/\D/g, ''),
+          pacienteDtnasc: pacDtnasc,
+          sexo: pacSexo,
+          tipoExame: pacTipoExame,
+          dataExame: dataLocalHoje(),
+          horarioChegada: horaChegada,
+          medicoNome: profile?.nome as string || '',
+        });
+      }
     }
 
     setPacLoading(false);
@@ -223,7 +261,7 @@ export default function Worklist() {
 
       // v3: writeBatch — tudo ou nada (atomico)
       const batch = writeBatch(db);
-      let criados = 0;
+      const examesCriados: Array<{ exameId: string; pac: Record<string, string> }> = [];
 
       for (const pac of novos) {
         // Criar paciente
@@ -258,11 +296,28 @@ export default function Worklist() {
           versao: 1,
           criadoEm: serverTimestamp(),
         });
-        criados++;
+        examesCriados.push({ exameId: exameRef.id, pac });
       }
 
       await batch.commit();
-      alert(`${criados} paciente(s) importado(s) do Feegow!`);
+
+      // Enviar MWL ao Orthanc (fire-and-forget, não bloqueia)
+      for (const { exameId, pac } of examesCriados) {
+        enviarMwlOrthanc({
+          wsId: workspace.id,
+          exameId,
+          pacienteNome: pac.pacienteNome,
+          pacienteId: pac.cpf,
+          pacienteDtnasc: pac.pacienteDtnasc,
+          sexo: pac.sexo,
+          tipoExame: pac.tipoExame,
+          dataExame: pac.dataExame,
+          horarioChegada: pac.horarioChegada,
+          medicoNome: profile?.nome as string || '',
+        });
+      }
+
+      alert(`${examesCriados.length} paciente(s) importado(s) do Feegow!`);
     } catch (e) {
       console.error('importarFeegow:', e);
       alert('Erro ao conectar com o Feegow.');
