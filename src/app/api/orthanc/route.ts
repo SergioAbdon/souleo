@@ -46,11 +46,19 @@ async function verificarAuth(req: NextRequest): Promise<string | null> {
   }
 }
 
-// ── Resolver URL do Orthanc (header ou workspace) ──
-async function resolverUrl(req: NextRequest): Promise<string | null> {
-  // 1. Header X-Orthanc-Url (usado no teste de conexao do LocalModal)
+// ── Resolver URL + credenciais do Orthanc (header ou workspace) ──
+type OrtancConfig = { url: string; user?: string; pass?: string };
+
+async function resolverConfig(req: NextRequest): Promise<OrtancConfig | null> {
+  // 1. Headers (usado no teste de conexao do LocalModal)
   const headerUrl = req.headers.get('x-orthanc-url');
-  if (headerUrl) return headerUrl.replace(/\/+$/, ''); // remover trailing slash
+  if (headerUrl) {
+    return {
+      url: headerUrl.replace(/\/+$/, ''),
+      user: req.headers.get('x-orthanc-user') || undefined,
+      pass: req.headers.get('x-orthanc-pass') || undefined,
+    };
+  }
 
   // 2. Buscar do workspace via query param wsId
   const wsId = req.nextUrl.searchParams.get('wsId');
@@ -58,22 +66,32 @@ async function resolverUrl(req: NextRequest): Promise<string | null> {
     const wsDoc = await dbAdmin.doc(`workspaces/${wsId}`).get();
     const data = wsDoc.data();
     if (data?.ortancAtivo && data?.ortancUrl) {
-      return (data.ortancUrl as string).replace(/\/+$/, '');
+      return {
+        url: (data.ortancUrl as string).replace(/\/+$/, ''),
+        user: (data.ortancUser as string) || undefined,
+        pass: (data.ortancPass as string) || undefined,
+      };
     }
   }
 
   return null;
 }
 
-// ── Fetch genérico ao Orthanc ──
-async function orthancFetch(baseUrl: string, endpoint: string, options?: RequestInit) {
+// ── Fetch genérico ao Orthanc (com auth opcional) ──
+async function orthancFetch(config: OrtancConfig, endpoint: string, options?: RequestInit) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const res = await fetch(`${baseUrl}${endpoint}`, {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json', ...options?.headers as Record<string, string> };
+    // Basic Auth se credenciais configuradas
+    if (config.user && config.pass) {
+      const b64 = Buffer.from(`${config.user}:${config.pass}`).toString('base64');
+      headers['Authorization'] = `Basic ${b64}`;
+    }
+    const res = await fetch(`${config.url}${endpoint}`, {
       ...options,
       signal: controller.signal,
-      headers: { 'Content-Type': 'application/json', ...options?.headers },
+      headers,
     });
     if (!res.ok) throw new Error(`Orthanc ${res.status}: ${res.statusText}`);
     return res.json();
@@ -100,17 +118,21 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, error: 'exameId e pacienteNome obrigatorios' }, { status: 400 });
       }
 
-      // Resolver URL do Orthanc via wsId
-      let ortancUrl: string | null = null;
+      // Resolver config do Orthanc via wsId
+      let ortancConfig: OrtancConfig | null = null;
       if (wsId) {
         const wsDoc = await dbAdmin.doc(`workspaces/${wsId}`).get();
         const data = wsDoc.data();
         if (data?.ortancAtivo && data?.ortancUrl) {
-          ortancUrl = (data.ortancUrl as string).replace(/\/+$/, '');
+          ortancConfig = {
+            url: (data.ortancUrl as string).replace(/\/+$/, ''),
+            user: (data.ortancUser as string) || undefined,
+            pass: (data.ortancPass as string) || undefined,
+          };
         }
       }
 
-      if (!ortancUrl) {
+      if (!ortancConfig) {
         return NextResponse.json({ ok: false, error: 'orthanc_offline', message: 'Orthanc nao configurado ou desativado.' });
       }
 
@@ -137,7 +159,7 @@ export async function POST(req: NextRequest) {
         'ScheduledProcedureStepStartTime': dicomTime,
       };
 
-      const result = await orthancFetch(ortancUrl, '/tools/create-dicom', {
+      const result = await orthancFetch(ortancConfig, '/tools/create-dicom', {
         method: 'POST',
         body: JSON.stringify({
           Tags: dicomTags,
@@ -173,9 +195,9 @@ export async function GET(req: NextRequest) {
 
   const action = req.nextUrl.searchParams.get('action');
 
-  // Resolver URL do Orthanc
-  const ortancUrl = await resolverUrl(req);
-  if (!ortancUrl) {
+  // Resolver config do Orthanc (URL + credenciais)
+  const config = await resolverConfig(req);
+  if (!config) {
     return NextResponse.json({ ok: false, error: 'URL do Orthanc nao configurada.' }, { status: 400 });
   }
 
@@ -183,7 +205,7 @@ export async function GET(req: NextRequest) {
     switch (action) {
       // Testar conexão — GET /system retorna versão e nome do Orthanc
       case 'teste': {
-        const data = await orthancFetch(ortancUrl, '/system');
+        const data = await orthancFetch(config, '/system');
         return NextResponse.json({
           ok: true,
           message: 'Orthanc conectado!',
@@ -195,7 +217,7 @@ export async function GET(req: NextRequest) {
       // Listar estudos no Orthanc (para sincronização)
       case 'listar_estudos': {
         const data = req.nextUrl.searchParams.get('data'); // YYYYMMDD ou YYYY-MM-DD
-        const studies = await orthancFetch(ortancUrl, '/studies?expand&since=0&limit=100');
+        const studies = await orthancFetch(config, '/studies?expand&since=0&limit=100');
         // Filtrar por data se fornecida e mapear campos relevantes
         const dataFiltro = data ? data.replace(/-/g, '') : null;
         const resultado = (studies || [])
@@ -226,7 +248,7 @@ export async function GET(req: NextRequest) {
         if (!accession) return NextResponse.json({ ok: false, error: 'accession obrigatorio' }, { status: 400 });
 
         // 1. Buscar Study por AccessionNumber
-        const findResult = await orthancFetch(ortancUrl, '/tools/find', {
+        const findResult = await orthancFetch(config, '/tools/find', {
           method: 'POST',
           body: JSON.stringify({ Level: 'Study', Query: { AccessionNumber: accession }, Expand: true }),
         });
@@ -241,7 +263,7 @@ export async function GET(req: NextRequest) {
         const studyDate = (study.MainDicomTags as Record<string, string>)?.StudyDate || '';
 
         // 2. Listar séries do estudo
-        const series = await orthancFetch(ortancUrl, `/studies/${studyId}/series`);
+        const series = await orthancFetch(config, `/studies/${studyId}/series`);
         if (!series?.length) {
           return NextResponse.json({ ok: true, encontrado: false, message: 'Estudo sem series.' });
         }
@@ -251,7 +273,7 @@ export async function GET(req: NextRequest) {
         for (const seriesId of series) {
           const sid = typeof seriesId === 'string' ? seriesId : seriesId?.ID;
           if (!sid) continue;
-          const seriesInfo = await orthancFetch(ortancUrl, `/series/${sid}`);
+          const seriesInfo = await orthancFetch(config, `/series/${sid}`);
           const modality = (seriesInfo?.MainDicomTags as Record<string, string>)?.Modality || '';
           if (modality === 'SR') {
             const instances = seriesInfo?.Instances || [];
@@ -263,12 +285,11 @@ export async function GET(req: NextRequest) {
         }
 
         if (!srInstanceId) {
-          // Sem SR, tentar extrair medidas de qualquer série US
           return NextResponse.json({ ok: true, encontrado: false, message: 'DICOM SR nao encontrado. Medidas manuais necessarias.' });
         }
 
         // 4. Extrair tags do DICOM SR
-        const tags = await orthancFetch(ortancUrl, `/instances/${srInstanceId}/simplified-tags`);
+        const tags = await orthancFetch(config, `/instances/${srInstanceId}/simplified-tags`);
 
         // 5. Parsear medidas do DICOM SR (ContentSequence contém as medidas)
         const medidas: Record<string, number> = {};

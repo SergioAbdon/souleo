@@ -50,6 +50,8 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
   const [procsLoading, setProcsLoading] = useState(false);
   const [ortancAtivo, setOrtancAtivo] = useState(false);
   const [ortancUrl, setOrtancUrl] = useState('');
+  const [ortancUser, setOrtancUser] = useState('');
+  const [ortancPass, setOrtancPass] = useState('');
   const [ortancStatus, setOrtancStatus] = useState<'none' | 'testing' | 'ok' | 'error'>('none');
   const [ortancVersion, setOrtancVersion] = useState('');
   const [loading, setLoading] = useState(false);
@@ -85,6 +87,8 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
       setFeegowProcs([]);
       setOrtancAtivo(!!workspace.ortancAtivo);
       setOrtancUrl(workspace.ortancUrl as string || '');
+      setOrtancUser(workspace.ortancUser as string || '');
+      setOrtancPass(workspace.ortancPass as string || '');
       setOrtancStatus(workspace.ortancUrl ? 'ok' : 'none');
       setOrtancVersion('');
     }
@@ -147,6 +151,8 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
       ),
       ortancAtivo,
       ortancUrl: ortancUrl.trim() || null,
+      ortancUser: ortancUser.trim() || null,
+      ortancPass: ortancPass.trim() || null,
     });
 
     if (ok) {
@@ -373,15 +379,28 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
                       placeholder="http://192.168.1.100:8042"
                       className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] font-mono text-xs" />
                   </div>
+                  <div className="w-24">
+                    <input type="text" value={ortancUser}
+                      onChange={e => setOrtancUser(e.target.value)}
+                      placeholder="Usuario"
+                      className="w-full border rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] text-xs" />
+                  </div>
+                  <div className="w-24">
+                    <input type="password" value={ortancPass}
+                      onChange={e => setOrtancPass(e.target.value)}
+                      placeholder="Senha"
+                      className="w-full border rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] text-xs" />
+                  </div>
                   <button
                     onClick={async () => {
                       if (!ortancUrl.trim()) { setErro('Informe a URL do Orthanc.'); return; }
                       setOrtancStatus('testing');
                       try {
                         const idToken = await auth.currentUser?.getIdToken();
-                        const res = await fetch('/api/orthanc?action=teste', {
-                          headers: { 'Authorization': `Bearer ${idToken || ''}`, 'X-Orthanc-Url': ortancUrl.trim() },
-                        });
+                        const headers: Record<string, string> = { 'Authorization': `Bearer ${idToken || ''}`, 'X-Orthanc-Url': ortancUrl.trim() };
+                        if (ortancUser.trim()) headers['X-Orthanc-User'] = ortancUser.trim();
+                        if (ortancPass.trim()) headers['X-Orthanc-Pass'] = ortancPass.trim();
+                        const res = await fetch('/api/orthanc?action=teste', { headers });
                         const data = await res.json();
                         if (data.ok) {
                           setOrtancStatus('ok');
