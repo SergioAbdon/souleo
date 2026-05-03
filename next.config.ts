@@ -19,7 +19,7 @@ const nextConfig: NextConfig = {
 export default withSentryConfig(nextConfig, {
   // Configuracao da organizacao/projeto (auto-detect via auth token no CI)
   org: 'leo-cy',
-  project: 'javascript-nextjs',
+  project: 'souleo',
 
   // Suprime logs verbose
   silent: !process.env.CI,
