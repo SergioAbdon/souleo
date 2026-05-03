@@ -59,8 +59,9 @@ const TIPOS_EXAME: Record<string, string> = {
 };
 
 export default function Worklist() {
-  const { workspace, profile } = useAuth();
+  const { workspace, profile, membership } = useAuth();
   const router = useRouter();
+  const ehMedico = membership?.role === 'medico';
 
   const [worklist, setWorklist] = useState<ExameItem[]>([]);
   const [busca, setBusca] = useState('');
@@ -333,13 +334,20 @@ export default function Worklist() {
       if (dados?.pdfUrl) {
         abrirPdfUrl(dados.pdfUrl as string);
       } else {
-        // Fallback: abrir o laudo normalmente
+        // Fallback: abrir o laudo em modo leitura (PDF ainda não foi gerado)
         router.push('/laudo/' + exameId);
       }
     } catch (e) {
       console.error('Erro ao abrir PDF:', e);
       router.push('/laudo/' + exameId);
     }
+  }
+
+  // ── Editar laudo emitido (medico apenas) ──
+  // Apenas navega pro motor de laudo. O alerta de credito e consumo
+  // acontecem dentro do motor, no botao "Desbloquear campos".
+  function editarLaudoEmitido(exameId: string) {
+    router.push('/laudo/' + exameId);
   }
 
   async function abrirLaudo(exameId: string) {
@@ -499,8 +507,10 @@ export default function Worklist() {
                       {/* EMITIDO */}
                       {item.status === 'emitido' && (
                         <>
-                          <Btn cor="green" onClick={() => router.push('/laudo/' + item.id)}>👁 Ver</Btn>
-                          <Btn cor="gray" onClick={() => imprimirPdf(item.id)}>🖨️</Btn>
+                          {ehMedico && (
+                            <Btn cor="amber" onClick={() => editarLaudoEmitido(item.id)}>✏️ Editar</Btn>
+                          )}
+                          <Btn cor="gray" onClick={() => imprimirPdf(item.id)}>🖨️ Imprimir</Btn>
                         </>
                       )}
                     </div>
