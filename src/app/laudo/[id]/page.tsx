@@ -14,7 +14,7 @@ import { db, auth } from '@/lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { dataLocalHoje } from '@/lib/utils';
 // v3: billing agora e server-side via /api/emitir
-import { gerarESalvarPdf } from '@/lib/pdfUtils';
+// gerarESalvarPdf legado removido — emissao + PDF agora sao server-side em /api/emitir
 import SidebarLaudo from '@/components/laudo/SidebarLaudo';
 import SheetA4 from '@/components/laudo/SheetA4';
 import EditorLaudo from '@/components/laudo/EditorLaudo';
@@ -413,12 +413,27 @@ export default function LaudoPage() {
       identificacaoAlterada: idMudou,
     };
 
-    let resultado: { ok: boolean; tipo?: string; motivo?: string };
+    // v3.1: gerar pdfHtml ANTES de emitir, mandar junto na requisicao
+    // Servidor faz emissao + PDF tudo numa chamada (sem race condition)
+    const pdfHtml = gerarPdfHtml();
+    const nome = (document.getElementById('nome') as HTMLInputElement)?.value || 'PACIENTE';
+    const nomeArq = 'ECOTT ' + nome.trim().toUpperCase();
+
+    toast('Emitindo laudo e gerando PDF...');
+
+    let resultado: { ok: boolean; tipo?: string; motivo?: string; pdfUrl?: string; pdfErro?: string };
     try {
       const res = await fetch('/api/emitir', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ wsId: workspace.id, exameId, dadosFinais, medicoUid: user.uid }),
+        body: JSON.stringify({
+          wsId: workspace.id,
+          exameId,
+          dadosFinais,
+          medicoUid: user.uid,
+          pdfHtml,
+          nomeArq,
+        }),
       });
       resultado = await res.json();
     } catch {
@@ -437,46 +452,31 @@ export default function LaudoPage() {
       return;
     }
 
-    if (resultado.ok) {
+    try { localStorage.removeItem(`rascunho_${exameId}`); } catch { /* */ }
 
-      try { localStorage.removeItem(`rascunho_${exameId}`); } catch { /* */ }
+    // Atualizar status no Feegow se veio de lá
+    if (exame?.feegowAppointId) {
+      try {
+        const fToken = await auth.currentUser?.getIdToken();
+        await fetch(`/api/feegow?wsId=${workspace.id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${fToken || ''}` },
+          body: JSON.stringify({ action: 'atualizar_status', agendamento_id: exame.feegowAppointId, status_id: 3 }),
+        });
+      } catch { /* não bloquear emissão se Feegow falhar */ }
+    }
 
-      // Atualizar status no Feegow se veio de lá
-      if (exame?.feegowAppointId) {
-        try {
-          const fToken = await auth.currentUser?.getIdToken();
-          await fetch(`/api/feegow?wsId=${workspace.id}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${fToken || ''}` },
-            body: JSON.stringify({ action: 'atualizar_status', agendamento_id: exame.feegowAppointId, status_id: 3 }),
-          });
-        } catch { /* não bloquear emissão se Feegow falhar */ }
-      }
+    setEmitido(true);
 
-      setEmitido(true);
-      toast('Laudo emitido e assinado');
-
-      // Gerar PDF real + salvar no Storage + abrir (dentro do timeout, DOM pronto)
-      setTimeout(async () => {
-        try {
-          const pdfHtml = gerarPdfHtml();
-          const nome = (document.getElementById('nome') as HTMLInputElement)?.value || 'PACIENTE';
-          const nomeArq = 'ECOTT ' + nome.trim().toUpperCase();
-
-          // Abrir HTML pra visualização imediata
-          const win = window.open('', '_blank', 'width=900,height=700');
-          if (win) { win.document.write(pdfHtml); win.document.close(); }
-
-          // Gerar PDF real + upload Firebase Storage (em background)
-          if (pdfHtml && workspace?.id) {
-            const pdfUrl = await gerarESalvarPdf(pdfHtml, workspace.id, exameId, nomeArq);
-            await updateDoc(doc(db, 'workspaces', workspace.id, 'exames', exameId), { pdfUrl });
-            toast('PDF salvo na nuvem');
-          }
-        } catch (e) { console.warn('PDF:', e); }
-      }, 800);
+    // Abrir o PDF gerado (se ja foi salvo no Storage)
+    if (resultado.pdfUrl) {
+      toast('Laudo emitido — PDF pronto');
+      window.open(resultado.pdfUrl, '_blank');
+    } else if (resultado.pdfErro) {
+      toast('Laudo emitido. PDF falhou — tente "Imprimir" depois.');
+      console.warn('PDF gen error:', resultado.pdfErro);
     } else {
-      toast('Erro ao emitir laudo');
+      toast('Laudo emitido e assinado');
     }
   }
 
