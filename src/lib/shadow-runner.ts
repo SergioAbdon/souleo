@@ -11,6 +11,7 @@
 import { lerMedidasDoDOM } from './motor-ts-adapter';
 import type { ResultadoLaudo } from '@/senna90/types';
 import * as Sentry from '@sentry/nextjs';
+import { auth } from './firebase';
 
 interface ShadowResult {
   matched: boolean;
@@ -81,9 +82,15 @@ function lerSaidaMotorAntigo(): { achados: string[]; conclusoes: string[] } {
 async function calcularServerSide(): Promise<ResultadoLaudo | null> {
   try {
     const medidas = lerMedidasDoDOM();
+    const token = await auth.currentUser?.getIdToken();
+    if (!token) return null; // Sem auth = sem call (silencioso)
+
     const res = await fetch('/api/laudo/calcular', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
       body: JSON.stringify(medidas),
     });
     if (!res.ok) return null;

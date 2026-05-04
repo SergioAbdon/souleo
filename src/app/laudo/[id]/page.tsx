@@ -21,6 +21,8 @@ import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
 import { gerarDocx } from '@/lib/exportDocx';
 import { PopupSalvarEmitir, ModoEmitido } from '@/components/laudo/PopupEmitir';
+// Shadow Mode (Fase 5): roda Senna90 server-side em paralelo invisível
+import { executarEReportar, shadowModeAtivo } from '@/lib/shadow-runner';
 
 export default function LaudoPage() {
   const params = useParams();
@@ -174,7 +176,14 @@ export default function LaudoPage() {
         try {
           const calcFn = (window as unknown as Record<string, unknown>).calc as (() => void) | undefined;
           if (calcFn) {
-            const sc = () => { try { calcFn(); } catch (e) { console.warn('calc:', e); } };
+            // Wrapper: roda motor antigo + shadow Senna90 (server-side, invisível)
+            const sc = () => {
+              try { calcFn(); } catch (e) { console.warn('calc:', e); }
+              // Shadow mode (Fase 5): invisível, server-side
+              if (shadowModeAtivo()) {
+                try { executarEReportar(exameId); } catch { /* não bloquear */ }
+              }
+            };
             document.querySelectorAll('#laudo-sidebar input, #laudo-sidebar select').forEach(el => {
               el.addEventListener('input', sc);
               el.addEventListener('change', sc);
