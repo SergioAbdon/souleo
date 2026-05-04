@@ -13,6 +13,7 @@ import { casosValvopatias } from './casos/03-valvopatias';
 import { casosDiastologia } from './casos/04-diastologia';
 import { casosStrainHP } from './casos/05-strain-hp';
 import { casosBordas } from './casos/06-bordas';
+import { casosDiastologiaCompleta } from './casos/07-diastologia-completa';
 
 const todosCasos = [
   ...casosSaudaveis,
@@ -21,6 +22,7 @@ const todosCasos = [
   ...casosDiastologia,
   ...casosStrainHP,
   ...casosBordas,
+  ...casosDiastologiaCompleta,
 ];
 
 console.log(`\n🧪 LEO MOTOR TS — Suite de Testes`);
