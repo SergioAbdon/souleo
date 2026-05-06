@@ -242,19 +242,46 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ ok: true, total: resultado.length, estudos: resultado });
       }
 
-      // Etapa 5 — buscar DICOM SR (medidas) por Accession Number
+      // Etapa 5 — buscar DICOM SR (medidas) por Accession Number OU Patient ID
       case 'buscar_sr': {
         const accession = req.nextUrl.searchParams.get('accession');
-        if (!accession) return NextResponse.json({ ok: false, error: 'accession obrigatorio' }, { status: 400 });
+        const patientId = req.nextUrl.searchParams.get('patientId');
+        const q = req.nextUrl.searchParams.get('q'); // busca genérica (tenta ambos)
 
-        // 1. Buscar Study por AccessionNumber
-        const findResult = await orthancFetch(config, '/tools/find', {
-          method: 'POST',
-          body: JSON.stringify({ Level: 'Study', Query: { AccessionNumber: accession }, Expand: true }),
-        });
+        if (!accession && !patientId && !q) {
+          return NextResponse.json({ ok: false, error: 'accession, patientId ou q obrigatorio' }, { status: 400 });
+        }
+
+        // Tentar busca em ordem: 1) AccessionNumber 2) PatientID
+        const tentativas: Array<{ campo: string; valor: string }> = [];
+        if (accession) tentativas.push({ campo: 'AccessionNumber', valor: accession });
+        if (patientId) tentativas.push({ campo: 'PatientID', valor: patientId });
+        if (q) {
+          // Busca genérica: tenta AccessionNumber primeiro, depois PatientID
+          tentativas.push({ campo: 'AccessionNumber', valor: q });
+          tentativas.push({ campo: 'PatientID', valor: q });
+        }
+
+        let findResult: Array<Record<string, unknown>> | null = null;
+        let campoUsado = '';
+        for (const t of tentativas) {
+          const r = await orthancFetch(config, '/tools/find', {
+            method: 'POST',
+            body: JSON.stringify({ Level: 'Study', Query: { [t.campo]: t.valor }, Expand: true }),
+          });
+          if (r?.length) {
+            findResult = r;
+            campoUsado = t.campo;
+            break;
+          }
+        }
 
         if (!findResult?.length) {
-          return NextResponse.json({ ok: true, encontrado: false, message: 'Nenhum estudo encontrado com esse AccessionNumber.' });
+          return NextResponse.json({
+            ok: true,
+            encontrado: false,
+            message: `Nenhum estudo encontrado (tentou ${tentativas.map(t => t.campo).join(', ')}).`
+          });
         }
 
         const study = findResult[0];
@@ -339,6 +366,10 @@ export async function GET(req: NextRequest) {
           }
         }
 
+        // Pegar AccessionNumber real do estudo encontrado (pode ser vazio)
+        const accessionEncontrado = (study.MainDicomTags as Record<string, string>)?.AccessionNumber || '';
+        const patientIdEncontrado = (study.PatientMainDicomTags as Record<string, string>)?.PatientID || '';
+
         return NextResponse.json({
           ok: true,
           encontrado: true,
@@ -347,6 +378,9 @@ export async function GET(req: NextRequest) {
           studyDate,
           totalMedidas: Object.keys(medidas).length,
           srInstanceId,
+          accessionNumber: accessionEncontrado,
+          patientId: patientIdEncontrado,
+          campoUsado,
         });
       }
 
