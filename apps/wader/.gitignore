@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.log
+
+# Configuração local (cada clínica tem a sua)
+wader.config.json
+wader.config.local.json
+
+# Credenciais
+sa.json
+sa.enc
+*.pem

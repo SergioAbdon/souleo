@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Wader · Recepção</title>
+    <style>
+      :root {
+        --bg: #f8fafc;
+        --fg: #0f172a;
+        --muted: #64748b;
+        --accent: #1e3a5f;
+        --border: #e2e8f0;
+        --success: #16a34a;
+        --warn: #f59e0b;
+        --danger: #dc2626;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+      }
+      header {
+        padding: 1rem 2rem;
+        background: white;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      header h1 { font-size: 1.1rem; margin: 0; font-weight: 600; }
+      header nav a {
+        color: var(--muted);
+        text-decoration: none;
+        margin-left: 1rem;
+        font-size: 0.9rem;
+      }
+      header nav a:hover { color: var(--accent); }
+      main {
+        padding: 2rem;
+        max-width: 1280px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: 380px 1fr;
+        gap: 2rem;
+      }
+      @media (max-width: 900px) {
+        main { grid-template-columns: 1fr; }
+      }
+      .card {
+        background: white;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 1.5rem;
+      }
+      .card h2 {
+        margin: 0 0 1rem;
+        font-size: 1rem;
+        font-weight: 600;
+      }
+      .card-subtitle {
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin: -0.75rem 0 1rem;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.75rem;
+      }
+      label {
+        display: block;
+        font-size: 0.78rem;
+        color: var(--muted);
+        margin-top: 0.65rem;
+        margin-bottom: 0.25rem;
+      }
+      input, select {
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 0.9rem;
+        font-family: inherit;
+        background: white;
+      }
+      input:focus, select:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      input:disabled, select:disabled { background: #f1f5f9; }
+      button {
+        margin-top: 1rem;
+        width: 100%;
+        padding: 0.6rem;
+        background: var(--accent);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:hover { opacity: 0.9; }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        background: #fef3c7;
+        color: #92400e;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+      }
+      .alert {
+        padding: 0.75rem;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        margin-top: 0.75rem;
+        display: none;
+      }
+      .alert.show { display: block; }
+      .alert.success { background: #dcfce7; color: #14532d; }
+      .alert.error { background: #fee2e2; color: #7f1d1d; }
+      .alert.info { background: #dbeafe; color: #1e3a5f; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td {
+        text-align: left;
+        padding: 0.55rem;
+        border-bottom: 1px solid var(--border);
+        font-size: 0.85rem;
+      }
+      th {
+        font-weight: 600;
+        color: var(--muted);
+        font-size: 0.7rem;
+        text-transform: uppercase;
+      }
+      .status {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+      }
+      .status.aguardando { background: #fef3c7; color: #92400e; }
+      .status.andamento { background: #dbeafe; color: #1e3a5f; }
+      .status.rascunho { background: #e0f2fe; color: #075985; }
+      .status.emitido { background: #dcfce7; color: #14532d; }
+      .acc-cell {
+        font-family: 'Consolas', monospace;
+        font-size: 0.7rem;
+        color: var(--muted);
+      }
+      .empty {
+        text-align: center;
+        padding: 2rem;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      .pill-info {
+        display: inline-block;
+        padding: 2px 6px;
+        background: #f1f5f9;
+        color: var(--muted);
+        border-radius: 4px;
+        font-size: 0.7rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Wader · Recepção</h1>
+      <nav>
+        <span class="badge" id="phase-badge">F2 — Manual UI</span>
+        <a href="/admin">Admin</a>
+        <a href="/wizard">Wizard</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="card">
+        <h2>Cadastro Manual</h2>
+        <p class="card-subtitle">Digite o CPF primeiro — se já cadastrado, dados serão preenchidos automaticamente.</p>
+
+        <label for="cpf">CPF</label>
+        <input id="cpf" type="text" placeholder="000.000.000-00" maxlength="14" inputmode="numeric" autocomplete="off" />
+
+        <label for="nomePaciente">Nome do paciente</label>
+        <input id="nomePaciente" type="text" placeholder="JOAO SILVA SANTOS" autocomplete="off" />
+
+        <div class="row">
+          <div>
+            <label for="dtnasc">Nascimento</label>
+            <input id="dtnasc" type="date" />
+          </div>
+          <div>
+            <label for="sexo">Sexo</label>
+            <select id="sexo">
+              <option value="">-</option>
+              <option value="M">M</option>
+              <option value="F">F</option>
+            </select>
+          </div>
+        </div>
+
+        <label for="convenio">Convênio</label>
+        <input id="convenio" type="text" placeholder="Particular, Unimed, etc." autocomplete="off" />
+
+        <label for="tipoExame">Procedimento</label>
+        <select id="tipoExame">
+          <option value="">Carregando...</option>
+        </select>
+
+        <div class="row">
+          <div>
+            <label for="dataExame">Data</label>
+            <input id="dataExame" type="date" />
+          </div>
+          <div>
+            <label for="horarioChegada">Horário</label>
+            <input id="horarioChegada" type="time" value="09:00" />
+          </div>
+        </div>
+
+        <button id="btnSalvar">Cadastrar</button>
+
+        <div id="alert" class="alert"></div>
+      </section>
+
+      <section class="card">
+        <h2>
+          Agenda do dia
+          <span id="contadorExames" style="color:var(--muted);font-weight:400;font-size:0.85rem;margin-left:0.5rem"></span>
+        </h2>
+        <p class="card-subtitle">
+          <span class="pill-info" id="ws-pill">workspace: …</span>
+        </p>
+        <div id="lista-container">
+          <div class="empty">Carregando…</div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const hoje = () => new Date().toISOString().slice(0, 10);
+      const formataCpf = (v) => {
+        const d = v.replace(/\D/g, '').slice(0, 11);
+        return d
+          .replace(/^(\d{3})(\d)/, '$1.$2')
+          .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+          .replace(/\.(\d{3})(\d)/, '.$1-$2');
+      };
+
+      $('cpf').addEventListener('input', (e) => {
+        e.target.value = formataCpf(e.target.value);
+      });
+
+      $('dataExame').value = hoje();
+
+      function showAlert(message, type) {
+        const el = $('alert');
+        el.textContent = message;
+        el.className = `alert show ${type}`;
+        if (type === 'success') {
+          setTimeout(() => el.classList.remove('show'), 4000);
+        }
+      }
+
+      // Auto-completar nome quando CPF tem 11 dígitos e existe no Firestore
+      let lastCpfBuscado = '';
+      $('cpf').addEventListener('blur', async () => {
+        const cpfDigitos = $('cpf').value.replace(/\D/g, '');
+        if (cpfDigitos.length !== 11 || cpfDigitos === lastCpfBuscado) return;
+        lastCpfBuscado = cpfDigitos;
+        try {
+          const res = await fetch(`/api/pacientes/buscar?cpf=${cpfDigitos}`);
+          const json = await res.json();
+          if (json.ok && json.encontrado) {
+            $('nomePaciente').value = json.paciente.nome;
+            if (json.paciente.dtnasc) $('dtnasc').value = json.paciente.dtnasc;
+            if (json.paciente.sexo) $('sexo').value = json.paciente.sexo;
+            if (json.paciente.convenio) $('convenio').value = json.paciente.convenio;
+            showAlert(`✓ Paciente reconhecido: ${json.paciente.nome}`, 'info');
+          }
+        } catch (_) { /* silencioso */ }
+      });
+
+      async function carregarProcedimentos() {
+        const sel = $('tipoExame');
+        try {
+          const res = await fetch('/api/procedimentos');
+          const json = await res.json();
+          if (!json.ok || !json.procedimentos.length) {
+            sel.innerHTML = '<option value="">Nenhum procedimento configurado</option>';
+            return;
+          }
+          sel.innerHTML = json.procedimentos
+            .map((p) => `<option value="${p.tipo}">${p.label}</option>`)
+            .join('');
+        } catch (err) {
+          sel.innerHTML = '<option value="">Erro ao carregar</option>';
+        }
+      }
+
+      async function carregarStatus() {
+        try {
+          const res = await fetch('/api/status');
+          const json = await res.json();
+          $('ws-pill').textContent = `workspace: ${json.wsId || '?'}`;
+        } catch (_) {}
+      }
+
+      async function carregarLista() {
+        try {
+          const res = await fetch(`/api/agendamentos?data=${$('dataExame').value}`);
+          const json = await res.json();
+          renderLista(json);
+        } catch (err) {
+          $('lista-container').innerHTML = `<div class="empty">Erro ao carregar: ${err.message}</div>`;
+        }
+      }
+
+      function renderLista({ exames, total }) {
+        $('contadorExames').textContent = total != null ? `· ${total} agendamento${total === 1 ? '' : 's'}` : '';
+        if (!exames || exames.length === 0) {
+          $('lista-container').innerHTML = '<div class="empty">Nenhum agendamento pra essa data.</div>';
+          return;
+        }
+        const rows = exames.map((e) => {
+          const accCurto = e.id ? e.id.substring(0, 8) : '—';
+          const labelTipo = ({
+            eco_tt: 'Eco TT',
+            doppler_carotidas: 'Carótidas',
+            eco_te: 'Eco TE',
+            eco_stress: 'Eco Stress',
+          })[e.tipoExame] || e.tipoExame;
+          return `
+          <tr>
+            <td><strong>${e.horarioChegada || '—'}</strong></td>
+            <td>${e.pacienteNome}</td>
+            <td>${labelTipo}</td>
+            <td><span class="status ${e.status}">${e.status}</span></td>
+            <td class="acc-cell" title="${e.id}">${accCurto}…</td>
+          </tr>
+        `;
+        }).join('');
+        $('lista-container').innerHTML = `
+          <table>
+            <thead>
+              <tr><th>Hora</th><th>Paciente</th><th>Procedimento</th><th>Status</th><th>ID/ACC</th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        `;
+      }
+
+      $('btnSalvar').addEventListener('click', async () => {
+        const payload = {
+          nomePaciente: $('nomePaciente').value.trim().toUpperCase(),
+          cpf: $('cpf').value.replace(/\D/g, ''),
+          dtnasc: $('dtnasc').value || undefined,
+          sexo: $('sexo').value || undefined,
+          convenio: $('convenio').value.trim() || undefined,
+          tipoExame: $('tipoExame').value,
+          dataExame: $('dataExame').value,
+          horarioChegada: $('horarioChegada').value,
+        };
+
+        $('btnSalvar').disabled = true;
+        $('btnSalvar').textContent = 'Cadastrando…';
+        try {
+          const res = await fetch('/api/agendamentos', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const json = await res.json();
+          if (!res.ok) {
+            showAlert(json.errors?.join(' · ') || json.message || 'Erro', 'error');
+          } else {
+            const accCurto = json.exame.id.substring(0, 12);
+            const novoOuExistente = json.pacienteCriado ? '(paciente NOVO)' : '(paciente reusado)';
+            showAlert(`✓ Cadastrado · ID/ACC: ${accCurto}… · ${novoOuExistente}`, 'success');
+            $('cpf').value = '';
+            $('nomePaciente').value = '';
+            $('dtnasc').value = '';
+            $('sexo').value = '';
+            $('convenio').value = '';
+            lastCpfBuscado = '';
+            await carregarLista();
+          }
+        } catch (err) {
+          showAlert('Erro de rede: ' + err.message, 'error');
+        } finally {
+          $('btnSalvar').disabled = false;
+          $('btnSalvar').textContent = 'Cadastrar';
+        }
+      });
+
+      $('dataExame').addEventListener('change', carregarLista);
+
+      Promise.all([carregarProcedimentos(), carregarLista(), carregarStatus()]);
+    </script>
+  </body>
+</html>
