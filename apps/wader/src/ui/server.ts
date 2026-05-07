@@ -4,10 +4,13 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { createLogger } from '../logger';
 import { WaderConfig } from '../config/types';
+import { WorklistSyncWorker } from '../workers/worklist-sync-worker';
+import { DicomIngestWorker } from '../workers/dicom-ingest-worker';
 import { registerAgendamentosRoutes } from './api/agendamentos';
 import { registerProcedimentosRoutes } from './api/procedimentos';
 import { registerOrthancConfigRoutes } from './api/orthanc-config';
 import { registerWorklistRoutes } from './api/worklist';
+import { registerDicomRoutes } from './api/dicom';
 
 const log = createLogger({ module: 'ui-server' });
 const PAGES_DIR = path.join(__dirname, 'pages');
@@ -24,7 +27,15 @@ const PAGES_DIR = path.join(__dirname, 'pages');
  *   /wizard        → wizard de instalação inicial
  *   /api/*         → endpoints internos (placeholder na F1)
  */
-export async function startUiServer(config: WaderConfig): Promise<FastifyInstance> {
+export interface UiServerExtras {
+  worklistWorker: WorklistSyncWorker | null;
+  dicomWorker?: DicomIngestWorker | null;
+}
+
+export async function startUiServer(
+  config: WaderConfig,
+  extras: UiServerExtras = { worklistWorker: null, dicomWorker: null },
+): Promise<FastifyInstance> {
   const app = Fastify({
     logger: false, // usamos pino diretamente via createLogger
     bodyLimit: 50 * 1024 * 1024, // 50 MB (DICOM SR pode ser grande)
@@ -43,7 +54,8 @@ export async function startUiServer(config: WaderConfig): Promise<FastifyInstanc
   registerAgendamentosRoutes(app, config);
   registerProcedimentosRoutes(app, config);
   registerOrthancConfigRoutes(app, config);
-  registerWorklistRoutes(app, config);
+  registerWorklistRoutes(app, config, extras.worklistWorker);
+  registerDicomRoutes(app, config, extras.dicomWorker ?? null);
 
   await app.listen({ host: '127.0.0.1', port: config.ui.port });
 

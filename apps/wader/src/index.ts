@@ -19,7 +19,11 @@ import { loadConfig, ConfigError } from './config/load';
 import { logger, createLogger } from './logger';
 import { startUiServer } from './ui/server';
 import { initFirebase } from './adapters/firebase';
+import { OrthancClient } from './adapters/orthanc-client';
+import { WorkspaceRepo } from './adapters/workspace-repo';
 import { validarWorklistPath } from './workers/worklist-path-validator';
+import { WorklistSyncWorker } from './workers/worklist-sync-worker';
+import { DicomIngestWorker } from './workers/dicom-ingest-worker';
 import type { FastifyInstance } from 'fastify';
 
 const log = createLogger({ module: 'main' });
@@ -48,24 +52,49 @@ async function main(): Promise<void> {
 
   // Valida pasta de worklists. Falhar NÃO derruba Wader — só desativa worklist sync.
   const wlPathValidation = validarWorklistPath(config.orthanc.worklistPath);
+  let worklistWorker: WorklistSyncWorker | null = null;
   if (!wlPathValidation.ok) {
     log.warn(
       { path: config.orthanc.worklistPath, error: wlPathValidation.error, hint: wlPathValidation.hint },
       'Pasta worklists inválida — sync de worklist ficará desativado',
     );
+  } else {
+    worklistWorker = new WorklistSyncWorker({
+      wsId: config.wsId,
+      worklistPath: config.orthanc.worklistPath,
+      intervalSec: config.polling.worklistSyncSec,
+    });
+    worklistWorker.start();
   }
 
-  const app = await startUiServer(config);
+  // DICOM ingest worker — não derruba se Orthanc estiver fora; tenta a cada tick
+  const orthancClient = new OrthancClient(new WorkspaceRepo(config.wsId));
+  const dicomWorker = new DicomIngestWorker({
+    wsId: config.wsId,
+    client: orthancClient,
+    intervalSec: config.polling.orthancChangesSec,
+  });
+  dicomWorker.start();
 
-  registerShutdownHandlers(app);
+  const app = await startUiServer(config, { worklistWorker, dicomWorker });
+
+  registerShutdownHandlers(app, { worklistWorker, dicomWorker });
 
   log.info('Wader rodando. Acesse http://localhost:%d', config.ui.port);
 }
 
-function registerShutdownHandlers(app: FastifyInstance): void {
+function registerShutdownHandlers(
+  app: FastifyInstance,
+  workers: { worklistWorker: WorklistSyncWorker | null; dicomWorker: DicomIngestWorker | null } = {
+    worklistWorker: null,
+    dicomWorker: null,
+  },
+): void {
   const shutdown = async (signal: string) => {
     log.info({ signal }, 'Sinal recebido, encerrando…');
     try {
+      workers.worklistWorker?.stop();
+      workers.dicomWorker?.stop();
       await app.close();
       log.info('Servidor encerrado com sucesso.');
       process.exit(0);

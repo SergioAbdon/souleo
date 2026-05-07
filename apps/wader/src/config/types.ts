@@ -60,7 +60,9 @@ export interface BackupConfig {
 }
 
 export interface PollingConfig {
+  /** Intervalo do worker de sync de worklists. Default 60s. */
   worklistSyncSec: number;
+  /** Intervalo do worker de DICOM ingest (Orthanc /changes). Default 30s. */
   orthancChangesSec: number;
 }
 
@@ -82,7 +84,7 @@ export const DEFAULT_CONFIG: Partial<WaderConfig> = {
   polling: {
     worklistSyncSec: 60,
     orthancChangesSec: 30,
-  },
+  } as PollingConfig,
   ui: {
     port: 8043,
     showTrayIcon: true,

@@ -9,8 +9,11 @@
         --bg: #f8fafc;
         --fg: #0f172a;
         --muted: #64748b;
-        --accent: #2563eb;
+        --accent: #1e3a5f;
         --border: #e2e8f0;
+        --success: #16a34a;
+        --warn: #f59e0b;
+        --danger: #dc2626;
       }
       * { box-sizing: border-box; }
       body {
@@ -34,15 +37,59 @@
         margin-left: 1rem;
         font-size: 0.9rem;
       }
-      main { padding: 2rem; max-width: 800px; margin: 0 auto; }
-      .placeholder {
-        background: white;
-        border: 1px dashed var(--border);
-        border-radius: 8px;
+      header nav a:hover { color: var(--accent); }
+      main {
         padding: 2rem;
-        text-align: center;
-        color: var(--muted);
+        max-width: 1100px;
+        margin: 0 auto;
+        display: grid;
+        gap: 1.25rem;
       }
+      .grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.25rem;
+      }
+      @media (max-width: 800px) {
+        .grid-2 { grid-template-columns: 1fr; }
+      }
+      .card {
+        background: white;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 1.5rem;
+      }
+      .card h2 {
+        margin: 0 0 1rem;
+        font-size: 1rem;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .card .subtitle { font-size: 0.8rem; color: var(--muted); margin-top: -0.5rem; margin-bottom: 1rem; }
+      .field {
+        display: flex;
+        justify-content: space-between;
+        padding: 0.4rem 0;
+        font-size: 0.85rem;
+        border-bottom: 1px solid #f1f5f9;
+      }
+      .field:last-child { border: 0; }
+      .field .label { color: var(--muted); }
+      .field .value { font-family: 'Consolas', monospace; color: var(--fg); }
+      .pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+      }
+      .pill.green { background: #dcfce7; color: #14532d; }
+      .pill.yellow { background: #fef3c7; color: #92400e; }
+      .pill.red { background: #fee2e2; color: #7f1d1d; }
+      .pill.gray { background: #e2e8f0; color: #475569; }
       .badge {
         display: inline-block;
         padding: 2px 8px;
@@ -53,22 +100,231 @@
         font-weight: 600;
         text-transform: uppercase;
       }
+      button {
+        padding: 0.4rem 0.8rem;
+        background: var(--accent);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+        margin-right: 0.4rem;
+      }
+      button:hover { opacity: 0.9; }
+      button.secondary { background: white; color: var(--accent); border: 1px solid var(--border); }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      .actions { margin-top: 0.75rem; }
+      pre.error {
+        background: #fee2e2;
+        color: #7f1d1d;
+        padding: 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        margin-top: 0.5rem;
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .pulse {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 0.4rem;
+      }
+      .pulse.green { background: var(--success); box-shadow: 0 0 0 0 rgba(22,163,74,0.7); animation: pulse 2s infinite; }
+      .pulse.yellow { background: var(--warn); }
+      .pulse.red { background: var(--danger); }
+      @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(22,163,74,0.7); }
+        70% { box-shadow: 0 0 0 6px rgba(22,163,74,0); }
+        100% { box-shadow: 0 0 0 0 rgba(22,163,74,0); }
+      }
     </style>
   </head>
   <body>
     <header>
-      <h1>Wader · Admin</h1>
+      <h1>Wader · Painel Admin</h1>
       <nav>
-        <span class="badge">F1 — Esqueleto</span>
+        <span class="badge" id="phase-badge">F1–F4 Concluídas</span>
         <a href="/">Recepção</a>
         <a href="/wizard">Wizard</a>
       </nav>
     </header>
+
     <main>
-      <div class="placeholder">
-        <h2>Painel Admin</h2>
-        <p>Placeholder da Fase 1. Status do serviço, configurações de aparelhos e logs serão implementados em fases posteriores.</p>
+      <!-- Status geral -->
+      <section class="card">
+        <h2>Status do Wader</h2>
+        <p class="subtitle">Visão geral em tempo real (atualiza a cada 5s)</p>
+        <div id="status-geral"></div>
+      </section>
+
+      <div class="grid-2">
+        <!-- Worklist Sync Worker -->
+        <section class="card">
+          <h2><span id="wl-pulse" class="pulse gray"></span> Worker · Worklist Sync</h2>
+          <p class="subtitle">Gera <code>.wl</code> pro Orthanc</p>
+          <div id="wl-worker-status"></div>
+          <div class="actions">
+            <button onclick="sync('worklist','start')">▶ Iniciar</button>
+            <button class="secondary" onclick="sync('worklist','stop')">■ Parar</button>
+            <button class="secondary" onclick="manualSync()">⟳ Sync agora</button>
+          </div>
+        </section>
+
+        <!-- DICOM Ingest Worker -->
+        <section class="card">
+          <h2><span id="di-pulse" class="pulse gray"></span> Worker · DICOM Ingest</h2>
+          <p class="subtitle">Monitora <code>/changes</code> do Orthanc</p>
+          <div id="di-worker-status"></div>
+          <div class="actions">
+            <button onclick="sync('dicom','start')">▶ Iniciar</button>
+            <button class="secondary" onclick="sync('dicom','stop')">■ Parar</button>
+            <button class="secondary" onclick="testOrthanc()">🔌 Testar conexão</button>
+          </div>
+        </section>
       </div>
+
+      <!-- Config Orthanc -->
+      <section class="card">
+        <h2>Conexão Orthanc (do Firestore)</h2>
+        <p class="subtitle">URL/user/pass vêm de <code>workspaces/{wsId}.ortancUrl/User/Pass</code> (LocalModal do LEO web)</p>
+        <div id="orthanc-config"></div>
+      </section>
+
+      <!-- Pasta Worklists -->
+      <section class="card">
+        <h2>Pasta de Worklists (local)</h2>
+        <p class="subtitle">Onde Wader escreve os arquivos <code>.wl</code> pro plugin Worklist do Orthanc</p>
+        <div id="worklist-path"></div>
+      </section>
     </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+
+      function fmtField(label, value) {
+        return `<div class="field"><span class="label">${label}</span><span class="value">${value}</span></div>`;
+      }
+
+      function pillFromBoolean(value, trueLabel = 'OK', falseLabel = 'erro') {
+        const cls = value ? 'green' : 'red';
+        const txt = value ? trueLabel : falseLabel;
+        return `<span class="pill ${cls}">${txt}</span>`;
+      }
+
+      async function fetchJson(url, init) {
+        const res = await fetch(url, init);
+        return res.json();
+      }
+
+      async function refreshAll() {
+        try {
+          const [status, wl, di, oc, wp] = await Promise.all([
+            fetchJson('/api/status'),
+            fetchJson('/api/worklist/worker'),
+            fetchJson('/api/dicom/worker'),
+            fetchJson('/api/orthanc/config'),
+            fetchJson('/api/worklist/path-status'),
+          ]);
+          renderStatus(status);
+          renderWorklistWorker(wl);
+          renderDicomWorker(di);
+          renderOrthancConfig(oc);
+          renderWorklistPath(wp);
+        } catch (e) {
+          console.error('refreshAll falhou:', e);
+        }
+      }
+
+      function renderStatus(status) {
+        $('status-geral').innerHTML =
+          fmtField('Service', `${status.service} v${status.phase}`) +
+          fmtField('Workspace', status.wsId) +
+          fmtField('Agent ID', status.agentId) +
+          fmtField('Uptime', `${status.uptimeSec}s`) +
+          fmtField('Última sync', new Date(status.timestamp).toLocaleString('pt-BR'));
+      }
+
+      function renderWorklistWorker(w) {
+        $('wl-pulse').className = `pulse ${w.running ? 'green' : 'red'}`;
+        const lr = w.lastResult ?? {};
+        $('wl-worker-status').innerHTML =
+          fmtField('Status', w.running ? '<span class="pill green">RODANDO</span>' : '<span class="pill red">PARADO</span>') +
+          fmtField('Intervalo', `${w.intervalSec}s`) +
+          fmtField('Execuções', `${w.execCount ?? 0}`) +
+          fmtField('Último tick', w.lastRunAt ? new Date(w.lastRunAt).toLocaleString('pt-BR') : '—') +
+          fmtField('Exames elegíveis', `${lr.examesElegiveis ?? '—'}`) +
+          fmtField('.wl na pasta', `${lr.wlsDepois ?? '—'}`) +
+          (w.lastError ? `<pre class="error">${w.lastError}</pre>` : '');
+      }
+
+      function renderDicomWorker(w) {
+        if (!w.configurado) {
+          $('di-pulse').className = 'pulse red';
+          $('di-worker-status').innerHTML = `<div class="field"><span class="label">Status</span><span>${w.mensagem ?? 'Não configurado'}</span></div>`;
+          return;
+        }
+        const hasError = !!w.lastError;
+        $('di-pulse').className = `pulse ${w.running ? (hasError ? 'yellow' : 'green') : 'red'}`;
+        $('di-worker-status').innerHTML =
+          fmtField('Status', w.running ? '<span class="pill green">RODANDO</span>' : '<span class="pill red">PARADO</span>') +
+          fmtField('Intervalo', `${w.intervalSec}s`) +
+          fmtField('Execuções', `${w.execCount}`) +
+          fmtField('Cursor (lastSeq)', `${w.lastSeq}`) +
+          fmtField('Estudos processados', `${w.estudosProcessados}`) +
+          fmtField('Estudos órfãos', `${w.estudosOrfaos}`) +
+          fmtField('Cache (já processados)', `${w.cacheProcessados}`) +
+          fmtField('Último tick', w.lastTickAt ? new Date(w.lastTickAt).toLocaleString('pt-BR') : '—') +
+          (w.lastError ? `<pre class="error">⚠ ${w.lastError}\n(esperado se Orthanc estiver fora da rede)</pre>` : '');
+      }
+
+      function renderOrthancConfig(oc) {
+        if (!oc.configurado) {
+          $('orthanc-config').innerHTML = `<div class="field"><span class="label">Configurado</span><span>${pillFromBoolean(false, '', 'NÃO')}</span></div><pre class="error">${oc.mensagem ?? 'Sem config Orthanc no Firestore'}</pre>`;
+          return;
+        }
+        $('orthanc-config').innerHTML =
+          fmtField('URL', `<code>${oc.orthancRemoto.url}</code>`) +
+          fmtField('User', oc.orthancRemoto.user) +
+          fmtField('Pass', oc.orthancRemoto.passMascarada) +
+          fmtField('Ativo', pillFromBoolean(oc.orthancRemoto.ativo, 'SIM', 'NÃO')) +
+          fmtField('Cache TTL', `${oc.cacheTtlMin} min`);
+      }
+
+      function renderWorklistPath(wp) {
+        $('worklist-path').innerHTML =
+          fmtField('Caminho', `<code>${wp.path}</code>`) +
+          fmtField('Existe', pillFromBoolean(wp.exists)) +
+          fmtField('Escrevível', pillFromBoolean(wp.writable)) +
+          (wp.error ? `<pre class="error">${wp.error}</pre>` : '');
+      }
+
+      async function sync(worker, action) {
+        const url = `/api/${worker}/worker/${action}`;
+        await fetchJson(url, { method: 'POST' });
+        await refreshAll();
+      }
+
+      async function manualSync() {
+        await fetchJson('/api/worklist/sync', { method: 'POST' });
+        await refreshAll();
+      }
+
+      async function testOrthanc() {
+        const r = await fetchJson('/api/dicom/test');
+        if (r.ok) {
+          alert('✓ Conexão Orthanc OK\n\n' + JSON.stringify(r.system, null, 2));
+        } else {
+          alert('✗ Falha de conexão:\n\n' + r.error);
+        }
+        await refreshAll();
+      }
+
+      refreshAll();
+      setInterval(refreshAll, 5000);
+    </script>
   </body>
 </html>

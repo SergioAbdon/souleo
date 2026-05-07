@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import { initializeApp, cert, getApps, App } from 'firebase-admin/app';
 import { getFirestore, Firestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { getStorage, Storage } from 'firebase-admin/storage';
 import { createLogger } from '../logger';
 import { FirebaseConfig } from '../config/types';
 
@@ -8,6 +9,7 @@ const log = createLogger({ module: 'firebase-adapter' });
 
 let _app: App | null = null;
 let _db: Firestore | null = null;
+let _storage: Storage | null = null;
 
 /**
  * Inicializa Firebase Admin SDK com a Service Account configurada.
@@ -40,9 +42,13 @@ export function initFirebase(config: FirebaseConfig): void {
   _app = initializeApp({
     credential: cert(sa as Parameters<typeof cert>[0]),
     projectId: config.projectId,
+    storageBucket: `${config.projectId}.appspot.com`,
   });
 
-  log.info({ projectId: config.projectId, clientEmail: sa.client_email }, 'Firebase inicializado');
+  log.info(
+    { projectId: config.projectId, clientEmail: sa.client_email, storageBucket: `${config.projectId}.appspot.com` },
+    'Firebase inicializado',
+  );
 }
 
 /**
@@ -56,6 +62,19 @@ export function getDb(): Firestore {
     _db = getFirestore();
   }
   return _db;
+}
+
+/**
+ * Retorna a instância única de Storage. Lazy.
+ */
+export function getFbStorage(): Storage {
+  if (!_storage) {
+    if (!_app && getApps().length === 0) {
+      throw new Error('Firebase não inicializado. Chame initFirebase() antes.');
+    }
+    _storage = getStorage();
+  }
+  return _storage;
 }
 
 export { FieldValue, Timestamp };
