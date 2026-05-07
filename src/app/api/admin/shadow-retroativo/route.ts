@@ -146,57 +146,131 @@ function dadosParaMedidas(dados: Record<string, unknown>): MedidasEcoTT {
 
 /** Padrões de divergências esperadas (13 alterações aprovadas) */
 const ESPERADAS: RegExp[] = [
-  /VR ≥ -1[89]%/,
-  /Estenose Pulmonar/,
-  /Átrio direito aumentado/,
+  /VR ≥ -1[89]%/,                       // GLS VE -18% → -20%
+  /Estenose Pulmonar/,                  // Cutoffs ASE 2017
+  /Átrio direito aumentado/,            // RAVI sexo-específico → unificado
+  /Ectasia.*\(previsto.*± .*mm\)/,     // Aorta com Z-score (versão nova)
+  /Ectasia.*medindo \d+ mm\.$/,         // Aorta sem Z-score (versão antiga)
 ];
 
 function isEsperada(velho: string, novo: string): boolean {
   return ESPERADAS.some(re => re.test(novo) || re.test(velho));
 }
 
-/** Compara achados/conclusões linha a linha */
+/** Compara achados/conclusões com tolerância (normalização + casamento de conjuntos) */
 function compararLaudo(velho: { achados: string[]; conclusoes: string[] }, novo: { achados: string[]; conclusoes: string[] }) {
   const divergencias: { categoria: string; linha: number; velho: string; novo: string; esperada: boolean }[] = [];
 
-  const maxA = Math.max(velho.achados.length, novo.achados.length);
-  for (let i = 0; i < maxA; i++) {
-    const v = velho.achados[i] || '';
-    const n = novo.achados[i] || '';
-    if (n.startsWith('__WILKINS__')) continue;
-    if (v !== n) {
-      divergencias.push({ categoria: 'achado', linha: i + 1, velho: v, novo: n, esperada: isEsperada(v, n) });
-    }
+  // Estratégia: normalizar ambos os lados, comparar como conjuntos.
+  // Se uma frase do velho NÃO está no novo (e vice-versa), é divergência.
+  // Linhas com mesma normalização (mesmo em ordens/posições diferentes) são consideradas iguais.
+
+  function comparar(velhoArr: string[], novoArr: string[], categoria: string) {
+    const velhoFiltrado = velhoArr.filter(x => x && !x.startsWith('__WILKINS__'));
+    const novoFiltrado = novoArr.filter(x => x && !x.startsWith('__WILKINS__'));
+
+    const velhoNorm = velhoFiltrado.map(s => ({ original: s, norm: normalizar(s) }));
+    const novoNorm = novoFiltrado.map(s => ({ original: s, norm: normalizar(s) }));
+
+    const novoNormSet = new Set(novoNorm.map(x => x.norm));
+    const velhoNormSet = new Set(velhoNorm.map(x => x.norm));
+
+    // Frases no velho que não estão no novo
+    velhoNorm.forEach((v, i) => {
+      if (!novoNormSet.has(v.norm)) {
+        divergencias.push({
+          categoria,
+          linha: i + 1,
+          velho: v.original,
+          novo: '',
+          esperada: isEsperada(v.original, ''),
+        });
+      }
+    });
+
+    // Frases no novo que não estão no velho
+    novoNorm.forEach((n, i) => {
+      if (!velhoNormSet.has(n.norm)) {
+        divergencias.push({
+          categoria,
+          linha: i + 1,
+          velho: '',
+          novo: n.original,
+          esperada: isEsperada('', n.original),
+        });
+      }
+    });
   }
 
-  const maxC = Math.max(velho.conclusoes.length, novo.conclusoes.length);
-  for (let i = 0; i < maxC; i++) {
-    const v = velho.conclusoes[i] || '';
-    const n = novo.conclusoes[i] || '';
-    if (v !== n) {
-      divergencias.push({ categoria: 'conclusao', linha: i + 1, velho: v, novo: n, esperada: isEsperada(v, n) });
-    }
-  }
+  comparar(velho.achados, novo.achados, 'achado');
+  comparar(velho.conclusoes, novo.conclusoes, 'conclusao');
 
   return divergencias;
 }
 
 /**
- * Extrai achados/conclusões do HTML salvo no exame.
- * O motor antigo salva o HTML em `achados` (texto livre TipTap).
+ * Extrai achados/conclusões do que está salvo no exame.
+ * O motor antigo salva como ARRAY de strings, mas Firestore pode
+ * ter convertido pra string única separada por vírgulas.
  */
-function extrairTextoHtml(html: string): string[] {
-  if (!html) return [];
-  // Remove tags HTML, pega texto puro de cada linha
-  const linhas = html
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<\/li>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .split('\n')
-    .map(l => l.trim())
+function extrairLinhas(dados: unknown): string[] {
+  if (!dados) return [];
+
+  // Caso 1: array (formato ideal)
+  if (Array.isArray(dados)) {
+    // Cada elemento pode ainda ser uma string com várias frases concatenadas
+    const todas: string[] = [];
+    for (const item of dados) {
+      const s = String(item || '').trim();
+      if (s) todas.push(...splitFrases(s));
+    }
+    return todas.filter(Boolean);
+  }
+
+  // Caso 2: string única (concatenada com vírgulas pelo Firestore)
+  if (typeof dados === 'string') {
+    // Tentar como HTML primeiro
+    if (dados.includes('<')) {
+      return dados
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/p>/gi, '\n')
+        .replace(/<\/li>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .split('\n')
+        .map(l => l.trim())
+        .filter(Boolean);
+    }
+    return splitFrases(dados);
+  }
+
+  return [];
+}
+
+/**
+ * Splita uma string com várias frases médicas concatenadas.
+ * Cada frase nova começa com letra maiúscula após uma vírgula.
+ *
+ * Ex: "Ritmo regular.,Câmaras normais.,Função preservada."
+ * → ["Ritmo regular.", "Câmaras normais.", "Função preservada."]
+ *
+ * Cuida de NÃO splitar vírgulas DENTRO de frases (ex: "Ectasia leve, medindo X mm.")
+ */
+function splitFrases(s: string): string[] {
+  // Splita em vírgula seguida (opcionalmente de espaço) e letra maiúscula portuguesa
+  return s
+    .split(/,\s*(?=[A-ZÁÉÍÓÚÂÊÔÃÕÜÇ])/g)
+    .map(x => x.trim())
     .filter(Boolean);
-  return linhas;
+}
+
+/** Normaliza string pra comparação tolerante (remove pontuação final, espaços extras, numeração) */
+function normalizar(s: string): string {
+  return s
+    .trim()
+    .replace(/^\d+[\.\)]\s*/, '')   // remove "1. " ou "1) " do início
+    .replace(/[\s ]+/g, ' ')    // colapsa espaços/nbsp
+    .replace(/[\.;]+$/, '')           // remove . ou ; do final
+    .toLowerCase();
 }
 
 /**
@@ -261,8 +335,8 @@ export async function POST(req: NextRequest) {
 
       // Extrai achados/conclusões salvos
       const velho = {
-        achados: extrairTextoHtml(String(dados.achados || '')),
-        conclusoes: extrairTextoHtml(String(dados.conclusoes || '')),
+        achados: extrairLinhas(dados.achados),
+        conclusoes: extrairLinhas(dados.conclusoes),
       };
 
       const divergencias = compararLaudo(velho, novo);
