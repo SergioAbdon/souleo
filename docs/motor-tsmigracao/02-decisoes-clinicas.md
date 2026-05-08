@@ -118,6 +118,31 @@
 
 **Total: 15 decisões clínicas aprovadas pelo Dr. Sérgio.**
 
+### Decisão #16 — Classificação de aorta por Z-score (07/05/2026)
+
+Após revisão profunda das guidelines ASE/EACVI 2015 (Chamber Quantification — Lang et al.) e ACC/AHA 2022 (Aortic Disease):
+
+**Achado importante:** A ASE **NÃO tem oficialmente** categorização "leve / moderada / importante" pra dilatação aórtica. Ela apenas:
+- Define limites superiores de normalidade (95% CI)
+- Recomenda Z-score (>2 DP = dilatado, sem subcategorização oficial)
+- Cutoffs cirúrgicos: ≥55 mm (geral), ≥50 mm (BAV/Marfan), ≥45 mm (Loeys-Dietz)
+
+**Decisão Dr. Sérgio:** Manter classificação atual (convenção clínica brasileira):
+- Z ≤ 2 → Normal
+- Z 2-3 → **Leve** (ectasia leve)
+- Z 3-4 → **Moderada**
+- Z > 4 → **Importante**
+
+Esta classificação é **convenção clínica** baseada em interpretação prática do Z-score, alinhada com literatura brasileira (DIC SBC). Não força uma "ASE oficial" que não existe formalmente.
+
+Fórmulas mantidas (Roman 1989 + Devereux 2012):
+- Raiz <40 anos: previsto = 1,50 + 0,95·ASC, DP = 0,19 cm
+- Raiz ≥40 anos: previsto = 1,92 + 0,74·ASC, DP = 0,19 cm
+- Aorta Ascendente: previsto = 1,47 + 0,91·ASC, DP = 0,22 cm
+- Arco Aórtico: previsto = 1,26 + 0,61·ASC, DP = 0,20 cm
+
+**Total acumulado: 16 decisões clínicas aprovadas.**
+
 ---
 
 ## 🔒 Compromissos

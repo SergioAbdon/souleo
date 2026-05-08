@@ -62,10 +62,11 @@ export function classificarRaizAo(
       metodo: 'zscore',
     };
   }
-  // ── Fallback sem ASC (ASE 2015) ──
-  // Raiz: M [37, 42, 49] mm (normal/leve/moderada → importante >49)
-  //       F [33, 40, 47] mm
-  const limites = sexo === 'F' ? [33, 40, 47] : [37, 42, 49];
+  // ── Fallback sem ASC ──
+  // Cutoffs ASE 2015 Chamber Quantification — atualizados 07/05/2026
+  // Decisão Dr. Sérgio: corrigir superestimação
+  // Raiz: M [40, 45, 55] | F [36, 41, 51]
+  const limites = sexo === 'F' ? [36, 41, 51] : [40, 45, 55];
   return {
     medidaMM,
     previstoMM: null,
@@ -101,8 +102,9 @@ export function classificarAoAscendente(
       metodo: 'zscore',
     };
   }
-  // Fallback: M [34, 39, 48] / F [31, 36, 43]
-  const limites = sexo === 'F' ? [31, 36, 43] : [34, 39, 48];
+  // Fallback ASE 2015 — atualizado 07/05/2026
+  // Asc: M [37, 42, 50] | F [34, 39, 47]
+  const limites = sexo === 'F' ? [34, 39, 47] : [37, 42, 50];
   return {
     medidaMM,
     previstoMM: null,
@@ -137,8 +139,9 @@ export function classificarArcoAo(
       metodo: 'zscore',
     };
   }
-  // Fallback: M=F [30, 35, 41]
-  const limites = [30, 35, 41];
+  // Fallback ASE 2015 — atualizado 07/05/2026
+  // Arco: sem distinção de sexo (ASE Chamber Quantification 2015)
+  const limites = [36, 38, 42];
   return {
     medidaMM,
     previstoMM: null,

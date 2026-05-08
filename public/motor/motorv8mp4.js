@@ -1,5 +1,3 @@
-(function(){
-'use strict';
 // ══════════════════════════════════════════════════════════════════
 // LEO v7 · MOTOR V8 MP4 — Ecocardiograma Transtorácico
 // Evolução do Motor V6 original (laudo_leo_v6.html)
@@ -98,7 +96,7 @@ function calcAll(){
   const er   = (b9&&b10&&b11) ? T((b10+b11)/b9,2) : null;
   const aoIdx= (b52&&asc) ? T(b52/asc,2) : null;
 
-  // Estenose Mitral — ESC 2025: grad médio >10 importante, 5-10 moderada, <5 leve; área <1 imp, 1-1.5 mod, 1.5-2.5 leve
+  // Gradiente mitral classificado (para conclusão)
   let estenMitGrau='';
   if(b46!==null){
     if(b46>10) estenMitGrau='importante';
@@ -107,27 +105,26 @@ function calcAll(){
   }
   if(!estenMitGrau && b47!==null){
     if(b47<1) estenMitGrau='importante';
-    else if(b47<=1.5) estenMitGrau='moderada';
-    else if(b47<2.5) estenMitGrau='leve';
+    else if(b47<1.5) estenMitGrau='moderada';
+    else if(b47<=2) estenMitGrau='leve';
   }
 
-  // Estenose Aórtica — ASE/ESC: grad médio >40 imp, 20-40 mod, <20 leve; AVA ≤1 imp, 1-1.5 mod, >1.5 leve
+  // Gradiente aórtico classificado
   let estenAoGrau='';
-  if(b51!==null){
+  if(b50!==null){
+    if(b50>=64) estenAoGrau='importante';
+    else if(b50>=36) estenAoGrau='moderada';
+    else if(b50>=27) estenAoGrau='leve';
+    else if(b50>=16) estenAoGrau='esclerose';
+  }
+  if(!estenAoGrau && b51!==null){
     if(b51>40) estenAoGrau='importante';
     else if(b51>=20) estenAoGrau='moderada';
     else if(b51>0) estenAoGrau='leve';
   }
   if(!estenAoGrau && b52!==null){
-    if(b52<=1) estenAoGrau='importante';
-    else if(b52<=1.5) estenAoGrau='moderada';
-    else if(b52<=2) estenAoGrau='leve';
-  }
-  if(!estenAoGrau && b50!==null){
-    if(b50>=64) estenAoGrau='importante';
-    else if(b50>=36) estenAoGrau='moderada';
-    else if(b50>=27) estenAoGrau='leve';
-    else if(b50>=16) estenAoGrau='esclerose';
+    if(b52<1) estenAoGrau='importante';
+    else if(b52<1.5) estenAoGrau='moderada';
   }
 
   return {
@@ -180,13 +177,15 @@ function j4(d){
 }
 
 function j5(d){
-  // AD Volume Index — ASE 2025 (Método de Discos): <30 normal, 30-36 leve, >36-41 moderado, >41 importante
   if(d.b25===null||d.b25===0) return '';
-  const vi = ` Volume index de ${d.b25} ml/m².`;
-  if(d.b25<30) return '';
-  if(d.b25<=36) return 'Átrio direito aumentado em grau leve.'+vi;
-  if(d.b25<=41) return 'Átrio direito aumentado em grau moderado.'+vi;
-  return 'Átrio direito aumentado em grau importante.'+vi;
+  if(d.sexo==='F'){
+    if(d.b25<=27) return ''; if(d.b25<=33) return 'Átrio direito aumentado em grau leve.';
+    if(d.b25<=39) return 'Átrio direito aumentado em grau moderado.';
+    return 'Átrio direito aumentado em grau importante.';
+  }
+  if(d.b25<=32) return ''; if(d.b25<=38) return 'Átrio direito aumentado em grau leve.';
+  if(d.b25<=45) return 'Átrio direito aumentado em grau moderado.';
+  return 'Átrio direito aumentado em grau importante.';
 }
 
 function j6(d){
@@ -208,11 +207,12 @@ function j6(d){
 }
 
 function j7(d){
-  // VD diâmetro basal — ASE 2025: <41 normal, 41-44 leve, >44-49 moderado, >49 importante
   if(d.b13===null) return '';
-  if(d.b13>49) return 'Ventrículo direito aumentado em grau importante ('+d.b13+' mm).';
-  if(d.b13>44) return 'Ventrículo direito aumentado em grau moderado ('+d.b13+' mm).';
-  if(d.b13>=41) return 'Ventrículo direito aumentado em grau leve ('+d.b13+' mm).';
+  if(d.b13>50) return 'Ventrículo direito aumentado em grau importante.';
+  if(d.b13===50) return 'Ventrículo direito aumentado em grau moderado a importante.';
+  if(d.b13>42) return 'Ventrículo direito aumentado em grau moderado.';
+  if(d.b13===42) return 'Ventrículo direito aumentado em grau leve a moderado.';
+  if(d.b13>35) return 'Ventrículo direito aumentado em grau leve.';
   return '';
 }
 
@@ -220,8 +220,8 @@ function j8(d){
   // Cada câmara: alterada se medida e fora do normal, normal se medida e ok OU se não medida (assume normal)
   const aeA=(d.b24!==null&&d.b24>0)?d.b24>34:(d.b8?(d.sexo==='M'?d.b8>40:d.b8>38):false);
   const veA=d.b9?(d.sexo==='M'?d.b9>58:d.b9>52):false;
-  const vdA=d.b13?d.b13>=41:false;   // VD — ASE 2025: >=41mm = alterado. Não preenchido = normal
-  const adA=d.b25?d.b25>=30:false; // AD — ASE 2025: >=30 ml/m² = alterado (ambos sexos)
+  const vdA=d.b13?d.b13>35:false;   // VD não preenchido = normal
+  const adA=d.b25?(d.sexo==='F'?d.b25>27:d.b25>32):false; // AD não preenchido = normal
 
   const alteradas = [aeA, veA, vdA, adA];
   const totalAlteradas = alteradas.filter(Boolean).length;
@@ -242,27 +242,28 @@ function j8(d){
 }
 
 function j9(d){
-  // Massa VE — ASE/EACVI 2015: M normal ≤224g, F normal ≤162g
-  // Comentário usa massa absoluta para graduar
   if(!d.massa||!d.sexo) return '';
   const m=d.massa;
   if(d.sexo==='M'){
-    if(m>292) return 'Aumento importante da massa do ventrículo esquerdo ('+Math.round(m)+' g).';
-    if(m>258) return 'Aumento moderado da massa do ventrículo esquerdo ('+Math.round(m)+' g).';
-    if(m>224) return 'Aumento leve da massa do ventrículo esquerdo ('+Math.round(m)+' g).';
-    return 'Massa do ventrículo esquerdo preservada.';
+    if(m>254) return 'Espessura miocárdica do ventrículo esquerdo aumentada em grau importante.';
+    if(m===254) return 'Espessura miocárdica do ventrículo esquerdo em grau moderado a importante.';
+    if(m>227) return 'Espessura miocárdica do ventrículo esquerdo aumentada em grau moderado.';
+    if(m===227) return 'Espessura miocárdica do ventrículo esquerdo aumentada em grau leve a moderado.';
+    if(m>200) return 'Espessura miocárdica do ventrículo esquerdo aumentada em grau leve.';
+    return 'Espessura miocárdica do ventrículo esquerdo preservada.';
   }
-  if(m>210) return 'Aumento importante da massa do ventrículo esquerdo ('+Math.round(m)+' g).';
-  if(m>186) return 'Aumento moderado da massa do ventrículo esquerdo ('+Math.round(m)+' g).';
-  if(m>162) return 'Aumento leve da massa do ventrículo esquerdo ('+Math.round(m)+' g).';
-  return 'Massa do ventrículo esquerdo preservada.';
+  if(m>193) return 'Espessura miocárdica do ventrículo esquerdo aumentada em grau importante.';
+  if(m===193) return 'Espessura miocárdica do ventrículo esquerdo aumentada em grau moderado a importante.';
+  if(m>171) return 'Espessura miocárdica do ventrículo esquerdo aumentada em grau moderado.';
+  if(m===171) return 'Espessura miocárdica do ventrículo esquerdo aumentada em grau leve a moderado.';
+  if(m>150) return 'Espessura miocárdica do ventrículo esquerdo aumentada em grau leve.';
+  return 'Espessura miocárdica do ventrículo esquerdo preservada.';
 }
 
 function j10(d){
-  // Geometria VE — ASE/EACVI 2015: Índice Massa M >115 g/m², F >95 g/m²; ER >0.42
   if(d.er===null||d.imVE===null||!d.sexo) return '';
-  const lim=d.sexo==='M'?115:95;
-  if(d.er>0.42&&d.imVE<=lim) return 'Remodelamento concêntrico do ventrículo esquerdo (índice de massa preservado com espessura relativa aumentada).';
+  const lim=d.sexo==='M'?102:88;
+  if(d.er>0.42&&d.imVE<=lim) return 'Índice de massa preservado e espessura relativa aumentada compatível com remodelamento concêntrico do ventrículo esquerdo.';
   if(d.er<=0.42&&d.imVE>lim) return 'Hipertrofia excêntrica do ventrículo esquerdo.';
   if(d.er<=0.42&&d.imVE<=lim) return 'Índice de massa e espessura relativa do ventrículo esquerdo preservados.';
   if(d.er>0.42&&d.imVE>lim) return 'Hipertrofia concêntrica do ventrículo esquerdo.';
@@ -407,36 +408,21 @@ function j22(d){
 
 // J50 — HP por Velocidade IT (fiel à planilha)
 function j50(d){
-  // HP probabilidade — ESC 2022 / ASE 2025: TRV + ≥2 sinais indiretos
   if(!d.b23||d.b23===0) return '';
   const presente=(d.b38==='S'||d.b38==='Sim'||d.b38==='Presente');
-  if(d.b23>3.4) return 'Hipertensão pulmonar de alta probabilidade.';
-  if(d.b23>=2.9) return presente?'Hipertensão pulmonar de alta probabilidade.':'Hipertensão pulmonar de probabilidade intermediária.';
-  return presente?'Hipertensão pulmonar de probabilidade intermediária.':'Ausência de sinais indiretos de hipertensão pulmonar.';
+  if(d.b23>3.4) return 'Alta Probabilidade de Hipertensão Pulmonar.';
+  if(d.b23>=2.9) return presente?'Alta Probabilidade de Hipertensão Pulmonar.':'Probabilidade Intermediária de Hipertensão Pulmonar.';
+  return presente?'Probabilidade Intermediária de Hipertensão Pulmonar.':'Baixa Probabilidade de Hipertensão Pulmonar.';
 }
 
 function j23(d){
-  // Função sistólica VD — ASE 2025: TAPSE ≥17 normal, 13-16 leve, 10-12 moderado, <10 importante
-  // Prioridade: b32 (manual) se preenchido, senão TAPSE automático, senão assume normal
-  const tVal = d.b33;
-  const tTxt = tVal!==null ? ` TAPSE= ${tVal} mm (VR ≥ 17 mm).` : '.';
-
-  // Se médico escolheu manualmente (b32)
-  if(d.b32==='L') return `Disfunção sistólica de grau leve do ventrículo direito${tTxt}`;
-  if(d.b32==='LM') return `Disfunção sistólica de grau leve a moderado do ventrículo direito${tTxt}`;
-  if(d.b32==='M') return `Disfunção sistólica de grau moderado do ventrículo direito${tTxt}`;
-  if(d.b32==='MI') return `Disfunção sistólica de grau moderado a importante do ventrículo direito${tTxt}`;
-  if(d.b32==='I') return `Disfunção sistólica de grau importante do ventrículo direito${tTxt}`;
-
-  // Se TAPSE preenchido → classificação automática
-  if(tVal!==null && tVal>0){
-    if(tVal<10) return `Disfunção sistólica de grau importante do ventrículo direito. TAPSE= ${tVal} mm (VR ≥ 17 mm).`;
-    if(tVal<13) return `Disfunção sistólica de grau moderado do ventrículo direito. TAPSE= ${tVal} mm (VR ≥ 17 mm).`;
-    if(tVal<17) return `Disfunção sistólica de grau leve do ventrículo direito. TAPSE= ${tVal} mm (VR ≥ 17 mm).`;
-    return `Função sistólica do ventrículo direito preservada. TAPSE= ${tVal} mm (VR ≥ 17 mm).`;
-  }
-
-  // Nenhum dado → assume normal
+  const t=d.b33!==null?` TAPSE= ${d.b33} mm (VR ≥ 20 mm).`:'.';
+  if(d.b32==='L') return `Disfunção sistólica de grau leve do ventrículo direito${t}`;
+  if(d.b32==='LM') return `Disfunção sistólica de grau leve a moderado do ventrículo direito${t}`;
+  if(d.b32==='M') return `Disfunção sistólica de grau moderado do ventrículo direito${t}`;
+  if(d.b32==='MI') return `Disfunção sistólica de grau moderado a importante do ventrículo direito${t}`;
+  if(d.b32==='I') return `Disfunção sistólica de grau importante do ventrículo direito${t}`;
+  if(!d.b32&&d.b33>0) return `Função sistólica do ventrículo direito preservada. TAPSE= ${d.b33} mm (VR ≥ 20 mm).`;
   return 'Função sistólica do ventrículo direito preservada.';
 }
 
@@ -526,10 +512,11 @@ function _classificarAorta(d, medida, segmento, nomeTexto){
     }
     return _aortaClassificar(medida, previsto, sd, nomeTexto);
   }
-  // Sem ASC → fallback valores fixos
-  if(segmento === 'raiz') return _aortaFallback(medida, [37,42,49], [33,40,47], d.sexo, nomeTexto);
-  if(segmento === 'ascendente') return _aortaFallback(medida, [34,39,48], [31,36,43], d.sexo, nomeTexto);
-  return _aortaFallback(medida, [30,35,41], [30,35,41], d.sexo, nomeTexto); // arco
+  // Sem ASC → fallback ASE 2015 Chamber Quantification (Lang et al.)
+  // Cutoffs atualizados em 07/05/2026 — superestimação corrigida
+  if(segmento === 'raiz') return _aortaFallback(medida, [40,45,55], [36,41,51], d.sexo, nomeTexto);
+  if(segmento === 'ascendente') return _aortaFallback(medida, [37,42,50], [34,39,47], d.sexo, nomeTexto);
+  return _aortaFallback(medida, [36,38,42], [36,38,42], d.sexo, nomeTexto); // arco — sem distinção sexo (ASE 2015)
 }
 
 function j37(d){
@@ -583,9 +570,8 @@ function j43(d){
   return '';
 }
 function j47(d){
-  // Geometria VE conclusão — ASE/EACVI 2015: IM M >115, F >95 g/m²; ER >0.42
   if(d.er===null||d.imVE===null||!d.sexo) return '';
-  const lim=d.sexo==='M'?115:95;
+  const lim=d.sexo==='M'?102:88;
   if(d.er>0.42&&d.imVE<=lim) return 'Remodelamento concêntrico do ventrículo esquerdo.';
   if(d.er<=0.42&&d.imVE>lim) return 'Hipertrofia excêntrica do ventrículo esquerdo.';
   if(d.er>0.42&&d.imVE>lim) return 'Hipertrofia concêntrica do ventrículo esquerdo.';
@@ -602,9 +588,9 @@ function concSistolica(d){
   const feLim = d.sexo==='M'?0.52:0.54;
   const feLimS = d.sexo==='M'?52:54;
 
-  // Dilatação — VD agora ASE 2025: >=41mm
+  // Dilatação
   const veAum = d.b9!==null && d.b9>lvLim;
-  const vdAum = d.b13!==null && d.b13>=41;
+  const vdAum = d.b13!==null && d.b13>35;
 
   // FE VE reduzida
   let feReduz = false;
@@ -612,27 +598,21 @@ function concSistolica(d){
   else if(d.feT!==null) feReduz = d.feT < feLim;
   const feDisp = d.b54!==null || d.feT!==null;
 
-  // Disfunção VD — ASE 2025: b32 manual OU TAPSE <17mm automático. Em branco = normal
-  let disfVD = !!d.b32;
-  if(!disfVD && d.b33!==null && d.b33>0 && d.b33<17) disfVD = true;
+  // Disfunção VD
+  const disfVD = !!d.b32;
 
-  // Dilatação (qualquer lado)
+  // Dilatação (sem especificar lado)
   const dilatado = veAum || vdAum;
 
   // Prefixo
   const prefix = dilatado ? 'Miocardiopatia Dilatada com ' : '';
 
-  // Disfunção VE
+  // Casos de disfunção
   const disfVE = feDisp && feReduz;
 
-  // Verificar alteração segmentar com FE preservada
-  const temSegmentar = d.b55||d.b56||d.b57||d.b58||d.b59||d.b60||d.b61||(d.b62&&d.b62!=='NL');
-  const fePreservada = d.b54!==null ? d.b54>=feLimS : (d.feT!==null ? d.feT>=feLim : true);
-
   if(!disfVE && !disfVD){
+    // Sem disfunção
     if(dilatado) return 'Miocardiopatia Dilatada com função sistólica preservada.';
-    // FE preservada + segmentar alterado (sem dilatação)
-    if(temSegmentar && fePreservada) return 'Alteração contrátil segmentar do ventrículo esquerdo.';
     return '';
   }
 
@@ -640,8 +620,8 @@ function concSistolica(d){
     return prefix + 'Disfunção sistólica biventricular.';
   }
   if(disfVE && !disfVD){
-    // FE preservada (Simpson) mas Teichholz reduziu + segmentar → prioriza segmentar
-    if(d.b54!==null && d.b54>=feLimS && temSegmentar){
+    // Verificar alteração segmentar (Simpson preservado com paredes alteradas)
+    if(d.b54!==null && d.b54>=feLimS){
       return dilatado
         ? 'Miocardiopatia Dilatada com função sistólica do ventrículo esquerdo preservada, apesar da alteração contrátil segmentar.'
         : 'Alteração contrátil segmentar do ventrículo esquerdo.';
@@ -649,10 +629,6 @@ function concSistolica(d){
     return prefix + 'Disfunção sistólica do ventrículo esquerdo.';
   }
   if(!disfVE && disfVD){
-    // Segmentar + disfunção VD
-    if(temSegmentar && fePreservada && dilatado){
-      return 'Miocardiopatia Dilatada com função sistólica do ventrículo esquerdo preservada, apesar da alteração contrátil segmentar. Disfunção sistólica do ventrículo direito.';
-    }
     return prefix + 'Disfunção sistólica do ventrículo direito.';
   }
   return '';
@@ -703,15 +679,13 @@ function concStrainVE(d){
 }
 
 function concStrainVD(d){
-  // GLS VD conclusão — ASE 2025: M ≤-20%, F ≤-21%
   if(d.glsVD===null) return '';
   const abs = Math.abs(d.glsVD);
-  const lim = d.sexo==='F' ? 21 : 20;
-  const vdNormal = !d.b32 && (d.b33===null || d.b33>=17); // sem disfunção VD convencional nem TAPSE reduzido
-  if(vdNormal && abs >= lim){
+  const vdNormal = !d.b32; // sem disfunção VD convencional
+  if(vdNormal && abs >= 20){
     return `Função sistólica do ventrículo direito preservada, confirmada pelo strain longitudinal (${d.glsVD}%).`;
   }
-  if(vdNormal && abs < lim){
+  if(vdNormal && abs < 20){
     return `Strain longitudinal do ventrículo direito reduzido (${d.glsVD}%), sugestivo de disfunção subclínica do ventrículo direito.`;
   }
   return ''; // VD já alterado, conclusão já existe via concSistolica
@@ -849,13 +823,10 @@ function jGLSve(d){
 }
 
 function jGLSvd(d){
-  // GLS VD — ASE 2025: M ≤-20%, F ≤-21%
   if(d.glsVD===null) return '';
   const abs = Math.abs(d.glsVD);
-  const lim = d.sexo==='F' ? 21 : 20;
-  const vrTxt = d.sexo==='F' ? '-21' : '-20';
-  if(abs >= lim) return `Strain global longitudinal do ventrículo direito pelo speckle tracking de ${d.glsVD}% (VR ≥ ${vrTxt}%).`;
-  return `Strain global longitudinal do ventrículo direito reduzido pelo speckle tracking de ${d.glsVD}% (VR ≥ ${vrTxt}%).`;
+  if(abs >= 20) return `Strain global longitudinal do ventrículo direito pelo speckle tracking de ${d.glsVD}% (VR ≥ -20%).`;
+  return `Strain global longitudinal do ventrículo direito reduzido pelo speckle tracking de ${d.glsVD}% (VR ≥ -20%).`;
 }
 
 function jLARS(d){
@@ -1068,14 +1039,14 @@ function gerarConclusao(d){
 // REFERÊNCIAS E ALERTAS
 // ══════════════════════════════════════════════════════════════════
 function refVal(campo,sexo){
-  // Referências ASE 2015 / ASE 2025 (VD: <41mm ambos sexos)
-  const R={b7:{M:'31–37',F:'27–33'},b8:{M:'30–40',F:'27–38'},b9:{M:'42–58',F:'38–52'},b10:{M:'6–10',F:'6–9'},b11:{M:'6–10',F:'6–9'},b12:{M:'25–40',F:'21–35'},b13:{M:'<41',F:'<41'},b28:{M:'26–34',F:'23–31'}};
+  // Cutoffs ASE/EACVI 2015 Chamber Quantification — atualizados 07/05/2026
+  const R={b7:{M:'32–40',F:'28–36'},b8:{M:'30–40',F:'27–38'},b9:{M:'42–58',F:'38–52'},b10:{M:'6–10',F:'6–9'},b11:{M:'6–10',F:'6–9'},b12:{M:'25–40',F:'21–35'},b13:{M:'21–35',F:'21–35'},b28:{M:'30–37',F:'27–34'},b29:{M:'22–36',F:'22–36'}};
   return R[campo]&&sexo?(R[campo][sexo]||R[campo].M)+' mm':'';
 }
 function isOOR(campo,val,sexo){
   if(val===null) return false;
-  // Limites para destaque OOR — ASE 2025 VD: <41mm
-  const L={b7:{M:[31,37],F:[27,33]},b8:{M:[30,40],F:[27,38]},b9:{M:[42,58],F:[38,52]},b10:{M:[6,10],F:[6,9]},b11:{M:[6,10],F:[6,9]},b12:{M:[25,40],F:[21,35]},b13:{M:[0,41],F:[0,41]}};
+  // Cutoffs ASE 2015 Chamber Quantification — atualizados 07/05/2026
+  const L={b7:{M:[32,40],F:[28,36]},b8:{M:[30,40],F:[27,38]},b9:{M:[42,58],F:[38,52]},b10:{M:[6,10],F:[6,9]},b11:{M:[6,10],F:[6,9]},b12:{M:[25,40],F:[21,35]},b13:{M:[21,35],F:[21,35]},b28:{M:[30,37],F:[27,34]},b29:{M:[22,36],F:[22,36]}};
   if(!L[campo]||!sexo) return false;
   const [lo,hi]=L[campo][sexo]||L[campo].M;
   return val<lo||val>hi;
@@ -1183,11 +1154,11 @@ function renderizarLaudo(d){
     ['Peso',fmt(d.peso),'Kg','','Relação Ao/AE',fmt(d.aoae,2),'',''],
     ['Altura',fmt(d.alt),'cm','','Vol. Diast. final VE',fmt(d.vdf),'ml',sexo?`${sexo==='M'?'62–150':'46–106'} ml`:''],
     ['Raiz Aórtica',fmt(d.b7),'mm',refVal('b7',sexo),'Vol. Sist. final VE',fmt(d.vsf),'ml',sexo?`${sexo==='M'?'21–61':'14–42'} ml`:''],
-    ['Átrio Esquerdo',fmt(d.b8),'mm',refVal('b8',sexo),'Fração de Ejeção (Teichholz)',d.feT!==null?(d.feT*100).toFixed(0)+'%':(d.b12===null?'VIDE':'—'),'',sexo?`>${sexo==='M'?52:54}%`:''],
+    ['Átrio Esquerdo',fmt(d.b8),'mm',refVal('b8',sexo),'Fração de Ejeção (Teichholz)',d.feT!==null?(d.feT*100).toFixed(0)+'%':(d.b12===null?'VIDE':'—'),'',sexo?`>${sexo==='M'?51:53}%`:''],
     ['DDVE',fmt(d.b9),'mm',refVal('b9',sexo),'Fração de Encurtamento',d.fs!==null?(d.fs*100).toFixed(0)+'%':(d.b12===null?'VIDE':'—'),'','30–40%'],
-    ['Septo Interventricular',fmt(d.b10),'mm',refVal('b10',sexo),'Massa do VE',fmt(d.massa),'g',sexo?`<${sexo==='M'?224:162} g`:''],
-    ['Parede Posterior',fmt(d.b11),'mm',refVal('b11',sexo),'Índice de Massa VE',fmt(d.imVE),'g/m²',sexo?`<${sexo==='M'?115:95} g/m²`:''],
-    ['DSVE',fmt(d.b12),'mm',refVal('b12',sexo),'Espessura Relativa',fmt(d.er,2),'','≤0,42'],
+    ['Septo Interventricular',fmt(d.b10),'mm',refVal('b10',sexo),'Massa do VE',fmt(d.massa),'g',sexo?`<${sexo==='M'?201:151} g`:''],
+    ['Parede Posterior',fmt(d.b11),'mm',refVal('b11',sexo),'Índice de Massa VE',fmt(d.imVE),'g/m²',sexo?`<${sexo==='M'?103:89} g/m²`:''],
+    ['DSVE',fmt(d.b12),'mm',refVal('b12',sexo),'Espessura Relativa',fmt(d.er,2),'','<0,43'],
     ['Ventrículo Direito',fmt(d.b13),'mm',refVal('b13',sexo),'Área Sup. Corpórea',fmt(d.asc,2),'m²',''],
   ];
   const campos=['b7','b8','b9','b10','b11','b12','b13',null,null,null];
@@ -1198,98 +1169,29 @@ function renderizarLaudo(d){
   });
   document.getElementById('params-tbody').innerHTML=html;
 
-  // Achados + Conclusões — gerar HTML e enviar para TipTap
+  // Achados
   const linhas=gerarAchados(d);
+  let ah=`<button class="btn-add-top" onclick="abrirBanco(null,'top')">＋ Adicionar item</button>`;
+  linhas.forEach(l=>{ ah+=renderLinha(l); });
+  document.getElementById('achados-body').innerHTML=ah;
+  document.querySelectorAll('.achado-editable').forEach(ar);
+
+  // Conclusão
   const concs=gerarConclusao(d);
-
-  // Montar HTML unificado: achados (parágrafos) + heading + conclusões (lista ordenada)
-  let laudoHtml='';
-  linhas.forEach(l=>{ laudoHtml+=`<p>${l}</p>`; });
-  laudoHtml+='<h3>CONCLUSÃO</h3>';
-  laudoHtml+='<ol>';
-  concs.forEach(c=>{ laudoHtml+=`<li>${c}</li>`; });
-  laudoHtml+='</ol>';
-
-  if(window._onLaudoGerado){
-    window._onLaudoGerado(laudoHtml);
-  }
+  let ch='';
+  concs.forEach((c,i)=>{ ch+=renderConcLinha(c,i+1); });
+  ch+=`<li style="padding:3px 0;"><button class="btn-add-top" style="margin:0;" onclick="addConclusao()">＋ Adicionar item</button></li>`;
+  document.getElementById('conclusao-list').innerHTML=ch;
 }
-
-// ══════════════════════════════════════════════════════════════════
-// UNDO / REDO
-// ══════════════════════════════════════════════════════════════════
-const undoStack=[];
-const redoStack=[];
-let userEditedAchados=false;
-function saveUndo(){
-  const achados=document.getElementById('achados-body');
-  const conclu=document.getElementById('conclusao-list');
-  if(achados&&conclu){
-    undoStack.push({a:achados.innerHTML,c:conclu.innerHTML});
-    if(undoStack.length>30) undoStack.shift();
-    redoStack.length=0;
-  }
-}
-function undo(){
-  if(undoStack.length<2) return;
-  const current=undoStack.pop();
-  redoStack.push(current);
-  const prev=undoStack[undoStack.length-1];
-  const achados=document.getElementById('achados-body');
-  const conclu=document.getElementById('conclusao-list');
-  if(achados&&conclu&&prev){
-    achados.innerHTML=prev.a;
-    conclu.innerHTML=prev.c;
-    achados.querySelectorAll('.achado-editable').forEach(ar);
-  }
-}
-function redo(){
-  if(!redoStack.length) return;
-  const next=redoStack.pop();
-  undoStack.push(next);
-  const achados=document.getElementById('achados-body');
-  const conclu=document.getElementById('conclusao-list');
-  if(achados&&conclu&&next){
-    achados.innerHTML=next.a;
-    conclu.innerHTML=next.c;
-    achados.querySelectorAll('.achado-editable').forEach(ar);
-  }
-}
-
-// ── Salvar undo ao começar a editar texto de achado/conclusão ──
-let undoSavedForField=false;
-document.addEventListener('focusin',function(e){
-  const t=e.target;
-  if(t&&(t.classList.contains('achado-editable')||t.classList.contains('conclusao-text'))){
-    undoSavedForField=false; // reset para salvar undo na primeira tecla
-  }
-});
-document.addEventListener('input',function(e){
-  const t=e.target;
-  if(t&&(t.classList.contains('achado-editable')||t.classList.contains('conclusao-text'))){
-    if(!undoSavedForField){ saveUndo(); undoSavedForField=true; }
-    userEditedAchados=true;
-  }
-});
-
-// ── Atalhos Ctrl+Z / Ctrl+Y nos achados/conclusões ──
-document.addEventListener('keydown',function(e){
-  const t=e.target;
-  const inAchados=t&&(t.classList.contains('achado-editable')||t.classList.contains('conclusao-text'));
-  if(!inAchados) return;
-  if(e.ctrlKey&&e.key==='z'){ e.preventDefault(); undo(); }
-  if(e.ctrlKey&&e.key==='y'){ e.preventDefault(); redo(); }
-});
 
 // ══════════════════════════════════════════════════════════════════
 // MANIPULAÇÃO DE LINHAS
 // ══════════════════════════════════════════════════════════════════
 function ar(el){ el.style.height='auto'; el.style.height=el.scrollHeight+'px'; }
 
-function remLinha(btn){ saveUndo(); userEditedAchados=true; btn.closest('.linha-wrapper').remove(); }
+function remLinha(btn){ btn.closest('.linha-wrapper').remove(); }
 
 function addLinhaBaixo(btn){
-  saveUndo(); userEditedAchados=true;
   const wrapper=btn.closest('.linha-wrapper');
   const nova=document.createElement('div');
   nova.innerHTML=renderLinha('');
@@ -1300,7 +1202,7 @@ function addLinhaBaixo(btn){
   if(novoWrapper){const ta=novoWrapper.querySelector('.achado-editable');if(ta){ar(ta);ta.focus();}}
 }
 
-function remConc(btn){ saveUndo(); userEditedAchados=true; btn.closest('.conc-wrapper').remove(); renum(); }
+function remConc(btn){ btn.closest('.conc-wrapper').remove(); renum(); }
 function renum(){ document.querySelectorAll('#conclusao-list .conc-wrapper').forEach((li,i)=>{ const n=li.querySelector('.conclusao-num');if(n)n.textContent=i+1; }); }
 
 // ── Drag & Drop ───────────────────────────────────────────────────
@@ -1328,7 +1230,6 @@ function dragDrop(e){
   const target=e.currentTarget;
   target.classList.remove('drag-over');
   if(!dragSrc||dragSrc===target) return;
-  saveUndo(); userEditedAchados=true;
   const parent=target.parentNode;
   const allItems=[...parent.children];
   const srcIdx=allItems.indexOf(dragSrc);
@@ -1341,7 +1242,6 @@ function dragDrop(e){
   parent.querySelectorAll('.achado-editable').forEach(ar);
 }
 function addConclusao(){
-  saveUndo(); userEditedAchados=true;
   const list=document.getElementById('conclusao-list');
   const addBtn=list.querySelector('li:last-child');
   const li=document.createElement('li');
@@ -1487,22 +1387,13 @@ function inserirFraseSelecionada(){
   if(!fraseSelecionada) return;
   const f=banco.find(x=>x.id===fraseSelecionada);
   if(!f) return;
-
-  // Modo TipTap — inserir via callback React
-  if(window._onInserirFrase){
-    window._onInserirFrase(f.txt);
-    fecharBanco();
-    return;
-  }
-
-  // Fallback modo antigo
-  saveUndo(); userEditedAchados=true;
   const body=document.getElementById('achados-body');
   const novaDiv=document.createElement('div');
   novaDiv.innerHTML=renderLinha(f.txt);
   const nova=novaDiv.firstElementChild;
 
   if(insertTarget&&insertTarget.pos==='top'){
+    // inserir logo após o botão "Adicionar item" no topo
     const addBtn=body.querySelector('.btn-add-top');
     body.insertBefore(nova,addBtn?addBtn.nextSibling:body.firstChild);
   } else if(insertTarget&&insertTarget.target){
@@ -1633,8 +1524,3 @@ if(typeof registrarMotor === 'function'){
 }
 
 console.log('%c🫀 Motor V8 MP4 (ECO TT) carregado — DICOM-ready ('+Object.keys(DICOM_TO_DOM).length+' campos) · Strain · i18n-prepared','color:#059669;font-weight:bold;font-size:11px;');
-
-
-window.calc=calc;window.calcAll=calcAll;window.gerarAchados=gerarAchados;window.gerarConclusao=gerarConclusao;window.renderizarLaudo=renderizarLaudo;window.alertaIT=typeof alertaIT!=='undefined'?alertaIT:function(){};window.tog=tog;window.setDiastModo=typeof setDiastModo!=='undefined'?setDiastModo:function(){};window.setDiastManual=typeof setDiastManual!=='undefined'?setDiastManual:function(){};window.getDiastModo=typeof getDiastModo!=='undefined'?getDiastModo:function(){};window.diastDivergencia=typeof diastDivergencia!=='undefined'?diastDivergencia:function(){};window.toggleWilkins=typeof toggleWilkins!=='undefined'?toggleWilkins:function(){};window.refluxoPulmonar=typeof refluxoPulmonar!=='undefined'?refluxoPulmonar:function(){};window.importarDICOM=typeof importarDICOM!=='undefined'?importarDICOM:function(){};
-window.undo=undo;window.redo=redo;window.saveUndo=saveUndo;window.resetUserEdited=function(){userEditedAchados=false;undoStack.length=0;redoStack.length=0;};window.remLinha=remLinha;window.addLinhaBaixo=addLinhaBaixo;window.remConc=remConc;window.addConclusao=addConclusao;window.renum=renum;window.ar=ar;window.renderLinha=renderLinha;window.renderConcLinha=renderConcLinha;window.dragStart=dragStart;window.dragOver=dragOver;window.dragLeave=dragLeave;window.dragEnd=dragEnd;window.dragDrop=dragDrop;window.abrirBanco=abrirBanco;window.fecharBanco=fecharBanco;window.setCat=setCat;window.renderBanco=renderBanco;window.selFrase=selFrase;window.editFrase=editFrase;window.delFrase=delFrase;window.adicionarFraseBanco=adicionarFraseBanco;window.inserirFraseSelecionada=inserirFraseSelecionada;window.saveBanco=saveBanco;
-})();

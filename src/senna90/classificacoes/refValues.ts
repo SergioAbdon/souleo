@@ -21,15 +21,16 @@ export function refVal(campo: string, sexo: Sexo): string {
   const isM = sexo !== 'F'; // default M se vazio
 
   switch (campo) {
-    // Câmaras (mm)
-    case 'b7':  return isM ? '31–37 mm' : '27–33 mm';   // Raiz Aórtica
+    // Câmaras (mm) — Cutoffs ASE 2015 Chamber Quantification atualizados 07/05/2026
+    case 'b7':  return isM ? '32–40 mm' : '28–36 mm';   // Raiz Aórtica (era 31-37/27-33)
     case 'b8':  return isM ? '30–40 mm' : '27–38 mm';   // AE
     case 'b9':  return isM ? '42–58 mm' : '38–52 mm';   // DDVE
     case 'b10': return isM ? '6–10 mm'  : '6–9 mm';     // Septo IV
     case 'b11': return isM ? '6–10 mm'  : '6–9 mm';     // Parede Posterior
     case 'b12': return isM ? '25–40 mm' : '21–35 mm';   // DSVE
     case 'b13': return '21–35 mm';                       // VD (unificado)
-    case 'b28': return isM ? '26–34 mm' : '23–31 mm';   // Aorta Asc
+    case 'b28': return isM ? '30–37 mm' : '27–34 mm';   // Aorta Asc (era 26-34/23-31)
+    case 'b29': return '22–36 mm';                       // Arco Aórtico (sem distinção sexo)
 
     // Volumes / Calculados
     case 'vdf': return isM ? '62–150 ml' : '46–106 ml'; // Vol Diast Final VE

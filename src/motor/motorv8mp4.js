@@ -512,10 +512,11 @@ function _classificarAorta(d, medida, segmento, nomeTexto){
     }
     return _aortaClassificar(medida, previsto, sd, nomeTexto);
   }
-  // Sem ASC → fallback valores fixos
-  if(segmento === 'raiz') return _aortaFallback(medida, [37,42,49], [33,40,47], d.sexo, nomeTexto);
-  if(segmento === 'ascendente') return _aortaFallback(medida, [34,39,48], [31,36,43], d.sexo, nomeTexto);
-  return _aortaFallback(medida, [30,35,41], [30,35,41], d.sexo, nomeTexto); // arco
+  // Sem ASC → fallback ASE 2015 Chamber Quantification (Lang et al.)
+  // Cutoffs atualizados em 07/05/2026 — superestimação corrigida
+  if(segmento === 'raiz') return _aortaFallback(medida, [40,45,55], [36,41,51], d.sexo, nomeTexto);
+  if(segmento === 'ascendente') return _aortaFallback(medida, [37,42,50], [34,39,47], d.sexo, nomeTexto);
+  return _aortaFallback(medida, [36,38,42], [36,38,42], d.sexo, nomeTexto); // arco — sem distinção sexo (ASE 2015)
 }
 
 function j37(d){
@@ -1038,12 +1039,14 @@ function gerarConclusao(d){
 // REFERÊNCIAS E ALERTAS
 // ══════════════════════════════════════════════════════════════════
 function refVal(campo,sexo){
-  const R={b7:{M:'31–37',F:'27–33'},b8:{M:'30–40',F:'27–38'},b9:{M:'42–58',F:'38–52'},b10:{M:'6–10',F:'6–9'},b11:{M:'6–10',F:'6–9'},b12:{M:'25–40',F:'21–35'},b13:{M:'21–35',F:'21–35'},b28:{M:'26–34',F:'23–31'}};
+  // Cutoffs ASE/EACVI 2015 Chamber Quantification — atualizados 07/05/2026
+  const R={b7:{M:'32–40',F:'28–36'},b8:{M:'30–40',F:'27–38'},b9:{M:'42–58',F:'38–52'},b10:{M:'6–10',F:'6–9'},b11:{M:'6–10',F:'6–9'},b12:{M:'25–40',F:'21–35'},b13:{M:'21–35',F:'21–35'},b28:{M:'30–37',F:'27–34'},b29:{M:'22–36',F:'22–36'}};
   return R[campo]&&sexo?(R[campo][sexo]||R[campo].M)+' mm':'';
 }
 function isOOR(campo,val,sexo){
   if(val===null) return false;
-  const L={b7:{M:[31,37],F:[27,33]},b8:{M:[30,40],F:[27,38]},b9:{M:[42,58],F:[38,52]},b10:{M:[6,10],F:[6,9]},b11:{M:[6,10],F:[6,9]},b12:{M:[25,40],F:[21,35]},b13:{M:[21,35],F:[21,35]}};
+  // Cutoffs ASE 2015 Chamber Quantification — atualizados 07/05/2026
+  const L={b7:{M:[32,40],F:[28,36]},b8:{M:[30,40],F:[27,38]},b9:{M:[42,58],F:[38,52]},b10:{M:[6,10],F:[6,9]},b11:{M:[6,10],F:[6,9]},b12:{M:[25,40],F:[21,35]},b13:{M:[21,35],F:[21,35]},b28:{M:[30,37],F:[27,34]},b29:{M:[22,36],F:[22,36]}};
   if(!L[campo]||!sexo) return false;
   const [lo,hi]=L[campo][sexo]||L[campo].M;
   return val<lo||val>hi;

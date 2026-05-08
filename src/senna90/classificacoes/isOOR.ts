@@ -27,9 +27,9 @@ export function isOOR(campo: string, val: number | null, sexo: Sexo): boolean {
   const isM = sexo !== 'F';
 
   switch (campo) {
-    // Câmaras (mm) — fora do range = alerta
-    case 'b7':
-      return isM ? (val < 31 || val > 37) : (val < 27 || val > 33);
+    // Câmaras (mm) — Cutoffs ASE 2015 atualizados 07/05/2026
+    case 'b7': // Raiz Aórtica (era 31-37/27-33)
+      return isM ? (val < 32 || val > 40) : (val < 28 || val > 36);
     case 'b8':
       return isM ? (val < 30 || val > 40) : (val < 27 || val > 38);
     case 'b9':
@@ -42,8 +42,10 @@ export function isOOR(campo: string, val: number | null, sexo: Sexo): boolean {
       return isM ? (val < 25 || val > 40) : (val < 21 || val > 35);
     case 'b13':
       return val < 21 || val > 35; // unificado
-    case 'b28':
-      return isM ? (val < 26 || val > 34) : (val < 23 || val > 31);
+    case 'b28': // Aorta Asc (era 26-34/23-31)
+      return isM ? (val < 30 || val > 37) : (val < 27 || val > 34);
+    case 'b29': // Arco Aórtico (novo, sem distinção sexo)
+      return val < 22 || val > 36;
 
     // Atrial volumes
     case 'b24': // LAVI
