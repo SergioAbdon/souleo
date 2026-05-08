@@ -144,18 +144,14 @@ function dadosParaMedidas(dados: Record<string, unknown>): MedidasEcoTT {
   };
 }
 
-/** Padrões de divergências esperadas (13 alterações aprovadas + ajustes textuais) */
+/**
+ * Padrões esperados das 13 alterações clínicas aprovadas pelo Dr. Sérgio.
+ * Apenas estes são considerados "esperados". Tudo mais é INESPERADO.
+ */
 const ESPERADAS: RegExp[] = [
-  /VR ≥ -1[89]%/,                          // GLS VE -18% → -20%
-  /Estenose Pulmonar/,                     // Cutoffs ASE 2017
-  /Átrio direito aumentado/,               // RAVI sexo-específico → unificado
-  /Ectasia.*\(previsto.*± .*mm\)/,        // Aorta com Z-score (versão nova)
-  /Ectasia.*medindo \d+ mm/,               // Aorta sem Z-score (versão antiga)
-  /Ectasia.*(?:raiz|ascendente|arco)/i,   // Qualquer ectasia (versão de classificação difere)
-  /Ectasia da aorta/,                      // Conclusão consolidada
-  /Massa do ventrículo esquerdo (?:preservada|aumentada)/, // Versão antiga motor
-  /Espessura miocárdica do ventrículo esquerdo (?:preservada|aumentada)/, // Versão nova
-  /Contratilidade preservada nas demais paredes/, // Senna90 emite, motor antigo às vezes não
+  /VR ≥ -1[89]%/,              // GLS VE -18% → -20% (decisão #6)
+  /Estenose Pulmonar/,         // Cutoffs ASE 2017 (decisão #8)
+  /Átrio direito aumentado/,   // RAVI sexo-específico → unificado (decisão #7)
 ];
 
 /** Calcula similaridade Jaccard entre 2 strings (intersecção/união de palavras) */
@@ -189,10 +185,9 @@ function isEsperada(velho: string, novo: string): boolean {
 }
 
 /**
- * Compara achados/conclusões com 3 níveis:
- * 1. Match exato (após normalização) — não vira divergência
- * 2. Match aproximado (similaridade >= 60%) — divergência ESPERADA com motivo "aproximado"
- * 3. Sem match — divergência INESPERADA (a menos que regex esperada bata)
+ * Compara achados/conclusões de forma ESTRITA.
+ * Match exato (após normalização ortográfica básica) ou divergência.
+ * Sem similaridade aproximada — espessura ≠ massa.
  */
 function compararLaudo(velho: { achados: string[]; conclusoes: string[] }, novo: { achados: string[]; conclusoes: string[] }) {
   const divergencias: { categoria: string; linha: number; velho: string; novo: string; esperada: boolean }[] = [];
@@ -201,72 +196,36 @@ function compararLaudo(velho: { achados: string[]; conclusoes: string[] }, novo:
     const velhoFiltrado = velhoArr.filter(x => x && !x.startsWith('__WILKINS__'));
     const novoFiltrado = novoArr.filter(x => x && !x.startsWith('__WILKINS__'));
 
-    const velhoNorm = velhoFiltrado.map(s => normalizar(s));
-    const novoNorm = novoFiltrado.map(s => normalizar(s));
+    const velhoNorm = velhoFiltrado.map(s => ({ original: s, norm: normalizar(s) }));
+    const novoNorm = novoFiltrado.map(s => ({ original: s, norm: normalizar(s) }));
 
-    const usadosNovo = new Set<number>();
-    const usadosVelho = new Set<number>();
+    const novoNormSet = new Set(novoNorm.map(x => x.norm));
+    const velhoNormSet = new Set(velhoNorm.map(x => x.norm));
 
-    // PASSO 1: matches exatos (já feitos pelo Set)
-    const novoNormSet = new Set(novoNorm);
-    const velhoNormSet = new Set(velhoNorm);
-
+    // Frases no velho que não estão no novo (match exato apenas)
     velhoNorm.forEach((v, i) => {
-      if (novoNormSet.has(v)) usadosVelho.add(i);
-    });
-    novoNorm.forEach((n, i) => {
-      if (velhoNormSet.has(n)) usadosNovo.add(i);
-    });
-
-    // PASSO 2: para cada frase do velho não usada, procurar match APROXIMADO no novo
-    velhoFiltrado.forEach((v, i) => {
-      if (usadosVelho.has(i)) return;
-      // Busca frase mais similar entre as não usadas do novo
-      let melhorIdx = -1;
-      let melhorScore = 0.6;
-      novoFiltrado.forEach((n, j) => {
-        if (usadosNovo.has(j)) return;
-        const s = similaridade(v, n);
-        if (s > melhorScore) {
-          melhorScore = s;
-          melhorIdx = j;
-        }
-      });
-      if (melhorIdx >= 0) {
-        // Match aproximado
-        const n = novoFiltrado[melhorIdx];
-        usadosNovo.add(melhorIdx);
-        usadosVelho.add(i);
+      if (!novoNormSet.has(v.norm)) {
         divergencias.push({
           categoria,
           linha: i + 1,
-          velho: v,
-          novo: n,
-          esperada: true, // similaridade alta = esperada (variação textual mínima)
+          velho: v.original,
+          novo: '',
+          esperada: isEsperada(v.original, ''),
         });
       }
     });
 
-    // PASSO 3: o que sobrou é divergência sem par (presente em um lado, ausente no outro)
-    velhoFiltrado.forEach((v, i) => {
-      if (usadosVelho.has(i)) return;
-      divergencias.push({
-        categoria,
-        linha: i + 1,
-        velho: v,
-        novo: '',
-        esperada: isEsperada(v, ''),
-      });
-    });
-    novoFiltrado.forEach((n, i) => {
-      if (usadosNovo.has(i)) return;
-      divergencias.push({
-        categoria,
-        linha: i + 1,
-        velho: '',
-        novo: n,
-        esperada: isEsperada('', n),
-      });
+    // Frases no novo que não estão no velho
+    novoNorm.forEach((n, i) => {
+      if (!velhoNormSet.has(n.norm)) {
+        divergencias.push({
+          categoria,
+          linha: i + 1,
+          velho: '',
+          novo: n.original,
+          esperada: isEsperada('', n.original),
+        });
+      }
     });
   }
 
