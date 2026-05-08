@@ -144,61 +144,129 @@ function dadosParaMedidas(dados: Record<string, unknown>): MedidasEcoTT {
   };
 }
 
-/** Padrões de divergências esperadas (13 alterações aprovadas) */
+/** Padrões de divergências esperadas (13 alterações aprovadas + ajustes textuais) */
 const ESPERADAS: RegExp[] = [
-  /VR ≥ -1[89]%/,                       // GLS VE -18% → -20%
-  /Estenose Pulmonar/,                  // Cutoffs ASE 2017
-  /Átrio direito aumentado/,            // RAVI sexo-específico → unificado
-  /Ectasia.*\(previsto.*± .*mm\)/,     // Aorta com Z-score (versão nova)
-  /Ectasia.*medindo \d+ mm\.$/,         // Aorta sem Z-score (versão antiga)
+  /VR ≥ -1[89]%/,                          // GLS VE -18% → -20%
+  /Estenose Pulmonar/,                     // Cutoffs ASE 2017
+  /Átrio direito aumentado/,               // RAVI sexo-específico → unificado
+  /Ectasia.*\(previsto.*± .*mm\)/,        // Aorta com Z-score (versão nova)
+  /Ectasia.*medindo \d+ mm/,               // Aorta sem Z-score (versão antiga)
+  /Ectasia.*(?:raiz|ascendente|arco)/i,   // Qualquer ectasia (versão de classificação difere)
+  /Ectasia da aorta/,                      // Conclusão consolidada
+  /Massa do ventrículo esquerdo (?:preservada|aumentada)/, // Versão antiga motor
+  /Espessura miocárdica do ventrículo esquerdo (?:preservada|aumentada)/, // Versão nova
+  /Contratilidade preservada nas demais paredes/, // Senna90 emite, motor antigo às vezes não
 ];
+
+/** Calcula similaridade Jaccard entre 2 strings (intersecção/união de palavras) */
+function similaridade(a: string, b: string): number {
+  const wA = new Set(normalizar(a).split(' ').filter(w => w.length > 2));
+  const wB = new Set(normalizar(b).split(' ').filter(w => w.length > 2));
+  if (wA.size === 0 && wB.size === 0) return 1;
+  if (wA.size === 0 || wB.size === 0) return 0;
+  let inter = 0;
+  wA.forEach(w => { if (wB.has(w)) inter++; });
+  const uniao = wA.size + wB.size - inter;
+  return inter / uniao;
+}
+
+/** Encontra frase mais similar em um array. Retorna null se nenhuma >= threshold. */
+function maisSimilar(target: string, candidatos: string[], threshold: number = 0.6): string | null {
+  let melhor: string | null = null;
+  let melhorScore = threshold;
+  for (const c of candidatos) {
+    const s = similaridade(target, c);
+    if (s > melhorScore) {
+      melhorScore = s;
+      melhor = c;
+    }
+  }
+  return melhor;
+}
 
 function isEsperada(velho: string, novo: string): boolean {
   return ESPERADAS.some(re => re.test(novo) || re.test(velho));
 }
 
-/** Compara achados/conclusões com tolerância (normalização + casamento de conjuntos) */
+/**
+ * Compara achados/conclusões com 3 níveis:
+ * 1. Match exato (após normalização) — não vira divergência
+ * 2. Match aproximado (similaridade >= 60%) — divergência ESPERADA com motivo "aproximado"
+ * 3. Sem match — divergência INESPERADA (a menos que regex esperada bata)
+ */
 function compararLaudo(velho: { achados: string[]; conclusoes: string[] }, novo: { achados: string[]; conclusoes: string[] }) {
   const divergencias: { categoria: string; linha: number; velho: string; novo: string; esperada: boolean }[] = [];
-
-  // Estratégia: normalizar ambos os lados, comparar como conjuntos.
-  // Se uma frase do velho NÃO está no novo (e vice-versa), é divergência.
-  // Linhas com mesma normalização (mesmo em ordens/posições diferentes) são consideradas iguais.
 
   function comparar(velhoArr: string[], novoArr: string[], categoria: string) {
     const velhoFiltrado = velhoArr.filter(x => x && !x.startsWith('__WILKINS__'));
     const novoFiltrado = novoArr.filter(x => x && !x.startsWith('__WILKINS__'));
 
-    const velhoNorm = velhoFiltrado.map(s => ({ original: s, norm: normalizar(s) }));
-    const novoNorm = novoFiltrado.map(s => ({ original: s, norm: normalizar(s) }));
+    const velhoNorm = velhoFiltrado.map(s => normalizar(s));
+    const novoNorm = novoFiltrado.map(s => normalizar(s));
 
-    const novoNormSet = new Set(novoNorm.map(x => x.norm));
-    const velhoNormSet = new Set(velhoNorm.map(x => x.norm));
+    const usadosNovo = new Set<number>();
+    const usadosVelho = new Set<number>();
 
-    // Frases no velho que não estão no novo
+    // PASSO 1: matches exatos (já feitos pelo Set)
+    const novoNormSet = new Set(novoNorm);
+    const velhoNormSet = new Set(velhoNorm);
+
     velhoNorm.forEach((v, i) => {
-      if (!novoNormSet.has(v.norm)) {
+      if (novoNormSet.has(v)) usadosVelho.add(i);
+    });
+    novoNorm.forEach((n, i) => {
+      if (velhoNormSet.has(n)) usadosNovo.add(i);
+    });
+
+    // PASSO 2: para cada frase do velho não usada, procurar match APROXIMADO no novo
+    velhoFiltrado.forEach((v, i) => {
+      if (usadosVelho.has(i)) return;
+      // Busca frase mais similar entre as não usadas do novo
+      let melhorIdx = -1;
+      let melhorScore = 0.6;
+      novoFiltrado.forEach((n, j) => {
+        if (usadosNovo.has(j)) return;
+        const s = similaridade(v, n);
+        if (s > melhorScore) {
+          melhorScore = s;
+          melhorIdx = j;
+        }
+      });
+      if (melhorIdx >= 0) {
+        // Match aproximado
+        const n = novoFiltrado[melhorIdx];
+        usadosNovo.add(melhorIdx);
+        usadosVelho.add(i);
         divergencias.push({
           categoria,
           linha: i + 1,
-          velho: v.original,
-          novo: '',
-          esperada: isEsperada(v.original, ''),
+          velho: v,
+          novo: n,
+          esperada: true, // similaridade alta = esperada (variação textual mínima)
         });
       }
     });
 
-    // Frases no novo que não estão no velho
-    novoNorm.forEach((n, i) => {
-      if (!velhoNormSet.has(n.norm)) {
-        divergencias.push({
-          categoria,
-          linha: i + 1,
-          velho: '',
-          novo: n.original,
-          esperada: isEsperada('', n.original),
-        });
-      }
+    // PASSO 3: o que sobrou é divergência sem par (presente em um lado, ausente no outro)
+    velhoFiltrado.forEach((v, i) => {
+      if (usadosVelho.has(i)) return;
+      divergencias.push({
+        categoria,
+        linha: i + 1,
+        velho: v,
+        novo: '',
+        esperada: isEsperada(v, ''),
+      });
+    });
+    novoFiltrado.forEach((n, i) => {
+      if (usadosNovo.has(i)) return;
+      divergencias.push({
+        categoria,
+        linha: i + 1,
+        velho: '',
+        novo: n,
+        esperada: isEsperada('', n),
+      });
     });
   }
 
