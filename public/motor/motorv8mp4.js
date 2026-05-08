@@ -551,6 +551,27 @@ function j39(d){
   const r = _classificarAorta(d, d.b29, 'arco', 'do arco aórtico');
   return (r && r.grau !== 'normal') ? r.txt : '';
 }
+
+// Quando raiz alterada, j37 só emite a raiz. Esta função emite os
+// segmentos NORMAIS restantes (asc/arco) que sumiriam do laudo.
+// Bug corrigido em 07/05/2026 — Dr. Sérgio.
+function jAortaNormaisComplementar(d){
+  if(!d.sexo) return '';
+  const raiz = _classificarAorta(d, d.b7, 'raiz', 'da raiz da aorta');
+  // Só atua quando raiz alterada (caso raiz normal, j37 já cobriu)
+  if(!raiz || raiz.grau === 'normal') return '';
+
+  const asc = _classificarAorta(d, d.b28, 'ascendente', 'da aorta ascendente');
+  const arco = _classificarAorta(d, d.b29, 'arco', 'do arco aórtico');
+
+  const normais = [];
+  if(!asc || asc.grau === 'normal') normais.push('aorta ascendente');
+  if(!arco || arco.grau === 'normal') normais.push('arco aórtico');
+
+  if(normais.length === 2) return 'Aorta ascendente e arco aórtico com dimensões normais.';
+  if(normais.length === 1) return normais[0].charAt(0).toUpperCase() + normais[0].slice(1) + ' com dimensões normais.';
+  return ''; // ambos asc/arco alterados — j38/j39 cobrem
+}
 function j40(d){ if(d.b42==='s')return'Placas de ateroma calcificadas e não complicadas no arco aórtico.';if(d.b42==='nv')return'Arco aórtico não visualizado adequadamente.';return ''; }
 
 function j43(d){
@@ -970,7 +991,7 @@ function gerarAchados(d){
     ...jRefluxoPulm(d),
     // ── PERICÁRDIO E AORTA ──
     ...L(j36(d)),
-    ...L(j37(d),j38(d),j39(d),j40(d)),
+    ...L(j37(d),j38(d),j39(d),jAortaNormaisComplementar(d),j40(d)),
   ].filter(Boolean);
 }
 

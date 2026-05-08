@@ -91,3 +91,38 @@ export function jArcoAortico(
   const r = classificarArcoAo(b29, sexo, asc);
   return r.grau !== 'normal' ? textoEctasia(r, 'do arco aórtico') : '';
 }
+
+/**
+ * Quando raiz aórtica está alterada, jAortaRaiz só emite a frase da raiz.
+ * Esta função complementa emitindo "Aorta ascendente / arco aórtico com
+ * dimensões normais" quando esses segmentos estão normais.
+ *
+ * Bug corrigido 07/05/2026 — Dr. Sérgio (laudo ficava sem relatar
+ * arco/asc normais quando raiz alterada).
+ */
+export function jAortaNormaisComplementar(
+  b7: number | null,
+  b28: number | null,
+  b29: number | null,
+  sexo: Sexo,
+  asc: number | null,
+  idade: number | null
+): string {
+  if (!sexo) return '';
+  const raiz = b7 ? classificarRaizAo(b7, sexo, asc, idade) : null;
+  // Só atua quando raiz alterada (caso normal, jAortaRaiz já cobriu)
+  if (!raiz || raiz.grau === 'normal') return '';
+
+  const ascR = b28 ? classificarAoAscendente(b28, sexo, asc) : null;
+  const arco = b29 ? classificarArcoAo(b29, sexo, asc) : null;
+
+  const normais: string[] = [];
+  if (!ascR || ascR.grau === 'normal') normais.push('aorta ascendente');
+  if (!arco || arco.grau === 'normal') normais.push('arco aórtico');
+
+  if (normais.length === 2) return 'Aorta ascendente e arco aórtico com dimensões normais.';
+  if (normais.length === 1) {
+    return normais[0].charAt(0).toUpperCase() + normais[0].slice(1) + ' com dimensões normais.';
+  }
+  return '';
+}
