@@ -261,17 +261,24 @@ export async function GET(req: NextRequest) {
       case 'importar': {
         const hoje = dataLocalHoje();
 
-        // Resolver mapa de procedimentos: workspace (configurável) ou fallback hardcoded
+        // Resolver mapas (procedimentos e profissionais): workspace ou fallback hardcoded
         let procMap: Record<number, string> = PROC_MAP;
+        const profMap: Record<number, string> = {};
         const wsId = req.nextUrl.searchParams.get('wsId');
         if (wsId) {
           const wsDoc = await dbAdmin.doc(`workspaces/${wsId}`).get();
-          const wsProcMap = wsDoc.data()?.feegowProcMap as Record<string, string> | undefined;
+          const wsData = wsDoc.data() || {};
+          const wsProcMap = wsData.feegowProcMap as Record<string, string> | undefined;
           if (wsProcMap && Object.keys(wsProcMap).length > 0) {
-            // Converter chaves string→number (Firestore salva chaves de objeto como string)
             procMap = {};
             for (const [k, v] of Object.entries(wsProcMap)) {
               procMap[Number(k)] = v;
+            }
+          }
+          const wsProfMap = wsData.feegowProfMap as Record<string, string> | undefined;
+          if (wsProfMap) {
+            for (const [k, v] of Object.entries(wsProfMap)) {
+              profMap[Number(k)] = v;
             }
           }
         }
@@ -305,12 +312,14 @@ export async function GET(req: NextRequest) {
                 pacienteNome: (pac.nome || '').toUpperCase(),
                 pacienteDtnasc: dtnasc,
                 sexo: pac.sexo === 'Masculino' ? 'M' : pac.sexo === 'Feminino' ? 'F' : '',
-                cpf: (pac.documento || '').replace(/\D/g, ''),
+                cpf: (pac.documentos?.cpf || '').replace(/\D/g, ''),
                 telefone: pac.telefones?.[0] || '',
                 convenio: convMap[ag.convenio_id] || '',
                 convenioId: ag.convenio_id,
                 tipoExame: procMap[ag.procedimento_id],
                 procedimentoId: ag.procedimento_id,
+                profissionalId: ag.profissional_id,
+                medicoExecutor: profMap[ag.profissional_id] || '',
                 horarioChegada: ag.horario ? ag.horario.slice(0, 5) : '',
                 dataExame: hoje,
                 origem: 'FEEGOW',
@@ -322,8 +331,25 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ ok: true, total: pacientes.length, pacientes });
       }
 
+      // Listar profissionais do Feegow (para mapeamento no LocalModal — análogo a 'procedimentos')
+      case 'profissionais': {
+        const profRes = await feegowFetch('/professional/list', token);
+        const todos = profRes?.content || [];
+        const profissionais = todos
+          .filter((p: Record<string, unknown>) => p.ativo === true)
+          .map((p: Record<string, unknown>) => ({
+            profissional_id: p.profissional_id,
+            nome: p.nome,
+            tratamento: p.tratamento,
+            conselho: p.conselho,
+            documento_conselho: p.documento_conselho,
+            uf_conselho: p.uf_conselho,
+          }));
+        return NextResponse.json({ ok: true, total: profissionais.length, profissionais });
+      }
+
       default:
-        return NextResponse.json({ error: 'action invalida. Use: teste, sala_espera, paciente, buscar_cpf, convenios, importar' }, { status: 400 });
+        return NextResponse.json({ error: 'action invalida. Use: teste, sala_espera, paciente, buscar_cpf, convenios, importar, profissionais, procedimentos' }, { status: 400 });
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Erro desconhecido';

@@ -55,6 +55,14 @@
       "collectionGroup": "exames",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "dataExame", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "exames",
+      "queryScope": "COLLECTION",
+      "fields": [
         { "fieldPath": "medicoUid", "order": "ASCENDING" },
         { "fieldPath": "dataExame", "order": "DESCENDING" }
       ]

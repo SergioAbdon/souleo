@@ -34,9 +34,10 @@ type Props = {
   exameOrigem?: string;
   exameCpf?: string;
   feegowPacienteId?: string | number | null;
+  exameAcc?: string;
 };
 
-export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, onImportarDicom, dicomLoading, dicomImportado, ortancAtivo, emitido, modoEmitido, readOnlyIdentificacao, readOnlyMotor, exameOrigem, exameCpf, feegowPacienteId }: Props) {
+export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, onImportarDicom, dicomLoading, dicomImportado, ortancAtivo, emitido, modoEmitido, readOnlyIdentificacao, readOnlyMotor, exameOrigem, exameCpf, feegowPacienteId, exameAcc }: Props) {
   const [idDesbloqueado, setIdDesbloqueado] = useState(false);
   const [motorDesbloqueado, setMotorDesbloqueado] = useState(false);
   // Detectar quando readOnlyMotor muda de true→false (médico desbloqueou)
@@ -191,6 +192,26 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
 
       {/* ═══ IDENTIFICAÇÃO ═══ */}
       <Sec id="sec-id" title="👤 Identificação" defaultOpen single>
+        {exameAcc && (
+          <div className="mb-2 rounded-lg border-2 border-[#2563EB] bg-blue-50 p-2.5">
+            <div className="text-[9px] text-[#2563EB] font-semibold uppercase tracking-wide mb-1">
+              🏥 ACC (AccessionNumber DICOM)
+            </div>
+            <button
+              type="button"
+              onClick={() => { navigator.clipboard.writeText(exameAcc); }}
+              title="Clique para copiar"
+              className="font-mono text-base font-bold text-[#1E3A5F] tracking-wide hover:bg-blue-100 px-1.5 py-0.5 rounded transition cursor-pointer block w-full text-left"
+            >
+              {exameAcc}
+            </button>
+            <div className="text-[10px] text-gray-600 mt-1.5 leading-relaxed">
+              <strong>Em caso de cadastro manual no Vivid:</strong> copie este código e cole em
+              <em> Patient → Edit → AccessionNumber</em> antes de enviar as imagens.
+              Sem isso, o LEO não casa as imagens com este exame.
+            </div>
+          </div>
+        )}
         {idBloqueado && exameOrigem === 'FEEGOW' && (
           <div className="mb-2 rounded-lg border border-purple-300 bg-purple-50 p-2.5">
             <div className="flex items-center gap-2 mb-1.5">

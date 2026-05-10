@@ -7,9 +7,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { savePaciente, saveExame, listenWorklist, getExame } from '@/lib/firestore';
+import { savePaciente, saveExame, listenWorklist, listenNaoRealizados, getExame } from '@/lib/firestore';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
 import { dataLocalHoje } from '@/lib/utils';
+import { gerarAccessionNumber } from '@/lib/gerarAccessionNumber';
 import { db, auth } from '@/lib/firebase';
 import { doc, deleteDoc, collection, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
@@ -64,6 +65,7 @@ export default function Worklist() {
   const ehMedico = membership?.role === 'medico';
 
   const [worklist, setWorklist] = useState<ExameItem[]>([]);
+  const [naoRealizados, setNaoRealizados] = useState<ExameItem[]>([]);
   const [busca, setBusca] = useState('');
   const [dataSel, setDataSel] = useState(dataLocalHoje);
   const [statusSel, setStatusSel] = useState<string>('todos');
@@ -96,6 +98,15 @@ export default function Worklist() {
     }, dataSel);
     return () => unsub();
   }, [wsId, dataSel]);
+
+  // Listener "nao-realizados" últimos 30 dias (passivo, só pra tab de auditoria)
+  useEffect(() => {
+    if (!wsId) return;
+    const unsub = listenNaoRealizados(wsId, (items) => {
+      setNaoRealizados(items as ExameItem[]);
+    }, 30);
+    return () => unsub();
+  }, [wsId]);
 
   // Timer — atualiza a cada 30s
   useEffect(() => {
@@ -196,15 +207,18 @@ export default function Worklist() {
       const agora2 = new Date();
       const horaChegada = agora2.toTimeString().slice(0, 5);
       const novoExameId = await saveExame(workspace.id, {
+        acc: gerarAccessionNumber(agora2),
         pacienteId: pacId,
         pacienteNome: pacNome.trim().toUpperCase(),
         pacienteDtnasc: pacDtnasc,
+        cpf: pacCpf.replace(/\D/g, ''),
         tipoExame: pacTipoExame,
         dataExame: dataLocalHoje(),
         horarioChegada: horaChegada,
         status: 'aguardando',
         convenio: pacConvenio,
         solicitante: pacSolicitante,
+        medicoExecutor: profile?.nome as string || '',
         sexo: pacSexo,
         origem: 'MANUAL',
       }, profile?.id || '');
@@ -274,6 +288,7 @@ export default function Worklist() {
           dtnasc: pac.pacienteDtnasc,
           sexo: pac.sexo,
           telefone: pac.telefone,
+          feegowPacienteId: pac.feegowPacienteId,
           criadoEm: serverTimestamp(),
         });
 
@@ -281,15 +296,19 @@ export default function Worklist() {
         const exameRef = doc(collection(db, 'workspaces', workspace.id, 'exames'));
         batch.set(exameRef, {
           id: exameRef.id,
+          acc: gerarAccessionNumber(),
           pacienteId: pacRef.id,
           pacienteNome: pac.pacienteNome,
           pacienteDtnasc: pac.pacienteDtnasc,
+          cpf: pac.cpf,
+          feegowPacienteId: pac.feegowPacienteId,
           tipoExame: pac.tipoExame,
           dataExame: pac.dataExame,
           horarioChegada: pac.horarioChegada,
           status: 'aguardando',
           convenio: pac.convenio,
           solicitante: profile?.nome as string || '',
+          medicoExecutor: pac.medicoExecutor || (profile?.nome as string || ''),
           sexo: pac.sexo,
           origem: 'FEEGOW',
           feegowAppointId: pac.feegowAppointId,
@@ -367,8 +386,9 @@ export default function Worklist() {
   }
 
   // Filtrar por status + busca texto
-  const filtrada = worklist.filter(it => {
-    if (statusSel !== 'todos' && it.status !== statusSel) return false;
+  const fonteDados = statusSel === 'nao-realizado' ? naoRealizados : worklist;
+  const filtrada = fonteDados.filter(it => {
+    if (statusSel !== 'todos' && statusSel !== 'nao-realizado' && it.status !== statusSel) return false;
     if (busca) {
       const nome = (it.pacienteNome as string || '').toLowerCase();
       const cpf = (it.pacienteDtnasc as string || '');
@@ -429,6 +449,11 @@ export default function Worklist() {
           className={`px-3 py-1 rounded-full font-semibold transition ${statusSel === 'emitido' ? 'bg-green-500 text-white' : 'bg-green-50 text-green-600 hover:bg-green-100'}`}>
           ✅ Emitidos ({worklist.filter(i => i.status === 'emitido').length})
         </button>
+        <button onClick={() => setStatusSel('nao-realizado')}
+          title="Exames não realizados nos últimos 30 dias (auditoria de no-show)"
+          className={`px-3 py-1 rounded-full font-semibold transition ${statusSel === 'nao-realizado' ? 'bg-gray-500 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+          🚫 Não realizados ({naoRealizados.length})
+        </button>
       </div>
 
       {/* Tabela */}
@@ -437,6 +462,7 @@ export default function Worklist() {
           <thead>
             <tr className="border-b text-xs text-gray-400 uppercase bg-gray-50">
               <th className="py-2 px-3 text-left w-16">Hora</th>
+              <th className="py-2 px-3 text-left w-36">ACC</th>
               <th className="py-2 px-3 text-left">Paciente</th>
               <th className="py-2 px-3 text-left w-28">Convênio</th>
               <th className="py-2 px-3 text-center w-20">Espera</th>
@@ -445,7 +471,7 @@ export default function Worklist() {
           </thead>
           <tbody>
             {filtrada.length === 0 && (
-              <tr><td colSpan={5} className="py-12 text-center text-gray-300">
+              <tr><td colSpan={6} className="py-12 text-center text-gray-300">
                 <p className="text-3xl mb-2">📋</p>
                 <p>{statusSel !== 'todos' ? `Nenhum exame "${statusSel}" nesta data` : 'Nenhum paciente na fila'}</p>
               </td></tr>
@@ -455,10 +481,30 @@ export default function Worklist() {
               const espera = item.status === 'aguardando' ? calcEspera(item.horarioChegada as string) : { texto: '', alerta: false };
               const origem = (item.origem as string) || 'MANUAL';
 
+              const isNaoRealizado = item.status === 'nao-realizado';
               return (
-                <tr key={item.id} className={`border-b hover:bg-gray-50 transition ${espera.alerta ? 'bg-red-50/30' : ''}`}>
-                  {/* Hora */}
-                  <td className="py-3 px-3 text-gray-500 font-mono text-xs">{item.horarioChegada || '—'}</td>
+                <tr key={item.id} className={`border-b hover:bg-gray-50 transition ${espera.alerta ? 'bg-red-50/30' : ''} ${isNaoRealizado ? 'opacity-70' : ''}`}>
+                  {/* Hora (e data se não-realizado) */}
+                  <td className="py-3 px-3 text-gray-500 font-mono text-xs">
+                    {isNaoRealizado && item.dataExame
+                      ? <><div className="text-[10px] text-gray-400">{(item.dataExame as string).split('-').reverse().slice(0, 2).join('/')}</div><div>{item.horarioChegada || '—'}</div></>
+                      : (item.horarioChegada || '—')}
+                  </td>
+
+                  {/* ACC — clique pra copiar (transcrição manual no Vivid) */}
+                  <td className="py-3 px-3">
+                    {item.acc ? (
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(item.acc as string); }}
+                        title="Clique para copiar (transcrição manual no Vivid)"
+                        className="font-mono text-[13px] font-bold text-[#1E3A5F] hover:bg-blue-50 px-1.5 py-0.5 rounded transition cursor-pointer"
+                      >
+                        {item.acc as string}
+                      </button>
+                    ) : (
+                      <span className="text-gray-300 text-xs">—</span>
+                    )}
+                  </td>
 
                   {/* Paciente */}
                   <td className="py-3 px-3">
