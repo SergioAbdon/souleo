@@ -332,6 +332,26 @@ export function listenWorklist(wsId: string, callback: (items: Record<string, un
   );
 }
 
+// Tab passiva — exames que viraram 'nao-realizado' (auto-cleanup à meia-noite)
+export function listenNaoRealizados(wsId: string, callback: (items: Record<string, unknown>[]) => void, dias: number = 30): Unsubscribe {
+  const d = new Date();
+  d.setDate(d.getDate() - dias);
+  const dataLimite = d.toISOString().slice(0, 10);
+  return onSnapshot(
+    query(
+      collection(db, 'workspaces', wsId, 'exames'),
+      where('status', '==', 'nao-realizado'),
+      where('dataExame', '>=', dataLimite),
+      orderBy('dataExame', 'desc')
+    ),
+    snap => {
+      const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      callback(items);
+    },
+    err => console.error('listenNaoRealizados:', err)
+  );
+}
+
 // ══ HISTÓRICO (exames emitidos) — com filtros ═══════════════
 
 export type FiltrosHistorico = {

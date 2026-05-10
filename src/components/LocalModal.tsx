@@ -48,6 +48,9 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
   const [feegowProcs, setFeegowProcs] = useState<Array<{ procedimento_id: number; nome: string }>>([]);
   const [feegowProcMap, setFeegowProcMap] = useState<Record<number, string>>({});
   const [procsLoading, setProcsLoading] = useState(false);
+  const [feegowProfs, setFeegowProfs] = useState<Array<{ profissional_id: number; nome: string; tratamento?: string; conselho?: string; documento_conselho?: string; uf_conselho?: string }>>([]);
+  const [feegowProfMap, setFeegowProfMap] = useState<Record<number, string>>({});
+  const [profsLoading, setProfsLoading] = useState(false);
   const [ortancAtivo, setOrtancAtivo] = useState(false);
   const [ortancUrl, setOrtancUrl] = useState('');
   const [ortancUser, setOrtancUser] = useState('');
@@ -85,6 +88,15 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
         setFeegowProcMap({});
       }
       setFeegowProcs([]);
+      const savedProfMap = workspace.feegowProfMap as Record<string, string> | undefined;
+      if (savedProfMap && Object.keys(savedProfMap).length > 0) {
+        const parsed: Record<number, string> = {};
+        for (const [k, v] of Object.entries(savedProfMap)) parsed[Number(k)] = v;
+        setFeegowProfMap(parsed);
+      } else {
+        setFeegowProfMap({});
+      }
+      setFeegowProfs([]);
       setOrtancAtivo(!!workspace.ortancAtivo);
       setOrtancUrl(workspace.ortancUrl as string || '');
       setOrtancUser(workspace.ortancUser as string || '');
@@ -130,6 +142,33 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
     setProcsLoading(false);
   }
 
+  async function carregarProfissionais() {
+    if (!feegowToken.trim()) return;
+    setProfsLoading(true);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/feegow?action=profissionais', {
+        headers: { 'Authorization': `Bearer ${idToken || ''}`, 'X-Feegow-Token': feegowToken.trim() },
+      });
+      const data = await res.json();
+      if (data.ok && data.profissionais?.length) {
+        setFeegowProfs(data.profissionais);
+        // Smart defaults: "Dr. Sergio Roberto Abdon Rodrigues"
+        if (Object.keys(feegowProfMap).length === 0) {
+          const defaults: Record<number, string> = {};
+          for (const p of data.profissionais) {
+            const tratamento = p.tratamento ? `${p.tratamento} ` : '';
+            defaults[p.profissional_id] = `${tratamento}${p.nome}`.trim();
+          }
+          setFeegowProfMap(defaults);
+        }
+      }
+    } catch {
+      setErro('Erro ao carregar profissionais do Feegow.');
+    }
+    setProfsLoading(false);
+  }
+
   async function handleSalvar() {
     setErro('');
     if (!nome) { setErro('Nome do local é obrigatório.'); return; }
@@ -149,6 +188,7 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
       feegowProcMap: Object.fromEntries(
         Object.entries(feegowProcMap).filter(([, v]) => v !== 'ignorar')
       ),
+      feegowProfMap: feegowProfMap,
       ortancAtivo,
       ortancUrl: ortancUrl.trim() || null,
       ortancUser: ortancUser.trim() || null,
@@ -353,6 +393,45 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
                 {feegowProcs.length === 0 && Object.keys(feegowProcMap).length > 0 && (
                   <p className="text-xs text-green-600">
                     {Object.keys(feegowProcMap).length} procedimento(s) mapeado(s). Clique em &quot;Carregar&quot; para editar.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {feegowStatus === 'ok' && (
+              <div className="mt-3 pt-3 border-t border-gray-200">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-semibold text-gray-500 uppercase">Profissionais</label>
+                  <button onClick={carregarProfissionais} disabled={profsLoading}
+                    className="px-3 py-1 text-xs font-semibold rounded-lg border border-purple-500 text-purple-600 hover:bg-purple-50 transition disabled:opacity-50">
+                    {profsLoading ? 'Carregando...' : feegowProfs.length > 0 ? 'Recarregar' : 'Carregar profissionais'}
+                  </button>
+                </div>
+
+                {feegowProfs.length > 0 && (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {feegowProfs.map(p => (
+                      <div key={p.profissional_id} className="flex items-center gap-2 text-xs">
+                        <span className="w-32 text-gray-500 truncate" title={`${p.conselho || ''} ${p.documento_conselho || ''}/${p.uf_conselho || ''}`}>
+                          {p.tratamento || ''} {p.nome.split(' ').slice(0, 2).join(' ')}
+                        </span>
+                        <input
+                          type="text"
+                          value={feegowProfMap[p.profissional_id] || ''}
+                          onChange={e => setFeegowProfMap(prev => ({ ...prev, [p.profissional_id]: e.target.value }))}
+                          className="flex-1 border rounded px-2 py-1 text-xs focus:outline-none focus:border-[#1E3A5F] text-[#1E3A5F]"
+                          placeholder="Nome a aparecer no laudo / DICOM" />
+                      </div>
+                    ))}
+                    <p className="text-[10px] text-gray-400 mt-2 pt-2 border-t">
+                      Como o nome do médico vai aparecer no DICOM (tag #19) e no laudo. Edite se quiser encurtar.
+                    </p>
+                  </div>
+                )}
+
+                {feegowProfs.length === 0 && Object.keys(feegowProfMap).length > 0 && (
+                  <p className="text-xs text-green-600">
+                    {Object.keys(feegowProfMap).length} profissional(is) mapeado(s). Clique em &quot;Carregar&quot; para editar.
                   </p>
                 )}
               </div>

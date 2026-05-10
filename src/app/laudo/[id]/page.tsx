@@ -876,6 +876,7 @@ ul{list-style:none;padding:0;margin:0;}
         exameOrigem={exame?.origem as string || ''}
         exameCpf={exame?.cpf as string || ''}
         feegowPacienteId={exame?.feegowPacienteId as string | number | null || null}
+        exameAcc={exame?.acc as string || ''}
         modoEmitido={
           <ModoEmitido
             onFinalizar={handleFinalizar}
