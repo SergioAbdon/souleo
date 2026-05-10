@@ -27,8 +27,12 @@ export const TIPOS_EXAME_LABEL: Record<TipoExame, string> = {
 /**
  * Status conforme observado em src/components/Worklist.tsx do LEO.
  * Wader cria exames com status='aguardando' (default Worklist).
+ *
+ * 'nao-realizado' — adicionado em 09/05/2026. Setado pelo cron do LEO
+ * (00:00 BRT) em exames com `dataExame < hoje` E `status='aguardando'`.
+ * Wader detecta a transição e remove o `.wl` correspondente.
  */
-export type StatusExame = 'aguardando' | 'andamento' | 'rascunho' | 'emitido';
+export type StatusExame = 'aguardando' | 'andamento' | 'rascunho' | 'emitido' | 'nao-realizado';
 
 /**
  * Origem do exame.
@@ -38,8 +42,16 @@ export type StatusExame = 'aguardando' | 'andamento' | 'rascunho' | 'emitido';
 export type OrigemExame = 'MANUAL' | 'FEEGOW';
 
 export interface Exame {
-  /** ID gerado pelo Firestore. Também é o AccessionNumber DICOM. */
+  /** ID gerado pelo Firestore. */
   id: string;
+
+  /**
+   * AccessionNumber DICOM gerado pelo LEO web no formato `EX{ddmmaa}{hhmmsscc}`
+   * (16 chars exatos, dentro do limite DICOM SH). Adicionado em 09/05/2026.
+   * Fallback pro `id` quando ausente (compatibilidade com exames antigos).
+   * Esta é a chave do match Vivid → Orthanc → Wader → LEO.
+   */
+  acc?: string;
 
   /** FK para `workspaces/{wsId}/pacientes/{id}`. */
   pacienteId: string;
@@ -47,7 +59,10 @@ export interface Exame {
   // Dados desnormalizados do paciente (cópia, conforme padrão LEO):
   pacienteNome: string;
   pacienteDtnasc?: string;
-  sexo?: 'M' | 'F' | '';
+  sexo?: 'M' | 'F' | 'O' | '';
+
+  /** CPF do paciente (sem pontos/traços). 1ª escolha pra PatientID DICOM. */
+  cpf?: string;
 
   /** Tipo do procedimento. Valores conforme `workspace.feegowProcMap`. */
   tipoExame: TipoExame;
@@ -62,6 +77,13 @@ export interface Exame {
   convenio?: string;
   solicitante?: string;
 
+  /**
+   * Nome do médico "dono da agenda" (responsável pela execução do exame).
+   * Vai pro DICOM tag #19 ScheduledPerformingPhysicianName.
+   * Vem do Feegow via `feegowProfMap[profissional_id]` ou do user logado em cadastro manual.
+   */
+  medicoExecutor?: string;
+
   status: StatusExame;
   origem: OrigemExame;
 
@@ -71,6 +93,8 @@ export interface Exame {
   // Campos de integração externa
   feegowAppointId?: string;
   feegowPacienteId?: string;
+  /** Profissional Feegow do agendamento (numérico). Resolve pra medicoExecutor. */
+  profissionalId?: number;
 
   versao: number;
 
@@ -78,6 +102,8 @@ export interface Exame {
   criadoEm?: string;
   atualizadoEm?: string;
   emitidoEm?: string;
+  /** Quando virou 'nao-realizado' (cron à meia-noite). */
+  naoRealizadoEm?: string;
 
   // Após emissão
   pdfUrl?: string;

@@ -21,11 +21,13 @@ const WADER_IMPL_VERSION = 'WADER_001';
 
 // Modality DICOM padrão para US
 const DEFAULT_MODALITY = 'US';
-// AE Title que o Vivid usa internamente — vem das memórias (project_vivid_t8_medcardio.md)
-// Como esse valor pode variar por instalação, deixamos opcional na geração.
-const DEFAULT_SCHEDULED_AE = 'VIVIDT8';
-// Nome humano default do aparelho. Pode ser sobrescrito via wader.config.json.
-const DEFAULT_STATION_NAME = 'VIVIDT8';
+// AE Title genérico — modelo "worklist compartilhada" decidido em 09/05/2026:
+// todos os Vivids da clínica consultam o mesmo nome (ex: MEDCARDIO), e cada
+// aparelho é configurado localmente pra enviar query com esse filtro.
+// Adicionar 2º/3º aparelho NÃO requer mudança aqui — só configurar o aparelho.
+const DEFAULT_SCHEDULED_AE = 'MEDCARDIO';
+const DEFAULT_STATION_NAME = 'MEDCARDIO';
+const DEFAULT_STEP_LOCATION = 'MEDCARDIO';
 
 /**
  * Mapeia tipoExame interno do LEO pra descrição DICOM legível pro médico no Vivid.
@@ -103,41 +105,64 @@ function montarDataset(exame: Exame, opts: GerarWlOpts = {}): Record<string, unk
     exame.tipoExame;
 
   const stationName = sanitizarAscii(opts.scheduledStationName ?? DEFAULT_STATION_NAME);
-  const stepLocation = sanitizarAscii(opts.scheduledProcedureStepLocation ?? '');
+  const stepLocation = sanitizarAscii(opts.scheduledProcedureStepLocation ?? DEFAULT_STEP_LOCATION);
 
   const studyInstanceUid = DicomMetaDictionary.uid();
+
+  // AccessionNumber — formato `EX{ddmmaa}{hhmmsscc}` gerado pelo LEO web (16 chars exatos,
+  // dentro do limite DICOM SH). Fallback pro doc id se ausente (compat com exames antigos).
+  // ⚠️ doc id Firestore tem 20 chars — Vivid trunca/rejeita. ACC é a chave do match.
+  const acc = sanitizarAscii(exame.acc || exame.id);
+
+  // PatientID — hierarquia decidida em 09/05/2026:
+  //   1ª CPF (estável por paciente, casa registros entre sistemas)
+  //   2ª feegowPacienteId (= "prontuário Feegow", estável quando paciente sem CPF — estrangeiro)
+  //   3ª doc id Firestore (fallback)
+  // Vivid usa PatientID pra agrupar exames do mesmo paciente.
+  const patientId = sanitizarAscii(
+    exame.cpf || (exame.feegowPacienteId ? String(exame.feegowPacienteId) : '') || exame.id,
+  );
 
   return {
     SpecificCharacterSet: 'ISO_IR 100',
     // Patient Module
     PatientName: formatarPatientName(exame.pacienteNome),
-    PatientID: sanitizarAscii(exame.pacienteId), // ID do Firestore — único e estável
-    PatientBirthDate: dataIsoParaDicom(exame.pacienteDtnasc),
-    PatientSex: exame.sexo ?? '',
+    PatientID: patientId,
+    // Fallback 19000101 quando ausente — Vivid alguns rejeitam vazio (Type 2 mas estrito)
+    PatientBirthDate: dataIsoParaDicom(exame.pacienteDtnasc) || '19000101',
+    // Fallback 'O' (Other) quando ausente — DICOM CS Defined Terms: M, F, O
+    PatientSex: exame.sexo || 'O',
 
     // Study Module
     StudyInstanceUID: studyInstanceUid,
-    AccessionNumber: sanitizarAscii(exame.id), // chave que o Vivid grava no DICOM e Wader usa pra match
+    AccessionNumber: acc,
 
-    // Requested Procedure Module
-    RequestedProcedureID: sanitizarAscii(exame.id),
+    // Requested Procedure Module — pra ECO simples, os 3 IDs (#12 ACC, #21 StepID, #24 ProcedureID)
+    // colapsam num único valor. DICOM permite (Type 1 obriga presente E não-vazio, mas não obriga distintos).
+    // Decisão Sergio 09/05: usar ACC nos 3 lugares pra simplicidade.
+    RequestedProcedureID: acc,
     RequestedProcedureDescription: sanitizarAscii(procDesc),
     RequestedProcedurePriority: 'MEDIUM',
-    ReferringPhysicianName: sanitizarAscii(exame.solicitante ?? ''),
+    // Sempre vazio (decisão Sergio 09/05) — irrelevante na prática clínica de eco
+    ReferringPhysicianName: '',
 
     // Scheduled Procedure Step Sequence (1 item — 1 exame)
     // Tags Type 2 incluídas mesmo vazias (manual Vivid T8 DCS, Tabela 9.5-2)
     ScheduledProcedureStepSequence: [
       {
-        ScheduledStationAETitle: DEFAULT_SCHEDULED_AE,
+        // AE Title genérico (worklist compartilhada — multi-aparelho com 1 Wader/1 Orthanc).
+        // opts.scheduledStationName pode sobrescrever pra clínicas que prefiram atribuição prévia.
+        ScheduledStationAETitle: sanitizarAscii(opts.scheduledStationName ?? DEFAULT_SCHEDULED_AE),
         ScheduledProcedureStepStartDate: dataIsoParaDicom(exame.dataExame),
         ScheduledProcedureStepStartTime: horaHHMMParaDicom(exame.horarioChegada),
         Modality: DEFAULT_MODALITY,
-        ScheduledPerformingPhysicianName: '',
+        // "Dono da agenda" — médico responsável pela execução. Mesmo formato do PatientName
+        // (nome completo no 1º componente, sem ^).
+        ScheduledPerformingPhysicianName: formatarPatientName(exame.medicoExecutor ?? ''),
         ScheduledProcedureStepDescription: sanitizarAscii(procDesc),
-        ScheduledProcedureStepID: sanitizarAscii(exame.id),
-        ScheduledStationName: stationName, // Type 2 (manual Vivid T8 DCS Tabela 9.5-2)
-        ScheduledProcedureStepLocation: stepLocation, // Type 2 — idem
+        ScheduledProcedureStepID: acc,
+        ScheduledStationName: stationName,
+        ScheduledProcedureStepLocation: stepLocation,
       },
     ],
   };
