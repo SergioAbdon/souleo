@@ -1,0 +1,34 @@
+{
+  "version": "1.0",
+  "wsId": "medcardio",
+  "agentId": "wader-001",
+
+  "firebase": {
+    "serviceAccountPath": "C:\\ProgramData\\Wader\\sa.enc",
+    "projectId": "leo-sistema-laudos"
+  },
+
+  "orthanc": {
+    "_comentario": "URL/user/pass do Orthanc vêm do Firestore (workspaces/{wsId}.ortancUrl/User/Pass). Aqui só caminhos de filesystem da máquina.",
+    "worklistPath": "C:\\Orthanc\\worklists"
+  },
+
+  "backup": {
+    "path": "C:\\OneDrive\\LEO-DICOM",
+    "retentionDays": 30
+  },
+
+  "polling": {
+    "worklistSyncSec": 60,
+    "orthancChangesSec": 30
+  },
+
+  "ui": {
+    "port": 8043,
+    "showTrayIcon": true
+  },
+
+  "telemetry": {
+    "sampleRate": 0.1
+  }
+}
