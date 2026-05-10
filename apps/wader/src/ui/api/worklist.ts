@@ -27,6 +27,7 @@ export function registerWorklistRoutes(
       const result = await syncWorklists({
         wsId: config.wsId,
         worklistPath: config.orthanc.worklistPath,
+        scheduledStationName: config.orthanc.scheduledStationName,
         data: req.body?.data,
       });
       return reply.send({ ok: true, ...result });

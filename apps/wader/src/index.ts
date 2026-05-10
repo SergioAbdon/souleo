@@ -63,6 +63,7 @@ async function main(): Promise<void> {
       wsId: config.wsId,
       worklistPath: config.orthanc.worklistPath,
       intervalSec: config.polling.worklistSyncSec,
+      scheduledStationName: config.orthanc.scheduledStationName,
     });
     worklistWorker.start();
   }

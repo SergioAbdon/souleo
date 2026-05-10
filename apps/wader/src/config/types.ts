@@ -52,6 +52,12 @@ export interface FirebaseConfig {
 export interface OrthancLocalConfig {
   /** Pasta onde o plugin Worklist do Orthanc lê arquivos `.wl`. Varia por instalação. */
   worklistPath: string;
+  /**
+   * Nome do aparelho de US conectado a essa máquina (tag DICOM 0040,0010).
+   * Default: "VIVIDT8". Pra clínica com 2+ aparelhos, cada Wader tem nome único
+   * (ex: "VIVIDT8-SALA1", "VIVIDT8-SALA2").
+   */
+  scheduledStationName?: string;
 }
 
 export interface BackupConfig {

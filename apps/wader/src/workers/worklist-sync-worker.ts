@@ -7,6 +7,8 @@ export interface WorklistSyncWorkerOptions {
   wsId: string;
   worklistPath: string;
   intervalSec: number;
+  /** Tag DICOM (0040,0010) do .wl. Default no wl-writer = "VIVIDT8". */
+  scheduledStationName?: string;
 }
 
 /**
@@ -84,6 +86,7 @@ export class WorklistSyncWorker {
       const result = await syncWorklists({
         wsId: this.opts.wsId,
         worklistPath: this.opts.worklistPath,
+        scheduledStationName: this.opts.scheduledStationName,
       });
       this.lastResult = result;
       this.lastError = null;

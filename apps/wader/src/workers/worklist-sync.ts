@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import { ExamesRepo } from '../adapters/exames-repo';
+import { WorkspaceRepo } from '../adapters/workspace-repo';
 import { StatusExame } from '../types/exame';
 import { salvarWl, deletarWl, listarWlExistentes } from './wl-writer';
 import { createLogger } from '../logger';
@@ -38,6 +39,8 @@ export interface SyncResult {
 export async function syncWorklists(opts: {
   wsId: string;
   worklistPath: string;
+  /** Nome do aparelho (DICOM 0040,0010). Vem do `wader.config.json`. */
+  scheduledStationName?: string;
   data?: string; // YYYY-MM-DD; default = hoje
 }): Promise<SyncResult> {
   const dataAlvo = opts.data ?? new Date().toISOString().slice(0, 10);
@@ -60,6 +63,16 @@ export async function syncWorklists(opts: {
   }
 
   const repo = new ExamesRepo(opts.wsId);
+  const wsRepo = new WorkspaceRepo(opts.wsId);
+
+  // Busca uma vez o nome da clínica (cache reuso entre exames do tick)
+  let nomeClinica = '';
+  try {
+    nomeClinica = await wsRepo.getNomeClinica();
+  } catch (err) {
+    log.warn({ err }, 'Não consegui buscar nomeClinica do workspace, usando vazio');
+  }
+
   const todosExames = await repo.listarDoDia(dataAlvo);
   const elegiveis = todosExames.filter((e) => STATUS_ELEGIVEIS_WL.includes(e.status));
   result.examesElegiveis = elegiveis.length;
@@ -79,7 +92,10 @@ export async function syncWorklists(opts: {
       continue;
     }
     try {
-      salvarWl(opts.worklistPath, exame);
+      salvarWl(opts.worklistPath, exame, {
+        scheduledStationName: opts.scheduledStationName,
+        scheduledProcedureStepLocation: nomeClinica,
+      });
       result.wlsCriados++;
     } catch (err) {
       const msg = `Falha ao gerar .wl pra exame ${exame.id}: ${(err as Error).message}`;

@@ -121,6 +121,17 @@ export class WorkspaceRepo {
   }
 
   /**
+   * Retorna o nome da clínica do workspace.
+   * Usado em (0040,0011) ScheduledProcedureStepLocation no .wl.
+   * Se não houver, retorna string vazia.
+   */
+  async getNomeClinica(): Promise<string> {
+    const snap = await getDb().collection('workspaces').doc(this.wsId).get();
+    if (!snap.exists) return '';
+    return String(snap.data()?.nomeClinica ?? '');
+  }
+
+  /**
    * Invalida todos os caches (forçar reload na próxima leitura).
    */
   invalidate(): void {
