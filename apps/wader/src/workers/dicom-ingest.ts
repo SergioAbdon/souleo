@@ -59,21 +59,39 @@ export async function processarEstudo(opts: {
     return result;
   }
 
-  // 2) Match no Firestore — exames/{exameId} onde exameId == AccessionNumber
-  const exameRef = getDb()
+  // 2) Match no Firestore — busca exame onde campo `acc` == AccessionNumber DICOM.
+  // Antes da Fase 4.6 o doc id era usado como ACC; após Fase 4.6 o ACC vive no campo
+  // `acc` (formato EX{ddmmaa}{hhmmsscc}, 16 chars). Tentamos por `acc` primeiro;
+  // fallback pra doc-id-as-acc cobre exames legados ainda sem o campo `acc`.
+  const examesCol = getDb()
     .collection('workspaces')
     .doc(opts.wsId)
-    .collection('exames')
-    .doc(accession);
+    .collection('exames');
 
-  const exameSnap = await exameRef.get();
-  if (!exameSnap.exists) {
-    result.errors.push(`Exame com ID/ACC=${accession} não encontrado em workspaces/${opts.wsId}/exames`);
+  let exameRef: FirebaseFirestore.DocumentReference | null = null;
+  let exameId: string | null = null;
+
+  const porAcc = await examesCol.where('acc', '==', accession).limit(1).get();
+  if (!porAcc.empty) {
+    exameRef = porAcc.docs[0].ref;
+    exameId = porAcc.docs[0].id;
+  } else {
+    // Fallback legado: doc id == ACC
+    const legadoRef = examesCol.doc(accession);
+    const legadoSnap = await legadoRef.get();
+    if (legadoSnap.exists) {
+      exameRef = legadoRef;
+      exameId = accession;
+    }
+  }
+
+  if (!exameRef || !exameId) {
+    result.errors.push(`Exame com acc=${accession} não encontrado em workspaces/${opts.wsId}/exames`);
     log.warn({ accession, wsId: opts.wsId }, 'Estudo sem exame correspondente');
     return result;
   }
 
-  result.exameIdNoLeo = accession;
+  result.exameIdNoLeo = exameId;
   result.matched = true;
 
   // 3) Lista instances + baixa cada preview + sobe pro Storage
@@ -91,7 +109,7 @@ export async function processarEstudo(opts: {
       const buffer = await opts.client.getInstancePreview(instanceId);
       const upload = await uploadDicomPreview({
         wsId: opts.wsId,
-        exameId: accession,
+        exameId: exameId,
         seq: i + 1,
         buffer,
         contentType: 'image/jpeg',
