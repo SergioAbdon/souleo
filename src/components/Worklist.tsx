@@ -277,8 +277,12 @@ export default function Worklist() {
       // v3: writeBatch — tudo ou nada (atomico)
       const batch = writeBatch(db);
       const examesCriados: Array<{ exameId: string; pac: Record<string, string> }> = [];
+      // Timestamp base do batch — cada exame ganha offset de 10ms pra evitar
+      // colisão de ACC quando loop roda em sub-centésimo de segundo.
+      const baseTime = new Date();
 
-      for (const pac of novos) {
+      for (let i = 0; i < novos.length; i++) {
+        const pac = novos[i];
         // Criar paciente
         const pacRef = doc(collection(db, 'workspaces', workspace.id, 'pacientes'));
         batch.set(pacRef, {
@@ -296,7 +300,7 @@ export default function Worklist() {
         const exameRef = doc(collection(db, 'workspaces', workspace.id, 'exames'));
         batch.set(exameRef, {
           id: exameRef.id,
-          acc: gerarAccessionNumber(),
+          acc: gerarAccessionNumber(baseTime, i * 10),
           pacienteId: pacRef.id,
           pacienteNome: pac.pacienteNome,
           pacienteDtnasc: pac.pacienteDtnasc,
