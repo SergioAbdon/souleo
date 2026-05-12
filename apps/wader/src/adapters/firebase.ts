@@ -39,14 +39,18 @@ export function initFirebase(config: FirebaseConfig): void {
     throw new Error(`Service Account inválida (JSON malformado) em ${config.serviceAccountPath}: ${(err as Error).message}`);
   }
 
+  // Firebase migrou nome de bucket em 2024-2025: .appspot.com -> .firebasestorage.app
+  // O bucket real verificado em 11/05/2026 do leo-sistema-laudos é o .firebasestorage.app.
+  const bucketName = `${config.projectId}.firebasestorage.app`;
+
   _app = initializeApp({
     credential: cert(sa as Parameters<typeof cert>[0]),
     projectId: config.projectId,
-    storageBucket: `${config.projectId}.appspot.com`,
+    storageBucket: bucketName,
   });
 
   log.info(
-    { projectId: config.projectId, clientEmail: sa.client_email, storageBucket: `${config.projectId}.appspot.com` },
+    { projectId: config.projectId, clientEmail: sa.client_email, storageBucket: bucketName },
     'Firebase inicializado',
   );
 }
