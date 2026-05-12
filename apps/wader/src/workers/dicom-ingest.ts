@@ -130,39 +130,39 @@ export async function processarEstudo(opts: {
   }
 
   // 4) Atualiza Firestore
-  // Por que distinguir sucesso de erro?
-  //   - Se TODAS imagens falharam (imagensProcessadas == 0 && imagensFalhadas > 0),
-  //     marcar `imagens-recebidas` é mentira — usuário abriria a galeria vazia.
-  //     Marca `erro-imagens` e devolve `matched: false` pro worker NÃO adicionar
-  //     em `processedStudyIds` (retenta na próxima rodada).
-  //   - Se NENHUMA instance veio (instanceIds.length == 0), também é erro do Orthanc/Vivid.
-  //   - Sucesso parcial (algumas processadas, algumas falharam) = `imagens-recebidas`
-  //     com a galeria parcial; pelo menos algo é visível.
+  //
+  // Decisão 11/05/2026 (Sergio):
+  //   - NÃO mudar o `status` do exame ao receber imagens.
+  //     Status continua sendo `aguardando` (ou o que estava antes).
+  //     A UI do LEO web detecta presença de DICOM olhando `imagensDicom.length > 0`.
+  //   - Sucesso parcial = mesma escrita (com array parcial).
+  //   - Falha total = ainda escrevemos os campos vazios + retornamos matched=false
+  //     pro worker remover do `processedStudyIds` e retentar.
+  //   - Falha total NÃO escreve `dicomOrthancStudyId` (assim sabemos que precisa retry
+  //     mesmo após restart do Wader; é o sinal persistente de "ainda não processou OK").
   const todasFalharam =
     instanceIds.length > 0 && result.imagensProcessadas === 0 && result.imagensFalhadas > 0;
   const semInstances = instanceIds.length === 0;
-  const statusFinal: 'imagens-recebidas' | 'erro-imagens' =
-    todasFalharam || semInstances ? 'erro-imagens' : 'imagens-recebidas';
+  const sucessoTotal = !todasFalharam && !semInstances;
 
-  await exameRef.update({
-    imagensDicom: imagensDicom.map((i) => i.url),
-    imagensDicomDetalhes: imagensDicom,
-    dicomStudyUid: study.MainDicomTags.StudyInstanceUID ?? null,
-    dicomOrthancStudyId: opts.orthancStudyId,
-    dicomMeta: {
-      modality: study.MainDicomTags.Modality ?? 'US',
-      studyDate: study.MainDicomTags.StudyDate ?? '',
-      studyTime: study.MainDicomTags.StudyTime ?? '',
-      studyDescription: study.MainDicomTags.StudyDescription ?? '',
-    },
-    status: statusFinal,
-    atualizadoEm: FieldValue.serverTimestamp(),
-  });
-
-  // Se tudo falhou, devolve matched=false pro worker permitir retry na próxima
-  // (worker confia em `matched` pra decidir se inclui em estatística de processados).
-  // Mantemos exameIdNoLeo preenchido pra log/debug, mas matched espelha sucesso real.
-  if (statusFinal === 'erro-imagens') {
+  if (sucessoTotal) {
+    await exameRef.update({
+      imagensDicom: imagensDicom.map((i) => i.url),
+      imagensDicomDetalhes: imagensDicom,
+      dicomStudyUid: study.MainDicomTags.StudyInstanceUID ?? null,
+      dicomOrthancStudyId: opts.orthancStudyId,
+      dicomMeta: {
+        modality: study.MainDicomTags.Modality ?? 'US',
+        studyDate: study.MainDicomTags.StudyDate ?? '',
+        studyTime: study.MainDicomTags.StudyTime ?? '',
+        studyDescription: study.MainDicomTags.StudyDescription ?? '',
+      },
+      // status: NÃO MEXE — conforme decisão 11/05/2026.
+      atualizadoEm: FieldValue.serverTimestamp(),
+    });
+  } else {
+    // Falha total: marca matched=false pra retentar próxima rodada.
+    // Não escreve `dicomOrthancStudyId` pra deixar claro que ainda não processamos OK.
     result.matched = false;
     result.errors.push(
       semInstances
@@ -174,14 +174,14 @@ export async function processarEstudo(opts: {
   log.info(
     {
       exameId: accession,
-      status: statusFinal,
       imagensProcessadas: result.imagensProcessadas,
       imagensFalhadas: result.imagensFalhadas,
       bytes: result.bytesTotais,
+      sucesso: sucessoTotal,
     },
-    statusFinal === 'imagens-recebidas'
-      ? 'Estudo processado e Firestore atualizado'
-      : 'Estudo marcado com erro-imagens — vai retentar na próxima rodada',
+    sucessoTotal
+      ? 'Estudo processado e Firestore atualizado (status preservado)'
+      : 'Estudo falhou — sem update no Firestore, retentará próxima rodada',
   );
 
   return result;

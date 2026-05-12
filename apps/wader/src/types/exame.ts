@@ -32,22 +32,10 @@ export const TIPOS_EXAME_LABEL: Record<TipoExame, string> = {
  * (00:00 BRT) em exames com `dataExame < hoje` E `status='aguardando'`.
  * Wader detecta a transição e remove o `.wl` correspondente.
  *
- * 'imagens-recebidas' — adicionado em 11/05/2026 (Fase 4.6). Setado pelo
- * Wader quando todas (ou parte) das imagens DICOM do estudo foram baixadas
- * do Orthanc e subidas pro Firebase Storage. LEO web mostra galeria.
- *
- * 'erro-imagens' — adicionado em 11/05/2026 (Fase 4.6). Setado pelo Wader
- * quando o estudo foi reconhecido (ACC bateu) mas TODAS as imagens falharam
- * no download/upload. Wader retenta na próxima rodada.
+ * Decisão 11/05/2026: pipeline DICOM NÃO altera `status` do exame.
+ * Presença de imagens é sinalizada via `imagensDicom.length > 0` no UI.
  */
-export type StatusExame =
-  | 'aguardando'
-  | 'andamento'
-  | 'rascunho'
-  | 'emitido'
-  | 'nao-realizado'
-  | 'imagens-recebidas'
-  | 'erro-imagens';
+export type StatusExame = 'aguardando' | 'andamento' | 'rascunho' | 'emitido' | 'nao-realizado';
 
 /**
  * Origem do exame.
