@@ -130,6 +130,20 @@ export async function processarEstudo(opts: {
   }
 
   // 4) Atualiza Firestore
+  // Por que distinguir sucesso de erro?
+  //   - Se TODAS imagens falharam (imagensProcessadas == 0 && imagensFalhadas > 0),
+  //     marcar `imagens-recebidas` é mentira — usuário abriria a galeria vazia.
+  //     Marca `erro-imagens` e devolve `matched: false` pro worker NÃO adicionar
+  //     em `processedStudyIds` (retenta na próxima rodada).
+  //   - Se NENHUMA instance veio (instanceIds.length == 0), também é erro do Orthanc/Vivid.
+  //   - Sucesso parcial (algumas processadas, algumas falharam) = `imagens-recebidas`
+  //     com a galeria parcial; pelo menos algo é visível.
+  const todasFalharam =
+    instanceIds.length > 0 && result.imagensProcessadas === 0 && result.imagensFalhadas > 0;
+  const semInstances = instanceIds.length === 0;
+  const statusFinal: 'imagens-recebidas' | 'erro-imagens' =
+    todasFalharam || semInstances ? 'erro-imagens' : 'imagens-recebidas';
+
   await exameRef.update({
     imagensDicom: imagensDicom.map((i) => i.url),
     imagensDicomDetalhes: imagensDicom,
@@ -141,18 +155,33 @@ export async function processarEstudo(opts: {
       studyTime: study.MainDicomTags.StudyTime ?? '',
       studyDescription: study.MainDicomTags.StudyDescription ?? '',
     },
-    status: 'imagens-recebidas',
+    status: statusFinal,
     atualizadoEm: FieldValue.serverTimestamp(),
   });
+
+  // Se tudo falhou, devolve matched=false pro worker permitir retry na próxima
+  // (worker confia em `matched` pra decidir se inclui em estatística de processados).
+  // Mantemos exameIdNoLeo preenchido pra log/debug, mas matched espelha sucesso real.
+  if (statusFinal === 'erro-imagens') {
+    result.matched = false;
+    result.errors.push(
+      semInstances
+        ? 'Estudo sem instances no Orthanc'
+        : `Todas as ${result.imagensFalhadas} imagens falharam ao baixar/subir`,
+    );
+  }
 
   log.info(
     {
       exameId: accession,
+      status: statusFinal,
       imagensProcessadas: result.imagensProcessadas,
       imagensFalhadas: result.imagensFalhadas,
       bytes: result.bytesTotais,
     },
-    'Estudo processado e Firestore atualizado',
+    statusFinal === 'imagens-recebidas'
+      ? 'Estudo processado e Firestore atualizado'
+      : 'Estudo marcado com erro-imagens — vai retentar na próxima rodada',
   );
 
   return result;
