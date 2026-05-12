@@ -107,6 +107,10 @@ export class DicomIngestWorker {
       log.info({ count: studiesToProcess.length, lastSeq: this.lastSeq }, 'Novos estudos estáveis detectados');
 
       for (const change of studiesToProcess) {
+        // Marca processado ANTES da tentativa: evita loop infinito se o estudo
+        // sempre falhar (ex: imagem corrompida). Se quisermos retry, removemos
+        // do set abaixo quando `result.matched === false` (significa erro recuperável
+        // como rede ou Orthanc temporariamente offline na hora do preview).
         this.processedStudyIds.add(change.ID);
         try {
           const result = await processarEstudo({
@@ -116,10 +120,26 @@ export class DicomIngestWorker {
           });
           this.lastResults.push(result);
           if (this.lastResults.length > 20) this.lastResults = this.lastResults.slice(-20);
-          if (result.matched) this.estudosProcessados++;
-          else this.estudosOrfaos++;
+          if (result.matched) {
+            this.estudosProcessados++;
+          } else {
+            this.estudosOrfaos++;
+            // Caso "erro-imagens" (exame existia no LEO mas download falhou):
+            // tira do set pra retentar. `exameIdNoLeo` preenchido distingue
+            // "exame não existe" (órfão genuíno, deixa marcado) de
+            // "exame existe mas download falhou" (retenta).
+            if (result.exameIdNoLeo) {
+              this.processedStudyIds.delete(change.ID);
+              log.info(
+                { orthancStudyId: change.ID, exameId: result.exameIdNoLeo },
+                'Removido de processedStudyIds — vai retentar próxima rodada',
+              );
+            }
+          }
         } catch (err) {
-          log.error({ err, orthancStudyId: change.ID }, 'Falha ao processar estudo');
+          // Erro inesperado (não capturado por processarEstudo). Remove pra retentar.
+          this.processedStudyIds.delete(change.ID);
+          log.error({ err, orthancStudyId: change.ID }, 'Falha ao processar estudo — vai retentar');
           this.lastError = (err as Error).message;
         }
       }

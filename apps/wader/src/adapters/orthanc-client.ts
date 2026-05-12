@@ -150,7 +150,7 @@ export class OrthancClient {
   private async get<T>(path: string): Promise<T> {
     const conn = await this.resolveConn();
     const url = conn.url + path;
-    const headers = this.buildHeaders(conn);
+    const headers = this.buildHeaders(conn, 'application/json');
 
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
@@ -174,7 +174,10 @@ export class OrthancClient {
   private async getBinary(path: string): Promise<Buffer> {
     const conn = await this.resolveConn();
     const url = conn.url + path;
-    const headers = this.buildHeaders(conn);
+    // Endpoints binários (/preview, /file, /rendered) retornam JPEG ou DICOM cru.
+    // Se mandarmos `Accept: application/json`, Orthanc devolve 415 Unsupported Media Type.
+    // `*/*` deixa o Orthanc escolher o content-type natural do endpoint.
+    const headers = this.buildHeaders(conn, '*/*');
 
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
@@ -197,8 +200,8 @@ export class OrthancClient {
     }
   }
 
-  private buildHeaders(conn: OrthancConnection): Record<string, string> {
-    const headers: Record<string, string> = { Accept: 'application/json' };
+  private buildHeaders(conn: OrthancConnection, accept: string): Record<string, string> {
+    const headers: Record<string, string> = { Accept: accept };
     if (conn.user && conn.pass) {
       const b64 = Buffer.from(`${conn.user}:${conn.pass}`).toString('base64');
       headers['Authorization'] = `Basic ${b64}`;
