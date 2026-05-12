@@ -184,17 +184,45 @@ export default function LaudoPage() {
                 try { executarEReportar(exameId); } catch { /* não bloquear */ }
               }
             };
-            document.querySelectorAll('#laudo-sidebar input, #laudo-sidebar select').forEach(el => {
-              el.addEventListener('input', sc);
-              el.addEventListener('change', sc);
-            });
 
-            // Sincronizar b24 (Câmaras) ↔ b24_diast (Diastólica)
-            const b24 = document.getElementById('b24') as HTMLInputElement;
-            const b24d = document.getElementById('b24_diast') as HTMLInputElement;
-            if (b24 && b24d) {
-              b24.addEventListener('input', () => { b24d.value = b24.value; });
-              b24d.addEventListener('input', () => { b24.value = b24d.value; });
+            // FIX 12/05/2026: Event delegation no container, NÃO em cada input.
+            //
+            // Bug antigo: querySelectorAll só pegava inputs das seções ABERTAS no
+            // momento do load (Válvulas e Contratilidade começam fechadas — seus
+            // inputs nem existiam no DOM). Quando o médico abria essas seções e
+            // digitava, calc() não rodava → frases não apareciam.
+            //
+            // Solução: um único listener no #laudo-sidebar (sempre presente).
+            // Eventos `input`/`change` borbulham (bubble) pro container, e
+            // checamos o target. Funciona pra inputs adicionados depois (seções
+            // expandidas, auto-fill DICOM futuro, etc).
+            const sidebar = document.getElementById('laudo-sidebar');
+            if (sidebar) {
+              const onInputOrChange = (e: Event) => {
+                const t = e.target as HTMLElement | null;
+                if (!t) return;
+                const tag = t.tagName;
+                if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') {
+                  sc();
+                }
+              };
+              sidebar.addEventListener('input', onInputOrChange);
+              sidebar.addEventListener('change', onInputOrChange);
+
+              // Sincronização b24 (Câmaras) ↔ b24_diast (Diastólica) — também
+              // via delegation (pra cobrir caso b24_diast ainda não existir):
+              const onB24Sync = (e: Event) => {
+                const t = e.target as HTMLInputElement | null;
+                if (!t || t.tagName !== 'INPUT') return;
+                if (t.id === 'b24') {
+                  const d = document.getElementById('b24_diast') as HTMLInputElement | null;
+                  if (d) d.value = t.value;
+                } else if (t.id === 'b24_diast') {
+                  const d = document.getElementById('b24') as HTMLInputElement | null;
+                  if (d) d.value = t.value;
+                }
+              };
+              sidebar.addEventListener('input', onB24Sync);
             }
 
             preencherExame();
@@ -840,11 +868,33 @@ ul{list-style:none;padding:0;margin:0;}
 
   function handleLimpar() {
     if (!confirm('Limpar todos os campos?')) return;
-    document.querySelectorAll('#laudo-sidebar input[type=number], #laudo-sidebar input[type=text]').forEach(el => {
-      (el as HTMLInputElement).value = '';
+    // Limpar TODOS os campos do motor pelos IDs conhecidos (não depende de
+    // a seção estar aberta/fechada no DOM). Mesma motivação do fix de
+    // event-delegation acima — Sec só monta children quando `open=true`.
+    const camposNum = [
+      'peso','altura',
+      'b7','b8','b9','b10','b11','b12','b13','b28','b29',
+      'b19','b20','b21','b22','b23','b24','b24_diast','b25','lars',
+      'b54','b33','gls_ve','gls_vd',
+      'b45','b46','b47','b50','b51','b52','b46t','b47t','b50p',
+      'psmap','b37',
+      'wk-mob','wk-esp','wk-cal','wk-sub',
+    ];
+    const camposSel = [
+      'sexo','ritmo',
+      'b32','b34','b35','b36','b34t','b39','b40','b39p','b40p','b41','b42','b38',
+      'b55','b56','b57','b58','b59','b60','b61','b62',
+      'wilkins-toggle','diast-manual-sel',
+    ];
+    camposNum.forEach(id => {
+      const el = document.getElementById(id) as HTMLInputElement | null;
+      if (el) el.value = '';
     });
-    document.querySelectorAll('#laudo-sidebar select').forEach(el => {
-      (el as HTMLSelectElement).selectedIndex = 0;
+    camposSel.forEach(id => {
+      const el = document.getElementById(id) as HTMLSelectElement | HTMLInputElement | null;
+      if (!el) return;
+      if (el instanceof HTMLSelectElement) el.selectedIndex = 0;
+      else if (el instanceof HTMLInputElement && el.type === 'checkbox') el.checked = false;
     });
     const dtEx = document.getElementById('dtexame') as HTMLInputElement;
     if (dtEx) dtEx.value = dataLocalHoje();
