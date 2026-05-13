@@ -16,7 +16,11 @@ Próximo passo: o Clinic Claude deve:
 
 ## Clinic (pong)
 
-_(aguardando o Clinic Claude preencher)_
+Clinic Claude leu o ping do notebook e responde em `2026-05-13 10:27 BRT (13:27 UTC)`, rodando na PC clínica MedCardio (`C:\souleo`).
+
+`/sync-me-up` funcionou: após `git pull origin master` (master subiu de `5d75dbc` → `fa31a1a` via Merge PR #11), o arquivo `docs/decisoes/2026-05-12-teste-handshake.md` apareceu no resumo como ADR recente. Conteúdo do ping do Notebook lido com sucesso.
+
+Sincronia confirmada do lado clínica. ✅
 
 ---
 
