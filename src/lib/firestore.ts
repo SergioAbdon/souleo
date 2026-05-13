@@ -6,6 +6,7 @@
 
 import { db } from './firebase';
 import { dataLocalHoje } from './utils';
+import { gerarAccessionNumber } from './gerarAccessionNumber';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc,
   query, where, orderBy, limit, onSnapshot, serverTimestamp,
@@ -290,6 +291,28 @@ export async function saveExame(wsId: string, dados: Record<string, unknown>, me
       });
       return dados.id as string;
     } else {
+      // Cinto de segurança contra colisão de ACC (bug 12/05/2026): antes de
+      // gravar um exame NOVO, verifica se já existe outro com o mesmo `acc`
+      // na mesma data. Se sim, regenera com offset incremental até 5 tentativas.
+      // Cobre o caso de cliente rodar batch fora do gerarAccessionNumber()
+      // (ex: ACC vindo de outra origem) ou contador in-memory zerado por reload.
+      if (dados.acc && dados.dataExame) {
+        let acc = dados.acc as string;
+        const dataExame = dados.dataExame as string;
+        for (let tentativa = 0; tentativa < 5; tentativa++) {
+          const dup = await getDocs(query(
+            collection(db, 'workspaces', wsId, 'exames'),
+            where('acc', '==', acc),
+            where('dataExame', '==', dataExame),
+            limit(1)
+          ));
+          if (dup.empty) break;
+          // colisão detectada — gera novo ACC com offset crescente (100ms*tentativa)
+          console.warn(`saveExame: ACC ${acc} já existe em ${dataExame}, regenerando (tentativa ${tentativa + 1})`);
+          acc = gerarAccessionNumber(new Date(), (tentativa + 1) * 100);
+        }
+        dados.acc = acc;
+      }
       const ref = doc(collection(db, 'workspaces', wsId, 'exames'));
       await setDoc(ref, {
         id: ref.id, ...dados,
