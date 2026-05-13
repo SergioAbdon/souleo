@@ -1,5 +1,6 @@
 import { OrthancClient, OrthancStudy } from '../adapters/orthanc-client';
 import { uploadDicomPreview } from '../adapters/storage-uploader';
+import { extrairMedidasDoEstudo, SrParseResult } from '../adapters/dicom-sr-parser';
 import { getDb, FieldValue } from '../adapters/firebase';
 import { createLogger } from '../logger';
 
@@ -13,6 +14,8 @@ export interface IngestResult {
   imagensProcessadas: number;
   imagensFalhadas: number;
   bytesTotais: number;
+  /** Total de medidas extraídas do DICOM SR (0 se estudo não tem SR). */
+  medidasExtraidas: number;
   errors: string[];
 }
 
@@ -38,6 +41,7 @@ export async function processarEstudo(opts: {
     imagensProcessadas: 0,
     imagensFalhadas: 0,
     bytesTotais: 0,
+    medidasExtraidas: 0,
     errors: [],
   };
 
@@ -129,17 +133,42 @@ export async function processarEstudo(opts: {
     }
   }
 
-  // 4) Atualiza Firestore
+  // 4) Extrair DICOM SR (medidas estruturadas)
   //
-  // Decisão 11/05/2026 (Sergio):
-  //   - NÃO mudar o `status` do exame ao receber imagens.
-  //     Status continua sendo `aguardando` (ou o que estava antes).
-  //     A UI do LEO web detecta presença de DICOM olhando `imagensDicom.length > 0`.
-  //   - Sucesso parcial = mesma escrita (com array parcial).
-  //   - Falha total = ainda escrevemos os campos vazios + retornamos matched=false
-  //     pro worker remover do `processedStudyIds` e retentar.
-  //   - Falha total NÃO escreve `dicomOrthancStudyId` (assim sabemos que precisa retry
-  //     mesmo após restart do Wader; é o sinal persistente de "ainda não processou OK").
+  // Decisão 13/05/2026 (substitui a de 11/05): pipeline DICOM AGORA processa
+  // SR também. Wader = produtor (server-side, alcança Orthanc na rede local).
+  // Leo = consumidor (lê `medidasDicom` direto do Firestore, sem chamar Orthanc).
+  //
+  // Motivação: o endpoint Leo Cloud `/api/orthanc?action=buscar_sr` roda no
+  // Vercel (internet pública), mas o `ortancUrl` é `http://192.168.x.x:8042`
+  // (IP da rede local da clínica). Vercel não alcança → botão "📡 Vivid"
+  // nunca funcionou em produção. Ver
+  // `docs/decisoes/2026-05-13-bug-acc-duplicado-remap-e-wader-sr.md` seção 5.
+  let srResult: SrParseResult = {
+    medidas: {},
+    srInstanceId: null,
+    totalMedidas: 0,
+    metodoFallback: 'sem-sr',
+  };
+  try {
+    srResult = await extrairMedidasDoEstudo({ client: opts.client, orthancStudyId: opts.orthancStudyId });
+    result.medidasExtraidas = srResult.totalMedidas;
+  } catch (err) {
+    // SR falhar não bloqueia a gravação de imagens — só loga e segue.
+    // `medidasDicom` fica vazio, médico pode digitar manualmente.
+    const msg = `Falha ao extrair SR: ${(err as Error).message}`;
+    log.warn({ err, orthancStudyId: opts.orthancStudyId }, msg);
+    result.errors.push(msg);
+  }
+
+  // 5) Atualiza Firestore
+  //
+  // Mudança 13/05/2026 (substitui regra de 11/05):
+  //   - Status muda pra 'andamento' atomicamente junto com imagens+SR
+  //   - `medidasDicom` (Record<codigoLOINC, numero>) gravado em campo separado
+  //     de `medidas` (que é editado pelo médico/motor)
+  //   - Falha total nas imagens ainda bloqueia o update (matched=false → retry)
+  //   - SR falhar isolado NÃO bloqueia (só grava medidas vazias + segue)
   const todasFalharam =
     instanceIds.length > 0 && result.imagensProcessadas === 0 && result.imagensFalhadas > 0;
   const semInstances = instanceIds.length === 0;
@@ -149,6 +178,12 @@ export async function processarEstudo(opts: {
     await exameRef.update({
       imagensDicom: imagensDicom.map((i) => i.url),
       imagensDicomDetalhes: imagensDicom,
+      medidasDicom: srResult.medidas,
+      medidasDicomMeta: {
+        srInstanceId: srResult.srInstanceId,
+        metodoFallback: srResult.metodoFallback,
+        processadoEm: new Date().toISOString(),
+      },
       dicomStudyUid: study.MainDicomTags.StudyInstanceUID ?? null,
       dicomOrthancStudyId: opts.orthancStudyId,
       dicomMeta: {
@@ -157,7 +192,7 @@ export async function processarEstudo(opts: {
         studyTime: study.MainDicomTags.StudyTime ?? '',
         studyDescription: study.MainDicomTags.StudyDescription ?? '',
       },
-      // status: NÃO MEXE — conforme decisão 11/05/2026.
+      status: 'andamento',
       atualizadoEm: FieldValue.serverTimestamp(),
     });
   } else {
@@ -176,11 +211,13 @@ export async function processarEstudo(opts: {
       exameId: accession,
       imagensProcessadas: result.imagensProcessadas,
       imagensFalhadas: result.imagensFalhadas,
+      medidasExtraidas: result.medidasExtraidas,
       bytes: result.bytesTotais,
       sucesso: sucessoTotal,
+      metodoSr: srResult.metodoFallback,
     },
     sucessoTotal
-      ? 'Estudo processado e Firestore atualizado (status preservado)'
+      ? `Estudo processado: ${result.imagensProcessadas} imgs + ${result.medidasExtraidas} medidas → status='andamento'`
       : 'Estudo falhou — sem update no Firestore, retentará próxima rodada',
   );
 

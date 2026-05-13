@@ -378,80 +378,53 @@ export default function LaudoPage() {
     return await saveExame(workspace.id, dados, user.uid);
   }
 
-  async function buscarSrGenerico(termo: string): Promise<{ok: boolean; encontrado: boolean; data?: Record<string, unknown>; error?: string}> {
-    const token = await auth.currentUser?.getIdToken();
-    // Busca genérica: API tenta AccessionNumber primeiro, depois PatientID
-    const res = await fetch(`/api/orthanc?action=buscar_sr&wsId=${workspace?.id}&q=${encodeURIComponent(termo)}`, {
-      headers: { 'Authorization': `Bearer ${token || ''}` },
-    });
-    const data = await res.json();
-    return { ok: data.ok, encontrado: data.encontrado, data, error: data.error };
-  }
-
-  async function importarMedidasDoDicom(srData: Record<string, unknown>, termoUsado: string) {
-    const w = window as unknown as Record<string, (...args: unknown[]) => unknown>;
-    const importFn = w.importarDICOM as ((d: unknown) => { ok: boolean; count: number; msg: string }) | undefined;
-    if (!importFn) {
-      alert('Motor nao carregado. Tente recarregar a pagina.');
-      return;
-    }
-    const result = importFn({ measurements: srData.medidas, patientName: srData.patientName, studyDate: srData.studyDate });
-    setDicomImportado(true);
-    // Salvar identificador usado para próxima vez não precisar perguntar
-    if (workspace?.id && exameId && user?.uid) {
-      const campoUsado = (srData.campoUsado as string) || 'AccessionNumber';
-      const accessionEncontrado = (srData.accessionNumber as string) || '';
-      const patientIdEncontrado = (srData.patientId as string) || '';
-      await saveExame(workspace.id, {
-        id: exameId,
-        orthancAccession: accessionEncontrado || termoUsado,
-        orthancPatientId: patientIdEncontrado,
-      }, user.uid);
-      console.log(`Vinculado ao Orthanc via ${campoUsado}: ${termoUsado}`);
-    }
-    alert(`${result.count} medidas importadas do Vivid T8!`);
-  }
-
+  /**
+   * Importa medidas DICOM SR — agora lê do Firestore (`exame.medidasDicom`),
+   * que foi populado pelo Wader na rede local (decisão 13/05/2026).
+   *
+   * O fluxo antigo via `/api/orthanc?action=buscar_sr` chamava Vercel→Orthanc
+   * direto, mas Vercel não alcança o IP local da clínica (192.168.x.x).
+   * Por isso o botão "📡 Vivid" nunca funcionou em produção antes.
+   *
+   * Ver `docs/decisoes/2026-05-13-bug-acc-duplicado-remap-e-wader-sr.md` §5.
+   */
   async function handleImportarDicom() {
     if (!workspace?.id || dicomLoading) return;
     setDicomLoading(true);
     try {
-      // 1ª tentativa: orthancAccession salvo, orthancPatientId salvo, OU exameId
-      const accessionSalvo = exame?.orthancAccession as string | undefined;
-      const patientIdSalvo = exame?.orthancPatientId as string | undefined;
-      const termoInicial = accessionSalvo || patientIdSalvo || exameId;
-      const result1 = await buscarSrGenerico(termoInicial);
+      const medidasDicom = exame?.medidasDicom as Record<string, number> | undefined;
+      const dicomMeta = exame?.dicomMeta as Record<string, string> | undefined;
 
-      if (result1.ok && result1.encontrado && result1.data) {
-        await importarMedidasDoDicom(result1.data, termoInicial);
+      if (!medidasDicom || Object.keys(medidasDicom).length === 0) {
+        alert(
+          'Sem medidas DICOM disponíveis ainda.\n\n' +
+          'O Wader processa o estudo logo após "End Exam" no Vivid. Se você acabou ' +
+          'de finalizar, aguarde até 1 minuto e tente novamente.\n\n' +
+          'Se persistir: verifique se o Wader está rodando na PC da clínica e se ' +
+          'o Vivid está enviando DICOM SR (não só imagens).'
+        );
         setDicomLoading(false);
         return;
       }
 
-      // 2ª tentativa: pedir manualmente (aceita ACC ou Patient ID)
-      const termoManual = prompt(
-        `Não encontrado automaticamente.\n\n` +
-        `Digite o Accession Number OU o Patient ID do exame no Orthanc:\n\n` +
-        `(consulte em http://192.168.15.27:8042)\n` +
-        `O LEO tenta primeiro como Accession Number, depois como Patient ID.`
-      );
-      if (!termoManual || !termoManual.trim()) {
+      const w = window as unknown as Record<string, (...args: unknown[]) => unknown>;
+      const importFn = w.importarDICOM as ((d: unknown) => { ok: boolean; count: number; msg: string }) | undefined;
+      if (!importFn) {
+        alert('Motor não carregado. Tente recarregar a página.');
         setDicomLoading(false);
         return;
       }
 
-      const termoTrimmed = termoManual.trim();
-      const result2 = await buscarSrGenerico(termoTrimmed);
-
-      if (result2.ok && result2.encontrado && result2.data) {
-        await importarMedidasDoDicom(result2.data, termoTrimmed);
-      } else if (result2.ok && !result2.encontrado) {
-        alert(`Não encontrado nem por AccessionNumber, nem por PatientID: "${termoTrimmed}"`);
-      } else {
-        alert(result2.error || 'Erro ao buscar no Orthanc.');
-      }
-    } catch {
-      alert('Orthanc nao disponivel.');
+      const result = importFn({
+        measurements: medidasDicom,
+        patientName: exame?.pacienteNome as string || '',
+        studyDate: dicomMeta?.studyDate || '',
+      });
+      setDicomImportado(true);
+      alert(`${result.count} medidas importadas do Vivid T8!`);
+    } catch (e) {
+      console.error('handleImportarDicom:', e);
+      alert('Erro ao importar medidas. Veja console pra detalhes.');
     }
     setDicomLoading(false);
   }
@@ -920,6 +893,7 @@ ul{list-style:none;padding:0;margin:0;}
         dicomLoading={dicomLoading}
         dicomImportado={dicomImportado}
         ortancAtivo={!!workspace?.ortancAtivo}
+        totalMedidasDicom={Object.keys((exame?.medidasDicom as Record<string, number> | undefined) || {}).length}
         emitido={emitido}
         readOnlyIdentificacao={!!(exame?.emitidoEm)}
         readOnlyMotor={emitido}

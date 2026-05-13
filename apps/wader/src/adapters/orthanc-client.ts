@@ -59,6 +59,35 @@ export interface OrthancInstance {
   };
 }
 
+export interface OrthancSeries {
+  ID: string;
+  ParentStudy: string;
+  Instances: string[];
+  MainDicomTags: {
+    Modality?: string; // 'US', 'SR', etc.
+    SeriesDescription?: string;
+    SeriesInstanceUID?: string;
+    SeriesNumber?: string;
+    ProtocolName?: string;
+    BodyPartExamined?: string;
+  };
+  IsStable: boolean;
+}
+
+/**
+ * Tags DICOM serializadas no formato "simplified" do Orthanc.
+ * Para SR (Modality=SR), o campo importante é `ContentSequence` —
+ * uma árvore de medidas codificadas (LOINC/SNOMED).
+ *
+ * Estrutura recursiva:
+ *   {
+ *     ConceptNameCodeSequence: [{ CodeValue: '18083-6', ... }],
+ *     MeasuredValueSequence: [{ NumericValue: '52.3', ... }],
+ *     ContentSequence: [...itens filhos...]
+ *   }
+ */
+export type SimplifiedTags = Record<string, unknown>;
+
 export class OrthancError extends Error {
   constructor(
     message: string,
@@ -116,6 +145,26 @@ export class OrthancClient {
       `/studies/${encodeURIComponent(studyId)}/series`,
     );
     return series.flatMap((s) => s.Instances ?? []);
+  }
+
+  /**
+   * Lista séries de um estudo com tags DICOM principais.
+   * Útil pra filtrar por modalidade (ex: separar série US de série SR).
+   */
+  async getStudySeries(studyId: string): Promise<OrthancSeries[]> {
+    return this.get<OrthancSeries[]>(`/studies/${encodeURIComponent(studyId)}/series`);
+  }
+
+  /**
+   * Pega tags DICOM "simplified" de uma instância — formato JSON onde tags
+   * vêm com nomes legíveis (PatientName, ConceptNameCodeSequence, etc),
+   * em vez de números hex (0010,0010).
+   *
+   * Crítico pra parser de SR (DICOM Structured Report): a árvore de medidas
+   * vive em `ContentSequence` recursivo.
+   */
+  async getInstanceSimplifiedTags(instanceId: string): Promise<SimplifiedTags> {
+    return this.get<SimplifiedTags>(`/instances/${encodeURIComponent(instanceId)}/simplified-tags`);
   }
 
   async getInstance(instanceId: string): Promise<OrthancInstance> {
