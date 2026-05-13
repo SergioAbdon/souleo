@@ -541,14 +541,6 @@ export default function Worklist() {
                       {(item.status === 'aguardando' || item.status === 'rascunho') && (
                         <>
                           <Btn cor="blue" onClick={() => abrirLaudo(item.id)}>📋 Laudar</Btn>
-                          {/* Botão "Imagens" aparece quando Wader já trouxe DICOM do Vivid.
-                              Decisão 11/05/2026: NÃO mudar o status do exame ao receber imagens;
-                              o array `imagensDicom` é a única fonte da verdade pra essa UI. */}
-                          {Array.isArray(item.imagensDicom) && (item.imagensDicom as unknown[]).length > 0 && (
-                            <Btn cor="cyan" onClick={() => abrirLaudo(item.id)}>
-                              📸 Imagens ({(item.imagensDicom as unknown[]).length})
-                            </Btn>
-                          )}
                           <Btn cor="gray" onClick={() => editarPaciente(item)}>👤 Editar</Btn>
                           <Btn cor="red" onClick={() => removerDaFila(item)}>🗑</Btn>
                         </>
@@ -570,6 +562,17 @@ export default function Worklist() {
                           )}
                           <Btn cor="gray" onClick={() => imprimirPdf(item.id)}>🖨️ Imprimir</Btn>
                         </>
+                      )}
+
+                      {/* Botão "📸 Imagens" — independente do status. Aparece sempre que o
+                          Wader já trouxe DICOM (mesmo se exame ficou `andamento`/`emitido`).
+                          Antes (11/05/2026) só aparecia em aguardando/rascunho — quebrava
+                          quando o Wader passa a setar status='andamento' automaticamente.
+                          Decisão 13/05/2026: presença de imagens é ortogonal ao status. */}
+                      {Array.isArray(item.imagensDicom) && (item.imagensDicom as unknown[]).length > 0 && (
+                        <Btn cor="cyan" onClick={() => abrirLaudo(item.id)}>
+                          📸 Imagens ({(item.imagensDicom as unknown[]).length})
+                        </Btn>
                       )}
                     </div>
                   </td>
