@@ -541,6 +541,14 @@ export default function Worklist() {
                       {(item.status === 'aguardando' || item.status === 'rascunho') && (
                         <>
                           <Btn cor="blue" onClick={() => abrirLaudo(item.id)}>📋 Laudar</Btn>
+                          {/* Botão "Imagens" aparece quando Wader já trouxe DICOM do Vivid.
+                              Decisão 11/05/2026: NÃO mudar o status do exame ao receber imagens;
+                              o array `imagensDicom` é a única fonte da verdade pra essa UI. */}
+                          {Array.isArray(item.imagensDicom) && (item.imagensDicom as unknown[]).length > 0 && (
+                            <Btn cor="cyan" onClick={() => abrirLaudo(item.id)}>
+                              📸 Imagens ({(item.imagensDicom as unknown[]).length})
+                            </Btn>
+                          )}
                           <Btn cor="gray" onClick={() => editarPaciente(item)}>👤 Editar</Btn>
                           <Btn cor="red" onClick={() => removerDaFila(item)}>🗑</Btn>
                         </>
@@ -658,13 +666,15 @@ export default function Worklist() {
 }
 
 // ── Botão de ação ──
-function Btn({ cor, onClick, children }: { cor: 'blue' | 'green' | 'gray' | 'red' | 'amber'; onClick: () => void; children: React.ReactNode }) {
+function Btn({ cor, onClick, children }: { cor: 'blue' | 'green' | 'gray' | 'red' | 'amber' | 'cyan'; onClick: () => void; children: React.ReactNode }) {
   const cores = {
     blue: 'bg-[#2563EB] text-white hover:bg-blue-700',
     green: 'bg-green-100 text-green-700 hover:bg-green-200',
     gray: 'bg-gray-100 text-gray-600 hover:bg-gray-200',
     red: 'bg-red-50 text-red-500 hover:bg-red-100',
     amber: 'bg-amber-50 text-amber-600 hover:bg-amber-100',
+    // Botão "📸 Imagens": acionado quando exame.imagensDicom.length > 0
+    cyan: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200',
   };
   return (
     <button onClick={onClick}
