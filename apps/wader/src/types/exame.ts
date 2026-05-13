@@ -32,8 +32,16 @@ export const TIPOS_EXAME_LABEL: Record<TipoExame, string> = {
  * (00:00 BRT) em exames com `dataExame < hoje` E `status='aguardando'`.
  * Wader detecta a transição e remove o `.wl` correspondente.
  *
- * Decisão 11/05/2026: pipeline DICOM NÃO altera `status` do exame.
- * Presença de imagens é sinalizada via `imagensDicom.length > 0` no UI.
+ * Decisão 13/05/2026 (substitui a de 11/05): pipeline DICOM AGORA altera
+ * o status pra 'andamento' quando termina de processar (imagens + SR) com
+ * sucesso. Mudança atômica no mesmo `update()` do Firestore.
+ *
+ * Wader = produtor (escreve no Firestore). Leo = consumidor (lê, exibe).
+ * Médico abre o Leo e vê: `andamento` + ícone 📸 + botão "📡 Vivid" habilitado
+ * (se tem medidas) — tudo coerente, sem race condition, sem depender de quem
+ * abriu o Leo primeiro.
+ *
+ * Ver `docs/decisoes/2026-05-13-bug-acc-duplicado-remap-e-wader-sr.md` seção 6.
  */
 export type StatusExame = 'aguardando' | 'andamento' | 'rascunho' | 'emitido' | 'nao-realizado';
 
@@ -98,6 +106,33 @@ export interface Exame {
   feegowPacienteId?: string;
   /** Profissional Feegow do agendamento (numérico). Resolve pra medicoExecutor. */
   profissionalId?: number;
+
+  /**
+   * Medidas estruturadas extraídas do DICOM SR pelo Wader.
+   * Adicionado em 13/05/2026 (substitui o fluxo Leo Cloud → Orthanc que
+   * não funcionava porque Vercel não alcança IP local da clínica).
+   *
+   * Chaves = códigos LOINC (ex: '18083-6' = LV End-Diastolic Dimension).
+   * Valores = números (sempre em unidade DICOM padrão).
+   *
+   * O motor V8 do Leo web consome via `window.importarDICOM({ measurements })`
+   * — mesma assinatura usada antes pelo fluxo Leo Cloud.
+   *
+   * Vazio (não existe ou `{}`) quando o estudo não tem série SR (ex: US
+   * vascular básico não gera SR). UI mostra botão "📡 Vivid" só se
+   * `Object.keys(medidasDicom || {}).length > 0`.
+   */
+  medidasDicom?: Record<string, number>;
+
+  /** Metadata da extração SR (debug/audit). */
+  medidasDicomMeta?: {
+    /** Instance ID Orthanc do SR processado. */
+    srInstanceId: string | null;
+    /** Método usado pra extrair: padrão ('content-sequence'), legado ou nenhum SR. */
+    metodoFallback: 'content-sequence' | 'tags-diretas' | 'sem-sr';
+    /** Quando o Wader processou. */
+    processadoEm: string; // ISO timestamp
+  };
 
   versao: number;
 

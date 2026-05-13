@@ -27,6 +27,13 @@ type Props = {
   dicomLoading?: boolean;
   dicomImportado?: boolean;
   ortancAtivo?: boolean;
+  /**
+   * Quantidade de medidas DICOM SR disponíveis pra este exame
+   * (`exame.medidasDicom` populado pelo Wader). Quando > 0, mostra botão
+   * "📡 Vivid" habilitado; quando 0, botão fica desabilitado/cinza com
+   * tooltip explicando que o Wader ainda não processou.
+   */
+  totalMedidasDicom?: number;
   emitido?: boolean;
   modoEmitido?: ReactNode;
   readOnlyIdentificacao?: boolean;
@@ -37,7 +44,7 @@ type Props = {
   exameAcc?: string;
 };
 
-export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, onImportarDicom, dicomLoading, dicomImportado, ortancAtivo, emitido, modoEmitido, readOnlyIdentificacao, readOnlyMotor, exameOrigem, exameCpf, feegowPacienteId, exameAcc }: Props) {
+export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, onImportarDicom, dicomLoading, dicomImportado, ortancAtivo, totalMedidasDicom, emitido, modoEmitido, readOnlyIdentificacao, readOnlyMotor, exameOrigem, exameCpf, feegowPacienteId, exameAcc }: Props) {
   const [idDesbloqueado, setIdDesbloqueado] = useState(false);
   const [motorDesbloqueado, setMotorDesbloqueado] = useState(false);
   // Detectar quando readOnlyMotor muda de true→false (médico desbloqueou)
@@ -167,14 +174,33 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
           modoEmitido
         ) : (
           <div id="modo-edicao" className="flex items-center gap-2 px-5 py-2">
-            {ortancAtivo && onImportarDicom && (
-              <button onClick={onImportarDicom} disabled={dicomLoading || dicomImportado}
-                className={`px-3 py-2 rounded-md text-[11px] font-semibold cursor-pointer transition border-none whitespace-nowrap ${
-                  dicomImportado ? 'bg-green-100 text-green-700' : 'bg-purple-600 text-white hover:bg-purple-700'
-                } disabled:opacity-50`}>
-                {dicomLoading ? '⏳' : dicomImportado ? '✅ Vivid' : '📡 Vivid'}
-              </button>
-            )}
+            {ortancAtivo && onImportarDicom && (() => {
+              // Botão habilita quando Wader já populou `medidasDicom` (totalMedidasDicom > 0).
+              // Quando ainda não há medidas, mostramos o botão cinza/desabilitado
+              // com tooltip explicando — assim o médico sabe que a feature existe.
+              const temMedidas = (totalMedidasDicom ?? 0) > 0;
+              return (
+                <button
+                  onClick={onImportarDicom}
+                  disabled={dicomLoading || dicomImportado || !temMedidas}
+                  title={
+                    dicomImportado
+                      ? 'Medidas já importadas'
+                      : temMedidas
+                        ? `Importar ${totalMedidasDicom} medidas do Vivid (DICOM SR)`
+                        : 'Sem medidas DICOM ainda — aguarde Wader processar o exame'
+                  }
+                  className={`px-3 py-2 rounded-md text-[11px] font-semibold cursor-pointer transition border-none whitespace-nowrap ${
+                    dicomImportado
+                      ? 'bg-green-100 text-green-700'
+                      : temMedidas
+                        ? 'bg-purple-600 text-white hover:bg-purple-700'
+                        : 'bg-gray-200 text-gray-500'
+                  } disabled:opacity-50`}>
+                  {dicomLoading ? '⏳' : dicomImportado ? '✅ Vivid' : temMedidas ? `📡 Vivid (${totalMedidasDicom})` : '📡 Vivid'}
+                </button>
+              );
+            })()}
             <button onClick={onSalvarEmitir}
               className="flex-1 py-2 rounded-md font-semibold text-white text-[11px] cursor-pointer hover:brightness-110 transition border-none bg-[#1E3A5F]">
               💾 Salvar / Emitir
