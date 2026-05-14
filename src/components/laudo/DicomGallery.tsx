@@ -22,6 +22,37 @@
 
 import { useEffect, useState } from 'react';
 
+/**
+ * Quebra um array de URLs em páginas de 8 (2 cols × 4 lin) e gera HTML.
+ * Usado pelo `imprimirSelecao()` no Gallery e pelo `gerarPdfHtml()` no
+ * page.tsx — exportada pra reuso.
+ *
+ * Slots vazios (quando N não é múltiplo de 8) ficam invisíveis no print.
+ */
+export function renderPaginas(urls: string[], pacienteNome?: string, tipoExame?: string): string {
+  if (urls.length === 0) return '';
+  const POR_PAGINA = 8;
+  const paginas: string[][] = [];
+  for (let i = 0; i < urls.length; i += POR_PAGINA) {
+    paginas.push(urls.slice(i, i + POR_PAGINA));
+  }
+  const cabec = [pacienteNome, tipoExame].filter(Boolean).join(' · ');
+  return paginas
+    .map(
+      (pgUrls, pgIdx) => `<div class="pagina">
+${cabec ? `<h1>📸 Imagens DICOM — ${cabec} (página ${pgIdx + 1} de ${paginas.length})</h1>` : ''}
+<div class="grid">
+${pgUrls
+  .map(
+    (url, i) => `<div class="slot"><img src="${url}" alt="Imagem ${pgIdx * POR_PAGINA + i + 1}" /><span class="num">${pgIdx * POR_PAGINA + i + 1}</span></div>`,
+  )
+  .join('\n')}
+</div>
+</div>`,
+    )
+    .join('\n');
+}
+
 type Props = {
   /** URLs públicas das imagens (Firebase Storage). Vazio/undefined = modal não renderiza. */
   imagens: string[];
@@ -32,9 +63,38 @@ type Props = {
   pacienteNome?: string;
   /** Tipo de exame, mostrado no header. */
   tipoExame?: string;
+  /**
+   * Habilita modo seleção (decisão 14/05/2026). Quando true:
+   *   - Click numa thumb adiciona/remove da seleção
+   *   - Selecionadas ficam com ring verde + badge mostrando ordem (1, 2, 3...)
+   *   - Header mostra contador "N selecionadas pra impressão"
+   *   - Botão "🖨️ Imprimir Seleção" abre nova janela com layout 2×4
+   * Quando false (default — modo secretária no Worklist): só visualização.
+   */
+  permitirSelecao?: boolean;
+  /**
+   * Lista de URLs selecionadas pra impressão. Caller (page.tsx) controla
+   * — vem de `exame.imagensSelecionadasPdf` ou state local com default.
+   * A ordem importa: define a ordem das imagens no PDF.
+   */
+  selecionadas?: string[];
+  /**
+   * Chamado quando médico clica em uma thumb (em modo seleção).
+   * Caller deve atualizar `selecionadas` adicionando ou removendo a URL.
+   */
+  onToggleSelecao?: (url: string) => void;
 };
 
-export default function DicomGallery({ imagens, open, onClose, pacienteNome, tipoExame }: Props) {
+export default function DicomGallery({
+  imagens,
+  open,
+  onClose,
+  pacienteNome,
+  tipoExame,
+  permitirSelecao = false,
+  selecionadas = [],
+  onToggleSelecao,
+}: Props) {
   // null = modo grid; número = modo lightbox mostrando aquele índice
   const [zoomIdx, setZoomIdx] = useState<number | null>(null);
 
@@ -65,6 +125,44 @@ export default function DicomGallery({ imagens, open, onClose, pacienteNome, tip
     return () => window.removeEventListener('keydown', onKey);
   }, [open, zoomIdx, imagens.length, onClose]);
 
+  // Map URL → posição na seleção (1-indexed). null se não selecionada.
+  // Usado pra renderizar o badge de ordem em vez do número-da-imagem.
+  function ordemSelecao(url: string): number | null {
+    if (!permitirSelecao) return null;
+    const idx = selecionadas.indexOf(url);
+    return idx === -1 ? null : idx + 1;
+  }
+
+  /** Abre nova janela com layout 2×4 (8 imagens/A4) e dispara print dialog.
+      Útil pra médico imprimir SÓ as imagens (sem laudo principal). */
+  function imprimirSelecao() {
+    if (selecionadas.length === 0) {
+      alert('Nenhuma imagem selecionada pra impressão.');
+      return;
+    }
+    const titulo = pacienteNome ? `Imagens · ${pacienteNome}` : 'Imagens DICOM';
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/>
+<title>${titulo}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  @page{size:A4 portrait;margin:8mm;}
+  body{font-family:'IBM Plex Sans',Arial,sans-serif;font-size:9pt;color:#1a1a1a;}
+  .pagina{page-break-after:always;display:flex;flex-direction:column;height:281mm;}
+  .pagina:last-child{page-break-after:auto;}
+  h1{font-size:11pt;font-weight:700;margin-bottom:3mm;padding-bottom:2mm;border-bottom:1.5px solid #1E3A5F;color:#1E3A5F;}
+  .grid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(4,1fr);gap:3mm;}
+  .slot{background:#000;border-radius:2px;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;}
+  .slot img{max-width:100%;max-height:100%;width:auto;height:auto;display:block;}
+  .slot .num{position:absolute;bottom:2mm;right:2mm;background:rgba(0,0,0,.7);color:#fff;font-size:8pt;font-weight:600;padding:1mm 2mm;border-radius:2px;}
+  @media print{.no-print{display:none;}}
+</style></head><body>
+${renderPaginas(selecionadas, pacienteNome, tipoExame)}
+<script>window.onload=()=>{setTimeout(()=>window.print(),300);};</script>
+</body></html>`;
+    const w = window.open('', '_blank', 'width=900,height=700');
+    if (w) { w.document.write(html); w.document.close(); }
+  }
+
   if (!open) return null;
   if (imagens.length === 0) {
     // Estado vazio (não deveria acontecer porque o botão é desabilitado, mas defensivo)
@@ -91,7 +189,11 @@ export default function DicomGallery({ imagens, open, onClose, pacienteNome, tip
           <h2 className="text-sm font-semibold flex items-center gap-2">
             <span>📸 Imagens DICOM</span>
             <span className="text-xs text-white/60 font-normal">
-              ({imagens.length} {imagens.length === 1 ? 'imagem' : 'imagens'})
+              ({imagens.length} {imagens.length === 1 ? 'imagem' : 'imagens'}
+              {permitirSelecao
+                ? ` · ${selecionadas.length} selecionada${selecionadas.length === 1 ? '' : 's'} pra impressão`
+                : ''}
+              )
             </span>
           </h2>
           {pacienteNome && (
@@ -103,6 +205,15 @@ export default function DicomGallery({ imagens, open, onClose, pacienteNome, tip
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          {permitirSelecao && selecionadas.length > 0 && zoomIdx === null && (
+            <button
+              onClick={imprimirSelecao}
+              title={`Imprimir ${selecionadas.length} imagem(ns) selecionada(s) — 8 por A4`}
+              className="px-3 py-1.5 rounded bg-cyan-600 text-white text-xs font-semibold hover:bg-cyan-700 transition flex items-center gap-1.5"
+            >
+              🖨️ Imprimir Seleção ({selecionadas.length})
+            </button>
+          )}
           {zoomIdx !== null && (
             <button
               onClick={() => setZoomIdx(null)}
@@ -127,26 +238,64 @@ export default function DicomGallery({ imagens, open, onClose, pacienteNome, tip
         // ───── MODO GRID ─────
         <div className="flex-1 overflow-auto px-4 py-4">
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-            {imagens.map((url, i) => (
-              <button
-                key={`${i}-${url}`}
-                onClick={() => setZoomIdx(i)}
-                className="group relative aspect-square bg-gray-900 rounded overflow-hidden hover:ring-2 hover:ring-cyan-400 transition cursor-zoom-in"
-                title={`Imagem ${i + 1} de ${imagens.length}`}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={url}
-                  loading="lazy"
-                  alt={`Imagem DICOM ${i + 1}`}
-                  className="w-full h-full object-contain bg-black"
-                />
-                <span className="absolute bottom-1.5 right-1.5 bg-black/80 text-white text-[10px] font-medium px-1.5 py-0.5 rounded">
-                  {i + 1}
-                </span>
-                <span className="absolute inset-0 bg-cyan-400/0 group-hover:bg-cyan-400/5 transition" />
-              </button>
-            ))}
+            {imagens.map((url, i) => {
+              const ordem = ordemSelecao(url);
+              const isSelecionada = ordem !== null;
+              return (
+                <div
+                  key={`${i}-${url}`}
+                  className={`group relative aspect-square bg-gray-900 rounded overflow-hidden transition cursor-zoom-in ${
+                    isSelecionada
+                      ? 'ring-[3px] ring-emerald-400'
+                      : 'hover:ring-2 hover:ring-cyan-400'
+                  }`}
+                  title={
+                    permitirSelecao
+                      ? isSelecionada
+                        ? `Imagem ${i + 1} · selecionada (${ordem}ª) — click pra desmarcar`
+                        : `Imagem ${i + 1} — click pra incluir na impressão`
+                      : `Imagem ${i + 1} de ${imagens.length}`
+                  }
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={url}
+                    loading="lazy"
+                    alt={`Imagem DICOM ${i + 1}`}
+                    onClick={() => setZoomIdx(i)}
+                    className="w-full h-full object-contain bg-black cursor-zoom-in"
+                  />
+                  {/* Badge: número da imagem (cinza) OU ordem na seleção (verde) */}
+                  <span
+                    className={`absolute bottom-1.5 right-1.5 text-white text-[10px] font-bold px-1.5 py-0.5 rounded select-none ${
+                      isSelecionada ? 'bg-emerald-500' : 'bg-black/80'
+                    }`}
+                  >
+                    {isSelecionada ? `${ordem}` : i + 1}
+                  </span>
+                  {/* Toggle de seleção (canto superior esquerdo) — só em modo seleção */}
+                  {permitirSelecao && onToggleSelecao && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleSelecao(url);
+                      }}
+                      title={isSelecionada ? 'Remover da impressão' : 'Incluir na impressão'}
+                      className={`absolute top-1.5 left-1.5 w-7 h-7 rounded-full text-sm font-bold transition flex items-center justify-center cursor-pointer ${
+                        isSelecionada
+                          ? 'bg-emerald-500 text-white hover:bg-emerald-600'
+                          : 'bg-black/60 text-white/70 hover:bg-black/80 hover:text-white opacity-0 group-hover:opacity-100'
+                      }`}
+                    >
+                      {isSelecionada ? '✓' : '+'}
+                    </button>
+                  )}
+                  {!permitirSelecao && (
+                    <span className="absolute inset-0 bg-cyan-400/0 group-hover:bg-cyan-400/5 transition" />
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : (
