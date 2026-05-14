@@ -207,3 +207,95 @@ Se outro Claude precisar reproduzir investigação similar, esses scripts servem
 - Commit anterior que tentou corrigir o mesmo bug: `7449785` (11/05/2026 — funcionou parcial, só pra batch interno)
 - Doc relacionada: `docs/wader/00-arquitetura.md` (fluxo Vivid → Orthanc → Wader → Leo)
 - Doc relacionada: `docs/wader/01-instalacao.md` (configuração do Vivid T8)
+
+---
+
+## 10. Atualização — fechamento da sessão 13/05/2026 (madrugada 14/05)
+
+> Adicionado ao mesmo ADR pra manter timeline linear. Cobre o que aconteceu DEPOIS das seções 1-9.
+
+### 10.1. Bloco 3 implementado e mergeado (Wader processa SR)
+
+Em vez de deixar como "próxima sessão", implementamos no mesmo dia. PRs mergeados em ordem:
+
+| PR | sha merge | Conteúdo | Branch |
+|---|---|---|---|
+| **#14** | `07eb9d9` | fix: botão "📸 Imagens" aparece em qualquer status | `claude/fix-worklist-imagens-andamento` |
+| **#15** | `5dab791` | feat: Wader processa DICOM SR, Leo lê do Firestore | `claude/wader-processa-sr` |
+| **#16** | `c36704f` | fix ACC preventivo + ADR (este arquivo) | `claude/fix-acc-colisao` |
+
+Mecânica de merge desta sessão: Sergio gerou Personal Access Token fine-grained (`claude-clinic-souleo`), Clinic Claude criou+mergeou PRs via API REST do GitHub. Token apagado do disco após cada uso. Sergio aprovou deixar token ativo até fechamento da sessão (vai revogar manualmente).
+
+### 10.2. Bug derivado: botão 📸 desapareceu no Worklist
+
+Ao remappear os 3 exames de 12/05 e mudar status pra `andamento` (Bloco 1), o botão "📸 Imagens (N)" sumiu da lista. Causa: no `Worklist.tsx:541` original, o botão estava dentro do bloco condicional `status === 'aguardando' || status === 'rascunho'`. Status novo `andamento` não tinha case.
+
+Fix (PR #14): mover o botão pra fora dos blocos de status — agora aparece sempre que `imagensDicom.length > 0`, independente do status. Presença de imagens é ortogonal ao estado do laudo.
+
+### 10.3. Reprocessamento operacional dos 3 exames com SR
+
+Após o PR #15 (Wader processa SR), rodei `C:\Wader\scripts\reprocessar-sr-3-exames.js` (mesma mecânica dos outros scripts ad-hoc da seção 8). Resultado:
+
+| Doc Firestore | tipoExame | Medidas LOINC extraídas |
+|---|---|---|
+| `uj1U5egIB7ox8CzbNRV8` MANOEL | eco_tt | **29** |
+| `v7JvTfjOhJBzCMcNuNIk` SONIA | eco_tt | **37** |
+| `He5dXgFCv1oft6xNlUlL` SONIA | doppler_carotidas | **5** (vascular tem menos SR padrão) |
+
+71 medidas total gravadas em `exame.medidasDicom`. Quando o site Leo subir com o código novo, médico vai clicar "📡 Vivid (29)" no Manoel e ver as medidas importarem no motor automaticamente. **Primeira vez que esse fluxo funciona em produção** (ver §5 — fluxo antigo via Vercel→Orthanc nunca funcionou).
+
+### 10.4. 🚨 BLOQUEIO ABERTO — Vercel falhando deploy
+
+**Descoberta no fim da sessão:** ao testar o Leo em produção, o botão 📸 **ainda não apareceu**. Investigação via GitHub API revelou que **os 8 deploys mais recentes em produção/preview estão `state=failure`**, desde `e8463b2` (Production, 13/05 13:34 BRT) — incluindo todos os PRs mergeados hoje.
+
+```
+13:34  e8463b2  Production  FAILURE  ← merge PR #12 (handshake dual-claude, manhã)
+17:56  07eb9d9  Production  FAILURE  ← merge PR #14 (fix botão 📸)
+18:01  5dab791  Production  FAILURE  ← merge PR #15 (Wader+SR)
+~22:00 c36704f  Production  FAILURE  ← merge PR #16 (fix ACC + este ADR — provável status)
+```
+
+**Conclusão dura:**
+
+- O domínio `souleo.com.br` está servindo **versão antiga** (último deploy bem-sucedido, anterior a 13:34 BRT do dia 13/05)
+- Nenhum dos PRs #14/#15/#16 está ativo em produção
+- O bug que causou o failure foi introduzido por algo **antes da minha sessão começar** (PR #12 ou anterior)
+
+**O que NÃO consegui daqui:**
+
+- API GitHub só retorna `state` e `description` do deploy, **não o build log**
+- Pra diagnosticar, preciso do log de build do Vercel — somente acessível via Vercel dashboard logado ou via Vercel API com token (que Sergio não me deu)
+
+**Próximo passo combinado:** Sergio vai pegar o log de build da deploy `5dab791` no Vercel dashboard quando retomarmos. Com o log, eu corrijo, commito, e o site sobe.
+
+**Mitigação:** os dados (Firestore + Storage) já estão certos. Quando o site subir, o estado fica consistente automaticamente — não tem migração de dados pendente.
+
+### 10.5. Scripts ad-hoc adicionados nesta tarde
+
+- `check-3-exames.js` — confirma estado pós-remap
+- `reprocessar-sr-3-exames.js` — popula `medidasDicom` dos 3 exames (replica logic do `dicom-sr-parser.ts` em JS puro)
+- `inspect-orthanc.js`, `identificar-estudo-sem-acc.js`, `baixar-previews-sonia-1050.js` — já mencionados §8
+
+Todos em `C:\Wader\scripts\` (NÃO no repo).
+
+### 10.6. Estado atual do checklist
+
+- ✅ ACC duplicado: fix preventivo em produção (após merge PR #16). Counter global + validação defensiva no save.
+- ✅ Exames quebrados: remappeados (imagens corretas) + ACCs distintos + medidasDicom populado.
+- ✅ Wader processa SR: código mergeado.
+- ✅ Leo lê Firestore (não chama Vercel→Orthanc): código mergeado.
+- ✅ Status automático "andamento" pelo Wader: código mergeado.
+- 🚨 **BLOQUEIO:** Vercel não deploya — site servindo versão antiga. Aguardando log de build.
+- ⏳ Sergio revogar PAT (acordado pro fim da sessão).
+- 📋 Backlog (registrado §7): galeria DICOM dentro do laudo, deprecar `/api/orthanc?action=buscar_sr` legacy, Auto-Send Vivid, Wader startup Windows.
+
+### 10.7. Como retomar (próximo Clinic Claude ou Notebook Claude)
+
+1. `git pull origin master` — pega os PRs #14/#15/#16
+2. Pedir ao Sergio o log de build do Vercel (deploy `5dab791` ou mais recente)
+3. Identificar erro no log (provavelmente TS error ou config issue)
+4. Aplicar fix em branch nova → PR → merge via API
+5. Após Vercel voltar a deployar com sucesso, testar:
+   - Worklist mostra "📸 Imagens (10/10/12)" nos 3 exames
+   - Laudo da Sonia carótida mostra "📡 Vivid (5)" habilitado
+   - Click em "📡 Vivid" importa 5 medidas no motor
