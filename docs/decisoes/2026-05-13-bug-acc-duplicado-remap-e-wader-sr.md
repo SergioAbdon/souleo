@@ -299,3 +299,122 @@ Todos em `C:\Wader\scripts\` (NÃO no repo).
    - Worklist mostra "📸 Imagens (10/10/12)" nos 3 exames
    - Laudo da Sonia carótida mostra "📡 Vivid (5)" habilitado
    - Click em "📡 Vivid" importa 5 medidas no motor
+
+---
+
+## 11. Continuação da sessão — 14/05/2026 (manhã/tarde)
+
+> Apêndice ao ADR de 13/05. Mantém timeline linear pra próxima Claude (notebook ou clinic) pegar contexto via `/sync-me-up`.
+
+### 11.1. Vercel destravado (Sergio, de casa)
+
+PR #17 `claude/fix-vercel-build-exclude-wader` (commit `3811e1c`) mergeado pelo Sergio no início da madrugada de 14/05. Causa do bug Vercel descoberta:
+
+```
+Type error: Cannot find module 'fastify' (apps/wader/src/index.ts:27)
+```
+
+Next.js type-checkava tudo dentro do `tsconfig.include` do LEO web, incluindo `apps/wader/` — mas o Vercel só instala deps do projeto raiz (LEO), então `fastify`/`pino`/`dcmjs` (deps do Wader) não resolvem. Bug existia desde 09/05, mas só apareceu quando PRs começaram a tocar `src/` e quebrar o cache do build do LEO.
+
+**Fix:** adicionar `apps/wader/**` e `scripts/**` ao `tsconfig.exclude`. Apps/wader tem seu próprio tsconfig pra dev local.
+
+### 11.2. Galeria DICOM dentro do laudo (PR #19)
+
+`src/components/laudo/DicomGallery.tsx` (NOVO):
+- Modal full-screen com backdrop escuro
+- Modo grid (thumbnails 2/3/4/5/6 cols responsivo) com lazy load
+- Modo lightbox (imagem grande + setas + contador)
+- Atalhos: ESC, ←, →
+
+Integrado em `SidebarLaudo.tsx` (botão **"🖼️ Imagens (N)"** entre 📡 Vivid e 💾 Salvar) e em `page.tsx` (state `galeriaOpen`).
+
+### 11.3. Imagens 403 — causa raiz e fix (PR #20)
+
+Após PR #19, médico clicou no botão "🖼️ Imagens" mas as imagens vieram **pretas** (HTTP 403 Forbidden).
+
+**Causa raiz:** URLs `storage.googleapis.com/{bucket}/{path}` são controladas por **IAM/ACL do objeto**, NÃO pelas Firebase Storage Rules. O comentário antigo no `storage-uploader.ts` mentia ("rules permitem leitura pública em dicom/"). O `<img src={url}>` no browser nunca enviou Firebase auth token, então sempre dava 403 — só nunca foi detectado porque a galeria não existia.
+
+**Fix em 2 camadas:**
+1. `apps/wader/src/adapters/storage-uploader.ts` — adiciona `predefinedAcl: 'publicRead'` ao `file.save()` (próximos uploads do Wader)
+2. `storage.rules` — adiciona `match /dicom/...` com `allow read: if true` (redundante pra URLs públicas, mas mantém compat futura com Firebase SDK)
+
+**Operacional:** script ad-hoc `C:\Wader\scripts\fix-acl-publica-imagens.js` re-aplicou ACL `publicRead` nas **61 imagens existentes** em `dicom/*` (5 exames do dia 11 + 12/05). URLs testadas após fix: HTTP 200 ✅.
+
+### 11.4. Modal abre no Worklist (modo secretária — PR #20 também)
+
+Bug: clicar "📸 Imagens (N)" no Worklist abria o motor do laudo. Importante porque o **modo secretária** não deve entrar no motor.
+
+**Fix em `Worklist.tsx`:** importa `<DicomGallery />`, novo estado `galeria`, click no botão abre modal direto no contexto do Worklist. Por default usa `permitirSelecao=false` (secretária só visualiza).
+
+### 11.5. Seleção de imagens pra impressão (PR #21)
+
+Decisão tomada com Sergio em discussão:
+
+- **N imagens selecionáveis** (qualquer número, sem limite forçado)
+- **8 por página A4** no PDF final (grid 2×4), última página pode ter slots vazios
+- **Páginas extras** após Conclusão (`page-break-before: always`)
+- **Auto-save no toggle** (decisão: "todas ficaram salvas" — referindo-se ao Storage; a seleção também persiste automaticamente)
+- **Default visual: 8 primeiras pré-selecionadas** ao abrir (só persiste quando médico toggle pela 1ª vez)
+- **Modo secretária:** sem seleção (só visualiza)
+- **Nome do botão:** "🖨️ Imprimir Seleção" (não "Salvar seleção") — abre janela com layout 2×4 + print dialog SEM laudo principal
+
+Campo novo no Firestore: `exame.imagensSelecionadasPdf: string[]` (URLs na ordem de seleção).
+
+Integração em `gerarPdfHtml()` do `page.tsx`: nova seção HTML com grid 2×4 após Conclusão.
+
+### 11.6. 🐛 BUGS ABERTOS — pra próxima sessão
+
+#### 11.6.a. UX de seleção confusa
+
+Sergio reportou: "NAO FUNCIONOU AO CLICAR, A IMAGEM AMPLIA!!" Quer **caixinha de seleção SEPARADA** do click pra ampliar.
+
+**Estado atual (PR #21):**
+- Click na imagem → abre lightbox (ampliar) ✅
+- Toggle de seleção é botão "+/✓" pequeno no canto sup. esq. da thumb, com `opacity-0 group-hover:opacity-100` (só aparece em hover, pouco visível)
+
+**O que fazer:**
+- Checkbox **sempre visível** (não dependente de hover)
+- Maior, mais óbvio (ex: ícone ☐/☑ ou switch)
+- Posição clara, separada do badge de ordem (badge fica no canto inferior direito, checkbox pode ir no canto sup. esq.)
+- Click na imagem continua abrindo lightbox
+
+#### 11.6.b. "Imprimir não está correto"
+
+Sergio reportou (sem detalhar): "A FUNÇÃO IMPRIMIR NAO AJUSTOU." Possíveis cenários:
+- Botão "🖨️ Imprimir Seleção" no modal não funciona (não abre janela, ou abre com layout errado/imagens não carregam)
+- PDF final (Salvar/Emitir) não inclui a seção de imagens
+- Outro problema
+
+**Pra próxima sessão:** pedir esclarecimento + investigar. Possíveis suspeitas a checar:
+- `window.open` bloqueado por popup blocker
+- CSS `@page` ou `page-break-before` não funciona em alguns browsers
+- Imagens DICOM podem demorar a carregar — print dispara antes (atualmente espera só 300ms)
+- `imagensPdfHtml` definido fora do retorno do `gerarPdfHtml()` — pode estar caindo em escopo errado? Conferir
+- PR #21 talvez ainda nem deployou no Vercel quando Sergio testou (esperar deploy + F5 hard)
+
+### 11.7. Estado dos PRs do dia 14/05
+
+| PR | sha | Branch | Conteúdo | Status |
+|---|---|---|---|---|
+| #17 | `58c27c4` | `fix-vercel-build-exclude-wader` | Fix tsconfig pro Vercel buildar | ✅ Mergeado, deploy OK |
+| #18 | `90861be` | `adr-update-fechamento-13-05` | Apêndice ao ADR (seção 10) | ✅ |
+| #19 | `730af43` | `galeria-dicom-no-laudo` | Componente `DicomGallery` | ✅ |
+| #20 | `c74a9c0` | `fix-galeria-storage-rules-e-worklist-modal` | Fix 403 + modal no Worklist | ✅ |
+| #21 | `88214dc` | `selecao-imagens-impressao` | Seleção + PDF com imagens | ✅ Merge OK, **UX com bug 11.6.a** + **imprimir com bug 11.6.b** |
+
+### 11.8. Token PAT — ainda ativo
+
+Sergio criou `claude-clinic-souleo` (fine-grained, scope `SergioAbdon/souleo` + Contents/PR write) e autorizou deixar **ativo até fim da sessão**. Usado pelo Clinic Claude pra criar+mergear PRs #14 a #21 via API.
+
+**Pra revogar manualmente:** https://github.com/settings/tokens → claude-clinic-souleo → Delete.
+
+### 11.9. keep-awake ainda rodando
+
+PowerShell em background (PID 10088 quando armado) com `SetThreadExecutionState` previne sleep + display off. Mata com `Stop-Process -Id <PID>` ou fim do shell. PID atual salvo em `%TEMP%\keep-awake.pid`.
+
+### 11.10. Próxima sessão deve
+
+1. **Fix UX seleção (11.6.a):** checkbox sempre visível, click separado do ampliar
+2. **Debug imprimir (11.6.b):** pedir detalhes ao Sergio, testar `imagensPdfHtml` rendering, conferir popup blocker, escopo de variável
+3. (opcional) Galeria de imagens visível **dentro** do laudo (lado direito do sheet?) em vez de modal — médico pode marcar conforme digita o laudo
+4. Backlog antigo: deprecar `/api/orthanc?action=buscar_sr`, Auto-Send Vivid, Wader startup Windows
