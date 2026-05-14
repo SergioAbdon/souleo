@@ -39,6 +39,10 @@ export default function LaudoPage() {
   // Estado da galeria DICOM (modal full-screen com thumbnails + lightbox).
   // Adicionada em 14/05/2026 — médico consegue ver as imagens dentro do laudo.
   const [galeriaOpen, setGaleriaOpen] = useState(false);
+  // URLs selecionadas pra imprimir no PDF do laudo (subset de imagensDicom).
+  // Sincronizado com `exame.imagensSelecionadasPdf` no Firestore. Default
+  // quando undefined no Firestore = primeiras 8 (ou menos se exame tem <8).
+  const [imagensSelecionadasPdf, setImagensSelecionadasPdf] = useState<string[]>([]);
   const editorRef = useRef<EditorLaudoRef>(null);
   const pendingHtml = useRef<string | null>(null);
 
@@ -84,10 +88,47 @@ export default function LaudoPage() {
           setExame(ex);
           const dados = ex as Record<string, unknown>;
           if (dados.emitidoEm) setEmitido(true);
+
+          // Inicializa seleção de imagens pra impressão:
+          //  - Se já tem `imagensSelecionadasPdf` salvo → usa
+          //  - Senão → default = primeiras 8 (ou todas, se exame tem <8)
+          //    Esse default só vive em memória; só persiste no Firestore
+          //    quando médico toggle alguma imagem (auto-save abaixo).
+          const todas = (dados.imagensDicom as string[] | undefined) || [];
+          const salvas = dados.imagensSelecionadasPdf as string[] | undefined;
+          if (salvas && Array.isArray(salvas)) {
+            // Filtra URLs salvas que ainda existem em imagensDicom (defensivo
+            // contra remap/reprocessamento que mudou URLs)
+            setImagensSelecionadasPdf(salvas.filter((u) => todas.includes(u)));
+          } else {
+            setImagensSelecionadasPdf(todas.slice(0, 8));
+          }
         }
       });
     }
   }, [workspace?.id, exameId]);
+
+  /**
+   * Toggle seleção de uma imagem pra impressão (decisão 14/05/2026).
+   * Auto-save no Firestore — sem botão "Salvar". O conceito é "estas vão
+   * pro PDF quando emitir/imprimir".
+   *
+   * Mantém a ORDEM em que o médico clicou (importa pro PDF) — não reordena
+   * pela posição na galeria.
+   */
+  async function handleToggleSelecaoImagem(url: string) {
+    if (!workspace?.id || !exameId || !user?.uid) return;
+    const novaLista = imagensSelecionadasPdf.includes(url)
+      ? imagensSelecionadasPdf.filter((u) => u !== url) // remove
+      : [...imagensSelecionadasPdf, url]; // adiciona no fim
+    setImagensSelecionadasPdf(novaLista); // optimistic UI
+    try {
+      await saveExame(workspace.id, { id: exameId, imagensSelecionadasPdf: novaLista }, user.uid);
+    } catch (e) {
+      console.warn('Falha ao salvar seleção de imagens:', e);
+      // Não reverter UI — médico continua escolhendo. Próximo toggle tenta de novo.
+    }
+  }
 
   // Preencher quando exame + motor prontos
   useEffect(() => {
@@ -622,6 +663,33 @@ Valores de referência: ASE/EACVI 2015; ASE 2025.
     const outSolic = document.getElementById('out-solicitante')?.textContent || '—';
     const outDtex = document.getElementById('out-dtexame')?.textContent || '—';
 
+    // Seção de imagens DICOM no PDF (decisão 14/05/2026):
+    //  - Página(s) nova(s) após Conclusão (page-break-before: always)
+    //  - Layout 2 colunas × 4 linhas = 8 imagens por A4
+    //  - Suporta N qualquer; última página pode ter slots vazios
+    //  - Se nada selecionado, não renderiza nada
+    let imagensPdfHtml = '';
+    if (imagensSelecionadasPdf.length > 0) {
+      const POR_PG = 8;
+      const totPgs = Math.ceil(imagensSelecionadasPdf.length / POR_PG);
+      const tipoLabel = (exame?.tipoExame as string | undefined) || '';
+      const pgsHtml = Array.from({ length: totPgs }, (_, pgIdx) => {
+        const slice = imagensSelecionadasPdf.slice(pgIdx * POR_PG, (pgIdx + 1) * POR_PG);
+        const slots = slice.map((url, i) =>
+          `<div class="dicom-slot"><img src="${url}" alt="Imagem ${pgIdx * POR_PG + i + 1}" /><span class="num">${pgIdx * POR_PG + i + 1}</span></div>`,
+        ).join('');
+        return `<div class="dicom-pg"><h2>📸 Imagens — ${outNome}${tipoLabel ? ` · ${tipoLabel}` : ''} (página ${pgIdx + 1} de ${totPgs})</h2><div class="dicom-grid">${slots}</div></div>`;
+      }).join('');
+      imagensPdfHtml = `<style>
+.dicom-pg{page-break-before:always;display:flex;flex-direction:column;height:281mm;padding:8mm;font-family:"IBM Plex Sans",sans-serif;}
+.dicom-pg h2{font-size:11pt;font-weight:700;color:${p1};margin-bottom:3mm;padding-bottom:2mm;border-bottom:1.5px solid ${p1};}
+.dicom-grid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(4,1fr);gap:3mm;}
+.dicom-slot{background:#000;border-radius:2px;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;}
+.dicom-slot img{max-width:100%;max-height:100%;width:auto;height:auto;display:block;}
+.dicom-slot .num{position:absolute;bottom:2mm;right:2mm;background:rgba(0,0,0,.7);color:#fff;font-size:7.5pt;font-weight:600;padding:1mm 2mm;border-radius:2px;}
+</style>${pgsHtml}`;
+    }
+
     return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>${nomeArq}</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
@@ -686,7 +754,9 @@ ul{list-style:none;padding:0;margin:0;}
   <div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;margin-top:3mm;-webkit-print-color-adjust:exact;print-color-adjust:exact;">CONCLUSÃO</div>
   <div style="border:1px solid #ddd;border-top:none;padding:4px 8px;"><ul>${concHTML}</ul></div>
 </td></tr></tbody>
-</table></body></html>`;
+</table>
+${imagensPdfHtml}
+</body></html>`;
   }
 
   // ── PDF via window.open ──
@@ -947,13 +1017,17 @@ ul{list-style:none;padding:0;margin:0;}
         onEmitir={handleEmitir}
       />
       {/* Galeria DICOM — modal full-screen (z-1000) com thumbnails e lightbox.
-          Aberta pelo botão "🖼️ Imagens (N)" no sidebar. */}
+          Aberta pelo botão "🖼️ Imagens (N)" no sidebar. Modo seleção ON
+          (decisão 14/05/2026) — médico marca quais vão pro PDF. */}
       <DicomGallery
         open={galeriaOpen}
         onClose={() => setGaleriaOpen(false)}
         imagens={(exame?.imagensDicom as string[] | undefined) || []}
         pacienteNome={exame?.pacienteNome as string | undefined}
         tipoExame={exame?.tipoExame as string | undefined}
+        permitirSelecao
+        selecionadas={imagensSelecionadasPdf}
+        onToggleSelecao={handleToggleSelecaoImagem}
       />
       {/* CSS global */}
       <style jsx global>{`
