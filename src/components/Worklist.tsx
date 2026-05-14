@@ -15,6 +15,7 @@ import { db, auth } from '@/lib/firebase';
 import { doc, deleteDoc, collection, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { checkEmissao } from '@/lib/billing';
+import DicomGallery from '@/components/laudo/DicomGallery';
 
 // v3: helper pra enviar token Firebase nas chamadas Feegow
 async function feegowAuthFetch(url: string, options?: RequestInit) {
@@ -88,6 +89,11 @@ export default function Worklist() {
   const [feegowLoading, setFeegowLoading] = useState(false);
   const [cpfBuscando, setCpfBuscando] = useState(false);
   const [cpfFeegow, setCpfFeegow] = useState(false); // indica se dados vieram do Feegow
+
+  // Galeria DICOM aberta direto do Worklist (modo secretária — não entra no motor).
+  // Adicionado em 14/05/2026: antes, clicar em "📸 Imagens" abria o laudo inteiro,
+  // mas secretária/usuário não-médico não deve passar pelo motor.
+  const [galeria, setGaleria] = useState<{ imagens: string[]; paciente: string; tipo: string } | null>(null);
 
   // Listener worklist (reage à data selecionada e ao workspace)
   const wsId = workspace?.id;
@@ -564,13 +570,18 @@ export default function Worklist() {
                         </>
                       )}
 
-                      {/* Botão "📸 Imagens" — independente do status. Aparece sempre que o
-                          Wader já trouxe DICOM (mesmo se exame ficou `andamento`/`emitido`).
-                          Antes (11/05/2026) só aparecia em aguardando/rascunho — quebrava
-                          quando o Wader passa a setar status='andamento' automaticamente.
-                          Decisão 13/05/2026: presença de imagens é ortogonal ao status. */}
+                      {/* Botão "📸 Imagens" — abre galeria diretamente no Worklist (modal),
+                          sem entrar no motor do laudo. Importante pro modo secretária:
+                          secretária pode revisar imagens do exame sem precisar abrir
+                          o laudo (que tem o motor de medidas etc).
+                          Decisão 14/05/2026 (substitui 13/05): antes chamava abrirLaudo;
+                          agora abre <DicomGallery /> direto no contexto do Worklist. */}
                       {Array.isArray(item.imagensDicom) && (item.imagensDicom as unknown[]).length > 0 && (
-                        <Btn cor="cyan" onClick={() => abrirLaudo(item.id)}>
+                        <Btn cor="cyan" onClick={() => setGaleria({
+                          imagens: item.imagensDicom as string[],
+                          paciente: (item.pacienteNome as string) || '',
+                          tipo: TIPOS_EXAME[(item.tipoExame as string) || ''] || (item.tipoExame as string) || '',
+                        })}>
                           📸 Imagens ({(item.imagensDicom as unknown[]).length})
                         </Btn>
                       )}
@@ -664,6 +675,16 @@ export default function Worklist() {
           </div>
         </div>
       )}
+
+      {/* Galeria DICOM aberta direto do Worklist (sem entrar no motor do laudo).
+          Modo secretária pode revisar imagens sem permissão de laudar. */}
+      <DicomGallery
+        open={galeria !== null}
+        onClose={() => setGaleria(null)}
+        imagens={galeria?.imagens || []}
+        pacienteNome={galeria?.paciente}
+        tipoExame={galeria?.tipo}
+      />
     </div>
   );
 }
