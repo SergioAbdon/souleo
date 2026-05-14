@@ -54,6 +54,19 @@ service firebase.storage {
       allow write: if false;
     }
 
+    // ── DICOM previews (JPGs gerados pelo Wader a partir do Orthanc) ──
+    // Path: dicom/{wsId}/{exameId}/{seq}.jpg
+    // Leitura PUBLICA — o <img src={url}> no browser nao envia token,
+    // e a URL e longa+aleatoria (wsId + exameId Firestore IDs).
+    // Adicionado em 14/05/2026 (antes disso, comentario do
+    // storage-uploader.ts mentia dizendo que existia essa regra; URLs
+    // davam 403 Forbidden em producao).
+    // Escrita: bloqueada no browser; Wader sobe via firebase-admin (bypassa).
+    match /dicom/{wsId}/{exameId}/{fileName} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // ── DENY DEFAULT ──
     // Qualquer outro path: bloqueado total
     match /{allPaths=**} {
