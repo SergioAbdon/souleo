@@ -30,5 +30,12 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "src/senna90/tests/**", "src/senna90/smoke-test.ts", "src/senna90/shadow-mode.ts"]
+  "exclude": [
+    "node_modules",
+    "src/senna90/tests/**",
+    "src/senna90/smoke-test.ts",
+    "src/senna90/shadow-mode.ts",
+    "apps/wader/**",
+    "scripts/**"
+  ]
 }
