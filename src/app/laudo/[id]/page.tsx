@@ -17,6 +17,7 @@ import { dataLocalHoje } from '@/lib/utils';
 // gerarESalvarPdf legado removido — emissao + PDF agora sao server-side em /api/emitir
 import SidebarLaudo from '@/components/laudo/SidebarLaudo';
 import SheetA4 from '@/components/laudo/SheetA4';
+import DicomGallery from '@/components/laudo/DicomGallery';
 import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
 import { gerarDocx } from '@/lib/exportDocx';
@@ -35,6 +36,9 @@ export default function LaudoPage() {
   const [emitido, setEmitido] = useState(false);
   const [dicomLoading, setDicomLoading] = useState(false);
   const [dicomImportado, setDicomImportado] = useState(false);
+  // Estado da galeria DICOM (modal full-screen com thumbnails + lightbox).
+  // Adicionada em 14/05/2026 — médico consegue ver as imagens dentro do laudo.
+  const [galeriaOpen, setGaleriaOpen] = useState(false);
   const editorRef = useRef<EditorLaudoRef>(null);
   const pendingHtml = useRef<string | null>(null);
 
@@ -894,6 +898,8 @@ ul{list-style:none;padding:0;margin:0;}
         dicomImportado={dicomImportado}
         ortancAtivo={!!workspace?.ortancAtivo}
         totalMedidasDicom={Object.keys((exame?.medidasDicom as Record<string, number> | undefined) || {}).length}
+        totalImagensDicom={((exame?.imagensDicom as string[] | undefined) || []).length}
+        onAbrirGaleria={() => setGaleriaOpen(true)}
         emitido={emitido}
         readOnlyIdentificacao={!!(exame?.emitidoEm)}
         readOnlyMotor={emitido}
@@ -939,6 +945,15 @@ ul{list-style:none;padding:0;margin:0;}
         onClose={() => setPopupOpen(false)}
         onRascunho={handleRascunho}
         onEmitir={handleEmitir}
+      />
+      {/* Galeria DICOM — modal full-screen (z-1000) com thumbnails e lightbox.
+          Aberta pelo botão "🖼️ Imagens (N)" no sidebar. */}
+      <DicomGallery
+        open={galeriaOpen}
+        onClose={() => setGaleriaOpen(false)}
+        imagens={(exame?.imagensDicom as string[] | undefined) || []}
+        pacienteNome={exame?.pacienteNome as string | undefined}
+        tipoExame={exame?.tipoExame as string | undefined}
       />
       {/* CSS global */}
       <style jsx global>{`

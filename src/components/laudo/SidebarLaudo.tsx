@@ -34,6 +34,14 @@ type Props = {
    * tooltip explicando que o Wader ainda não processou.
    */
   totalMedidasDicom?: number;
+  /**
+   * Quantidade de imagens DICOM (preview JPG) disponíveis. Quando > 0,
+   * mostra botão "🖼️ Imagens (N)" que abre `<DicomGallery />` em modal.
+   * Adicionado em 14/05/2026 quando galeria virou parte do laudo.
+   */
+  totalImagensDicom?: number;
+  /** Handler do botão de abrir galeria. */
+  onAbrirGaleria?: () => void;
   emitido?: boolean;
   modoEmitido?: ReactNode;
   readOnlyIdentificacao?: boolean;
@@ -44,7 +52,7 @@ type Props = {
   exameAcc?: string;
 };
 
-export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, onImportarDicom, dicomLoading, dicomImportado, ortancAtivo, totalMedidasDicom, emitido, modoEmitido, readOnlyIdentificacao, readOnlyMotor, exameOrigem, exameCpf, feegowPacienteId, exameAcc }: Props) {
+export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, onImportarDicom, dicomLoading, dicomImportado, ortancAtivo, totalMedidasDicom, totalImagensDicom, onAbrirGaleria, emitido, modoEmitido, readOnlyIdentificacao, readOnlyMotor, exameOrigem, exameCpf, feegowPacienteId, exameAcc }: Props) {
   const [idDesbloqueado, setIdDesbloqueado] = useState(false);
   const [motorDesbloqueado, setMotorDesbloqueado] = useState(false);
   // Detectar quando readOnlyMotor muda de true→false (médico desbloqueou)
@@ -198,6 +206,29 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
                         : 'bg-gray-200 text-gray-500'
                   } disabled:opacity-50`}>
                   {dicomLoading ? '⏳' : dicomImportado ? '✅ Vivid' : temMedidas ? `📡 Vivid (${totalMedidasDicom})` : '📡 Vivid'}
+                </button>
+              );
+            })()}
+            {/* Botão "🖼️ Imagens (N)" — abre <DicomGallery /> com previews JPG.
+                Adicionado em 14/05/2026 (antes médico via só a contagem no
+                Worklist sem como abrir as imagens dentro do laudo). */}
+            {onAbrirGaleria && (() => {
+              const temImagens = (totalImagensDicom ?? 0) > 0;
+              return (
+                <button
+                  onClick={onAbrirGaleria}
+                  disabled={!temImagens}
+                  title={
+                    temImagens
+                      ? `Ver ${totalImagensDicom} imagens DICOM do exame`
+                      : 'Sem imagens DICOM ainda — aguarde Wader processar'
+                  }
+                  className={`px-3 py-2 rounded-md text-[11px] font-semibold cursor-pointer transition border-none whitespace-nowrap ${
+                    temImagens
+                      ? 'bg-cyan-600 text-white hover:bg-cyan-700'
+                      : 'bg-gray-200 text-gray-500'
+                  } disabled:opacity-50`}>
+                  {temImagens ? `🖼️ Imagens (${totalImagensDicom})` : '🖼️ Imagens'}
                 </button>
               );
             })()}
