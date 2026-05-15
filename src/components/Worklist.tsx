@@ -562,32 +562,51 @@ export default function Worklist() {
                   {/* Ações */}
                   <td className="py-3 px-3 text-right">
                     <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                      {/* AGUARDANDO / RASCUNHO */}
-                      {(item.status === 'aguardando' || item.status === 'rascunho') && (
-                        <>
-                          <Btn cor="blue" onClick={() => abrirLaudo(item.id)}>📋 Laudar</Btn>
-                          <Btn cor="gray" onClick={() => editarPaciente(item)}>👤 Editar</Btn>
-                          <Btn cor="red" onClick={() => removerDaFila(item)}>🗑</Btn>
-                        </>
-                      )}
+                      {(() => {
+                        // Normalização defensiva de status (fix 15/05/2026):
+                        // EDWALDO e CARMEN ficaram com status legado
+                        // 'imagens-recebidas' (decisão antiga de 11/05, removida
+                        // do tipo em 13/05 quando passou a usar 'andamento').
+                        // A UI só tinha bloco pra aguardando/rascunho/andamento/
+                        // emitido — exames com status legado viravam "fantasma"
+                        // (sem botão de ação, só 📸 Imagens).
+                        //
+                        // Mapeia qualquer status fora do esperado pra um dos
+                        // 3 grupos de ação. 'imagens-recebidas'/'erro-imagens'
+                        // (legados do pipeline DICOM) → andamento.
+                        const st = item.status as string;
+                        let grupo: 'aguardando' | 'andamento' | 'emitido';
+                        if (st === 'emitido') grupo = 'emitido';
+                        else if (st === 'aguardando' || st === 'rascunho') grupo = 'aguardando';
+                        else grupo = 'andamento'; // andamento, imagens-recebidas, erro-imagens, e qualquer status inesperado
 
-                      {/* EM ANDAMENTO */}
-                      {item.status === 'andamento' && (
-                        <>
-                          <Btn cor="blue" onClick={() => abrirLaudo(item.id)}>▶ Continuar</Btn>
-                          <Btn cor="gray" onClick={() => editarPaciente(item)}>👤 Editar</Btn>
-                        </>
-                      )}
-
-                      {/* EMITIDO */}
-                      {item.status === 'emitido' && (
-                        <>
-                          {ehMedico && (
-                            <Btn cor="amber" onClick={() => editarLaudoEmitido(item.id)}>✏️ Editar</Btn>
-                          )}
-                          <Btn cor="gray" onClick={() => imprimirPdf(item.id)}>🖨️ Imprimir</Btn>
-                        </>
-                      )}
+                        if (grupo === 'aguardando') {
+                          return (
+                            <>
+                              <Btn cor="blue" onClick={() => abrirLaudo(item.id)}>📋 Laudar</Btn>
+                              <Btn cor="gray" onClick={() => editarPaciente(item)}>👤 Editar</Btn>
+                              <Btn cor="red" onClick={() => removerDaFila(item)}>🗑</Btn>
+                            </>
+                          );
+                        }
+                        if (grupo === 'andamento') {
+                          return (
+                            <>
+                              <Btn cor="blue" onClick={() => abrirLaudo(item.id)}>▶ Continuar</Btn>
+                              <Btn cor="gray" onClick={() => editarPaciente(item)}>👤 Editar</Btn>
+                            </>
+                          );
+                        }
+                        // emitido
+                        return (
+                          <>
+                            {ehMedico && (
+                              <Btn cor="amber" onClick={() => editarLaudoEmitido(item.id)}>✏️ Editar</Btn>
+                            )}
+                            <Btn cor="gray" onClick={() => imprimirPdf(item.id)}>🖨️ Imprimir</Btn>
+                          </>
+                        );
+                      })()}
 
                       {/* Botão "📸 Imagens" — abre galeria diretamente no Worklist (modal),
                           sem entrar no motor do laudo. Importante pro modo secretária:
