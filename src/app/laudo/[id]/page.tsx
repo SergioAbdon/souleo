@@ -470,41 +470,43 @@ export default function LaudoPage() {
 
   /**
    * Callback do modal DicomSrImport — recebe os inputs que o médico
-   * MARCOU e chama `window.importarDICOM` do motor com payload no formato
-   * esperado (`{ measurements: { [campoMotor]: valor } }`).
+   * marcou e seta os campos do motor DIRETAMENTE via DOM.
    *
-   * Motor já preenche os DOM inputs e recalcula automaticamente
-   * (cascade: Septo + Parede + DDVE → Massa VE; DDVE + DSVE → FE Teich).
+   * Por que NÃO chamar `window.importarDICOM`:
+   *   - O motor V8 espera `measurements: Record<LOINC, number>` (formato
+   *     antigo, com códigos LOINC universais como chave).
+   *   - Nosso novo flow usa códigos contextualizados (LA_M-02550, etc) e
+   *     mapeia pra IDs de campo do motor (b7, b8, ...) na whitelist.
+   *   - Passar `{ b7: 3.71, ... }` pro motor antigo dá erro (ele tenta
+   *     interpretar 'b7' como LOINC).
+   *
+   * Em vez disso: setar o `.value` do input DOM + dispatch de event
+   * `input` (bubbles=true). O motor tem um listener delegated em
+   * `#laudo-sidebar` que captura esses eventos e dispara recalc
+   * automaticamente (cascade: Septo+Parede+DDVE → Massa, etc).
+   *
+   * Decisão 15/05/2026 (Sergio): valores entram brutos como vêm do SR
+   * (atualmente em cm). Sergio vai ajustar o Vivid depois pra mandar em
+   * mm direto — quando isso acontecer, nada muda aqui (valor passa direto).
    */
   function handleConfirmarImportSr(selecionados: InputImport[]) {
     if (selecionados.length === 0) return;
-    const w = window as unknown as Record<string, (...args: unknown[]) => unknown>;
-    const importFn = w.importarDICOM as ((d: unknown) => { ok: boolean; count: number; msg: string }) | undefined;
-    if (!importFn) {
-      alert('Motor não carregado. Tente recarregar a página.');
-      return;
-    }
-
-    // Monta `measurements` no formato esperado: { [campoMotorId]: valor }.
-    // O motor V8 usa os IDs `b7`, `b8`, etc, internamente.
-    const measurements: Record<string, number> = {};
+    let preenchidos = 0;
     for (const s of selecionados) {
-      measurements[s.campo] = s.valor;
+      const el = document.getElementById(s.campo) as HTMLInputElement | null;
+      if (!el) {
+        console.warn(`Campo motor "${s.campo}" não encontrado no DOM (input ${s.nomePt} pulado)`);
+        continue;
+      }
+      // Formata com 2 casas decimais pra não jogar "3.71197..." no input.
+      el.value = s.valor.toFixed(2);
+      // Dispatch event triggera o listener delegated do motor → recalc.
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      preenchidos++;
     }
-
-    const dicomMeta = exame?.dicomMeta as Record<string, string> | undefined;
-    try {
-      const result = importFn({
-        measurements,
-        patientName: exame?.pacienteNome as string || '',
-        studyDate: dicomMeta?.studyDate || '',
-      });
-      setDicomImportado(true);
-      alert(`✅ ${result.count} medidas importadas. Motor recalcula derivados automaticamente.`);
-    } catch (e) {
-      console.error('handleConfirmarImportSr:', e);
-      alert('Erro ao importar. Veja console pra detalhes.');
-    }
+    setDicomImportado(true);
+    alert(`✅ ${preenchidos} medida${preenchidos === 1 ? '' : 's'} importada${preenchidos === 1 ? '' : 's'}. Motor recalcula derivados automaticamente.`);
   }
 
   function handleVoltar() {
