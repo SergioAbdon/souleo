@@ -195,7 +195,7 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
                     dicomImportado
                       ? 'Medidas já importadas'
                       : temMedidas
-                        ? `Importar ${totalMedidasDicom} medidas do Vivid (DICOM SR)`
+                        ? `Importar ${totalMedidasDicom} medidas do Vivid (DICOM SR) — abre modal pra validar antes`
                         : 'Sem medidas DICOM ainda — aguarde Wader processar o exame'
                   }
                   className={`px-3 py-2 rounded-md text-[11px] font-semibold cursor-pointer transition border-none whitespace-nowrap ${
@@ -205,7 +205,7 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
                         ? 'bg-purple-600 text-white hover:bg-purple-700'
                         : 'bg-gray-200 text-gray-500'
                   } disabled:opacity-50`}>
-                  {dicomLoading ? '⏳' : dicomImportado ? '✅ Vivid' : temMedidas ? `📡 Vivid (${totalMedidasDicom})` : '📡 Vivid'}
+                  {dicomLoading ? '⏳' : dicomImportado ? '✅ Importado' : temMedidas ? `📡 Importar (${totalMedidasDicom})` : '📡 Importar'}
                 </button>
               );
             })()}

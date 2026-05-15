@@ -17,6 +17,28 @@
  */
 export type TipoExame = 'eco_tt' | 'doppler_carotidas' | 'eco_te' | 'eco_stress';
 
+/**
+ * Item do `medidasDicom` (schema novo 15/05/2026).
+ *
+ * `grupo` é o Measurement Group onde o código apareceu no SR (LA = Left
+ * Atrium, LV = Left Ventricle, AO = Aortic, MV = Mitral Valve, etc).
+ * Crítico pra desambiguar códigos genéricos como `M-02550` ("Diameter"),
+ * que sozinho não diz qual estrutura.
+ *
+ * Definido também em `apps/wader/src/adapters/dicom-sr-parser.ts` — esta
+ * é a "fonte da verdade" do tipo no schema do Firestore.
+ */
+export interface MedidaSr {
+  /** Valor numérico (na unidade indicada por `unit`). */
+  value: number;
+  /** Unidade do SR (ex: 'cm', 'm/s', 'ml', '%', 'kg', ''). */
+  unit: string;
+  /** Nome legível em inglês, vindo direto do `CodeMeaning` do SR. */
+  meaning: string;
+  /** Grupo (estrutura anatômica) — ver `GrupoSr` no parser. */
+  grupo: 'LA' | 'LV' | 'AO' | 'MV' | 'RA' | 'RV' | 'TV' | 'PV' | 'general';
+}
+
 export const TIPOS_EXAME_LABEL: Record<TipoExame, string> = {
   eco_tt: 'Ecocardiograma Transtorácico',
   doppler_carotidas: 'Doppler de Carótidas',
@@ -109,20 +131,25 @@ export interface Exame {
 
   /**
    * Medidas estruturadas extraídas do DICOM SR pelo Wader.
-   * Adicionado em 13/05/2026 (substitui o fluxo Leo Cloud → Orthanc que
-   * não funcionava porque Vercel não alcança IP local da clínica).
    *
-   * Chaves = códigos LOINC (ex: '18083-6' = LV End-Diastolic Dimension).
-   * Valores = números (sempre em unidade DICOM padrão).
+   * Schema NOVO (15/05/2026 — após descoberta da lógica de contexto do
+   * Vivid T8). Chave = `{grupo}_{codeValue}`, ex: `LA_M-02550`, `LV_29436-3`.
+   * Valor = `{ value, unit, meaning, grupo }`.
    *
-   * O motor V8 do Leo web consome via `window.importarDICOM({ measurements })`
-   * — mesma assinatura usada antes pelo fluxo Leo Cloud.
+   * Por que mudou: o schema antigo (`Record<string, number>`) era ambíguo
+   * pra códigos genéricos como `M-02550` ("Diameter"), que aparece em
+   * vários grupos do SR (LA, AO, LV...). Sem saber o grupo, não dá pra
+   * mapear pro campo certo do motor. Detalhes em
+   * `feedback_dicom_sr_vivid_logica.md` (memória local).
    *
-   * Vazio (não existe ou `{}`) quando o estudo não tem série SR (ex: US
-   * vascular básico não gera SR). UI mostra botão "📡 Vivid" só se
-   * `Object.keys(medidasDicom || {}).length > 0`.
+   * Schema ANTIGO (`Record<string, number>`) ainda existe em exames
+   * processados antes de 15/05. O Leo client lida com os 2 schemas — vê
+   * `isSchemaNovo()` em `src/lib/dicom-sr-mapping.ts`.
+   *
+   * Vazio/undefined quando o estudo não tem série SR (US vascular
+   * básico não gera SR padrão).
    */
-  medidasDicom?: Record<string, number>;
+  medidasDicom?: Record<string, MedidaSr | number>;
 
   /** Metadata da extração SR (debug/audit). */
   medidasDicomMeta?: {

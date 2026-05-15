@@ -18,6 +18,8 @@ import { dataLocalHoje } from '@/lib/utils';
 import SidebarLaudo from '@/components/laudo/SidebarLaudo';
 import SheetA4 from '@/components/laudo/SheetA4';
 import DicomGallery from '@/components/laudo/DicomGallery';
+import DicomSrImport from '@/components/laudo/DicomSrImport';
+import { normalizarParaImport, prefixoArquivoPorTipo, InputImport, MedidaSr } from '@/lib/dicom-sr-mapping';
 import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
 import { gerarDocx } from '@/lib/exportDocx';
@@ -39,10 +41,17 @@ export default function LaudoPage() {
   // Estado da galeria DICOM (modal full-screen com thumbnails + lightbox).
   // Adicionada em 14/05/2026 — médico consegue ver as imagens dentro do laudo.
   const [galeriaOpen, setGaleriaOpen] = useState(false);
+  // Modal de import de medidas SR (15/05/2026). Substitui o auto-import
+  // que rodava ao clicar "📡 Vivid" — agora abre modal de validação 1-a-1.
+  const [srImportOpen, setSrImportOpen] = useState(false);
   // URLs selecionadas pra imprimir no PDF do laudo (subset de imagensDicom).
   // Sincronizado com `exame.imagensSelecionadasPdf` no Firestore. Default
   // quando undefined no Firestore = primeiras 8 (ou menos se exame tem <8).
   const [imagensSelecionadasPdf, setImagensSelecionadasPdf] = useState<string[]>([]);
+  // Toggle "Incluir imagens DICOM no PDF" — controlado pelo médico no
+  // PopupSalvarEmitir (decisão 15/05/2026). Default true quando há imagens
+  // selecionadas. Lido por `gerarPdfHtml()` pra incluir/omitir as páginas.
+  const [imagensIncluidasNoPdf, setImagensIncluidasNoPdf] = useState(true);
   const editorRef = useRef<EditorLaudoRef>(null);
   const pendingHtml = useRef<string | null>(null);
 
@@ -424,54 +433,78 @@ export default function LaudoPage() {
   }
 
   /**
-   * Importa medidas DICOM SR — agora lê do Firestore (`exame.medidasDicom`),
-   * que foi populado pelo Wader na rede local (decisão 13/05/2026).
+   * Abre o modal de IMPORTAÇÃO de medidas DICOM SR.
    *
-   * O fluxo antigo via `/api/orthanc?action=buscar_sr` chamava Vercel→Orthanc
-   * direto, mas Vercel não alcança o IP local da clínica (192.168.x.x).
-   * Por isso o botão "📡 Vivid" nunca funcionou em produção antes.
+   * Mudança 15/05/2026: antes o click no botão "📡 Vivid" importava DIRETO
+   * sem validação. Agora abre `<DicomSrImport>` que mostra cada input com
+   * checkbox individual — médico confirma item a item. Decisão clínica
+   * com Sergio: "GOSTEI DA SUGESTAO B" (validação 1-a-1).
    *
-   * Ver `docs/decisoes/2026-05-13-bug-acc-duplicado-remap-e-wader-sr.md` §5.
+   * Inputs vêm de `normalizarParaImport()` que lê `exame.medidasDicom` e
+   * filtra só os mapeáveis na whitelist `SR_TO_MOTOR` (calculados são
+   * ignorados — motor recalcula).
    */
-  async function handleImportarDicom() {
-    if (!workspace?.id || dicomLoading) return;
-    setDicomLoading(true);
+  function handleImportarDicom() {
+    if (!workspace?.id) return;
+    const inputsDisponiveis = getInputsImportaveis();
+    if (inputsDisponiveis.length === 0) {
+      alert(
+        'Sem medidas DICOM SR mapeáveis pra importar.\n\n' +
+        'Ou o Wader ainda não processou o estudo, ou as medidas SR não estão ' +
+        'na whitelist conhecida (ver `src/lib/dicom-sr-mapping.ts`).'
+      );
+      return;
+    }
+    setSrImportOpen(true);
+  }
+
+  /**
+   * Retorna a lista de inputs DICOM importáveis pro motor (filtrados via
+   * whitelist SR_TO_MOTOR). Funciona com schema NOVO (medidas com contexto)
+   * e ANTIGO (Record<string, number>) via normalizarParaImport.
+   */
+  function getInputsImportaveis(): InputImport[] {
+    const medidasDicom = exame?.medidasDicom as Record<string, MedidaSr | number> | undefined;
+    return normalizarParaImport(medidasDicom);
+  }
+
+  /**
+   * Callback do modal DicomSrImport — recebe os inputs que o médico
+   * MARCOU e chama `window.importarDICOM` do motor com payload no formato
+   * esperado (`{ measurements: { [campoMotor]: valor } }`).
+   *
+   * Motor já preenche os DOM inputs e recalcula automaticamente
+   * (cascade: Septo + Parede + DDVE → Massa VE; DDVE + DSVE → FE Teich).
+   */
+  function handleConfirmarImportSr(selecionados: InputImport[]) {
+    if (selecionados.length === 0) return;
+    const w = window as unknown as Record<string, (...args: unknown[]) => unknown>;
+    const importFn = w.importarDICOM as ((d: unknown) => { ok: boolean; count: number; msg: string }) | undefined;
+    if (!importFn) {
+      alert('Motor não carregado. Tente recarregar a página.');
+      return;
+    }
+
+    // Monta `measurements` no formato esperado: { [campoMotorId]: valor }.
+    // O motor V8 usa os IDs `b7`, `b8`, etc, internamente.
+    const measurements: Record<string, number> = {};
+    for (const s of selecionados) {
+      measurements[s.campo] = s.valor;
+    }
+
+    const dicomMeta = exame?.dicomMeta as Record<string, string> | undefined;
     try {
-      const medidasDicom = exame?.medidasDicom as Record<string, number> | undefined;
-      const dicomMeta = exame?.dicomMeta as Record<string, string> | undefined;
-
-      if (!medidasDicom || Object.keys(medidasDicom).length === 0) {
-        alert(
-          'Sem medidas DICOM disponíveis ainda.\n\n' +
-          'O Wader processa o estudo logo após "End Exam" no Vivid. Se você acabou ' +
-          'de finalizar, aguarde até 1 minuto e tente novamente.\n\n' +
-          'Se persistir: verifique se o Wader está rodando na PC da clínica e se ' +
-          'o Vivid está enviando DICOM SR (não só imagens).'
-        );
-        setDicomLoading(false);
-        return;
-      }
-
-      const w = window as unknown as Record<string, (...args: unknown[]) => unknown>;
-      const importFn = w.importarDICOM as ((d: unknown) => { ok: boolean; count: number; msg: string }) | undefined;
-      if (!importFn) {
-        alert('Motor não carregado. Tente recarregar a página.');
-        setDicomLoading(false);
-        return;
-      }
-
       const result = importFn({
-        measurements: medidasDicom,
+        measurements,
         patientName: exame?.pacienteNome as string || '',
         studyDate: dicomMeta?.studyDate || '',
       });
       setDicomImportado(true);
-      alert(`${result.count} medidas importadas do Vivid T8!`);
+      alert(`✅ ${result.count} medidas importadas. Motor recalcula derivados automaticamente.`);
     } catch (e) {
-      console.error('handleImportarDicom:', e);
-      alert('Erro ao importar medidas. Veja console pra detalhes.');
+      console.error('handleConfirmarImportSr:', e);
+      alert('Erro ao importar. Veja console pra detalhes.');
     }
-    setDicomLoading(false);
   }
 
   function handleVoltar() {
@@ -491,9 +524,12 @@ export default function LaudoPage() {
     } catch { toast('Erro ao salvar rascunho'); }
   }
 
-  async function handleEmitir() {
+  async function handleEmitir(incluirImagens: boolean = true) {
     setPopupOpen(false);
     if (!workspace?.id || !exameId || !user?.uid) return;
+    // Guarda escolha do médico no state — `gerarPdfHtml()` consulta isso
+    // antes de incluir as páginas extras de imagens
+    setImagensIncluidasNoPdf(incluirImagens);
 
     const medidas = coletarMedidas();
     const achados = coletarAchados();
@@ -517,10 +553,14 @@ export default function LaudoPage() {
     };
 
     // v3.1: gerar pdfHtml ANTES de emitir, mandar junto na requisicao
-    // Servidor faz emissao + PDF tudo numa chamada (sem race condition)
-    const pdfHtml = gerarPdfHtml();
+    // Servidor faz emissao + PDF tudo numa chamada (sem race condition).
+    // Passa `incluirImagens` explícito pra evitar race do setState async
+    // (decisão 15/05/2026 — médico escolhe no PopupSalvarEmitir).
+    const pdfHtml = gerarPdfHtml(incluirImagens);
     const nome = (document.getElementById('nome') as HTMLInputElement)?.value || 'PACIENTE';
-    const nomeArq = 'ECOTT ' + nome.trim().toUpperCase();
+    // Nome do arquivo dinâmico por tipoExame (decisão 15/05/2026):
+    //   eco_tt → ECOTT, doppler_carotidas → DOPPLER CAROTIDAS, etc.
+    const nomeArq = prefixoArquivoPorTipo(exame?.tipoExame as string | undefined) + ' ' + nome.trim().toUpperCase();
 
     toast('Emitindo laudo e gerando PDF...');
 
@@ -611,9 +651,15 @@ export default function LaudoPage() {
   }
 
   // ── Gerar HTML do PDF a partir do DOM ──
-  function gerarPdfHtml(): string {
+  // `incluirImagensParam` (decisão 15/05/2026): se passado, sobrescreve
+  // o state `imagensIncluidasNoPdf` — usado pelo handleEmitir() que recebe
+  // a escolha do médico via callback do PopupSalvarEmitir (state ainda não
+  // foi commitado quando esta função é chamada).
+  function gerarPdfHtml(incluirImagensParam?: boolean): string {
+    const incluirImagens = incluirImagensParam !== undefined ? incluirImagensParam : imagensIncluidasNoPdf;
     const nome = (document.getElementById('nome') as HTMLInputElement)?.value || 'PACIENTE';
-    const nomeArq = 'ECOTT ' + nome.trim().toUpperCase();
+    // Nome do arquivo dinâmico por tipoExame
+    const nomeArq = prefixoArquivoPorTipo(exame?.tipoExame as string | undefined) + ' ' + nome.trim().toUpperCase();
 
     // Coletar tabela de parâmetros — reconstruir do DOM com larguras fixas
     const rows = document.querySelectorAll('#params-tbody tr');
@@ -663,29 +709,37 @@ Valores de referência: ASE/EACVI 2015; ASE 2025.
     const outSolic = document.getElementById('out-solicitante')?.textContent || '—';
     const outDtex = document.getElementById('out-dtexame')?.textContent || '—';
 
-    // Seção de imagens DICOM no PDF (decisão 14/05/2026):
+    // Seção de imagens DICOM no PDF (decisão 14/05/2026, fix 15/05/2026):
     //  - Página(s) nova(s) após Conclusão (page-break-before: always)
     //  - Layout 2 colunas × 4 linhas = 8 imagens por A4
-    //  - Suporta N qualquer; última página pode ter slots vazios
-    //  - Se nada selecionado, não renderiza nada
+    //  - SEMPRE 8 slots — última pg pode ter slots vazios (decisão 15/05)
+    //  - Fix CSS: `minmax(0, 1fr)` + `min-height: 0` força 4 linhas mesmo
+    //    se imagem (aspect 4:3) tentar empurrar pra mais (bug 14/05 saía 6/pg)
+    //  - Pulado se imagensIncluidasNoPdf=false (toggle no PopupSalvarEmitir)
     let imagensPdfHtml = '';
-    if (imagensSelecionadasPdf.length > 0) {
+    if (incluirImagens && imagensSelecionadasPdf.length > 0) {
       const POR_PG = 8;
       const totPgs = Math.ceil(imagensSelecionadasPdf.length / POR_PG);
       const tipoLabel = (exame?.tipoExame as string | undefined) || '';
       const pgsHtml = Array.from({ length: totPgs }, (_, pgIdx) => {
         const slice = imagensSelecionadasPdf.slice(pgIdx * POR_PG, (pgIdx + 1) * POR_PG);
-        const slots = slice.map((url, i) =>
-          `<div class="dicom-slot"><img src="${url}" alt="Imagem ${pgIdx * POR_PG + i + 1}" /><span class="num">${pgIdx * POR_PG + i + 1}</span></div>`,
-        ).join('');
+        // Pad pra ter SEMPRE 8 slots por página (decisão 15/05/2026)
+        const padded = [...slice];
+        while (padded.length < POR_PG) padded.push('');
+        const slots = padded.map((url, i) => {
+          if (!url) return '<div class="dicom-slot dicom-slot-vazio"></div>';
+          const num = pgIdx * POR_PG + i + 1;
+          return `<div class="dicom-slot"><img src="${url}" alt="Imagem ${num}" /><span class="num">${num}</span></div>`;
+        }).join('');
         return `<div class="dicom-pg"><h2>📸 Imagens — ${outNome}${tipoLabel ? ` · ${tipoLabel}` : ''} (página ${pgIdx + 1} de ${totPgs})</h2><div class="dicom-grid">${slots}</div></div>`;
       }).join('');
       imagensPdfHtml = `<style>
-.dicom-pg{page-break-before:always;display:flex;flex-direction:column;height:281mm;padding:8mm;font-family:"IBM Plex Sans",sans-serif;}
-.dicom-pg h2{font-size:11pt;font-weight:700;color:${p1};margin-bottom:3mm;padding-bottom:2mm;border-bottom:1.5px solid ${p1};}
-.dicom-grid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(4,1fr);gap:3mm;}
-.dicom-slot{background:#000;border-radius:2px;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;}
-.dicom-slot img{max-width:100%;max-height:100%;width:auto;height:auto;display:block;}
+.dicom-pg{page-break-before:always;display:flex;flex-direction:column;height:calc(100vh - 16mm);padding:8mm;font-family:"IBM Plex Sans",sans-serif;}
+.dicom-pg h2{font-size:11pt;font-weight:700;color:${p1};margin-bottom:3mm;padding-bottom:2mm;border-bottom:1.5px solid ${p1};flex-shrink:0;}
+.dicom-grid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(4, minmax(0, 1fr));gap:3mm;min-height:0;}
+.dicom-slot{background:#000;border-radius:2px;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;min-height:0;}
+.dicom-slot-vazio{background:transparent;}
+.dicom-slot img{max-width:100%;max-height:100%;width:auto;height:auto;display:block;object-fit:contain;}
 .dicom-slot .num{position:absolute;bottom:2mm;right:2mm;background:rgba(0,0,0,.7);color:#fff;font-size:7.5pt;font-weight:600;padding:1mm 2mm;border-radius:2px;}
 </style>${pgsHtml}`;
     }
@@ -967,7 +1021,7 @@ ${imagensPdfHtml}
         dicomLoading={dicomLoading}
         dicomImportado={dicomImportado}
         ortancAtivo={!!workspace?.ortancAtivo}
-        totalMedidasDicom={Object.keys((exame?.medidasDicom as Record<string, number> | undefined) || {}).length}
+        totalMedidasDicom={getInputsImportaveis().length}
         totalImagensDicom={((exame?.imagensDicom as string[] | undefined) || []).length}
         onAbrirGaleria={() => setGaleriaOpen(true)}
         emitido={emitido}
@@ -1009,12 +1063,24 @@ ${imagensPdfHtml}
           />
         }
       />
-      {/* Popup */}
+      {/* Popup Salvar/Emitir — agora mostra toggle "Incluir imagens DICOM"
+          quando há selecionadas (decisão 15/05/2026). */}
       <PopupSalvarEmitir
         open={popupOpen}
         onClose={() => setPopupOpen(false)}
         onRascunho={handleRascunho}
         onEmitir={handleEmitir}
+        totalImagensSelecionadas={imagensSelecionadasPdf.length}
+      />
+      {/* Modal de Import SR — validação 1-a-1 das medidas do Vivid antes
+          de jogar no motor (decisão 15/05/2026). Aberto pelo botão
+          "📡 Importar (N)" no sidebar. Filtra calculados (motor recalcula). */}
+      <DicomSrImport
+        open={srImportOpen}
+        onClose={() => setSrImportOpen(false)}
+        inputs={getInputsImportaveis()}
+        pacienteNome={exame?.pacienteNome as string | undefined}
+        onImportar={handleConfirmarImportSr}
       />
       {/* Galeria DICOM — modal full-screen (z-1000) com thumbnails e lightbox.
           Aberta pelo botão "🖼️ Imagens (N)" no sidebar. Modo seleção ON

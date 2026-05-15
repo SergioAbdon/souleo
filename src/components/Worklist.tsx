@@ -93,7 +93,26 @@ export default function Worklist() {
   // Galeria DICOM aberta direto do Worklist (modo secretária — não entra no motor).
   // Adicionado em 14/05/2026: antes, clicar em "📸 Imagens" abria o laudo inteiro,
   // mas secretária/usuário não-médico não deve passar pelo motor.
+  //
+  // Mudança 15/05/2026 (Sergio): secretária TAMBÉM pode selecionar imagens pra
+  // impressão ("INDEPENDENTE DA SELEÇÃO DO MÉDICO, ELA PODE IMPRIMIR TODA CASO
+  // JULGUE NECESSARIO. POR PADRAO SELECIONA AS 8 PRIMEIRAS"). Seleção é local
+  // (efêmera, não persiste no Firestore) — não interfere com a seleção do médico.
   const [galeria, setGaleria] = useState<{ imagens: string[]; paciente: string; tipo: string } | null>(null);
+  const [secretariaSelecionadas, setSecretariaSelecionadas] = useState<string[]>([]);
+
+  // Quando galeria abre, default = 8 primeiras imagens
+  useEffect(() => {
+    if (galeria) {
+      setSecretariaSelecionadas(galeria.imagens.slice(0, 8));
+    }
+  }, [galeria]);
+
+  function handleToggleSelecaoSecretaria(url: string) {
+    setSecretariaSelecionadas((prev) =>
+      prev.includes(url) ? prev.filter((u) => u !== url) : [...prev, url],
+    );
+  }
 
   // Listener worklist (reage à data selecionada e ao workspace)
   const wsId = workspace?.id;
@@ -677,13 +696,17 @@ export default function Worklist() {
       )}
 
       {/* Galeria DICOM aberta direto do Worklist (sem entrar no motor do laudo).
-          Modo secretária pode revisar imagens sem permissão de laudar. */}
+          Modo secretária pode revisar E selecionar imagens pra imprimir (decisão
+          15/05/2026). Seleção dela é local (não persiste) — independente da do médico. */}
       <DicomGallery
         open={galeria !== null}
         onClose={() => setGaleria(null)}
         imagens={galeria?.imagens || []}
         pacienteNome={galeria?.paciente}
         tipoExame={galeria?.tipo}
+        permitirSelecao
+        selecionadas={secretariaSelecionadas}
+        onToggleSelecao={handleToggleSelecaoSecretaria}
       />
     </div>
   );

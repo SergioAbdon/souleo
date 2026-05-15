@@ -27,14 +27,25 @@ import { useEffect, useState } from 'react';
  * Usado pelo `imprimirSelecao()` no Gallery e pelo `gerarPdfHtml()` no
  * page.tsx — exportada pra reuso.
  *
- * Slots vazios (quando N não é múltiplo de 8) ficam invisíveis no print.
+ * SEMPRE 8 slots por página: se N não for múltiplo de 8, última página
+ * fica com slots vazios (invisíveis no print). Decisão 15/05/2026 (Sergio):
+ * "PAGINAS SEMPRE SEJAM MULTIPLOS DE 8".
+ *
+ * FIX 15/05/2026: usa `minmax(0, 1fr)` em vez de `1fr` puro nas linhas do
+ * grid. Sem o `minmax(0, ...)`, o conteúdo da imagem (com aspect ratio 4:3
+ * grande) pode forçar a linha a esticar além do 1/4 da página, fazendo
+ * Chrome reposicionar pra 3 linhas/A4 (bug que aconteceu antes — saía 6
+ * imgs em vez de 8). `min-height: 0` no slot reforça.
  */
 export function renderPaginas(urls: string[], pacienteNome?: string, tipoExame?: string): string {
   if (urls.length === 0) return '';
   const POR_PAGINA = 8;
   const paginas: string[][] = [];
   for (let i = 0; i < urls.length; i += POR_PAGINA) {
-    paginas.push(urls.slice(i, i + POR_PAGINA));
+    const pg = urls.slice(i, i + POR_PAGINA);
+    // Pad com strings vazias pra ter SEMPRE 8 slots (decisão 15/05/2026)
+    while (pg.length < POR_PAGINA) pg.push('');
+    paginas.push(pg);
   }
   const cabec = [pacienteNome, tipoExame].filter(Boolean).join(' · ');
   return paginas
@@ -43,9 +54,11 @@ export function renderPaginas(urls: string[], pacienteNome?: string, tipoExame?:
 ${cabec ? `<h1>📸 Imagens DICOM — ${cabec} (página ${pgIdx + 1} de ${paginas.length})</h1>` : ''}
 <div class="grid">
 ${pgUrls
-  .map(
-    (url, i) => `<div class="slot"><img src="${url}" alt="Imagem ${pgIdx * POR_PAGINA + i + 1}" /><span class="num">${pgIdx * POR_PAGINA + i + 1}</span></div>`,
-  )
+  .map((url, i) => {
+    if (!url) return '<div class="slot slot-vazio"></div>'; // slot vazio invisível
+    const num = pgIdx * POR_PAGINA + i + 1;
+    return `<div class="slot"><img src="${url}" alt="Imagem ${num}" /><span class="num">${num}</span></div>`;
+  })
   .join('\n')}
 </div>
 </div>`,
@@ -147,17 +160,27 @@ export default function DicomGallery({
   *{box-sizing:border-box;margin:0;padding:0;}
   @page{size:A4 portrait;margin:8mm;}
   body{font-family:'IBM Plex Sans',Arial,sans-serif;font-size:9pt;color:#1a1a1a;}
-  .pagina{page-break-after:always;display:flex;flex-direction:column;height:281mm;}
+  /* height:auto + flex permite o conteúdo definir; page-break controla quebra */
+  .pagina{page-break-after:always;display:flex;flex-direction:column;height:calc(100vh - 16mm);}
   .pagina:last-child{page-break-after:auto;}
-  h1{font-size:11pt;font-weight:700;margin-bottom:3mm;padding-bottom:2mm;border-bottom:1.5px solid #1E3A5F;color:#1E3A5F;}
-  .grid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(4,1fr);gap:3mm;}
-  .slot{background:#000;border-radius:2px;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;}
-  .slot img{max-width:100%;max-height:100%;width:auto;height:auto;display:block;}
+  h1{font-size:11pt;font-weight:700;margin-bottom:3mm;padding-bottom:2mm;border-bottom:1.5px solid #1E3A5F;color:#1E3A5F;flex-shrink:0;}
+  /* FIX 15/05/2026: minmax(0,1fr) + min-height:0 garante 4 linhas mesmo se
+     o conteúdo das imagens (aspect ratio 4:3) tentar empurrar pra mais. */
+  .grid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(4, minmax(0, 1fr));gap:3mm;min-height:0;}
+  .slot{background:#000;border-radius:2px;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;min-height:0;}
+  .slot-vazio{background:transparent;}
+  .slot img{max-width:100%;max-height:100%;width:auto;height:auto;display:block;object-fit:contain;}
   .slot .num{position:absolute;bottom:2mm;right:2mm;background:rgba(0,0,0,.7);color:#fff;font-size:8pt;font-weight:600;padding:1mm 2mm;border-radius:2px;}
-  @media print{.no-print{display:none;}}
+  @media print{.no-print{display:none;} @page{margin:8mm;}}
+  /* Aviso pro usuário desativar header/footer do Chrome no print dialog */
+  .aviso-print{position:fixed;top:8px;right:8px;background:#fef3c7;border:1px solid #f59e0b;padding:8px 12px;border-radius:4px;font-size:11px;color:#92400e;max-width:280px;}
 </style></head><body>
+<div class="aviso-print no-print">
+  💡 No diálogo de impressão, em <strong>"Mais configurações"</strong>, desmarque
+  <strong>"Cabeçalhos e rodapés"</strong> pra não cortar a 4ª linha de imagens.
+</div>
 ${renderPaginas(selecionadas, pacienteNome, tipoExame)}
-<script>window.onload=()=>{setTimeout(()=>window.print(),300);};</script>
+<script>window.onload=()=>{setTimeout(()=>window.print(),500);};</script>
 </body></html>`;
     const w = window.open('', '_blank', 'width=900,height=700');
     if (w) { w.document.write(html); w.document.close(); }
@@ -273,7 +296,11 @@ ${renderPaginas(selecionadas, pacienteNome, tipoExame)}
                   >
                     {isSelecionada ? `${ordem}` : i + 1}
                   </span>
-                  {/* Toggle de seleção (canto superior esquerdo) — só em modo seleção */}
+                  {/* Checkbox de seleção (canto superior esquerdo) — SEMPRE
+                      VISÍVEL em modo seleção (decisão 15/05/2026).
+                      Antes ficava só no hover via opacity-0 group-hover:opacity-100,
+                      e Sergio reclamou: "NAO FUNCIONOU AO CLICAR, A IMAGEM AMPLIA".
+                      Agora a checkbox é grande, opaca e separada do click pra ampliar. */}
                   {permitirSelecao && onToggleSelecao && (
                     <button
                       onClick={(e) => {
@@ -281,13 +308,13 @@ ${renderPaginas(selecionadas, pacienteNome, tipoExame)}
                         onToggleSelecao(url);
                       }}
                       title={isSelecionada ? 'Remover da impressão' : 'Incluir na impressão'}
-                      className={`absolute top-1.5 left-1.5 w-7 h-7 rounded-full text-sm font-bold transition flex items-center justify-center cursor-pointer ${
+                      className={`absolute top-2 left-2 w-8 h-8 rounded text-base font-bold transition flex items-center justify-center cursor-pointer shadow-md ring-1 ${
                         isSelecionada
-                          ? 'bg-emerald-500 text-white hover:bg-emerald-600'
-                          : 'bg-black/60 text-white/70 hover:bg-black/80 hover:text-white opacity-0 group-hover:opacity-100'
+                          ? 'bg-emerald-500 text-white hover:bg-emerald-600 ring-emerald-700'
+                          : 'bg-white text-gray-700 hover:bg-emerald-50 ring-gray-400'
                       }`}
                     >
-                      {isSelecionada ? '✓' : '+'}
+                      {isSelecionada ? '☑' : '☐'}
                     </button>
                   )}
                   {!permitirSelecao && (

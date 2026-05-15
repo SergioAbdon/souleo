@@ -9,15 +9,54 @@ type Props = {
   open: boolean;
   onClose: () => void;
   onRascunho: () => void;
-  onEmitir: () => void;
+  /**
+   * Callback chamado ao clicar "Emitir". Recebe `incluirImagens: boolean`
+   * — se médico marcou o toggle de incluir imagens DICOM no PDF.
+   * Adicionado em 15/05/2026 (Sergio: "PODE MANTER A SUGESTAO" V1).
+   */
+  onEmitir: (incluirImagens: boolean) => void;
+  /**
+   * Quantidade de imagens DICOM selecionadas pra impressão. Quando > 0,
+   * mostra checkbox "Incluir imagens (N)" — marcado por default. Quando 0,
+   * esconde o checkbox (não há o que incluir).
+   */
+  totalImagensSelecionadas?: number;
 };
 
-export function PopupSalvarEmitir({ open, onClose, onRascunho, onEmitir }: Props) {
+export function PopupSalvarEmitir({ open, onClose, onRascunho, onEmitir, totalImagensSelecionadas = 0 }: Props) {
+  // Toggle do checkbox — marcado por default quando há imagens
+  const [incluirImagens, setIncluirImagens] = useState(true);
+
+  // Reset quando o popup abre
+  if (open && totalImagensSelecionadas === 0 && incluirImagens) {
+    // (sem imagens: força false pra não passar true por engano)
+    setIncluirImagens(false);
+  }
+
   if (!open) return null;
   return (
     <div className="fixed inset-0 bg-black/45 z-[99999] flex items-center justify-center" onClick={onClose}>
       <div className="bg-white rounded-[14px] p-7 w-[340px] shadow-[0_12px_40px_rgba(0,0,0,.25)]" onClick={e => e.stopPropagation()}>
         <div className="text-center text-[16px] font-bold text-[#1E3A5F] mb-[18px]">Finalizar Laudo</div>
+
+        {/* Toggle "Incluir imagens DICOM" — só aparece se médico selecionou imagens */}
+        {totalImagensSelecionadas > 0 && (
+          <label className="flex items-center gap-2 mb-4 p-2.5 rounded-md bg-cyan-50 border border-cyan-200 cursor-pointer hover:bg-cyan-100 transition">
+            <input
+              type="checkbox"
+              checked={incluirImagens}
+              onChange={(e) => setIncluirImagens(e.target.checked)}
+              className="w-4 h-4 accent-cyan-600 cursor-pointer"
+            />
+            <span className="text-[12px] text-[#1E3A5F] font-medium">
+              Incluir imagens DICOM no PDF
+              <span className="text-[10px] text-[#6B7280] ml-1">
+                ({totalImagensSelecionadas} selecionada{totalImagensSelecionadas === 1 ? '' : 's'} · 8/A4)
+              </span>
+            </span>
+          </label>
+        )}
+
         <div className="flex flex-col gap-2.5">
           <button onClick={onRascunho}
             className="flex items-center gap-3.5 p-3.5 rounded-[10px] border-[1.5px] border-[#E5E7EB] bg-white cursor-pointer text-left hover:border-[#1E3A5F] hover:bg-[#1E3A5F]/[.04] transition">
@@ -27,12 +66,16 @@ export function PopupSalvarEmitir({ open, onClose, onRascunho, onEmitir }: Props
               <div className="text-[11px] text-[#6B7280] mt-0.5">Salva e continua editando</div>
             </div>
           </button>
-          <button onClick={onEmitir}
+          <button onClick={() => onEmitir(incluirImagens)}
             className="flex items-center gap-3.5 p-3.5 rounded-[10px] border-[1.5px] border-[#059669] bg-white cursor-pointer text-left hover:border-[#059669] hover:bg-[#059669]/[.06] transition">
             <span className="text-[22px]">✅</span>
             <div>
               <div className="text-[13px] font-bold text-[#059669]">Emitir Laudo</div>
-              <div className="text-[11px] text-[#6B7280] mt-0.5">Finaliza e assina o laudo</div>
+              <div className="text-[11px] text-[#6B7280] mt-0.5">
+                {totalImagensSelecionadas > 0 && incluirImagens
+                  ? `Finaliza, assina e inclui ${totalImagensSelecionadas} imagens`
+                  : 'Finaliza e assina o laudo'}
+              </div>
             </div>
           </button>
         </div>
