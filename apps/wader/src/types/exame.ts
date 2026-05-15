@@ -47,23 +47,36 @@ export const TIPOS_EXAME_LABEL: Record<TipoExame, string> = {
 };
 
 /**
- * Status conforme observado em src/components/Worklist.tsx do LEO.
- * Wader cria exames com status='aguardando' (default Worklist).
+ * Status canônico do exame (DEFINIÇÃO FECHADA com Sergio em 15/05/2026).
+ * Ver memória `feedback_status_exame_canonico.md` e ADR seção 13.
  *
- * 'nao-realizado' — adicionado em 09/05/2026. Setado pelo cron do LEO
- * (00:00 BRT) em exames com `dataExame < hoje` E `status='aguardando'`.
- * Wader detecta a transição e remove o `.wl` correspondente.
+ * ┌────────────────┬──────────────────────────────────────────┬──────────┐
+ * │ Status         │ Significado                              │ tem DICOM│
+ * ├────────────────┼──────────────────────────────────────────┼──────────┤
+ * │ aguardando     │ Cadastrado, esperando paciente/imagens   │ não      │
+ * │ andamento      │ REALIZADO, pendente de laudo (médico age) │ sim     │
+ * │ rascunho       │ Laudo iniciado, não emitido              │ sim ou não│
+ * │ emitido        │ Finalizado e assinado (doc médico-legal) │ sim ou não│
+ * │ nao-realizado  │ Paciente faltou (cron, sem DICOM)        │ NUNCA    │
+ * └────────────────┴──────────────────────────────────────────┴──────────┘
  *
- * Decisão 13/05/2026 (substitui a de 11/05): pipeline DICOM AGORA altera
- * o status pra 'andamento' quando termina de processar (imagens + SR) com
- * sucesso. Mudança atômica no mesmo `update()` do Firestore.
+ * REGRA DE OURO: tem DICOM ⇒ FOI REALIZADO ⇒ só caminha pra frente
+ * (andamento → rascunho → emitido). Nunca volta pra aguardando nem
+ * vira nao-realizado.
  *
- * Wader = produtor (escreve no Firestore). Leo = consumidor (lê, exibe).
- * Médico abre o Leo e vê: `andamento` + ícone 📸 + botão "📡 Vivid" habilitado
- * (se tem medidas) — tudo coerente, sem race condition, sem depender de quem
- * abriu o Leo primeiro.
+ * 3 TRAVAS:
+ *  1. Cron meia-noite só marca nao-realizado quem é 'aguardando'
+ *     (cleanup-worklist/route.ts já filtra status=='aguardando').
+ *  2. Wader ao processar DICOM:
+ *       aguardando | nao-realizado → andamento
+ *       rascunho   → mantém rascunho (não regride trabalho do médico)
+ *       emitido    → mantém emitido (documento legal)
+ *  3. Emitido reaberto pra editar mas não reemitido → continua emitido
+ *     (Leo avisa ao sair — Opção A).
  *
- * Ver `docs/decisoes/2026-05-13-bug-acc-duplicado-remap-e-wader-sr.md` seção 6.
+ * LEGADOS REMOVIDOS (15/05): 'imagens-recebidas', 'erro-imagens'.
+ * Não usar nunca mais. Exames antigos com esses valores foram migrados
+ * pra 'andamento'.
  */
 export type StatusExame = 'aguardando' | 'andamento' | 'rascunho' | 'emitido' | 'nao-realizado';
 
