@@ -418,3 +418,120 @@ PowerShell em background (PID 10088 quando armado) com `SetThreadExecutionState`
 2. **Debug imprimir (11.6.b):** pedir detalhes ao Sergio, testar `imagensPdfHtml` rendering, conferir popup blocker, escopo de variável
 3. (opcional) Galeria de imagens visível **dentro** do laudo (lado direito do sheet?) em vez de modal — médico pode marcar conforme digita o laudo
 4. Backlog antigo: deprecar `/api/orthanc?action=buscar_sr`, Auto-Send Vivid, Wader startup Windows
+
+---
+
+## 12. Continuação da sessão — 15/05/2026
+
+> Apêndice do dia 15/05. Coberta uma descoberta arquitetural enorme + 2 PRs grandes que destravam a integração SR de verdade.
+
+### 12.1. Descoberta da lógica do DICOM SR do Vivid T8
+
+**Sintoma:** ao tentar mapear LOINC → campo do motor, **só 2 de 29** códigos do Manoel eram reconhecidos via whitelist LOINC universal. Os outros 27 ou eram códigos GE proprietários (`G-0383`, `GEU-106-0103`, `F-32120`, `M-02550`) ou LOINCs que o Vivid usa com nome diferente do oficial.
+
+**Descoberta:** o **próprio SR carrega o nome em texto** via campo `ConceptNameCodeSequence[0].CodeMeaning`. O Vivid se documenta sozinho dentro do DICOM. Exemplo:
+```json
+{
+  "ConceptNameCodeSequence": [{
+    "CodeValue": "29436-3",
+    "CodeMeaning": "LV Internal End Diastolic Dimension",
+    "CodingSchemeDesignator": "LN"
+  }],
+  "MeasuredValueSequence": [{
+    "NumericValue": "5.3",
+    "MeasurementUnitsCodeSequence": [{ "CodeValue": "cm" }]
+  }]
+}
+```
+
+**Implicação 1:** parser deve extrair `CodeMeaning` junto com `CodeValue` — não jogar fora.
+
+**Implicação 2 (mais importante):** códigos genéricos como `M-02550` ("Diameter" no SNOMED-CT) aparecem em VÁRIOS Measurement Groups do SR (LA, LV, AO, MV...). Sozinho não dá pra saber qual diâmetro é. O contexto vive no grupo: se siblings mencionam "Left Atrium", o `M-02550` daquele grupo é o diâmetro AE.
+
+**Estratégia adotada:** parser identifica o grupo pelos siblings e prefixa o código no schema final: `LA_M-02550`, `LV_29436-3`, `AO_18015-8`, etc.
+
+Detalhes técnicos em `feedback_dicom_sr_vivid_logica.md` (memória local).
+
+### 12.2. PR #23 — parser SR contextualizado + modal de import + UX completa
+
+Commit `8bbac19` em master. 9 arquivos, +759/-154 linhas.
+
+**O que mudou:**
+
+| Onde | O quê |
+|---|---|
+| `apps/wader/src/adapters/dicom-sr-parser.ts` | Schema novo `Record<{grupo}_{codeValue}, MedidaSr>` com detecção de grupo |
+| `apps/wader/src/types/exame.ts` | Tipo `MedidaSr` (value+unit+meaning+grupo) |
+| `src/lib/dicom-sr-mapping.ts` (NOVO) | Whitelist `SR_TO_MOTOR` mapeando 7 inputs principais |
+| `src/components/laudo/DicomSrImport.tsx` (NOVO) | Modal com checkbox 1-a-1 (Sugestão B) |
+| `src/app/laudo/[id]/page.tsx` | Modal import + nome PDF dinâmico + toggle imagens |
+| `src/components/laudo/SidebarLaudo.tsx` | Label "📡 Vivid" → "📡 Importar" |
+| `src/components/laudo/DicomGallery.tsx` | Checkbox sempre visível (☐/☑) + fix 8/A4 (minmax 1fr) |
+| `src/components/laudo/PopupEmitir.tsx` | Toggle "Incluir imagens DICOM no PDF" |
+| `src/components/Worklist.tsx` | Secretária pode selecionar + imprimir |
+
+**Reprocessamento operacional** (script ad-hoc):
+- EDWALDO eco: **8/8** inputs mapeáveis
+- SONIA eco: **8/8** inputs mapeáveis
+- MANOEL eco: 7/8 (faltou AE Vol Index — Vivid não mandou esse exame)
+- SONIA carótida: 0/8 (esperado, vascular tem SR diferente)
+- CARMEN eco: 0/8 (estudo sem série SR no Orthanc — investigar)
+
+### 12.3. PR #24 — fix import via DOM direto
+
+Commit `913ee49`. Bug detectado em prod após PR #23: ao confirmar import, alert "Erro ao importar".
+
+**Causa:** `window.importarDICOM()` do motor V8 espera payload `Record<LOINC, number>`. Estávamos passando `{ b7: 3.71, ... }` (IDs de campo do motor). Motor não interpretava → exception.
+
+**Fix:** bypass do `importarDICOM`. Setar `input.value` direto + dispatch event `input` (bubbles) — o motor tem listener delegated em `#laudo-sidebar` que captura e recalcula tudo.
+
+Detalhes em `feedback_dicom_sr_import_motor.md` (memória local).
+
+### 12.4. Convenção sobre unidades cm vs mm
+
+Decisão Sergio 15/05/2026: 
+
+> "a gente depois modifica no vivid cm e mm!!! tem como enviar os valores assim mesmo, ao vamos perder tempo com esse ajuste!?"
+
+Por enquanto:
+- Vivid SR manda em **cm** (DDVE 5.32 cm, etc)
+- Motor LEO tem labels em **mm**
+- Código passa valor BRUTO sem converter — médico vê 5.32 onde label diz "mm" (mas é 5.32 cm = 53.2 mm)
+- Quando Vivid for reconfigurado → valor já passa direto, código não precisa mudar
+
+### 12.5. Quadro final dos PRs do dia 15/05
+
+| PR | sha | Conteúdo | Status |
+|---|---|---|---|
+| #23 | `8bbac19` | Parser SR contextualizado + modal import + UX completa | ✅ |
+| #24 | `913ee49` | Fix import via DOM direto (bypass importarDICOM) | ✅ |
+
+### 12.6. 🐛 BUGS AINDA ABERTOS
+
+#### 12.6.a Motor não auto-completa frases (achados + conclusão)
+
+Reportado em 14/05 (§11.6, ainda aberto). Médico digita medida, valores calculados rolam (Massa, FE), mas **frases dos comentários e conclusão NÃO geram automaticamente**. 
+
+Investigação pendente — precisa do **print do console F12** quando médico digita uma medida. Sergio prometeu mandar mas ainda não chegou.
+
+Suspeita: regressão de algum `useEffect` mexido entre PRs #19-#23. O `_onLaudoGerado` callback (motor → TipTap) pode não estar disparando.
+
+### 12.7. Validação pendente
+
+Sergio precisa testar end-to-end com PR #23+#24 deployados:
+1. Modal de import sem erro
+2. Campos do motor preenchidos via DOM
+3. Cascata de recalc rolando (Massa, FE)
+4. PDF final com imagens 8/A4
+
+### 12.8. Estado de coisas externas
+
+- **PAT `claude-clinic-souleo`:** continua ativo (Sergio vai revogar quando terminar)
+- **keep-awake (PID 10088):** continua rodando
+
+### 12.9. Próxima sessão
+
+1. **Bug das frases (12.6.a)** — investigar com print do console
+2. (futuro) Sergio ajusta Vivid pra mandar SR em mm
+3. (futuro) Mapear mais inputs SR quando Senna90 entrar
+4. Backlog antigo: galeria DICOM dentro do laudo (visível enquanto digita), deprecar `/api/orthanc?action=buscar_sr`, Auto-Send Vivid
