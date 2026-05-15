@@ -535,3 +535,67 @@ Sergio precisa testar end-to-end com PR #23+#24 deployados:
 2. (futuro) Sergio ajusta Vivid pra mandar SR em mm
 3. (futuro) Mapear mais inputs SR quando Senna90 entrar
 4. Backlog antigo: galeria DICOM dentro do laudo (visível enquanto digita), deprecar `/api/orthanc?action=buscar_sr`, Auto-Send Vivid
+
+---
+
+## 13. Definição canônica de STATUS + recuperação de órfãos — 15/05/2026 (tarde/noite)
+
+### 13.1. Recuperação de 15 exames órfãos no Orthanc
+
+Sergio registrou exames manualmente no Vivid (sem worklist) na semana de ajustes. Resultado: estudos no Orthanc sem ACC, exames no Leo sem imagens. Operação de link manual:
+
+| Grupo | Exames | Método |
+|---|---|---|
+| **A** | 7 (ALANA, 2×JOSE, 2×MARIA, JURANDINA, ALESSANDRA) | Match nome+data (token-set, ignora ordem DICOM `SOBRENOME^NOME`). Link 1:1 |
+| **B** | 6 (LETICIA, SILVANA, BENEDITA × eco+carótida) | Desambiguado por riqueza do SR: ECO 26-32 medidas, carótida 5 |
+| **C** | KLAUS (linkado, confirmado via Feegow CPF) + ANA CAROLINA (criada retroativa) | Feegow lookup |
+
+Critério-chave Grupo B (Sergio): "o exame que tem dados dicom são os ecos" → estudo com SR rico = eco_tt; SR pobre (5 medidas) = doppler_carotidas.
+
+ANA CAROLINA: não tinha exame no Leo. Criado retroativo (data 11/05) com dados do Feegow (CPF 023.100.002-21, nasc 05/08/1997, F, eco_tt), ACC único `EX110526171900`, flag `criadoRetroativo: true`.
+
+ADMIR NEGRAO MACEDO: agendado no Feegow + exame no Leo, mas **sem estudo no Orthanc** — DICOM nunca chegou (exame não realizado OU só no Vivid não enviado).
+
+Scripts em `C:\Wader\scripts\` (fora do repo): `diagnostico-orfaos-v2.js`, `aplicar-link-grupo-a.js`, `analisar-grupo-b.js`, `aplicar-link-grupo-b.js`, `resolver-feegow-grupo-c.js`, `aplicar-grupo-c.js`.
+
+### 13.2. Bug status legado (CARMEN/EDWALDO) + PR #26
+
+CARMEN e EDWALDO ficaram com status legado `imagens-recebidas` (decisão antiga 11/05, removida em 13/05). Worklist não tinha bloco de botões pra esse status → exame "fantasma" sem ▶ Continuar.
+
+- Operacional: 2 exames migrados `imagens-recebidas` → `andamento`
+- PR #26 (`f292d2b`): normalização defensiva no Worklist — qualquer status fora de emitido/aguardando/rascunho cai no grupo `andamento`
+
+### 13.3. DEFINIÇÃO CANÔNICA DE STATUS (fechada com Sergio)
+
+**5 status oficiais:** `aguardando`, `andamento`, `rascunho`, `emitido`, `nao-realizado`.
+
+| Status | Significado | Tem DICOM? |
+|---|---|---|
+| aguardando | Cadastrado, esperando paciente/imagens | não |
+| andamento | REALIZADO, pendente de laudo (médico age) | sim |
+| rascunho | Laudo iniciado, não emitido | sim ou não |
+| emitido | Finalizado e assinado (documento médico-legal) | sim ou não |
+| nao-realizado | Paciente faltou (cron, sem DICOM) | NUNCA |
+
+**Regra de ouro:** tem DICOM ⇒ FOI REALIZADO ⇒ só caminha pra frente (andamento → rascunho → emitido). Nunca regride pra aguardando nem vira nao-realizado.
+
+**3 travas:**
+1. Cron meia-noite só marca `nao-realizado` quem é `aguardando` — código `cleanup-worklist/route.ts` JÁ filtra `status=='aguardando'` (verificado, correto, não mexido).
+2. Wader ao processar DICOM (`dicom-ingest.ts`): `aguardando|nao-realizado → andamento`; `rascunho → mantém`; `emitido → mantém`. Lê status atual antes do update.
+3. Emitido reaberto pra editar mas não reemitido → continua `emitido`. Leo avisa ao sair (Opção A).
+
+**Legados mortos:** `imagens-recebidas`, `erro-imagens` — removidos do tipo, exames migrados.
+
+### 13.4. Implementação (PR a mergear)
+
+- `apps/wader/src/types/exame.ts`: `StatusExame` com comentário canônico + legados marcados mortos
+- `apps/wader/src/workers/dicom-ingest.ts`: Trava 2 (lê status antes, preserva rascunho/emitido)
+- `src/app/laudo/[id]/page.tsx`: Opção A — `reedicaoAtiva` state; handleDesbloquear marca; handleEmitir reseta; handleVoltar avisa
+- Cron: NÃO mexido (já correto)
+
+Memória local: `feedback_status_exame_canonico.md`.
+
+### 13.5. Backlog dessa definição
+
+- Dashboard: contador "⚠️ N exames realizados aguardando laudo" (andamento+rascunho com DICOM) — Sergio não decidiu ainda
+- Opção C (rascunho de reedição persistido) — se quiserem não perder edição de emitido no futuro

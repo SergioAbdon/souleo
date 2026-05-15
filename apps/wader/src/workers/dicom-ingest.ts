@@ -175,6 +175,21 @@ export async function processarEstudo(opts: {
   const sucessoTotal = !todasFalharam && !semInstances;
 
   if (sucessoTotal) {
+    // TRAVA 2 (status canônico, decisão 15/05/2026 — ver memória
+    // `feedback_status_exame_canonico.md` e ADR §13):
+    // O Wader NÃO pode regredir o trabalho do médico. Ao processar DICOM:
+    //   aguardando | nao-realizado → andamento  (promove)
+    //   rascunho   → mantém rascunho            (médico já começou)
+    //   emitido    → mantém emitido             (documento legal)
+    //   qualquer outro (legado) → andamento     (defensivo)
+    // Só ANEXA imagens/medidas; status só avança, nunca regride.
+    const snap = await exameRef.get();
+    const statusAtual = (snap.data()?.status as string) || 'aguardando';
+    const statusFinal =
+      statusAtual === 'rascunho' || statusAtual === 'emitido'
+        ? statusAtual
+        : 'andamento';
+
     await exameRef.update({
       imagensDicom: imagensDicom.map((i) => i.url),
       imagensDicomDetalhes: imagensDicom,
@@ -192,7 +207,7 @@ export async function processarEstudo(opts: {
         studyTime: study.MainDicomTags.StudyTime ?? '',
         studyDescription: study.MainDicomTags.StudyDescription ?? '',
       },
-      status: 'andamento',
+      status: statusFinal,
       atualizadoEm: FieldValue.serverTimestamp(),
     });
   } else {

@@ -52,6 +52,10 @@ export default function LaudoPage() {
   // PopupSalvarEmitir (decisão 15/05/2026). Default true quando há imagens
   // selecionadas. Lido por `gerarPdfHtml()` pra incluir/omitir as páginas.
   const [imagensIncluidasNoPdf, setImagensIncluidasNoPdf] = useState(true);
+  // Reedição de laudo emitido em curso (Opção A, status canônico Trava 3):
+  // true quando médico desbloqueou um 'emitido'. handleEmitir reseta;
+  // handleVoltar avisa se ainda true (edição não reemitida será perdida).
+  const [reedicaoAtiva, setReedicaoAtiva] = useState(false);
   const editorRef = useRef<EditorLaudoRef>(null);
   const pendingHtml = useRef<string | null>(null);
 
@@ -510,6 +514,19 @@ export default function LaudoPage() {
   }
 
   function handleVoltar() {
+    // Opção A (decisão 15/05/2026 — status canônico, Trava 3):
+    // Se o médico desbloqueou um laudo JÁ EMITIDO pra editar mas NÃO
+    // reemitiu, avisa que a edição será perdida (o PDF emitido original
+    // continua sendo o documento oficial — status permanece 'emitido').
+    if (reedicaoAtiva) {
+      const ok = confirm(
+        '⚠️ Você desbloqueou um laudo já emitido e editou, mas NÃO reemitiu.\n\n' +
+        'As alterações serão PERDIDAS — o laudo emitido original continua valendo.\n\n' +
+        'Para salvar as mudanças, cancele e clique em "Salvar / Emitir" (consome 1 crédito).\n\n' +
+        'Sair mesmo assim e descartar a edição?'
+      );
+      if (!ok) return;
+    }
     router.push('/dashboard');
   }
 
@@ -612,6 +629,7 @@ export default function LaudoPage() {
     }
 
     setEmitido(true);
+    setReedicaoAtiva(false); // reemitiu com sucesso — não há edição pendente
 
     // Abrir o PDF gerado (se ja foi salvo no Storage)
     if (resultado.pdfUrl) {
@@ -628,6 +646,7 @@ export default function LaudoPage() {
   function handleDesbloquear() {
     if (!confirm('Ao editar e reemitir, será consumido 1 crédito da sua franquia.\n\nDeseja desbloquear para edição?')) return;
     setEmitido(false);
+    setReedicaoAtiva(true); // marca: emitido reaberto — handleVoltar avisa se não reemitir
     toast('Laudo desbloqueado para edição');
   }
 
