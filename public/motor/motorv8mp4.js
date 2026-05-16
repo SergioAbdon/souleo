@@ -241,23 +241,26 @@ function j8(d){
   return 'Demais câmaras cardíacas com dimensões normais.';
 }
 
+// j9 — Massa do VE (absoluta, em g)
+// CORREÇÃO 07/05/2026 — Dr. Sérgio: input = massa, texto agora fala "Massa"
+// (antes falava "Espessura miocárdica", inconsistente com o input).
 function j9(d){
   if(!d.massa||!d.sexo) return '';
   const m=d.massa;
   if(d.sexo==='M'){
-    if(m>254) return 'Espessura miocárdica do ventrículo esquerdo aumentada em grau importante.';
-    if(m===254) return 'Espessura miocárdica do ventrículo esquerdo em grau moderado a importante.';
-    if(m>227) return 'Espessura miocárdica do ventrículo esquerdo aumentada em grau moderado.';
-    if(m===227) return 'Espessura miocárdica do ventrículo esquerdo aumentada em grau leve a moderado.';
-    if(m>200) return 'Espessura miocárdica do ventrículo esquerdo aumentada em grau leve.';
-    return 'Espessura miocárdica do ventrículo esquerdo preservada.';
+    if(m>254) return 'Massa do ventrículo esquerdo aumentada em grau importante.';
+    if(m===254) return 'Massa do ventrículo esquerdo em grau moderado a importante.';
+    if(m>227) return 'Massa do ventrículo esquerdo aumentada em grau moderado.';
+    if(m===227) return 'Massa do ventrículo esquerdo aumentada em grau leve a moderado.';
+    if(m>200) return 'Massa do ventrículo esquerdo aumentada em grau leve.';
+    return 'Massa do ventrículo esquerdo preservada.';
   }
-  if(m>193) return 'Espessura miocárdica do ventrículo esquerdo aumentada em grau importante.';
-  if(m===193) return 'Espessura miocárdica do ventrículo esquerdo aumentada em grau moderado a importante.';
-  if(m>171) return 'Espessura miocárdica do ventrículo esquerdo aumentada em grau moderado.';
-  if(m===171) return 'Espessura miocárdica do ventrículo esquerdo aumentada em grau leve a moderado.';
-  if(m>150) return 'Espessura miocárdica do ventrículo esquerdo aumentada em grau leve.';
-  return 'Espessura miocárdica do ventrículo esquerdo preservada.';
+  if(m>193) return 'Massa do ventrículo esquerdo aumentada em grau importante.';
+  if(m===193) return 'Massa do ventrículo esquerdo aumentada em grau moderado a importante.';
+  if(m>171) return 'Massa do ventrículo esquerdo aumentada em grau moderado.';
+  if(m===171) return 'Massa do ventrículo esquerdo aumentada em grau leve a moderado.';
+  if(m>150) return 'Massa do ventrículo esquerdo aumentada em grau leve.';
+  return 'Massa do ventrículo esquerdo preservada.';
 }
 
 function j10(d){

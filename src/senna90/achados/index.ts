@@ -10,7 +10,7 @@
 // 4.  VE (j6)
 // 5.  VD (j7)
 // 6.  Síntese câmaras (j8)
-// 7.  Espessura miocárdica (j9)
+// 7.  Massa do VE (j9)
 // 8.  Geometria/remodelamento (j10)
 // 9.  Sistólica VE (j12 ou j11)
 // 10. GLS VE (jGLSve)
@@ -192,7 +192,7 @@ export function gerarAchados(m: MedidasEcoTT, calc: CalculosDerivados): string[]
     ...L(jVE_diametro(d.b9, d.sexo)),
     ...L(jVD_diametro(d.b13)),
     ...L(jCamarasNormais(d.b8, d.b9, d.b13, d.b24, d.b25, d.sexo)),
-    // VE estrutura
+    // VE estrutura (j9 analisa MASSA absoluta, texto fala em massa)
     ...L(jEspessuraMiocardica(d.massa, d.sexo)),
     ...L(jPadraoGeometrico(d.er, d.imVE, d.sexo)),
     // Sistólica VE (Simpson prevalece)
