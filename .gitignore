@@ -41,6 +41,13 @@ yarn-error.log*
 *-credentials/
 leo-credentials/
 
+# tokens / secrets (NUNCA commitar)
+TOKENS/
+**/TOKENS/
+**/TOKENS.txt
+**/tokens.txt
+.env.tokens
+
 # vercel
 .vercel
 

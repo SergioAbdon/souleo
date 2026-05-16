@@ -46,7 +46,7 @@ export const casosCardiopatia: CasoTeste[] = [
     })(),
     esperado: {
       achados: [
-        'Espessura miocárdica do ventrículo esquerdo aumentada',
+        'Massa do ventrículo esquerdo aumentada',
         'Hipertrofia concêntrica do ventrículo esquerdo.',
       ],
       conclusoes: [

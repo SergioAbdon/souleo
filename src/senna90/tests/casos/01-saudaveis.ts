@@ -22,7 +22,7 @@ export const casosSaudaveis: CasoTeste[] = [
       achados: [
         'Ritmo cardíaco regular.',
         'Câmaras cardíacas com dimensões normais.',
-        'Espessura miocárdica do ventrículo esquerdo preservada.',
+        'Massa do ventrículo esquerdo preservada.',
         'Função sistólica do ventrículo esquerdo preservada e sem alteração contrátil segmentar.',
         'Função sistólica do ventrículo direito preservada.',
         'Pericárdio sem alterações.',
