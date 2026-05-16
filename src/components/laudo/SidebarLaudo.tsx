@@ -245,7 +245,10 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
       </div>
 
       {/* ═══ ÁREA SCROLLÁVEL ═══ */}
-      <div className="flex-1 overflow-y-auto pb-10">
+      {/* Atalhos de teclado (spec layout 03/05): ENTER→próximo campo,
+          SHIFT+ENTER→campo anterior, ESC→limpa o campo atual. TAB/SHIFT+TAB
+          já são nativos do browser. Ver navTeclado() no fim do arquivo. */}
+      <div className="flex-1 overflow-y-auto pb-10" onKeyDown={navTeclado}>
 
       {/* ═══ IDENTIFICAÇÃO ═══ */}
       <Sec id="sec-id" title="👤 Identificação" defaultOpen single>
@@ -321,8 +324,7 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
         <F label="Ventrículo Direito" u="mm"><input type="number" id="b13" step="0.1" className="sf" /></F>
         <F label="Aorta Ascendente" u="mm"><input type="number" id="b28" step="0.1" className="sf" /></F>
         <F label="Arco Aórtico" u="mm"><input type="number" id="b29" step="0.1" className="sf" /></F>
-        <F label="AE Vol. index" u="ml/m²"><input type="number" id="b24" step="0.1" className="sf" /></F>
-        <F label="AD Vol. index" u="ml/m²"><input type="number" id="b25" step="0.1" className="sf" /></F>
+        {/* Vol AE/AD index movidos pra Função Diastólica (spec layout 03/05) */}
         <div className="col-span-2 border-t border-dashed border-[#E5E7EB] mt-1 pt-1.5 grid grid-cols-2 gap-x-3 gap-y-[7px]">
           <F label="VDF VE" u="ml"><C id="calc-vdf" /></F>
           <F label="VSF VE" u="ml"><C id="calc-vsf" /></F>
@@ -367,28 +369,34 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
             </select>
           </div>
         </div>
+        {/* Sequência aprovada (spec layout 03/05):
+            E|E/A · e'|E/e' · Vel IT|PSAP · Vol AE index · ≥2 sinais HP · Vol AD index|LA strain.
+            Vol AE index usa id="b24" (id canônico que motor-ts-adapter + motor antigo
+            leem pra volAEindex); o antigo "b24_diast" foi unificado. */}
         <F label="Onda E" u="cm/s"><input type="number" id="b19" step="0.1" className="sf" /></F>
         <F label="Relação E/A"><input type="number" id="b20" step="0.01" className="sf" /></F>
         <F label="e' septal" u="cm/s"><input type="number" id="b21" step="0.1" className="sf" /></F>
         <F label="Relação E/e'"><input type="number" id="b22" step="0.1" className="sf" /></F>
-        <F label="Vol. AE index" u="ml/m²"><input type="number" id="b24_diast" step="0.1" className="sf" /></F>
-        <F label="LA strain" u="% · VR≥18"><input type="number" id="lars" step="0.1" className="sf" placeholder="reservoir" /></F>
         <F label="Vel. IT" u="m/s"><input type="number" id="b23" step="0.01" className="sf" /></F>
         <F label="PSAP" u="mmHg"><input type="number" id="b37" step="1" className="sf" /></F>
         <div id="alerta-psap" className="col-span-2 text-[9px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1 font-medium" style={{ display: 'none' }}>
           ⚠️ Vel. IT preenchida sem PSAP — informe a PSAP estimada
         </div>
+        <F label="Vol. AE index" u="ml/m²"><input type="number" id="b24" step="0.1" className="sf" /></F>
         <F label="≥2 sinais indiretos de HP?"><select id="b38" className="sf"><option value="">Não</option><option value="S">Sim</option></select></F>
+        <F label="Vol. AD index" u="ml/m²"><input type="number" id="b25" step="0.1" className="sf" /></F>
+        <F label="LA strain" u="% · VR≥18"><input type="number" id="lars" step="0.1" className="sf" placeholder="reservoir" /></F>
       </Sec>
 
       {/* ═══ VÁLVULAS ═══ */}
       <Sec id="sec-valv" title="🔵 Válvulas">
+        {/* Ordem aprovada (spec layout 03/05): Mitral → Aórtica → Tricúspide → Pulmonar */}
         <F label="V. Mitral"><VSel id="b34" /></F>
         <F label="Refluxo Mitral"><RSel id="b35" /></F>
-        <F label="V. Tricúspide"><VSel id="b34t" /></F>
-        <F label="Refluxo Tricúspide"><RSel id="b36" /></F>
         <F label="V. Aórtica"><VSel id="b39" /></F>
         <F label="Refluxo Aórtico"><RSel id="b40" /></F>
+        <F label="V. Tricúspide"><VSel id="b34t" /></F>
+        <F label="Refluxo Tricúspide"><RSel id="b36" /></F>
         <F label="V. Pulmonar"><VSel id="b39p" /></F>
         <F label="Refluxo Pulmonar">
           <select id="b40p" className="sf"
@@ -403,7 +411,7 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
         </F>
         {/* Campo condicional PSMAP — aparece quando Refluxo Pulmonar preenchido */}
         <div id="field-psmap" className="col-span-2" style={{ display: 'none' }}>
-          <F label="Pressão Sist. Art. Pulm." u="mmHg"><input type="number" id="psmap" step="1" className="sf" /></F>
+          <F label="Pressão Sist. Média Art. Pulmonar" u="mmHg"><input type="number" id="psmap" step="1" className="sf" /></F>
         </div>
         <F label="Derrame Pericárdico"><RSel id="b41" /></F>
         <F label="Placas Arco Aórtico"><select id="b42" className="sf"><option value="">— Não —</option><option value="s">Sim — Calcificadas</option></select></F>
@@ -477,24 +485,32 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
       </Sec>
 
       {/* ═══ SISTÓLICA ═══ */}
-      <Sec id="sec-sist" title="💓 Função Sistólica" defaultOpen>
+      {/* Spec layout 03/05: seção FECHADA por padrão; ordem Proposta A
+          (Simpson|TAPSE · GLS VE|GLS VD · Disfunção VD) */}
+      <Sec id="sec-sist" title="💓 Função Sistólica" collapsed>
         <F label="Simpson VE" u="%"><input type="number" id="b54" step="0.1" className="sf" placeholder="se disponível" /></F>
-        <F label="Disfunção VD"><select id="b32" className="sf"><option value="">— Preservada —</option><option value="L">Leve</option><option value="LM">Leve-Mod</option><option value="M">Moderada</option><option value="MI">Mod-Imp</option><option value="I">Importante</option></select></F>
         <F label="TAPSE" u="mm · VR≥17"><input type="number" id="b33" step="0.1" className="sf" /></F>
         <F label="GLS VE" u="% · VR≥-18"><input type="number" id="gls_ve" step="0.1" className="sf" placeholder="ex: -21" /></F>
         <F label="GLS VD" u="% · VR≥-20"><input type="number" id="gls_vd" step="0.1" className="sf" placeholder="ex: -24" /></F>
+        <F label="Disfunção VD"><select id="b32" className="sf"><option value="">— Preservada —</option><option value="L">Leve</option><option value="LM">Leve-Mod</option><option value="M">Moderada</option><option value="MI">Mod-Imp</option><option value="I">Importante</option></select></F>
       </Sec>
 
       {/* ═══ SEGMENTAR ═══ */}
       <Sec id="sec-seg" title="🗺️ Contratilidade Segmentar" collapsed>
         <div className="col-span-2 text-[10px] text-[#6B7280] italic pb-1">H=Hipocin · A=Acin · D=Discin · B=basal · M=média · A=apical</div>
+        {/* Ordem AHA anti-horário (spec layout 03/05) + CORREÇÃO C3 (15/05):
+            o motor antigo lia b59=Lateral/b60=Inferior/b61=Inferolateral (ERRADO
+            pelo padrão AHA 17-segmentos). O Senna90 (decidido correto com Sergio)
+            lê b59=inferior, b60=inferolateral, b61=lateral. Aqui os LABELS são
+            alinhados ao Senna90/AHA — o que o médico vê = o que o Senna90 calcula.
+            IDs preservados (b55..b62). Auditoria: 0 laudos emitidos afetados. */}
         <F label="Região Apical"><select id="b55" className="sf"><option value="">— Normal —</option><option value="H">Hipocinesia</option><option value="A">Acinesia</option><option value="D">Discinesia</option></select></F>
         <F label="P. Anterior"><WallSel id="b56" /></F>
         <F label="P. Septal anterior"><WallSel id="b57" /></F>
         <F label="P. Septal inferior"><WallSel id="b58" /></F>
-        <F label="P. Lateral"><WallSel id="b59" /></F>
-        <F label="P. Inferior"><WallSel id="b60" /></F>
-        <F label="P. Inferolateral"><WallSel id="b61" /></F>
+        <F label="P. Inferior"><WallSel id="b59" /></F>
+        <F label="P. Inferolateral"><WallSel id="b60" /></F>
+        <F label="P. Lateral"><WallSel id="b61" /></F>
         <F label="Demais paredes"><select id="b62" className="sf"><option value="NL">NL — Preservadas</option><option value="HD">Hipocin. difusa</option><option value="HR">Hipocin. demais</option><option value="AD">Acinesia difusa</option><option value="DD">Discinesia difusa</option></select></F>
       </Sec>
 
@@ -503,6 +519,39 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
       </div>{/* fim área scrollável */}
     </div>
   );
+}
+
+// ── Atalhos de teclado (spec layout 03/05) ──
+// ENTER → próximo campo · SHIFT+ENTER → anterior · ESC → limpa campo atual.
+// Pure DOM, sem state. Pula campos invisíveis (seção fechada / display:none).
+function navTeclado(e: React.KeyboardEvent<HTMLDivElement>) {
+  const t = e.target as HTMLElement;
+  const tag = t.tagName;
+  if (tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'TEXTAREA') return;
+
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const campos = Array.from(
+      e.currentTarget.querySelectorAll<HTMLElement>('input, select, textarea'),
+    ).filter((el) => {
+      const d = (el as HTMLInputElement | HTMLSelectElement).disabled;
+      return !d && el.offsetParent !== null; // visível + habilitado
+    });
+    const i = campos.indexOf(t);
+    if (i === -1) return;
+    const alvo = e.shiftKey ? campos[i - 1] : campos[i + 1];
+    if (alvo) {
+      alvo.focus();
+      if (alvo instanceof HTMLInputElement && alvo.type !== 'date') alvo.select();
+    }
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    if (t instanceof HTMLInputElement) t.value = '';
+    else if (t instanceof HTMLSelectElement) t.selectedIndex = 0;
+    // Dispara recálculo (motor escuta input/change delegado em #laudo-sidebar)
+    t.dispatchEvent(new Event('input', { bubbles: true }));
+    t.dispatchEvent(new Event('change', { bubbles: true }));
+  }
 }
 
 // ── Componentes internos ──
