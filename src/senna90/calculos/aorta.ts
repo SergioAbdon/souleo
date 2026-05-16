@@ -177,16 +177,21 @@ function classificarPorFallback(
 // ══════════════════════════════════════════════════════════════════
 // docs/decisoes/2026-05-16-spec-aorta.md
 //
-// • Normal→ectasia (Raiz/Asc): mantém o método VALIDADO existente
-//   (Z-score idade+sexo+ASC; fallback ASE 2015 por sexo) — é o "corte
-//   referenciado por idade e sexo" pedido pelo Dr. Sérgio.
-// • Ectasia→aneurisma (Raiz/Asc): ABSOLUTO ≥50 mm (ACC/AHA 2022,
-//   faixa cirúrgica esporádica). Reconcilia a antiga divergência
-//   Z-score×absoluto: leve/moderada/importante deixam de existir.
-// • Arco: faixa FIXA 22–36 normal · 37–44 ectasia · ≥45 aneurisma
-//   (sem sexo/idade e sem índice — não validado p/ arco na diretriz).
-// • Índice área transversal (cm²) ÷ altura (m): só Raiz/Asc; ≥10 ⇒
-//   "com critérios de maior gravidade" (ACC/AHA 2022).
+// Fronteira normal→ectasia, fonte mais recente POR SEGMENTO:
+// • RAIZ : WASE 2022 (seio de Valsalva), corte por SEXO + IDADE =
+//   média + 1,96·DP (percentil 97,5, critério do paper). Sem idade
+//   no exame → cai no Z-score Roman validado (rede de segurança).
+// • ASCENDENTE : ASE/EACVI Chamber Quantification 2015 — normal
+//   ≤ 36 mm (absoluto).
+// • ARCO : ASE Chamber 2015 (não tabula arco → usa o nº de
+//   ascendente proximal) — normal ≤ 36 mm.
+//
+// Ectasia→aneurisma (ABSOLUTO): Raiz/Asc ≥ 50 mm · Arco ≥ 45 mm
+// (ACC/AHA 2022). Reconcilia a antiga divergência Z×absoluto —
+// leve/moderada/importante deixam de existir.
+//
+// Índice área transversal (cm²) ÷ altura (m): só Raiz/Asc; ≥ 10 ⇒
+// "com critérios de maior gravidade" (ACC/AHA 2022). Arco sem índice.
 // ══════════════════════════════════════════════════════════════════
 
 export type TierAorta = 'normal' | 'ectasia' | 'aneurisma';
@@ -199,7 +204,8 @@ export interface SegmentoAortaResult {
 }
 
 const ANEURISMA_MM_RAIZ_ASC = 50;
-const ARCO_NORMAL_MAX = 36;
+const ASC_NORMAL_MAX = 36;   // ASE Chamber 2015 — ascendente proximal ≤36 mm
+const ARCO_NORMAL_MAX = 36;  // idem (Chamber não tabula arco isolado)
 const ARCO_ANEURISMA_MM = 45;
 
 /**
@@ -216,21 +222,38 @@ export function indiceAortaAltura(
   return truncar(areaCm2 / (alturaCm / 100), 1);
 }
 
-function tierRaizAsc(
-  normalBoundary: ResultadoAorta,
+/**
+ * WASE 2022 — limite superior do normal da RAIZ (seio de Valsalva), mm.
+ * Cutoff = média + 1,96·DP (percentil 97,5 — critério do paper WASE).
+ * Faixas WASE: jovem ≤40 · médio 41–65 · idoso ≥66.
+ *   Homem : 38 / 40 / 41      Mulher : 35 / 36 / 37
+ */
+function corteWaseRaiz(sexo: Sexo, idade: number): number {
+  const homem = sexo !== 'F';
+  if (idade <= 40) return homem ? 38 : 35;
+  if (idade <= 65) return homem ? 40 : 36;
+  return homem ? 41 : 37;
+}
+
+/** Monta o tier a partir de "está acima do normal?" + medida + altura. */
+function montarTierRaizAsc(
+  acimaDoNormal: boolean,
   medidaMM: number,
   alturaCm: number | null
 ): SegmentoAortaResult {
   const indiceCm2m = indiceAortaAltura(medidaMM, alturaCm);
   const graveIndice = indiceCm2m !== null && indiceCm2m >= 10;
-  if (normalBoundary.grau === 'normal' && medidaMM < ANEURISMA_MM_RAIZ_ASC) {
+  if (!acimaDoNormal && medidaMM < ANEURISMA_MM_RAIZ_ASC) {
     return { medidaMM, tier: 'normal', indiceCm2m, graveIndice };
   }
   const tier: TierAorta = medidaMM >= ANEURISMA_MM_RAIZ_ASC ? 'aneurisma' : 'ectasia';
   return { medidaMM, tier, indiceCm2m, graveIndice };
 }
 
-/** Raiz aórtica — tier (normal boundary = Z-score/fallback validado). */
+/**
+ * Raiz aórtica — fronteira normal→ectasia pelo WASE 2022 (sexo+idade).
+ * Sem idade no exame → Z-score Roman validado (rede de segurança).
+ */
 export function tierRaizAo(
   medidaMM: number,
   sexo: Sexo,
@@ -238,17 +261,23 @@ export function tierRaizAo(
   idade: number | null,
   alturaCm: number | null
 ): SegmentoAortaResult {
-  return tierRaizAsc(classificarRaizAo(medidaMM, sexo, asc, idade), medidaMM, alturaCm);
+  const acima = idade !== null
+    ? medidaMM > corteWaseRaiz(sexo, idade)
+    : classificarRaizAo(medidaMM, sexo, asc, idade).grau !== 'normal';
+  return montarTierRaizAsc(acima, medidaMM, alturaCm);
 }
 
-/** Aorta ascendente — tier (espelha a raiz). */
+/**
+ * Aorta ascendente — fronteira normal→ectasia pelo ASE Chamber 2015:
+ * normal ≤ 36 mm (absoluto). Aneurisma ≥ 50 mm. Mantém índice cm²/m.
+ */
 export function tierAoAscendente(
   medidaMM: number,
-  sexo: Sexo,
-  asc: number | null,
+  _sexo: Sexo,
+  _asc: number | null,
   alturaCm: number | null
 ): SegmentoAortaResult {
-  return tierRaizAsc(classificarAoAscendente(medidaMM, sexo, asc), medidaMM, alturaCm);
+  return montarTierRaizAsc(medidaMM > ASC_NORMAL_MAX, medidaMM, alturaCm);
 }
 
 /** Arco aórtico — faixa fixa 22–36 / 37–44 / ≥45. Sem índice. */
