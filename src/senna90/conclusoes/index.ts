@@ -168,7 +168,7 @@ function concAorta(d: any): string {
     }
   }
   if (d.b29) {
-    const r = tierArcoAo(d.b29);
+    const r = tierArcoAo(d.b29, d.sexo);
     if (r.tier === 'aneurisma') out.push('Aneurisma do arco aórtico.');
     else if (r.tier === 'ectasia') out.push('Ectasia do arco aórtico.');
   }

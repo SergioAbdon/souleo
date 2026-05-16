@@ -113,7 +113,8 @@ nunca parou de carregar.
   resolvida — Senna90 e motor antigo embarcam a versão clínica correta.
 - **Spec da aorta** implementada e validada. Referências FECHADAS com
   Dr. Sérgio: **raiz = WASE 2022** (sexo+idade), **ascendente+arco =
-  ASE Chamber 2015** (≤36 mm); aneurisma ≥50/≥45; índice cm²/m ≥10.
+  ASE Chamber 2015 Tab.14** (♂≤38 / ♀≤35 mm); aneurisma ≥50/≥45;
+  índice cm²/m ≥10.
   Ver **`docs/decisoes/2026-05-16-spec-aorta.md`** (sem pendência de
   aval — decisão fechada).
 - Validação: `tsc` limpo · 72/72 testes · 24/24 exames reais.

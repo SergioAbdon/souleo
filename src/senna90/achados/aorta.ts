@@ -94,7 +94,7 @@ export function jAortaRaiz(
 
   const raiz = b7 ? tierRaizAo(b7, sexo, asc, idade, alturaCm) : null;
   const ascR = b28 ? tierAoAscendente(b28, sexo, asc, alturaCm) : null;
-  const arco = b29 ? tierArcoAo(b29) : null;
+  const arco = b29 ? tierArcoAo(b29, sexo) : null;
 
   if (raiz && raiz.tier !== 'normal') {
     return comentarioRaiz(raiz);
@@ -122,7 +122,7 @@ export function jAortaAscendente(
 /** j39 — Arco aórtico (faixa fixa, sem sexo/ASC/índice) */
 export function jArcoAortico(b29: number | null, sexo: Sexo): string {
   if (!sexo || !b29) return '';
-  const r = tierArcoAo(b29);
+  const r = tierArcoAo(b29, sexo);
   return r.tier !== 'normal' ? comentarioArco(r) : '';
 }
 
@@ -148,7 +148,7 @@ export function jAortaNormaisComplementar(
   if (!raiz || raiz.tier === 'normal') return '';
 
   const ascR = b28 ? tierAoAscendente(b28, sexo, asc, alturaCm) : null;
-  const arco = b29 ? tierArcoAo(b29) : null;
+  const arco = b29 ? tierArcoAo(b29, sexo) : null;
 
   const normais: string[] = [];
   if (!ascR || ascR.tier === 'normal') normais.push('aorta ascendente');

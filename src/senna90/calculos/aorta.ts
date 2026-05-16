@@ -181,10 +181,9 @@ function classificarPorFallback(
 // • RAIZ : WASE 2022 (seio de Valsalva), corte por SEXO + IDADE =
 //   média + 1,96·DP (percentil 97,5, critério do paper). Sem idade
 //   no exame → cai no Z-score Roman validado (rede de segurança).
-// • ASCENDENTE : ASE/EACVI Chamber Quantification 2015 — normal
-//   ≤ 36 mm (absoluto).
-// • ARCO : ASE Chamber 2015 (não tabula arco → usa o nº de
-//   ascendente proximal) — normal ≤ 36 mm.
+// • ASCENDENTE : ASE/EACVI Chamber Quantification 2015 (Tabela 14,
+//   ascendente proximal) — Homem ≤ 38 · Mulher ≤ 35 mm (média+2DP).
+// • ARCO : idem (Chamber não tabula arco → usa ascendente proximal).
 //
 // Ectasia→aneurisma (ABSOLUTO): Raiz/Asc ≥ 50 mm · Arco ≥ 45 mm
 // (ACC/AHA 2022). Reconcilia a antiga divergência Z×absoluto —
@@ -204,9 +203,17 @@ export interface SegmentoAortaResult {
 }
 
 const ANEURISMA_MM_RAIZ_ASC = 50;
-const ASC_NORMAL_MAX = 36;   // ASE Chamber 2015 — ascendente proximal ≤36 mm
-const ARCO_NORMAL_MAX = 36;  // idem (Chamber não tabula arco isolado)
 const ARCO_ANEURISMA_MM = 45;
+
+/**
+ * ASE/EACVI Chamber Quantification 2015, Tabela 14 — aorta ascendente
+ * PROXIMAL em adultos normais: Homem 30 ± 4 mm · Mulher 27 ± 4 mm.
+ * Limite superior do normal = média + 2 DP → Homem 38 · Mulher 35 mm.
+ * Arco usa o mesmo (Chamber não tabula o arco transverso isolado).
+ */
+function corteChamberAsc(sexo: Sexo): number {
+  return sexo !== 'F' ? 38 : 35;
+}
 
 /**
  * Índice = área transversal (cm²) ÷ altura (m). ACC/AHA 2022: ≥10 cm²/m
@@ -273,17 +280,17 @@ export function tierRaizAo(
  */
 export function tierAoAscendente(
   medidaMM: number,
-  _sexo: Sexo,
+  sexo: Sexo,
   _asc: number | null,
   alturaCm: number | null
 ): SegmentoAortaResult {
-  return montarTierRaizAsc(medidaMM > ASC_NORMAL_MAX, medidaMM, alturaCm);
+  return montarTierRaizAsc(medidaMM > corteChamberAsc(sexo), medidaMM, alturaCm);
 }
 
-/** Arco aórtico — faixa fixa 22–36 / 37–44 / ≥45. Sem índice. */
-export function tierArcoAo(medidaMM: number): SegmentoAortaResult {
+/** Arco — normal pelo Chamber ascendente proximal (sexo); ≥45 aneurisma. Sem índice. */
+export function tierArcoAo(medidaMM: number, sexo: Sexo): SegmentoAortaResult {
   let tier: TierAorta = 'normal';
   if (medidaMM >= ARCO_ANEURISMA_MM) tier = 'aneurisma';
-  else if (medidaMM > ARCO_NORMAL_MAX) tier = 'ectasia';
+  else if (medidaMM > corteChamberAsc(sexo)) tier = 'ectasia';
   return { medidaMM, tier, indiceCm2m: null, graveIndice: false };
 }
