@@ -643,3 +643,44 @@ PID do keep-awake (SetThreadExecutionState) ainda em `%TEMP%\keep-awake.pid` —
 - **14/05:** galeria DICOM, fix imagens 403, seleção/impressão 8/A4
 - **15/05:** SR contextualizado (descoberta CodeMeaning+grupo), modal import validado, recuperação de 15 exames órfãos, ANA CAROLINA retroativa, definição canônica de status, **bug das frases resolvido**
 - **Total:** PRs #14 a #28 (15 PRs) mergeados. Sistema DICOM ponta-a-ponta funcional.
+
+---
+
+## 15. Wader rodava CÓDIGO ANTIGO em produção — 16/05/2026 (tarde)
+
+### 15.1. Descoberta
+
+Sergio fez exame (CARMEN, 16/05 12:42, eco_tt). No Leo chegou só **2 de 14 imagens, 0 SR, status `imagens-recebidas`**. Investigação: o Wader em `C:\Wader\` rodava **código de 08/05** — nunca recebeu NENHUM fix da semana:
+
+- PR #7 (retry/415): erro `Orthanc 415` derrubava o ingest worker
+- PR #15/#23 (parser SR contextualizado): 0 medidas SR extraídas
+- PR #27 (status canônico): status `imagens-recebidas` (legado morto)
+
+Rodou **8 dias defasado**. Os PRs estavam em master/produção (Leo via Vercel) mas o Wader nunca atualizou.
+
+### 15.2. Causa raiz
+
+`C:\Wader\` é **cópia manual** (não git clone). **Leo deploya automático (Vercel no push); Wader NÃO tem CI/CD.** `git push` que mergeia PR de `apps/wader/**` não atualiza o Wader rodando — só o repo.
+
+### 15.3. Correção aplicada (16/05)
+
+1. Backup `C:\Wader\src` → `src.bak-16maio`
+2. `cp -rf C:/souleo/apps/wader/src/* C:/Wader/src/` (deps idênticas, pulou npm install)
+3. Preservados: `sa.json`, `wader.config.json`, `node_modules`, `scripts/`
+4. Reiniciado (matou PID antigo → `npm start`)
+5. CARMEN reprocessada manual (cursor `/changes` não volta atrás): **14 imgs + 57 medidas SR + 8/8 inputs mapeáveis + status `andamento`** ✅
+
+### 15.4. Bônus: Vivid agora manda em mm
+
+CARMEN reprocessada veio com valores em **mm** (DDVE 50.29 mm, Septo 11.19 mm) — antes vinha cm. **Sergio ajustou o Vivid**. Confirma a decisão de não converter no código (§12.4): Vivid em mm → valor entra correto direto no motor, zero mudança.
+
+### 15.5. Lição / backlog
+
+**SEMPRE que mergear PR que toca `apps/wader/**`:** o Wader em produção NÃO atualiza sozinho — atualizar `C:\Wader\` manual + reiniciar. Backlog: script `update-wader` OU transformar `C:\Wader\` em git sparse-checkout pra `git pull` + restart. Detalhes em memória `feedback_wader_deploy_manual.md`.
+
+### 15.6. Estado final
+
+- Wader atualizado (código do repo) rodando desde 16:44
+- Exames NOVOS fluem automático (Vivid → Orthanc → Wader → Leo completo)
+- CARMEN completa no Leo, pronta pra laudar
+- Pendências: ADMIR (amanhã), PAT ativo (Sergio revoga quando encerrar)
