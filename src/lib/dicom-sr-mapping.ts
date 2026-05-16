@@ -30,22 +30,40 @@ export interface MedidaSr {
  * Conforme decidido em 15/05/2026 com Sergio: "VAMOS TESTAR ESSES INPUTS
  * POR ENQUANTO. DEPOIS QUANDO MOTOR FOR O SENNA, CORRELACIONAMOS."
  */
-export const SR_TO_MOTOR: Record<string, { campo: string; nomePt: string }> = {
-  // ── Câmaras (vão pra seção CÂMARAS do motor) ──
-  'AO_18015-8':      { campo: 'b7',  nomePt: 'Raiz Aórtica' },           // Aortic Root Diameter (cm)
-  'LA_M-02550':      { campo: 'b8',  nomePt: 'Átrio Esquerdo' },         // Diameter no grupo LA = AE 2D ⭐ (cm)
-  'LV_29436-3':      { campo: 'b9',  nomePt: 'DDVE' },                   // LV Internal End Diastolic Dim (cm)
-  'LV_18154-5':      { campo: 'b10', nomePt: 'Septo Interventricular' }, // IVS Diastolic Thickness (cm)
-  'LV_18152-9':      { campo: 'b11', nomePt: 'Parede Posterior' },       // LV Posterior Wall Diastolic Thickness (cm)
-  'LV_29438-9':      { campo: 'b12', nomePt: 'DSVE' },                   // LV Internal Systolic Dimension (cm)
+/**
+ * Escopo travado com Dr. Sérgio 16/05/2026: integrar SOMENTE estes 12.
+ * `casas` = casas decimais no arredondamento (regra por tipo, decidida
+ * 16/05). SEM conversão de unidade: o Vivid foi ajustado e o SR já vem
+ * em mm (lineares) e cm/s (velocidades) — ver ADR §15.4. Arredondar no
+ * adaptador (LEO), não no Vivid (Prec. do Vivid não afeta o SR).
+ * b13 (VD) NÃO entra: o Vivid nunca emite conceito de ventrículo
+ * direito no SR (varredura de 20 exames) — fica manual.
+ */
+export const SR_TO_MOTOR: Record<string, { campo: string; nomePt: string; casas: number }> = {
+  // ── Câmaras (lineares — SR já vem em mm; arredonda p/ inteiro) ──
+  'AO_18015-8':      { campo: 'b7',  nomePt: 'Raiz Aórtica',           casas: 0 }, // Aortic Root Diameter (mm)
+  'LA_M-02550':      { campo: 'b8',  nomePt: 'Átrio Esquerdo',         casas: 0 }, // Diameter grupo LA = AE 2D (mm)
+  'LV_29436-3':      { campo: 'b9',  nomePt: 'DDVE',                    casas: 0 }, // LV Internal End Diastolic Dim (mm)
+  'LV_18154-5':      { campo: 'b10', nomePt: 'Septo Interventricular', casas: 0 }, // IVS Diastolic Thickness (mm)
+  'LV_18152-9':      { campo: 'b11', nomePt: 'Parede Posterior',       casas: 0 }, // LV Posterior Wall Diast (mm)
+  'LV_29438-9':      { campo: 'b12', nomePt: 'DSVE',                    casas: 0 }, // LV Internal Systolic Dim (mm)
+  'AO_18012-5':      { campo: 'b28', nomePt: 'Aorta Ascendente',       casas: 0 }, // Ascending Aortic Diameter (mm)
 
   // ── Função Diastólica (seção DIASTÓLICA) ──
-  'MV_18037-2':      { campo: 'b19', nomePt: 'Vel. Onda E (Mitral)' },   // E-Wave Peak Velocity (m/s)
-  // 'MV_17978-8' (Onda A) e 'MV_59133-9' (e' Tissue) entram quando motor expandir
+  'MV_18037-2':      { campo: 'b19', nomePt: 'Vel. Onda E (Mitral)',   casas: 0 }, // E-Wave Peak Velocity (cm/s)
+  'MV_18038-0':      { campo: 'b20', nomePt: 'Relação E/A',            casas: 1 }, // E to A Ratio (adimensional)
+  'MV_59133-9':      { campo: 'b21', nomePt: "e' septal",              casas: 1 }, // Peak Tissue Velocity (cm/s)
+  'MV_59111-5':      { campo: 'b22', nomePt: "Relação E/e'",           casas: 1 }, // E Vel/Annulus E Ratio (adim.)
 
   // ── Átrio Esquerdo Volume (seção CÂMARAS — b24) ──
-  'LA_GEU-106-0033': { campo: 'b24', nomePt: 'AE Vol. index' },          // LA End Systolic Vol Index (ml/m²)
+  'LA_GEU-106-0033': { campo: 'b24', nomePt: 'AE Vol. index',          casas: 0 }, // LA End Systolic Vol Index (ml/m²)
 };
+
+/** Arredonda pro nº de casas decidido por tipo de medida (16/05/2026). */
+function arredonda(v: number, casas: number): number {
+  const f = Math.pow(10, casas);
+  return Math.round(v * f) / f;
+}
 
 /**
  * Detecta se o `medidasDicom` vem no schema NOVO (com contexto, value+unit+meaning)
@@ -110,7 +128,7 @@ export function normalizarParaImport(
         key,
         campo: map.campo,
         nomePt: map.nomePt,
-        valor: dado.value,
+        valor: arredonda(dado.value, map.casas),
         unit: dado.unit || '',
       });
     }
@@ -126,7 +144,7 @@ export function normalizarParaImport(
       if (matches.length === 1) {
         const key = matches[0];
         const map = SR_TO_MOTOR[key];
-        result.push({ key, campo: map.campo, nomePt: map.nomePt, valor, unit: '' });
+        result.push({ key, campo: map.campo, nomePt: map.nomePt, valor: arredonda(valor, map.casas), unit: '' });
       }
       // Se 0 ou >1 matches, pula (ambíguo ou desconhecido)
     }

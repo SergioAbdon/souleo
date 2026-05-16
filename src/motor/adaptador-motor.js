@@ -1,3 +1,13 @@
+// ⚠️⚠️ DEPRECATED / CÓDIGO MORTO — NÃO USAR (16/05/2026) ⚠️⚠️
+// Nenhum código ativo importa este arquivo (grep: só docs + script py).
+// É o adaptador V7 pré-migração TipTap (DOM getElementById + calc()
+// global — arquitetura morta desde commit 0fd5c67). Os códigos DICOM
+// do MAPA abaixo são LEGADOS/ERRADOS (ex.: raiz=18008-3; o Vivid real
+// manda AO_18015-8). NÃO confie neles, NÃO "corrija" aqui.
+//
+// ✅ ADAPTADOR CANÔNICO (SR→campos LEO, códigos reais + arredondamento):
+//        src/lib/dicom-sr-mapping.ts  (SR_TO_MOTOR / normalizarParaImport)
+// Mantido só por compat histórica/Claude API. Candidato a remoção.
 // ══════════════════════════════════════════════════════════════════
 // LEO · ADAPTADOR DO MOTOR V7
 //
