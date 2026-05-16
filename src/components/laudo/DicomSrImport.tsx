@@ -143,7 +143,9 @@ export default function DicomSrImport({ open, onClose, inputs, pacienteNome, onI
                       />
                       <span className="flex-1 text-sm text-gray-800">{it.nomePt}</span>
                       <span className="text-sm font-mono font-semibold text-gray-700 whitespace-nowrap">
-                        {it.valor.toFixed(2)}
+                        {/* valor JÁ arredondado pelo adaptador (regra por tipo).
+                            Só display; NÃO mexe no valor importado nem em dados futuros. */}
+                        {it.valor.toLocaleString('pt-BR')}
                         <span className="text-[10px] text-gray-500 ml-1 font-normal">{it.unit}</span>
                       </span>
                     </label>
