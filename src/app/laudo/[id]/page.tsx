@@ -547,8 +547,10 @@ export default function LaudoPage() {
         console.warn(`Campo motor "${s.campo}" não encontrado no DOM (input ${s.nomePt} pulado)`);
         continue;
       }
-      // Formata com 2 casas decimais pra não jogar "3.71197..." no input.
-      el.value = s.valor.toFixed(2);
+      // Adaptador já arredondou (regra por tipo: lineares=inteiro, razões=1
+      // casa). String() usa ponto decimal → parse-safe pro motor e aceito
+      // pelo input type=number (vírgula quebraria parseFloat e o type=number).
+      el.value = String(s.valor);
       // Dispatch event triggera o listener delegated do motor → recalc.
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
