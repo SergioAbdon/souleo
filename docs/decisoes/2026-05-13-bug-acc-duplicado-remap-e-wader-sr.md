@@ -599,3 +599,47 @@ Memória local: `feedback_status_exame_canonico.md`.
 
 - Dashboard: contador "⚠️ N exames realizados aguardando laudo" (andamento+rascunho com DICOM) — Sergio não decidiu ainda
 - Opção C (rascunho de reedição persistido) — se quiserem não perder edição de emitido no futuro
+
+---
+
+## 14. Fechamento da sessão 15/05/2026 (noite)
+
+### 14.1. PR #28 — bug das frases (cerne do LEO) RESOLVIDO
+
+Sintoma: médico digita medida → calculados (Massa/FE) aparecem, mas comentários+conclusão NÃO auto-completam (ou somem após 1x).
+
+Causa raiz: `useEffect` que aplica `pendingHtml` no TipTap fazia `clearInterval` após a 1ª aplicação. Quando o motor regerava frase com `editorRef.current` null (TipTap remontado — re-renders aumentaram pelos states novos dos PRs #19-#27), pendingHtml era setado mas o interval já estava morto → frase perdida.
+
+Fix (commit `e955fbd`): interval permanente, cleanup só no unmount.
+
+Lição registrada em memória `feedback_bug_frases_pendinghtml.md`: retry/polling não deve se auto-matar se o evento pode reocorrer.
+
+Histórico: o commit `6447e99` (12/05) já tinha "corrigido" frases que não apareciam — mas aquilo era OUTRA causa (event delegation pra seções fechadas). Esta era 2ª causa independente, latente até os re-renders desta semana expor.
+
+### 14.2. Quadro completo dos PRs 15/05
+
+| PR | sha | Conteúdo |
+|---|---|---|
+| #23 | `8bbac19` | Parser SR contextualizado + modal import + UX completa |
+| #24 | `913ee49` | Fix import via DOM direto (bypass importarDICOM) |
+| #25 | `3a906a1` | ADR apêndice §12 |
+| #26 | `f292d2b` | Fix Worklist status legado (não some botões) |
+| #27 | `26f06c3` | Definição canônica de status + 3 travas |
+| #28 | `e955fbd` | **Fix bug das frases (pendingHtml interval permanente)** |
+
+### 14.3. Estado pendente pra próxima sessão (16/05)
+
+1. **ADMIR NEGRAO MACEDO** — adiado pra amanhã. Tem agendamento Feegow (11/05 14:45 eco) + exame Leo (`LllwrJHf1mf9`, eco_tt, nao-realizado, 0 imgs) mas **NENHUM estudo no Orthanc**. Hipótese: imagens só no Vivid (não enviadas) ou exame não realizado. Sergio vai confirmar se fez o exame; se sim, reenviar do Vivid.
+2. **Sergio testar end-to-end** (deploy de tudo): bug frases corrigido, import SR, galeria, status canônico.
+3. **PAT `claude-clinic-souleo`** — Sergio decidiu **NÃO revogar agora** (continuamos amanhã). Continua ativo (fine-grained, sem expiração, scope SergioAbdon/souleo Contents+PR). Revogar quando encerrar de vez.
+
+### 14.4. keep-awake
+
+PID do keep-awake (SetThreadExecutionState) ainda em `%TEMP%\keep-awake.pid` — segue ativo prevenindo sleep. Matar quando sessão encerrar de vez.
+
+### 14.5. Resumo executivo da semana (13-15/05)
+
+- **13/05:** bug ACC duplicado, remap 3 exames, Wader processa SR, fix Vercel build
+- **14/05:** galeria DICOM, fix imagens 403, seleção/impressão 8/A4
+- **15/05:** SR contextualizado (descoberta CodeMeaning+grupo), modal import validado, recuperação de 15 exames órfãos, ANA CAROLINA retroativa, definição canônica de status, **bug das frases resolvido**
+- **Total:** PRs #14 a #28 (15 PRs) mergeados. Sistema DICOM ponta-a-ponta funcional.
