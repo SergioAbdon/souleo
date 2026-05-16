@@ -26,6 +26,14 @@ import { gerarDocx } from '@/lib/exportDocx';
 import { PopupSalvarEmitir, ModoEmitido } from '@/components/laudo/PopupEmitir';
 // Shadow Mode (Fase 5): roda Senna90 server-side em paralelo invisível
 import { executarEReportar, shadowModeAtivo } from '@/lib/shadow-runner';
+// Migração Senna90 (16/05/2026): quando a flag está ON, o Senna90
+// (server, 72/72 testes) passa a alimentar achados/conclusões no TipTap
+// via `_onLaudoGerado` — a ponte que existia mas NUNCA era chamada
+// desde a migração TipTap (raiz do "bug das frases" imortal).
+// Flag OFF = comportamento de hoje (rollback instantâneo, zero-deploy).
+import { senna90Primario } from '@/lib/primary-engine-flag';
+import { calcularSenna90, criarDebounce } from '@/lib/senna90-bridge';
+import { montarLaudoHtml } from '@/lib/senna90-render';
 
 export default function LaudoPage() {
   const params = useParams();
@@ -246,9 +254,34 @@ export default function LaudoPage() {
         try {
           const calcFn = (window as unknown as Record<string, unknown>).calc as (() => void) | undefined;
           if (calcFn) {
-            // Wrapper: roda motor antigo + shadow Senna90 (server-side, invisível)
+            // ── Migração Senna90 (16/05/2026) ──────────────────────────
+            // Disparador com debounce (300ms): chama o Senna90 no servidor
+            // e injeta achados/conclusões no TipTap via `_onLaudoGerado`.
+            // ESTE é o conserto da raiz: `_onLaudoGerado` existia desde a
+            // migração TipTap mas NINGUÉM chamava — o motor antigo escrevia
+            // em `#achados-body` (inexistente) e crashava silencioso. Agora
+            // o Senna90 (tipado, 72/72 testes, mapeamento AHA correto)
+            // alimenta a ponte. Debounce evita estourar rate-limit 60/min.
+            // Falha (rede/auth) → não re-renderiza, motor antigo segue
+            // fazendo params-tbody/calc-* (sem regressão).
+            const dispararSenna90 = criarDebounce(300, async () => {
+              const r = await calcularSenna90();
+              if (!r) return; // falha → fallback silencioso (motor antigo)
+              const html = montarLaudoHtml(r.achados, r.conclusoes);
+              const onGer = (window as unknown as Record<string, unknown>)
+                ._onLaudoGerado as ((h: string) => void) | undefined;
+              if (onGer) onGer(html);
+            });
+
+            // Wrapper: motor antigo (params-tbody + calc-*, intocado) +
+            // Senna90 (achados/conclusões → TipTap, só se flag ON) +
+            // shadow (comparação invisível, se ativo).
             const sc = () => {
               try { calcFn(); } catch (e) { console.warn('calc:', e); }
+              // Migração Senna90: flag ON → preenche o vazio dos achados.
+              if (senna90Primario()) {
+                try { dispararSenna90(); } catch { /* não bloquear */ }
+              }
               // Shadow mode (Fase 5): invisível, server-side
               if (shadowModeAtivo()) {
                 try { executarEReportar(exameId); } catch { /* não bloquear */ }
