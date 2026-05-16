@@ -32,37 +32,63 @@ export interface MedidaSr {
  */
 /**
  * Escopo travado com Dr. Sérgio 16/05/2026: integrar SOMENTE estes 12.
- * `casas` = casas decimais no arredondamento (regra por tipo, decidida
- * 16/05). SEM conversão de unidade: o Vivid foi ajustado e o SR já vem
- * em mm (lineares) e cm/s (velocidades) — ver ADR §15.4. Arredondar no
- * adaptador (LEO), não no Vivid (Prec. do Vivid não afeta o SR).
- * b13 (VD) NÃO entra: o Vivid nunca emite conceito de ventrículo
- * direito no SR (varredura de 20 exames) — fica manual.
+ * `casas` = casas decimais no arredondamento (regra por tipo).
+ * `alvo`  = unidade que o motor LEO espera.
+ *
+ * CONVERSÃO DE UNIDADE ATIVA (16/05, autorizada — revoga a nota
+ * anterior "SEM conversão"): o adaptador converte a unidade do SR
+ * para `alvo` ANTES de arredondar. Necessário porque exames ANTIGOS
+ * (pré-ajuste do Vivid) vêm em cm / m·s e os NOVOS em mm / cm·s — o
+ * DICOM SR carrega a unidade, o adaptador normaliza (não o Vivid).
+ * b13 (VD) NÃO entra: Vivid nunca emite conceito de VD no SR.
  */
-export const SR_TO_MOTOR: Record<string, { campo: string; nomePt: string; casas: number }> = {
-  // ── Câmaras (lineares — SR já vem em mm; arredonda p/ inteiro) ──
-  'AO_18015-8':      { campo: 'b7',  nomePt: 'Raiz Aórtica',           casas: 0 }, // Aortic Root Diameter (mm)
-  'LA_M-02550':      { campo: 'b8',  nomePt: 'Átrio Esquerdo',         casas: 0 }, // Diameter grupo LA = AE 2D (mm)
-  'LV_29436-3':      { campo: 'b9',  nomePt: 'DDVE',                    casas: 0 }, // LV Internal End Diastolic Dim (mm)
-  'LV_18154-5':      { campo: 'b10', nomePt: 'Septo Interventricular', casas: 0 }, // IVS Diastolic Thickness (mm)
-  'LV_18152-9':      { campo: 'b11', nomePt: 'Parede Posterior',       casas: 0 }, // LV Posterior Wall Diast (mm)
-  'LV_29438-9':      { campo: 'b12', nomePt: 'DSVE',                    casas: 0 }, // LV Internal Systolic Dim (mm)
-  'AO_18012-5':      { campo: 'b28', nomePt: 'Aorta Ascendente',       casas: 0 }, // Ascending Aortic Diameter (mm)
+export const SR_TO_MOTOR: Record<
+  string,
+  { campo: string; nomePt: string; casas: number; alvo: 'mm' | 'cm/s' | '' }
+> = {
+  // ── Câmaras (lineares → mm; SR pode vir cm[antigo] ou mm[novo]) ──
+  'AO_18015-8':      { campo: 'b7',  nomePt: 'Raiz Aórtica',           casas: 0, alvo: 'mm'   }, // Aortic Root Diameter
+  'LA_M-02550':      { campo: 'b8',  nomePt: 'Átrio Esquerdo',         casas: 0, alvo: 'mm'   }, // Diameter grupo LA = AE
+  'LV_29436-3':      { campo: 'b9',  nomePt: 'DDVE',                    casas: 0, alvo: 'mm'   }, // LV End Diastolic Dim
+  'LV_18154-5':      { campo: 'b10', nomePt: 'Septo Interventricular', casas: 0, alvo: 'mm'   }, // IVS Diast Thickness
+  'LV_18152-9':      { campo: 'b11', nomePt: 'Parede Posterior',       casas: 0, alvo: 'mm'   }, // LV Post Wall Diast
+  'LV_29438-9':      { campo: 'b12', nomePt: 'DSVE',                    casas: 0, alvo: 'mm'   }, // LV Systolic Dim
+  'AO_18012-5':      { campo: 'b28', nomePt: 'Aorta Ascendente',       casas: 0, alvo: 'mm'   }, // Ascending Ao Diameter
 
-  // ── Função Diastólica (seção DIASTÓLICA) ──
-  'MV_18037-2':      { campo: 'b19', nomePt: 'Vel. Onda E (Mitral)',   casas: 0 }, // E-Wave Peak Velocity (cm/s)
-  'MV_18038-0':      { campo: 'b20', nomePt: 'Relação E/A',            casas: 1 }, // E to A Ratio (adimensional)
-  'MV_59133-9':      { campo: 'b21', nomePt: "e' septal",              casas: 1 }, // Peak Tissue Velocity (cm/s)
-  'MV_59111-5':      { campo: 'b22', nomePt: "Relação E/e'",           casas: 1 }, // E Vel/Annulus E Ratio (adim.)
+  // ── Função Diastólica (velocidades → cm/s; razões → sem conversão) ──
+  'MV_18037-2':      { campo: 'b19', nomePt: 'Vel. Onda E (Mitral)',   casas: 0, alvo: 'cm/s' }, // E-Wave (pode vir m/s)
+  'MV_18038-0':      { campo: 'b20', nomePt: 'Relação E/A',            casas: 1, alvo: ''     }, // adimensional
+  'MV_59133-9':      { campo: 'b21', nomePt: "e' septal",              casas: 1, alvo: 'cm/s' }, // Tissue (pode vir m/s)
+  'MV_59111-5':      { campo: 'b22', nomePt: "Relação E/e'",           casas: 1, alvo: ''     }, // adimensional
 
-  // ── Átrio Esquerdo Volume (seção CÂMARAS — b24) ──
-  'LA_GEU-106-0033': { campo: 'b24', nomePt: 'AE Vol. index',          casas: 0 }, // LA End Systolic Vol Index (ml/m²)
+  // ── Átrio Esquerdo Volume (índice — sem conversão) ──
+  'LA_GEU-106-0033': { campo: 'b24', nomePt: 'AE Vol. index',          casas: 0, alvo: ''     }, // LA Vol Index ml/m²
 };
 
 /** Arredonda pro nº de casas decidido por tipo de medida (16/05/2026). */
 function arredonda(v: number, casas: number): number {
   const f = Math.pow(10, casas);
   return Math.round(v * f) / f;
+}
+
+/**
+ * Converte o valor da unidade do SR p/ a unidade que o motor espera.
+ * Exames antigos vêm cm / m·s; novos mm / cm·s. Sem unidade (schema
+ * antigo) → assume já correto (não converte). Razões/índices: nunca.
+ */
+function converter(value: number, unitRaw: string, alvo: 'mm' | 'cm/s' | ''): number {
+  const u = (unitRaw || '').toLowerCase().trim();
+  if (alvo === 'mm') {
+    if (u === 'cm') return value * 10;
+    if (u === 'm') return value * 1000;
+    return value; // 'mm' ou vazio → já em mm
+  }
+  if (alvo === 'cm/s') {
+    if (u === 'm/s') return value * 100;
+    if (u === 'mm/s') return value / 10;
+    return value; // 'cm/s' ou vazio → já em cm/s
+  }
+  return value; // razões / índices → nunca converte
 }
 
 /**
@@ -128,8 +154,8 @@ export function normalizarParaImport(
         key,
         campo: map.campo,
         nomePt: map.nomePt,
-        valor: arredonda(dado.value, map.casas),
-        unit: dado.unit || '',
+        valor: arredonda(converter(dado.value, dado.unit, map.alvo), map.casas),
+        unit: map.alvo || dado.unit || '',
       });
     }
   } else {
@@ -144,7 +170,7 @@ export function normalizarParaImport(
       if (matches.length === 1) {
         const key = matches[0];
         const map = SR_TO_MOTOR[key];
-        result.push({ key, campo: map.campo, nomePt: map.nomePt, valor: arredonda(valor, map.casas), unit: '' });
+        result.push({ key, campo: map.campo, nomePt: map.nomePt, valor: arredonda(converter(valor, '', map.alvo), map.casas), unit: map.alvo || '' });
       }
       // Se 0 ou >1 matches, pula (ambíguo ou desconhecido)
     }
