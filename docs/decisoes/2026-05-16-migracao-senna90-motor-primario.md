@@ -1,15 +1,19 @@
 # Migração Senna90 como motor primário de achados/conclusões (16/05/2026)
 
-> **Status:** Fase 1-2 implementadas (flag OFF por padrão). Validação em lote + ativação pendentes.
+> **Status:** ✅ **ATIVADO EM PRODUÇÃO 16/05/2026** (Dr. Sérgio autorizou).
+> env `NEXT_PUBLIC_PRIMARY_ENGINE=senna90` setada no Vercel + redeploy
+> (dpl sha 559f251, READY, aliases souleo.com.br). Rollback instantâneo
+> por device: `localStorage 'leo:primary-engine'='off'` (vence o env).
 > **Dono:** Claude do notebook. **Decidido com:** Dr. Sérgio.
-> **Audience:** Clinic Claude + Sérgio futuro.
 
 ---
 
-## 🔒 CONGELAMENTO (Clinic Claude — LER ANTES DE EDITAR)
+## 🔓 DESCONGELADO — migração ATIVADA (16/05/2026)
 
-A migração motor→Senna90 está EM ANDAMENTO pelo Claude do notebook.
-**NÃO edite estes arquivos até este ADR mudar pra status "CONCLUÍDO":**
+Migração concluída e **Senna90 ativo em produção**. O congelamento
+abaixo foi LIBERADO. Clinic Claude pode editar de novo, **mas
+coordene** (commit+push após cada edit, decisões em docs/decisoes).
+Arquivos que estiveram congelados durante a migração:
 
 - `src/app/laudo/[id]/page.tsx`
 - `src/lib/shadow-runner.ts`
