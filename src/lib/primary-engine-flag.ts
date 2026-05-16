@@ -13,13 +13,11 @@
 // assume a geração de achados/conclusões → TipTap. O motor antigo
 // CONTINUA rodando pra params-tbody + calc-* (sem regressão).
 //
-//   Flag OFF → comportamento de hoje (rollback instantâneo, zero-deploy)
-//   Flag ON  → Senna90 preenche achados/conclusões via TipTap
-//
-// Espelha o padrão de `shadowModeAtivo()` em shadow-runner.ts:
-//   - env var `NEXT_PUBLIC_PRIMARY_ENGINE=senna90` (liga pra todos)
-//   - localStorage `leo:primary-engine` = 'senna90' (liga por device,
-//     pra teste do Sergio sem deploy)
+// ATIVADO EM PRODUÇÃO 16/05/2026 (Dr. Sérgio): default global = Senna90.
+//   - env var `NEXT_PUBLIC_PRIMARY_ENGINE=senna90` → liga pra TODOS
+//   - localStorage `leo:primary-engine`='off' → KILL-SWITCH por device
+//     (vence o env, rollback instantâneo zero-deploy)
+//   - localStorage `leo:primary-engine`='senna90' → força ON por device
 //
 // Decisão de migração: docs/decisoes/ (ADR Senna90) + memória local.
 // ══════════════════════════════════════════════════════════════════
@@ -30,36 +28,42 @@ const ENV_VAL = 'senna90';
 /**
  * True quando o Senna90 deve ser o motor primário de achados/conclusões.
  *
+ * Precedência (rollback instantâneo garantido):
+ *  1. localStorage 'off'     → kill-switch por device (vence tudo)
+ *  2. localStorage 'senna90' → ON por device
+ *  3. env NEXT_PUBLIC_PRIMARY_ENGINE=senna90 → default global (produção)
+ *
  * SSR-safe: retorna false no servidor (sem window/localStorage).
  */
 export function senna90Primario(): boolean {
   if (typeof window === 'undefined') return false;
 
-  // 1) Env var global (produção, liga pra todos)
-  if (process.env.NEXT_PUBLIC_PRIMARY_ENGINE === ENV_VAL) return true;
+  let ls: string | null = null;
+  try { ls = localStorage.getItem(LS_KEY); } catch { /* indisponível */ }
 
-  // 2) Override por device (localStorage) — pro Sergio testar sem deploy
-  try {
-    return localStorage.getItem(LS_KEY) === ENV_VAL;
-  } catch {
-    return false;
-  }
+  if (ls === 'off') return false;   // kill-switch — rollback instantâneo
+  if (ls === ENV_VAL) return true;  // ON por device
+  return process.env.NEXT_PUBLIC_PRIMARY_ENGINE === ENV_VAL; // default global
 }
 
 /**
- * Liga/desliga o Senna90 primário NESTE device (localStorage).
- * Útil pra Sergio alternar no console do navegador durante validação:
+ * Força ON/OFF NESTE device. 'off' vence o env global → rollback
+ * instantâneo (zero-deploy) mesmo com Senna90 ligado pra todos.
  *
- *   import { setSenna90Primario } from '@/lib/primary-engine-flag'
- *   setSenna90Primario(true)   // liga
- *   setSenna90Primario(false)  // rollback instantâneo
+ *   setSenna90Primario(false)  // kill-switch: motor antigo AQUI
+ *   setSenna90Primario(true)   // força Senna90 AQUI
+ *   limparPrimaryEngine()      // remove override → volta ao default do ambiente
  */
 export function setSenna90Primario(ligado: boolean): void {
   if (typeof window === 'undefined') return;
   try {
-    if (ligado) localStorage.setItem(LS_KEY, ENV_VAL);
-    else localStorage.removeItem(LS_KEY);
+    localStorage.setItem(LS_KEY, ligado ? ENV_VAL : 'off');
   } catch {
     /* localStorage indisponível — ignora */
   }
+}
+
+export function limparPrimaryEngine(): void {
+  if (typeof window === 'undefined') return;
+  try { localStorage.removeItem(LS_KEY); } catch { /* ignora */ }
 }
