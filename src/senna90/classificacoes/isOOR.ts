@@ -28,8 +28,11 @@ export function isOOR(campo: string, val: number | null, sexo: Sexo): boolean {
 
   switch (campo) {
     // Câmaras (mm) — Cutoffs ASE 2015 atualizados 07/05/2026
-    case 'b7': // Raiz Aórtica (era 31-37/27-33)
-      return isM ? (val < 32 || val > 40) : (val < 28 || val > 36);
+    // ── Aorta: spec 16/05 (autoritativo = calculos/aorta.ts). Só
+    //    sinaliza dilatação (sem corte inferior — não flag "pequena").
+    //    Raiz por idade vive em tierRaizAo; aqui faixa média por sexo.
+    case 'b7': // Raiz — WASE 2022 (≤40 ♂ / ≤36 ♀, faixa média s/ idade)
+      return isM ? val > 40 : val > 36;
     case 'b8':
       return isM ? (val < 30 || val > 40) : (val < 27 || val > 38);
     case 'b9':
@@ -42,10 +45,10 @@ export function isOOR(campo: string, val: number | null, sexo: Sexo): boolean {
       return isM ? (val < 25 || val > 40) : (val < 21 || val > 35);
     case 'b13':
       return val < 21 || val > 35; // unificado
-    case 'b28': // Aorta Asc (era 26-34/23-31)
-      return isM ? (val < 30 || val > 37) : (val < 27 || val > 34);
-    case 'b29': // Arco Aórtico (novo, sem distinção sexo)
-      return val < 22 || val > 36;
+    case 'b28': // Aorta ascendente — ASE Chamber 2015 (≤38 ♂ / ≤35 ♀)
+      return isM ? val > 38 : val > 35;
+    case 'b29': // Arco — ACR/ACRIN 6654 (≤35 ♂ / ≤32 ♀)
+      return isM ? val > 35 : val > 32;
 
     // Atrial volumes
     case 'b24': // LAVI

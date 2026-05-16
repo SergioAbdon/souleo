@@ -183,11 +183,11 @@ function classificarPorFallback(
 //   no exame → cai no Z-score Roman validado (rede de segurança).
 // • ASCENDENTE : ASE/EACVI Chamber Quantification 2015 (Tabela 14,
 //   ascendente proximal) — Homem ≤ 38 · Mulher ≤ 35 mm (média+2DP).
-// • ARCO : idem (Chamber não tabula arco → usa ascendente proximal).
+// • ARCO : ACR / ACRIN 6654 — Homem ≤ 35 · Mulher ≤ 32 mm.
 //
-// Ectasia→aneurisma (ABSOLUTO): Raiz/Asc ≥ 50 mm · Arco ≥ 45 mm
-// (ACC/AHA 2022). Reconcilia a antiga divergência Z×absoluto —
-// leve/moderada/importante deixam de existir.
+// Ectasia→aneurisma (ABSOLUTO): Raiz/Asc ≥ 50 mm (ACC/AHA 2022);
+// Arco ≥ 44 mm (♂) / ≥ 41 mm (♀) = ≥1,5× a média ACRIN.
+// Reconcilia a antiga divergência Z×absoluto — leve/mod/imp saem.
 //
 // Índice área transversal (cm²) ÷ altura (m): só Raiz/Asc; ≥ 10 ⇒
 // "com critérios de maior gravidade" (ACC/AHA 2022). Arco sem índice.
@@ -203,7 +203,6 @@ export interface SegmentoAortaResult {
 }
 
 const ANEURISMA_MM_RAIZ_ASC = 50;
-const ARCO_ANEURISMA_MM = 45;
 
 /**
  * ASE/EACVI Chamber Quantification 2015, Tabela 14 — aorta ascendente
@@ -213,6 +212,19 @@ const ARCO_ANEURISMA_MM = 45;
  */
 function corteChamberAsc(sexo: Sexo): number {
   return sexo !== 'F' ? 38 : 35;
+}
+
+/**
+ * ACR / ACRIN 6654 (rede de imagem do ACR — NLST) — ARCO transverso.
+ * Normal (limite superior ≈ média+2DP): Homem 35 · Mulher 32 mm.
+ * Aneurisma = ≥1,5× a média normal ACRIN: Homem 44 · Mulher 41 mm.
+ * Caveats: medida TC borda-externa; população NLST 55–74 anos.
+ */
+function corteArcoNormal(sexo: Sexo): number {
+  return sexo !== 'F' ? 35 : 32;
+}
+function corteArcoAneurisma(sexo: Sexo): number {
+  return sexo !== 'F' ? 44 : 41;
 }
 
 /**
@@ -287,10 +299,10 @@ export function tierAoAscendente(
   return montarTierRaizAsc(medidaMM > corteChamberAsc(sexo), medidaMM, alturaCm);
 }
 
-/** Arco — normal pelo Chamber ascendente proximal (sexo); ≥45 aneurisma. Sem índice. */
+/** Arco — ACR/ACRIN sexo-específico: normal ≤35♂/≤32♀ · aneurisma ≥44♂/≥41♀. Sem índice. */
 export function tierArcoAo(medidaMM: number, sexo: Sexo): SegmentoAortaResult {
   let tier: TierAorta = 'normal';
-  if (medidaMM >= ARCO_ANEURISMA_MM) tier = 'aneurisma';
-  else if (medidaMM > corteChamberAsc(sexo)) tier = 'ectasia';
+  if (medidaMM >= corteArcoAneurisma(sexo)) tier = 'aneurisma';
+  else if (medidaMM > corteArcoNormal(sexo)) tier = 'ectasia';
   return { medidaMM, tier, indiceCm2m: null, graveIndice: false };
 }

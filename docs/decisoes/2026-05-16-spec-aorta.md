@@ -1,43 +1,24 @@
 # Spec da Aorta (raiz / ascendente / arco) + j9 Massa (16/05/2026)
 
-> **Status:** IMPLEMENTADO e VALIDADO no master. Senna90 (flag OFF em produção).
+> **Status:** IMPLEMENTADO no master. Senna90 atrás de flag (OFF em produção).
+> A refVal da tabela de parâmetros (motor antigo) é ALTERADA para a Raiz.
 > **Decidido com:** Dr. Sérgio (cardiologista). **Dono:** Claude notebook.
-> **Audience:** Clinic Claude + Sérgio futuro.
 
 ---
 
-## 1. Contexto
+## 1. Tiers por segmento — Normal / Ectasia / Aneurisma
 
-Substitui a antiga classificação aórtica por Z-score com graus
-leve/moderada/importante (decisão #16), que superestimava ectasia e
-tinha inconsistência Z-score × fallback absoluto. Esta spec reconcilia
-e usa **a referência mais recente disponível por segmento**.
+| Segmento | Normal (fronteira) | Ectasia | Aneurisma | Índice cm²/m | "medindo mm" |
+|---|---|---|---|---|---|
+| **Raiz** | **WASE 2022** ♂ 38/40/41 · ♀ 35/36/37 mm (idade ≤40 / 41–65 / ≥66); sem idade → Z-score Roman | > corte e < 50 | **≥ 50 mm** | ✅ ≥10 ⇒ gravidade | ❌ (já no quadro) |
+| **Ascendente** | **ASE Chamber 2015 Tab.14** ♂ ≤ 38 · ♀ ≤ 35 mm | > corte e < 50 | **≥ 50 mm** | ✅ ≥10 ⇒ gravidade | ✅ |
+| **Arco** | **ACR / ACRIN 6654** ♂ ≤ 35 · ♀ ≤ 32 mm | ♂ 36–43 · ♀ 33–40 mm | **♂ ≥ 44 · ♀ ≥ 41 mm** | ❌ (não validado) | ✅ |
 
-## 2. Tiers por segmento — Normal / Ectasia / Aneurisma
+- Corte WASE = média + 1,96·DP (percentil 97,5, critério do paper).
+- Arco aneurisma = ≥ 1,5× a média normal ACRIN (♂ ~29→44 · ♀ ~27→41).
+- "com dimensões normais" (fix 07/05) PRESERVADA.
 
-| Segmento | Fronteira Normal→Ectasia | Aneurisma | Índice cm²/m | "medindo mm" |
-|---|---|---|---|---|
-| **Raiz** | **WASE 2022** (seio de Valsalva), sexo+idade | ≥ 50 mm | ✅ ≥10 ⇒ gravidade | ❌ (já no quadro) |
-| **Ascendente** | **ASE Chamber 2015 Tab.14** — ♂ ≤ 38 · ♀ ≤ 35 mm | ≥ 50 mm | ✅ ≥10 ⇒ gravidade | ✅ |
-| **Arco** | **ASE Chamber 2015 Tab.14** — ♂ ≤ 38 · ♀ ≤ 35 mm (mesmo da asc) | ≥ 45 mm | ❌ não validado | ✅ |
-
-### RAIZ — WASE 2022 (média + 1,96·DP = percentil 97,5, critério do paper)
-
-| Faixa etária | ♂ Normal até | ♀ Normal até |
-|---|---|---|
-| ≤ 40 anos | 38 mm | 35 mm |
-| 41–65 anos | 40 mm | 36 mm |
-| ≥ 66 anos | 41 mm | 37 mm |
-
-Sem idade no exame → Z-score Roman validado (rede de segurança).
-
-### ASCENDENTE / ARCO — ASE Chamber 2015, Tabela 14 (ascendente proximal)
-
-Média ± DP: **Homem 30 ± 4 mm · Mulher 27 ± 4 mm**.
-Limite normal = **média + 2 DP → Homem ≤ 38 mm · Mulher ≤ 35 mm**.
-Arco usa o mesmo (Chamber não tabula o arco transverso isolado).
-
-### Textos gerados
+## 2. Frases
 
 - Raiz ectasia: `Ectasia da Raiz aórtica, Y,Y cm²/m (valores acima de 10 cm²/m sugerem maior gravidade).`
 - Raiz aneurisma: `Dilatação aneurismática da Raiz aórtica.`
@@ -46,57 +27,47 @@ Arco usa o mesmo (Chamber não tabula o arco transverso isolado).
 - Arco ectasia: `Ectasia do arco aórtico medindo XX mm.`
 - Arco aneurisma: `Dilatação aneurismática do arco aórtico medindo XX mm.`
 - CONCLUSÃO: 1 frase por segmento; `…, com critérios de maior gravidade.` se índice ≥10 (só raiz/asc).
-- Frase "com dimensões normais" (fix 07/05) PRESERVADA.
 
-## 3. Referências (decisão FECHADA — melhor por segmento, não miscelânia)
+## 3. Referências (FECHADAS — melhor por segmento, sem miscelânia)
 
-- **Raiz = WASE 2022** (Normal Values of Aortic Root Size, JASE
-  mar/2022, PMC9111967). Mais recente, sexo+idade.
-- **Ascendente + Arco = ASE/EACVI Chamber Quantification 2015**
-  (Lang et al.), **Tabela 14** "Aortic root dimensions in normal
-  adults", linha *Proximal ascending aorta* (♂ 3,0±0,4 · ♀ 2,7±0,4 cm).
-  WASE 2022 **só tem raiz** → cada segmento na fonte mais recente
-  que existe pra ele.
-- **Aneurisma absoluto** ≥50 raiz/asc · ≥45 arco (ACC/AHA 2022).
-  **Índice área(cm²)÷altura(m) ≥10** ⇒ maior gravidade (só raiz/asc).
+| O quê | Fonte |
+|---|---|
+| Raiz (normal) | **WASE 2022** — Normal Values of Aortic Root Size, JASE mar/2022 (PMC9111967) |
+| Ascendente (normal) | **ASE/EACVI Chamber Quantification 2015** (Lang et al.), Tabela 14 — asc proximal ♂ 3,0±0,4 · ♀ 2,7±0,4 cm; ULN = média+2DP |
+| **Arco (normal/ectasia/aneurisma)** | **ACR / ACRIN 6654** (NLST, rede de imagem do Colégio Americano de Radiologia). Caveats: medida TC borda-externa; população 55–74a (fumantes). Aneurisma pela régua relativa ACR (≥1,5×). |
+| Aneurisma raiz/asc (≥50 mm) | ACC/AHA 2022 (faixa cirúrgica esporádica) |
+| **Índice área÷altura ≥10 cm²/m** | **ACC/AHA 2022** (dados Yale / Zafar–Elefteriades), validado p/ **raiz + ascendente** — NÃO é do WASE |
 
-## 4. Honestidade registrada
+## 4. Tabela de parâmetros (motor antigo — `motorv8mp4.js`)
 
-- Versão inicial usou ≤36 mm fixo (fonte secundária). **Corrigido**
-  pela Tabela 14 primária do ASE (sexo-específico ♂38/♀35) quando
-  o Dr. Sérgio enviou a tabela oficial.
-- Arco: Chamber não tabula o arco transverso; usa-se a linha de
-  ascendente proximal como proxy. Fonte mais fraca das três —
-  registrado e aceito pelo Dr. Sérgio.
+- `refVal('b7',sexo,idade)`: a "Referência" da **Raiz Aórtica** passa a ser
+  **dinâmica por sexo + idade** (WASE 2022): exibe `≤ XX mm`. Sem data de
+  nascimento → faixa média (♂ ≤40 / ♀ ≤36). Espelhado em `src/` e `public/`.
+- `SheetA4.tsx`: rodapé da tabela passa a **citar todas as referências**
+  (WASE 2022 / ASE Chamber 2015 / ACR-ACRIN 6654 / ACC-AHA 2022 / demais ASE).
+- ⚠️ NÃO mexido (fora de escopo, registrado): a coloração de alerta da
+  célula b7 (`isOOR`) ainda usa 32–40/28–36. Avaliar depois com Sérgio.
 
-## 5. Mudanças colaterais
+## 5. j9 — Massa do VE · reaplicado
 
-- Conclusão multi-segmento: 1 frase por segmento.
-- Teste B10 (`06-bordas.ts`): asc 50 mm → aneurisma.
-- `classificarRaizAo/AoAscendente/ArcoAo` continuam existindo
-  (Roman fallback da raiz + comparadores).
+Cherry-pick `0350307` → `2811dc5`. "Espessura miocárdica" → "Massa do
+ventrículo esquerdo" nos 2 motores + 2 testes. Cutoffs LV mass inalterados.
 
-## 6. j9 — Massa do VE · reaplicado
-
-Cherry-pick limpo `0350307` → `2811dc5`. "Espessura miocárdica" →
-"Massa do ventrículo esquerdo" nos 2 motores + 2 testes. Cutoffs
-ASE 2015 LV mass inalterados.
-
-## 7. getLimiteSuperior() — alinhado
+## 6. getLimiteSuperior() — alinhado
 
 `isOOR.ts`: b7/b28 corrigidos (b7: 40/36 · b28: 37/34).
 
-## 8. Arquivos
+## 7. Arquivos tocados
 
-`calculos/aorta.ts` (corteWaseRaiz + corteChamberAsc + tiers),
-`achados/aorta.ts`, `achados/index.ts`, `conclusoes/index.ts`,
-`classificacoes/isOOR.ts`, `tests/casos/06-bordas.ts`, motor antigo (j9).
+`src/senna90/calculos/aorta.ts` (tiers + corteWaseRaiz/corteChamberAsc/
+corteArcoNormal/corteArcoAneurisma), `achados/aorta.ts`, `achados/index.ts`,
+`conclusoes/index.ts`, `classificacoes/isOOR.ts`, `tests/casos/06-bordas.ts`,
+`src/motor/motorv8mp4.js` + `public/motor/motorv8mp4.js` (j9 + refVal Raiz),
+`src/components/laudo/SheetA4.tsx` (rodapé referências).
 
-## 9. Validação (cortes finais WASE / Chamber Tab.14 por sexo)
+## 8. Validação
 
-`tsc --noEmit` exit 0 · **72/72** testes · **24/24** exames reais
-(0 vazio, 0 exception). Impacto clínico: cortes pararam de
-superestimar ectasia; com a correção por sexo, ascendente de 36 mm
-em **mulher** (corte 35) sai ectasia, 40 mm em **homem** (corte 38)
-sai ectasia — coerente com a Tabela 14. Flag Senna90 **OFF** em
-produção → zero risco até o Dr. Sérgio ligar e validar na tela.
+`tsc --noEmit` + **72/72** testes Senna90 + **24/24** exames reais
+(0 vazio, 0 exception). Flag Senna90 OFF → produção inalterada (exceto a
+"Referência" da Raiz e o rodapé, que são exibição e foram pedidos pelo
+Dr. Sérgio).
