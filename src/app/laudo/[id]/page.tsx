@@ -81,13 +81,25 @@ export default function LaudoPage() {
   const logoB64 = (workspace?.logoB64 as string) || '';
   const sigB64 = (profile?.sigB64 as string) || '';
 
-  // Processar conteúdo pendente quando TipTap monta
+  // Processar conteúdo pendente quando TipTap está pronto.
+  //
+  // FIX 15/05/2026 (bug "frases não aparecem"): ANTES esse interval fazia
+  // `clearInterval` após a PRIMEIRA aplicação de pendingHtml. Problema: o
+  // motor chama `_onLaudoGerado` toda vez que recalcula (médico digita).
+  // Se nesse momento `editorRef.current` está null (TipTap remontou — e os
+  // states novos de galeria/import/reedição aumentaram re-renders), a frase
+  // ia pra `pendingHtml` MAS o interval já estava morto (clearInterval) →
+  // pendingHtml nunca mais era aplicado → comentários/conclusão sumiam.
+  //
+  // Agora o interval roda enquanto o componente está montado (só limpa no
+  // unmount). Custo: 1 tick/300ms ocioso — irrelevante. Garante que
+  // QUALQUER pendingHtml setado é aplicado na próxima checagem, sempre.
   useEffect(() => {
     const interval = setInterval(() => {
       if (pendingHtml.current && editorRef.current) {
         editorRef.current.setContent(pendingHtml.current);
         pendingHtml.current = null;
-        clearInterval(interval);
+        // NÃO faz clearInterval — mantém vivo pra próximas frases
       }
     }, 300);
     return () => clearInterval(interval);
