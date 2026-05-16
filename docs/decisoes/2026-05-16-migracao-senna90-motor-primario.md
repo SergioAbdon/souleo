@@ -105,3 +105,17 @@ testes). Abordagem **output-only swap, additive, feature-flagged**:
 Console do navegador: `localStorage.removeItem('leo:primary-engine')` →
 recarrega → motor antigo primário de novo. Zero deploy. O motor antigo
 nunca parou de carregar.
+
+## 6. Update 16/05/2026 — j9 + spec aorta implementados
+
+- **j9 Massa** (texto "Espessura"→"Massa") **reaplicado no master**
+  (cherry-pick limpo `0350307` → `2811dc5`). Pendência da migração
+  resolvida — Senna90 e motor antigo embarcam a versão clínica correta.
+- **Spec da aorta** (raiz/asc/arco: normal/ectasia/aneurisma + índice
+  cm²/m + "medindo mm") implementada e validada. Ver
+  **`docs/decisoes/2026-05-16-spec-aorta.md`** (inclui 1 interpretação
+  que precisa do aval do Sérgio: "corte idade+sexo" = método Z-score
+  validado existente, não tabela WASE inventada).
+- Validação: `tsc` limpo · 72/72 testes · 24/24 exames reais.
+- Flag Senna90 **continua OFF** em produção. Pendência §4.2 (Sérgio
+  liga a flag e valida na tela) segue de pé.

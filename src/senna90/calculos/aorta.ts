@@ -171,3 +171,90 @@ function classificarPorFallback(
   if (medida <= limites[2]) return 'moderada';
   return 'importante';
 }
+
+// ══════════════════════════════════════════════════════════════════
+// SPEC AORTA — Tiers normal/ectasia/aneurisma (Dr. Sérgio 16/05/2026)
+// ══════════════════════════════════════════════════════════════════
+// docs/decisoes/2026-05-16-spec-aorta.md
+//
+// • Normal→ectasia (Raiz/Asc): mantém o método VALIDADO existente
+//   (Z-score idade+sexo+ASC; fallback ASE 2015 por sexo) — é o "corte
+//   referenciado por idade e sexo" pedido pelo Dr. Sérgio.
+// • Ectasia→aneurisma (Raiz/Asc): ABSOLUTO ≥50 mm (ACC/AHA 2022,
+//   faixa cirúrgica esporádica). Reconcilia a antiga divergência
+//   Z-score×absoluto: leve/moderada/importante deixam de existir.
+// • Arco: faixa FIXA 22–36 normal · 37–44 ectasia · ≥45 aneurisma
+//   (sem sexo/idade e sem índice — não validado p/ arco na diretriz).
+// • Índice área transversal (cm²) ÷ altura (m): só Raiz/Asc; ≥10 ⇒
+//   "com critérios de maior gravidade" (ACC/AHA 2022).
+// ══════════════════════════════════════════════════════════════════
+
+export type TierAorta = 'normal' | 'ectasia' | 'aneurisma';
+
+export interface SegmentoAortaResult {
+  medidaMM: number;
+  tier: TierAorta;
+  indiceCm2m: number | null; // só Raiz/Asc (precisa altura)
+  graveIndice: boolean;      // indiceCm2m !== null && >= 10
+}
+
+const ANEURISMA_MM_RAIZ_ASC = 50;
+const ARCO_NORMAL_MAX = 36;
+const ARCO_ANEURISMA_MM = 45;
+
+/**
+ * Índice = área transversal (cm²) ÷ altura (m). ACC/AHA 2022: ≥10 cm²/m
+ * sugere maior gravidade. Validado só p/ raiz/ascendente.
+ */
+export function indiceAortaAltura(
+  medidaMM: number,
+  alturaCm: number | null
+): number | null {
+  if (!medidaMM || medidaMM <= 0 || alturaCm === null || alturaCm <= 0) return null;
+  const rCm = medidaMM / 10 / 2;
+  const areaCm2 = Math.PI * rCm * rCm;
+  return truncar(areaCm2 / (alturaCm / 100), 1);
+}
+
+function tierRaizAsc(
+  normalBoundary: ResultadoAorta,
+  medidaMM: number,
+  alturaCm: number | null
+): SegmentoAortaResult {
+  const indiceCm2m = indiceAortaAltura(medidaMM, alturaCm);
+  const graveIndice = indiceCm2m !== null && indiceCm2m >= 10;
+  if (normalBoundary.grau === 'normal' && medidaMM < ANEURISMA_MM_RAIZ_ASC) {
+    return { medidaMM, tier: 'normal', indiceCm2m, graveIndice };
+  }
+  const tier: TierAorta = medidaMM >= ANEURISMA_MM_RAIZ_ASC ? 'aneurisma' : 'ectasia';
+  return { medidaMM, tier, indiceCm2m, graveIndice };
+}
+
+/** Raiz aórtica — tier (normal boundary = Z-score/fallback validado). */
+export function tierRaizAo(
+  medidaMM: number,
+  sexo: Sexo,
+  asc: number | null,
+  idade: number | null,
+  alturaCm: number | null
+): SegmentoAortaResult {
+  return tierRaizAsc(classificarRaizAo(medidaMM, sexo, asc, idade), medidaMM, alturaCm);
+}
+
+/** Aorta ascendente — tier (espelha a raiz). */
+export function tierAoAscendente(
+  medidaMM: number,
+  sexo: Sexo,
+  asc: number | null,
+  alturaCm: number | null
+): SegmentoAortaResult {
+  return tierRaizAsc(classificarAoAscendente(medidaMM, sexo, asc), medidaMM, alturaCm);
+}
+
+/** Arco aórtico — faixa fixa 22–36 / 37–44 / ≥45. Sem índice. */
+export function tierArcoAo(medidaMM: number): SegmentoAortaResult {
+  let tier: TierAorta = 'normal';
+  if (medidaMM >= ARCO_ANEURISMA_MM) tier = 'aneurisma';
+  else if (medidaMM > ARCO_NORMAL_MAX) tier = 'ectasia';
+  return { medidaMM, tier, indiceCm2m: null, graveIndice: false };
+}

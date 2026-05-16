@@ -130,14 +130,17 @@ export function checkOOR(
 // ── Helper interno ──
 function getLimiteSuperior(campo: string, isM: boolean): number {
   switch (campo) {
-    case 'b7':  return isM ? 37 : 33;
+    // Limites superiores alinhados aos ranges do isOOR (cutoffs ASE 2015,
+    // atualizados 07/05/2026). b7/b28 estavam com valor antigo (37/33 e
+    // 34/31) — corrigido p/ bater com isOOR (b7: 40/36 · b28: 37/34).
+    case 'b7':  return isM ? 40 : 36;
     case 'b8':  return isM ? 40 : 38;
     case 'b9':  return isM ? 58 : 52;
     case 'b10': return isM ? 10 : 9;
     case 'b11': return isM ? 10 : 9;
     case 'b12': return isM ? 40 : 35;
     case 'b13': return 35;
-    case 'b28': return isM ? 34 : 31;
+    case 'b28': return isM ? 37 : 34;
     default: return Infinity;
   }
 }

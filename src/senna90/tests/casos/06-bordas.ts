@@ -160,7 +160,7 @@ export const casosBordas: CasoTeste[] = [
   },
   {
     id: 'B10',
-    descricao: 'Aorta ascendente dilatada (50mm)',
+    descricao: 'Aorta ascendente 50mm → aneurisma (spec 16/05/2026, ≥50mm)',
     inputs: (() => {
       const m = pacienteSaudavelM();
       m.camaras.aoAscendente = 50;
@@ -168,11 +168,12 @@ export const casosBordas: CasoTeste[] = [
     })(),
     esperado: {
       achados: [
-        'Ectasia',
+        'Dilatação aneurismática',
         'aorta ascendente',
+        'medindo 50 mm',
       ],
       conclusoes: [
-        'Ectasia',
+        'Aneurisma da aorta ascendente.',
       ],
     },
   },

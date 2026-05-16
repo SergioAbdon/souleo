@@ -240,10 +240,10 @@ export function gerarAchados(m: MedidasEcoTT, calc: CalculosDerivados): string[]
     // ── Pericárdio e Aorta ──
     ...L(jPericardio(d.b41)),
     ...L(
-      jAortaRaiz(d.b7, d.b28, d.b29, d.sexo, d.asc, calc.idade),
-      jAortaAscendente(d.b28, d.sexo, d.asc),
-      jArcoAortico(d.b29, d.sexo, d.asc),
-      jAortaNormaisComplementar(d.b7, d.b28, d.b29, d.sexo, d.asc, calc.idade),
+      jAortaRaiz(d.b7, d.b28, d.b29, d.sexo, d.asc, calc.idade, m.gerais.altura),
+      jAortaAscendente(d.b28, d.sexo, d.asc, m.gerais.altura),
+      jArcoAortico(d.b29, d.sexo),
+      jAortaNormaisComplementar(d.b7, d.b28, d.b29, d.sexo, d.asc, calc.idade, m.gerais.altura),
       jPlacas(d.b42),
     ),
   ].filter(Boolean);

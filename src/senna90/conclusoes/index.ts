@@ -30,9 +30,9 @@ import type { MedidasEcoTT, CalculosDerivados, GrauRefluxo, GrauEstenose } from 
 import { j43, DIAST_SENTENCAS, j21 } from '../achados/diastologia';
 import { jProbabilidadeHP } from '../achados/valvas';
 import {
-  classificarRaizAo,
-  classificarAoAscendente,
-  classificarArcoAo,
+  tierRaizAo,
+  tierAoAscendente,
+  tierArcoAo,
 } from '../calculos/aorta';
 import { getDiastModo } from '../achados/index';
 
@@ -139,27 +139,41 @@ function concHP(b23: number | null, b38: '' | 'S'): string {
  * 1 segmento: "Ectasia X da Y."
  * 2-3 segmentos: "Ectasia da aorta (X, Y e Z)."
  */
+/**
+ * concAorta — uma frase por segmento alterado (spec 16/05/2026).
+ * "Ectasia/Aneurisma da [segmento]" (+ ", com critérios de maior
+ * gravidade" se índice cm²/m ≥ 10 — só raiz/asc). Múltiplos segmentos
+ * = frases concatenadas no mesmo item. (Antes: "Ectasia X da aorta (...)".)
+ */
 function concAorta(d: any): string {
   if (!d.sexo) return '';
-  const raiz = d.b7 ? classificarRaizAo(d.b7, d.sexo, d.asc, d.idade) : null;
-  const asc = d.b28 ? classificarAoAscendente(d.b28, d.sexo, d.asc) : null;
-  const arco = d.b29 ? classificarArcoAo(d.b29, d.sexo, d.asc) : null;
+  const out: string[] = [];
 
-  const alterados: { seg: string; grau: string }[] = [];
-  if (raiz && raiz.grau !== 'normal') alterados.push({ seg: 'raiz aórtica', grau: raiz.grau });
-  if (asc && asc.grau !== 'normal') alterados.push({ seg: 'aorta ascendente', grau: asc.grau });
-  if (arco && arco.grau !== 'normal') alterados.push({ seg: 'arco aórtico', grau: arco.grau });
-
-  if (!alterados.length) return '';
-  if (alterados.length === 1) {
-    return `Ectasia ${alterados[0].grau} da ${alterados[0].seg}.`;
+  if (d.b7) {
+    const r = tierRaizAo(d.b7, d.sexo, d.asc, d.idade, d.altura);
+    if (r.tier === 'aneurisma') out.push('Aneurisma da Raiz aórtica.');
+    else if (r.tier === 'ectasia') {
+      out.push(r.graveIndice
+        ? 'Ectasia da Raiz aórtica, com critérios de maior gravidade.'
+        : 'Ectasia da Raiz aórtica.');
+    }
   }
-  // 2-3 segmentos
-  const segs = alterados.map(a => a.seg);
-  const segsTexto = segs.length === 2
-    ? `${segs[0]} e ${segs[1]}`
-    : `${segs.slice(0, -1).join(', ')} e ${segs[segs.length - 1]}`;
-  return `Ectasia da aorta (${segsTexto}).`;
+  if (d.b28) {
+    const r = tierAoAscendente(d.b28, d.sexo, d.asc, d.altura);
+    if (r.tier === 'aneurisma') out.push('Aneurisma da aorta ascendente.');
+    else if (r.tier === 'ectasia') {
+      out.push(r.graveIndice
+        ? 'Ectasia da aorta ascendente, com critérios de maior gravidade.'
+        : 'Ectasia da aorta ascendente.');
+    }
+  }
+  if (d.b29) {
+    const r = tierArcoAo(d.b29);
+    if (r.tier === 'aneurisma') out.push('Aneurisma do arco aórtico.');
+    else if (r.tier === 'ectasia') out.push('Ectasia do arco aórtico.');
+  }
+
+  return out.join(' ');
 }
 
 /** concStrainVE — 3 cenários (FE pres+normal, FE pres+reduzido, FE reduz) */
@@ -254,6 +268,7 @@ function montarD(m: MedidasEcoTT, calc: CalculosDerivados): any {
     b41: m.valvas.derramePericard,
     b42: m.valvas.placasArco,
     asc: calc.asc,
+    altura: m.gerais.altura,
     feT: calc.feT,
     imVE: calc.imVE,
     er: calc.er,
