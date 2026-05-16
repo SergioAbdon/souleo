@@ -81,7 +81,7 @@ export default function SheetA4({ p1, clinicaNome, clinicaSlogan, clinicaEnd, cl
           </table>
           <div style={{ fontSize: '5.5pt', color: '#888', lineHeight: 1.4, padding: '2px 4px', borderTop: '0.5px solid #ddd' }}>
             <span>DDVE= Diâmetro diastólico do VE. DSVE= Diâmetro sistólico do VE. VE= Ventrículo esquerdo. VD= Ventrículo direito.</span><br />
-            <span>Valores de referência: ASE/EACVI 2015; ASE 2025.</span>
+            <span>Valores de referência — Raiz aórtica: WASE 2022 (seio de Valsalva, por sexo e idade). Aorta ascendente: ASE/EACVI Chamber Quantification 2015 (Tab. 14). Arco aórtico: ACR/ACRIN 6654 (NLST). Índice área transversal/altura (≥10 cm²/m): ACC/AHA 2022. Demais câmaras: ASE/EACVI 2015; ASE 2025.</span>
           </div>
         </div>
 

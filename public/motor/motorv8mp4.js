@@ -1062,15 +1062,35 @@ function gerarConclusao(d){
 // ══════════════════════════════════════════════════════════════════
 // REFERÊNCIAS E ALERTAS
 // ══════════════════════════════════════════════════════════════════
-function refVal(campo,sexo){
-  // Cutoffs ASE/EACVI 2015 Chamber Quantification — atualizados 07/05/2026
-  const R={b7:{M:'32–40',F:'28–36'},b8:{M:'30–40',F:'27–38'},b9:{M:'42–58',F:'38–52'},b10:{M:'6–10',F:'6–9'},b11:{M:'6–10',F:'6–9'},b12:{M:'25–40',F:'21–35'},b13:{M:'21–35',F:'21–35'},b28:{M:'30–37',F:'27–34'},b29:{M:'22–36',F:'22–36'}};
+// WASE 2022 — limite superior do normal da Raiz (seio de Valsalva), mm,
+// por SEXO e IDADE (média+1,96·DP). Sem idade → faixa média 41–65.
+// docs/decisoes/2026-05-16-spec-aorta.md
+function waseRaizUpper(sexo,idade){
+  const m=sexo==='M';
+  if(idade==null) return m?40:36;
+  if(idade<=40) return m?38:35;
+  if(idade<=65) return m?40:36;
+  return m?41:37;
+}
+function refVal(campo,sexo,idade){
+  if(campo==='b7'&&sexo) return '≤ '+waseRaizUpper(sexo,idade)+' mm';
+  // Demais câmaras: ASE/EACVI 2015 Chamber Quantification — atualiz. 07/05/2026
+  const R={b8:{M:'30–40',F:'27–38'},b9:{M:'42–58',F:'38–52'},b10:{M:'6–10',F:'6–9'},b11:{M:'6–10',F:'6–9'},b12:{M:'25–40',F:'21–35'},b13:{M:'21–35',F:'21–35'},b28:{M:'30–37',F:'27–34'},b29:{M:'22–36',F:'22–36'}};
   return R[campo]&&sexo?(R[campo][sexo]||R[campo].M)+' mm':'';
 }
-function isOOR(campo,val,sexo){
+function idadeAnos(dn,de){
+  if(!dn||!de) return null;
+  const n=new Date(dn), e=new Date(de);
+  let a=e.getFullYear()-n.getFullYear();
+  if(e.getMonth()<n.getMonth()||(e.getMonth()===n.getMonth()&&e.getDate()<n.getDate())) a--;
+  return a;
+}
+function isOOR(campo,val,sexo,idade){
   if(val===null) return false;
-  // Cutoffs ASE 2015 Chamber Quantification — atualizados 07/05/2026
-  const L={b7:{M:[32,40],F:[28,36]},b8:{M:[30,40],F:[27,38]},b9:{M:[42,58],F:[38,52]},b10:{M:[6,10],F:[6,9]},b11:{M:[6,10],F:[6,9]},b12:{M:[25,40],F:[21,35]},b13:{M:[21,35],F:[21,35]},b28:{M:[30,37],F:[27,34]},b29:{M:[22,36],F:[22,36]}};
+  // Raiz: alerta segue WASE sexo+idade (só dilatação — sem corte inferior).
+  if(campo==='b7') return sexo?val>waseRaizUpper(sexo,idade):false;
+  // Demais câmaras: ASE 2015 Chamber Quantification — atualizados 07/05/2026
+  const L={b8:{M:[30,40],F:[27,38]},b9:{M:[42,58],F:[38,52]},b10:{M:[6,10],F:[6,9]},b11:{M:[6,10],F:[6,9]},b12:{M:[25,40],F:[21,35]},b13:{M:[21,35],F:[21,35]},b28:{M:[30,37],F:[27,34]},b29:{M:[22,36],F:[22,36]}};
   if(!L[campo]||!sexo) return false;
   const [lo,hi]=L[campo][sexo]||L[campo].M;
   return val<lo||val>hi;
@@ -1177,7 +1197,7 @@ function renderizarLaudo(d){
     ['Sexo',d.sexo||'—','','','Índice de Massa Corporal',fmt(d.imc),'kg/m²','<25 kg/m²'],
     ['Peso',fmt(d.peso),'Kg','','Relação Ao/AE',fmt(d.aoae,2),'',''],
     ['Altura',fmt(d.alt),'cm','','Vol. Diast. final VE',fmt(d.vdf),'ml',sexo?`${sexo==='M'?'62–150':'46–106'} ml`:''],
-    ['Raiz Aórtica',fmt(d.b7),'mm',refVal('b7',sexo),'Vol. Sist. final VE',fmt(d.vsf),'ml',sexo?`${sexo==='M'?'21–61':'14–42'} ml`:''],
+    ['Raiz Aórtica',fmt(d.b7),'mm',refVal('b7',sexo,idadeAnos(v('dtnasc'),v('dtexame'))),'Vol. Sist. final VE',fmt(d.vsf),'ml',sexo?`${sexo==='M'?'21–61':'14–42'} ml`:''],
     ['Átrio Esquerdo',fmt(d.b8),'mm',refVal('b8',sexo),'Fração de Ejeção (Teichholz)',d.feT!==null?(d.feT*100).toFixed(0)+'%':(d.b12===null?'VIDE':'—'),'',sexo?`>${sexo==='M'?51:53}%`:''],
     ['DDVE',fmt(d.b9),'mm',refVal('b9',sexo),'Fração de Encurtamento',d.fs!==null?(d.fs*100).toFixed(0)+'%':(d.b12===null?'VIDE':'—'),'','30–40%'],
     ['Septo Interventricular',fmt(d.b10),'mm',refVal('b10',sexo),'Massa do VE',fmt(d.massa),'g',sexo?`<${sexo==='M'?201:151} g`:''],
@@ -1187,8 +1207,9 @@ function renderizarLaudo(d){
   ];
   const campos=['b7','b8','b9','b10','b11','b12','b13',null,null,null];
   let html='';
+  const idadeRef=idadeAnos(v('dtnasc'),v('dtexame'));
   rows.forEach((r,i)=>{
-    const al=campos[i]?isOOR(campos[i],d[campos[i]],sexo):false;
+    const al=campos[i]?isOOR(campos[i],d[campos[i]],sexo,idadeRef):false;
     html+=`<tr><td>${r[0]}</td><td class="val${al?' alert':''}">${r[1]}</td><td class="ref">${r[2]}</td><td class="ref">${r[3]}</td><td class="params-divider">${r[4]}</td><td class="val">${r[5]}</td><td class="ref">${r[6]}</td><td class="ref">${r[7]}</td></tr>`;
   });
   document.getElementById('params-tbody').innerHTML=html;
