@@ -56,8 +56,8 @@ Uso real 01–16/05 (388 ag.): 315 Atendido, 28 (1), 21 NãoCompareceu,
 | Fase | Itens | Status |
 |---|---|---|
 | **A** | #1 erro visível no cadastro · #2 status correto | ✅ FEITO 3f405dd |
-| B | #5a apagar page.tsx L616 · #5b tirar 'convenio' de coletarMedidas | ⏳ aguarda OK |
-| C | #5c migração 1x: `medidas.convenio`→topo onde topo vazio (dry-run 1º) | ⏳ |
+| **B** | #5a apagar page.tsx L616 · #5b tirar 'convenio' de coletarMedidas | ✅ FEITO 5e0ce8e |
+| **C** | #5c migração: `medidas.convenio`→topo onde topo vazio | ✅ APLICADO 17/05 — 2 docs (Manoel→PARTICULAR, Ana→UNIMED), marcador `_migracaoConvenio` (reversível, `medidas.convenio` intacto) |
 | D | #4 trocar texto "corrija no Feegow" (SidebarLaudo L279-281) | ⏳ |
 | E | #3 editar convênio/solicitante em emitido (só esses 2; nome/datas 🔒; **sem crédito** = caminho novo, NÃO /api/emitir que sempre cobra; regerar PDF) | ⏳ discutir |
 | #6 | Reconciliar Feegow no clique "🔗 Feegow" | ⏳ futuro |
@@ -66,7 +66,18 @@ Uso real 01–16/05 (388 ag.): 315 Atendido, 28 (1), 21 NãoCompareceu,
 status Feegow {6,11,22,15} → marcar `nao-realizado` (NÃO apagar);
 {2,3,5} → não mexer (3 é o próprio LEO); nunca "≠4 → remover".
 
+## Teste 17/05 (data-layer, Firestore real) — 6/6 PASS
+
+`teste-cadastro-cancelar.cjs`: 2 simulações (Feegow + Manual). Cada uma:
+cria → aparece na query exata do `listenWorklist` → cancela (=`deleteDoc`,
+igual `removerDaFila`) → some. + checa que status manual = 'aguardando'
+(fix #2). Docs marcados `_teste`, auto-limpos. **Não cobre** a UI do
+`handleSalvarPaciente` (#1 silent-fail) — validar com cadastro manual
+real na clínica.
+
 ## Diagnóstico (scripts untracked, raiz do repo — não commitar)
 `check-bug-cadastro.cjs`, `check-convenio-carotidas.cjs`,
 `check-feegow-appoints.cjs`, `check-manoel-full.cjs`,
-`check-feegow-status.cjs`, `check-feegow-status2.cjs`.
+`check-feegow-status.cjs`, `check-feegow-status2.cjs`,
+`check-migracao-convenio-dryrun.cjs`, `migrar-convenio-5c.cjs`,
+`teste-cadastro-cancelar.cjs`.
