@@ -50,9 +50,11 @@ type Props = {
   exameCpf?: string;
   feegowPacienteId?: string | number | null;
   exameAcc?: string;
+  /** Salvar correção administrativa (convênio/solicitante) — sem crédito (Phase E). */
+  onCorrigirAdmin?: () => void;
 };
 
-export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, onImportarDicom, dicomLoading, dicomImportado, ortancAtivo, totalMedidasDicom, totalImagensDicom, onAbrirGaleria, emitido, modoEmitido, readOnlyIdentificacao, readOnlyMotor, exameOrigem, exameCpf, feegowPacienteId, exameAcc }: Props) {
+export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, onImportarDicom, dicomLoading, dicomImportado, ortancAtivo, totalMedidasDicom, totalImagensDicom, onAbrirGaleria, emitido, modoEmitido, readOnlyIdentificacao, readOnlyMotor, exameOrigem, exameCpf, feegowPacienteId, exameAcc, onCorrigirAdmin }: Props) {
   const [idDesbloqueado, setIdDesbloqueado] = useState(false);
   const [motorDesbloqueado, setMotorDesbloqueado] = useState(false);
   // Detectar quando readOnlyMotor muda de true→false (médico desbloqueou)
@@ -276,21 +278,21 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
           <div className="mb-2 rounded-lg border border-purple-300 bg-purple-50 p-2.5">
             <div className="flex items-center gap-2 mb-1.5">
               <span className="text-purple-600 text-sm">🔗</span>
-              <span className="text-[10.5px] text-purple-700 font-semibold flex-1">Identificação sincronizada com Feegow</span>
+              <span className="text-[10.5px] text-purple-700 font-semibold flex-1">Veio do Feegow — laudo emitido</span>
             </div>
-            <p className="text-[9.5px] text-purple-600">Para corrigir dados do paciente, edite no Feegow. O LEO atualiza automaticamente ao editar o laudo.</p>
+            <p className="text-[9.5px] text-purple-600">🔒 <b>Nome e datas</b> travados (segurança). <b>Convênio e médico solicitante:</b> corrija aqui e clique &quot;Salvar correção&quot; — <b>sem custo</b>. Editar no Feegow <b>não</b> atualiza este exame.</p>
           </div>
         )}
         {idBloqueado && exameOrigem !== 'FEEGOW' && (
           <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5">
             <div className="flex items-center gap-2 mb-1.5">
               <span className="text-amber-600 text-sm">🔒</span>
-              <span className="text-[10.5px] text-amber-700 font-semibold flex-1">Campos bloqueados — laudo já emitido</span>
+              <span className="text-[10.5px] text-amber-700 font-semibold flex-1">Laudo já emitido</span>
             </div>
-            <p className="text-[9.5px] text-amber-600 mb-2">Para corrigir dados, desbloqueie os campos. Alterações consomem 1 crédito.</p>
+            <p className="text-[9.5px] text-amber-600 mb-2">🔒 <b>Nome e datas:</b> desbloqueie p/ corrigir (consome 1 crédito). <b>Convênio e médico solicitante:</b> corrija aqui e &quot;Salvar correção&quot; — <b>sem custo</b>.</p>
             <button onClick={handleDesbloquearId} disabled={feegowLoading}
               className="w-full py-1.5 rounded-md bg-amber-500 text-white text-[10.5px] font-semibold hover:bg-amber-600 transition disabled:opacity-50">
-              {feegowLoading ? '⏳ Consultando Feegow...' : '🔓 Desbloquear campos'}
+              {feegowLoading ? '⏳ Consultando Feegow...' : '🔓 Desbloquear nome/datas (1 crédito)'}
             </button>
           </div>
         )}
@@ -299,8 +301,16 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
           <F label={idBloqueado ? '🔒 Data de nascimento' : 'Data de nascimento'}><input type="date" id="dtnasc" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
           <F label={idBloqueado ? '🔒 Data do exame' : 'Data do exame'}><input type="date" id="dtexame" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} defaultValue={dataLocalHoje()} disabled={idBloqueado} /></F>
         </div>
-        <F label={idBloqueado ? '🔒 Convênio' : 'Convênio'}><input type="text" id="convenio" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
-        <F label={idBloqueado ? '🔒 Médico solicitante' : 'Médico solicitante'}><input type="text" id="solicitante" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
+        {/* E (17/05): convênio + solicitante editáveis MESMO em emitido,
+            sem crédito. Identidade (nome/datas acima) segue travada. */}
+        <F label="Convênio"><input type="text" id="convenio" className="sf" /></F>
+        <F label="Médico solicitante"><input type="text" id="solicitante" className="sf" /></F>
+        {readOnlyIdentificacao && onCorrigirAdmin && (
+          <button type="button" onClick={onCorrigirAdmin}
+            className="w-full mt-2 py-1.5 rounded-md bg-emerald-600 text-white text-[10.5px] font-semibold hover:bg-emerald-700 transition">
+            💾 Salvar correção (convênio/solicitante) — sem custo
+          </button>
+        )}
       </Sec>
 
       {/* ═══ MEDIDAS GERAIS ═══ */}

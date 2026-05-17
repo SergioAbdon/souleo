@@ -703,6 +703,43 @@ export default function LaudoPage() {
     toast('Laudo desbloqueado para edição');
   }
 
+  // Phase E (17/05): corrige SÓ convênio + solicitante de um exame emitido,
+  // SEM crédito, regerando o PDF. Não passa por /api/emitir (que sempre cobra).
+  // Identidade (nome/datas) NÃO entra aqui — segue travada/Desbloquear.
+  async function handleCorrigirLaudo() {
+    if (!workspace?.id || !exameId || !user?.uid) return;
+    const convenio = (document.getElementById('convenio') as HTMLInputElement)?.value || '';
+    const solicitante = (document.getElementById('solicitante') as HTMLInputElement)?.value || '';
+    const nome = (document.getElementById('nome') as HTMLInputElement)?.value || 'PACIENTE';
+    const nomeArq = prefixoArquivoPorTipo(exame?.tipoExame as string | undefined) + ' ' + nome.trim().toUpperCase();
+    toast('Salvando correção e regerando PDF...');
+    try {
+      const res = await fetch('/api/corrigir-laudo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          wsId: workspace.id,
+          exameId,
+          convenio,
+          solicitante,
+          pdfHtml: gerarPdfHtml(true),
+          nomeArq,
+          medicoUid: user.uid,
+        }),
+      });
+      const r = await res.json();
+      if (!r.ok) { toast('Erro ao salvar correção. Tente novamente.'); return; }
+      if (r.pdfUrl) {
+        toast('Correção salva — PDF atualizado');
+        window.open(r.pdfUrl, '_blank');
+      } else {
+        toast(r.pdfErro ? 'Correção salva. PDF falhou — tente "Imprimir".' : 'Correção salva.');
+      }
+    } catch {
+      toast('Erro de conexão ao salvar correção.');
+    }
+  }
+
   function handleFinalizar() {
     toast('Atendimento finalizado');
     router.push('/dashboard');
@@ -1105,6 +1142,7 @@ ${imagensPdfHtml}
         exameCpf={exame?.cpf as string || ''}
         feegowPacienteId={exame?.feegowPacienteId as string | number | null || null}
         exameAcc={exame?.acc as string || ''}
+        onCorrigirAdmin={handleCorrigirLaudo}
         modoEmitido={
           <ModoEmitido
             onFinalizar={handleFinalizar}
