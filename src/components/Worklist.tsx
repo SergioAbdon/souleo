@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { savePaciente, saveExame, listenWorklist, listenNaoRealizados, getExame } from '@/lib/firestore';
+import { savePaciente, saveExame, listenWorklist, listenNaoRealizados, getExame, getPaciente } from '@/lib/firestore';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
 import { dataLocalHoje } from '@/lib/utils';
 import { gerarAccessionNumber } from '@/lib/gerarAccessionNumber';
@@ -184,11 +184,14 @@ export default function Worklist() {
     setCpfBuscando(false);
   }
 
-  function editarPaciente(item: ExameItem) {
+  async function editarPaciente(item: ExameItem) {
     setEditPacId(item.pacienteId as string || null);
     setEditExameId(item.id);
     setPacNome(item.pacienteNome as string || '');
-    setPacCpf(''); // CPF não está no exame, vem do paciente
+    // #7a: CPF ESTÁ no exame (gravado no cadastro). Antes vinha vazio
+    // (comentário antigo "não está no exame" estava errado). Sem isso,
+    // salvar a edição apagava o CPF do paciente — e CPF é chave do DICOM.
+    setPacCpf(item.cpf as string || '');
     setPacDtnasc(item.pacienteDtnasc as string || '');
     setPacSexo(item.sexo as string || '');
     setPacTel('');
@@ -197,6 +200,16 @@ export default function Worklist() {
     setPacTipoExame(item.tipoExame as string || 'eco_tt');
     setPacErro('');
     setModalPac(true);
+    // #7b: fonte verdadeira — busca a ficha do paciente p/ CPF+telefone
+    // reais (telefone não fica no exame; CPF pode estar só na ficha em
+    // exames antigos). Assíncrono: modal já abriu, campos se completam.
+    if (item.pacienteId && workspace?.id) {
+      const pac = await getPaciente(workspace.id, item.pacienteId as string) as Record<string, unknown> | null;
+      if (pac) {
+        if (pac.cpf) setPacCpf(pac.cpf as string);
+        if (pac.telefone) setPacTel(pac.telefone as string);
+      }
+    }
   }
 
   async function handleSalvarPaciente() {
@@ -205,12 +218,17 @@ export default function Worklist() {
     if (!workspace?.id) { setPacErro('Workspace não encontrado.'); return; }
     setPacLoading(true);
 
+    const cpfLimpo = pacCpf.replace(/\D/g, '');
     const pacData: Record<string, unknown> = {
       nome: pacNome.trim().toUpperCase(),
-      cpf: pacCpf.replace(/\D/g, ''),
       dtnasc: pacDtnasc, sexo: pacSexo,
-      telefone: pacTel, convenio: pacConvenio,
+      convenio: pacConvenio,
     };
+    // #7c defensivo: NÃO regravar cpf/telefone vazios por cima do valor
+    // existente. Só grava se preenchido — evita apagar CPF/telefone numa
+    // edição (ex: corrigir convênio). CPF é a chave de pareamento DICOM.
+    if (cpfLimpo) pacData.cpf = cpfLimpo;
+    if (pacTel) pacData.telefone = pacTel;
     if (editPacId) pacData.id = editPacId;
 
     const pacId = await savePaciente(workspace.id, pacData);

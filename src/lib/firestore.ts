@@ -249,6 +249,13 @@ export async function getPacientes(wsId: string) {
   } catch (e) { console.error('getPacientes:', e); return []; }
 }
 
+export async function getPaciente(wsId: string, pacienteId: string) {
+  try {
+    const snap = await getDoc(doc(db, 'workspaces', wsId, 'pacientes', pacienteId));
+    return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  } catch (e) { console.error('getPaciente:', e); return null; }
+}
+
 export async function savePaciente(wsId: string, dados: Record<string, unknown>) {
   try {
     if (dados.id) {
