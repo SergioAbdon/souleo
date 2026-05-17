@@ -86,8 +86,8 @@ Uso real 01–16/05 (388 ag.): 315 Atendido, 28 (1), 21 NãoCompareceu,
 | **A** | #1 erro visível no cadastro · #2 status correto | ✅ FEITO 3f405dd |
 | **B** | #5a apagar page.tsx L616 · #5b tirar 'convenio' de coletarMedidas | ✅ FEITO 5e0ce8e |
 | **C** | #5c migração: `medidas.convenio`→topo onde topo vazio | ✅ APLICADO 17/05 — 2 docs (Manoel→PARTICULAR, Ana→UNIMED), marcador `_migracaoConvenio` (reversível, `medidas.convenio` intacto) |
-| D | #4 trocar texto "corrija no Feegow" (SidebarLaudo L279-281) | ⏳ |
-| E | #3 editar convênio/solicitante em emitido (só esses 2; nome/datas 🔒; **sem crédito** = caminho novo, NÃO /api/emitir que sempre cobra; regerar PDF) | ⏳ discutir |
+| **D** | #4 mensagem verdadeira (2 caixas SidebarLaudo, FEEGOW+não) | ✅ FEITO 526937e |
+| **E** | #3 convênio/solicitante editável em emitido **sem crédito** + regera PDF (endpoint novo `/api/corrigir-laudo`; PDF extraído p/ `src/lib/pdf-server.ts`) | ✅ FEITO 526937e |
 | #6 | Reconciliar Feegow no clique "🔗 Feegow" | ⏳ futuro |
 | **#7** | Editar paciente apagava CPF/telefone (7a+7b+7c) | ✅ FEITO aa27b2d |
 
@@ -118,7 +118,9 @@ Escopo e custo são **independentes**:
 | Médico solicitante | 📄 Por exame | 🟢 grátis |
 | Convênio | 📄 Por exame | 🟢 grátis |
 
-### D + E — plano final (escolhas A+A) — ⏳ aguarda "pode codar" do Dr. Sérgio
+### D + E — ✅ FEITO 526937e (17/05, escolhas A+A)
+Endpoint `/api/corrigir-laudo` (sem billing) + `src/lib/pdf-server.ts`
+(PDF extraído, reuso emitir+corrigir). Identidade segue travada. Plano:
 - **D**: reescrever as 2 caixas em `SidebarLaudo.tsx` (275-296, FEEGOW e
   não-FEEGOW) com texto verdadeiro: identidade 🔒 (Desbloquear=1 crédito),
   convênio/solicitante corrigíveis aqui sem custo, "editar no Feegow NÃO
