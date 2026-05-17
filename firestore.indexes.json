@@ -4,6 +4,14 @@
       "collectionGroup": "exames",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "acc", "order": "ASCENDING" },
+        { "fieldPath": "dataExame", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "exames",
+      "queryScope": "COLLECTION",
+      "fields": [
         { "fieldPath": "dataExame", "order": "ASCENDING" },
         { "fieldPath": "horarioChegada", "order": "ASCENDING" }
       ]
