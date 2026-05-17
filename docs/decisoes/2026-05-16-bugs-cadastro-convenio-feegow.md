@@ -49,6 +49,22 @@ Load: linhas ~416-432 (aplica `medidas`, fallback topo só "se vazio").
 Carótidas sem convênio = **dado do Feegow, NÃO bug LEO**: o agendamento
 de Carótida no Feegow tem `convenio_id` null (só o Eco tem id=3 UNIMED).
 
+## Bug 7 — Editar paciente apagava CPF/telefone  ✅ CORRIGIDO (aa27b2d)
+
+Observado pelo Dr. Sérgio (17/05). `editarPaciente` fazia
+`setPacCpf('')`+`setPacTel('')` (suposição errada no comentário: "CPF
+não está no exame"). Mas o exame **tem** `cpf` (gravado no cadastro,
+manual e Feegow). Ao Salvar, `savePaciente` (updateDoc) regravava
+`cpf:''`/`telefone:''` por cima da ficha do paciente → **perda de
+dado**. CPF = chave de pareamento DICOM/Orthanc. Confirmado com dado
+real (cadastro de hoje tinha cpf/tel salvos; só a edição não exibia).
+
+Fix: **7a** `editarPaciente` carrega `item.cpf`; **7b** novo
+`getPaciente()` (firestore.ts) busca a ficha p/ CPF+telefone reais
+(async, modal já abre); **7c** `handleSalvarPaciente` não inclui
+cpf/telefone vazios no `pacData` → `updateDoc` não zera o existente.
+`savePaciente` só tem 1 caller (Worklist) — fix localizado seguro.
+
 ## Status possíveis no Feegow (oficial, `/appoints/status`, 11)
 
 | id | status | id | status |
@@ -73,6 +89,7 @@ Uso real 01–16/05 (388 ag.): 315 Atendido, 28 (1), 21 NãoCompareceu,
 | D | #4 trocar texto "corrija no Feegow" (SidebarLaudo L279-281) | ⏳ |
 | E | #3 editar convênio/solicitante em emitido (só esses 2; nome/datas 🔒; **sem crédito** = caminho novo, NÃO /api/emitir que sempre cobra; regerar PDF) | ⏳ discutir |
 | #6 | Reconciliar Feegow no clique "🔗 Feegow" | ⏳ futuro |
+| **#7** | Editar paciente apagava CPF/telefone (7a+7b+7c) | ✅ FEITO aa27b2d |
 
 **#6 regra (segura):** só `origem=FEEGOW` + só `status LEO=aguardando`;
 status Feegow {6,11,22,15} → marcar `nao-realizado` (NÃO apagar);
