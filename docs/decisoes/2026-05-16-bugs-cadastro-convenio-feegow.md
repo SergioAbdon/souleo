@@ -14,9 +14,21 @@ Causa (provada — nenhum exame `origem=MANUAL` ou criado hoje no Firestore):
   → sobrescrevia o `status:'aguardando'` do cadastro manual.
 
 Fix aplicado: tratar `saveExame` vazio (erro + modal aberto, 2 ramos);
-`status: (dados.status as string) || 'rascunho'`. Causa raiz exata da
-falha do `saveExame` ainda desconhecida — a Fase A faz ela **aparecer**
-(erro na tela + Console F12) na próxima tentativa.
+`status: (dados.status as string) || 'rascunho'`.
+
+**CAUSA RAIZ FECHADA (17/05):** Phase A #1 funcionou em produção e
+revelou no Console: `saveExame: FirebaseError: The query requires an
+index`. A consulta anti-colisão de ACC (`saveExame` L303-308:
+`where('acc','==') + where('dataExame','==')`) **nunca teve índice
+composto**. Manual passa por `saveExame` → quebrava. Feegow não (usa
+`writeBatch` direto). Fix: índice `acc+dataExame` add em
+`firestore.indexes.json` (commit 3fc1a2d) + `firebase deploy --only
+firestore:indexes` (17/05, via service account, sem --force) →
+índice confirmado no Firebase. **Bug 1 encerrado.**
+
+Hardening opcional pendente (decisão Dr. Sérgio): trocar a consulta
+por `where('acc','==')` só + filtro de data em memória → nunca mais
+depende de índice composto.
 
 ## Bug 2 — Convênio: campo DUPLICADO (causa raiz provada)
 
