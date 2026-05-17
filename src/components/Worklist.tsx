@@ -218,7 +218,7 @@ export default function Worklist() {
 
     if (editExameId) {
       // Atualizando paciente de um exame existente
-      await saveExame(workspace.id, {
+      const okExame = await saveExame(workspace.id, {
         id: editExameId,
         pacienteNome: pacNome.trim().toUpperCase(),
         pacienteDtnasc: pacDtnasc,
@@ -227,6 +227,11 @@ export default function Worklist() {
         tipoExame: pacTipoExame,
         sexo: pacSexo,
       }, profile?.id || '');
+      if (!okExame) {
+        setPacErro('Não foi possível salvar a alteração. Nada foi gravado. (Detalhe no Console — F12.)');
+        setPacLoading(false);
+        return;
+      }
     } else {
       // Novo paciente — criar exame na fila
       const agora2 = new Date();
@@ -248,21 +253,25 @@ export default function Worklist() {
         origem: 'MANUAL',
       }, profile?.id || '');
 
-      // Enviar MWL ao Orthanc (fire-and-forget)
-      if (novoExameId) {
-        enviarMwlOrthanc({
-          wsId: workspace.id,
-          exameId: novoExameId,
-          pacienteNome: pacNome.trim().toUpperCase(),
-          pacienteId: pacCpf.replace(/\D/g, ''),
-          pacienteDtnasc: pacDtnasc,
-          sexo: pacSexo,
-          tipoExame: pacTipoExame,
-          dataExame: dataLocalHoje(),
-          horarioChegada: horaChegada,
-          medicoNome: profile?.nome as string || '',
-        });
+      if (!novoExameId) {
+        setPacErro('Não foi possível criar o exame na fila. Nada foi gravado. (Detalhe no Console — F12.)');
+        setPacLoading(false);
+        return;
       }
+
+      // Enviar MWL ao Orthanc (fire-and-forget)
+      enviarMwlOrthanc({
+        wsId: workspace.id,
+        exameId: novoExameId,
+        pacienteNome: pacNome.trim().toUpperCase(),
+        pacienteId: pacCpf.replace(/\D/g, ''),
+        pacienteDtnasc: pacDtnasc,
+        sexo: pacSexo,
+        tipoExame: pacTipoExame,
+        dataExame: dataLocalHoje(),
+        horarioChegada: horaChegada,
+        medicoNome: profile?.nome as string || '',
+      });
     }
 
     setPacLoading(false);

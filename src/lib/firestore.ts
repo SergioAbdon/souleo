@@ -316,7 +316,7 @@ export async function saveExame(wsId: string, dados: Record<string, unknown>, me
       const ref = doc(collection(db, 'workspaces', wsId, 'exames'));
       await setDoc(ref, {
         id: ref.id, ...dados,
-        status: 'rascunho', versao: 1, medicoUid,
+        status: (dados.status as string) || 'rascunho', versao: 1, medicoUid,
         criadoEm: now()
       });
       return ref.id;
