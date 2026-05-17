@@ -438,7 +438,10 @@ export default function LaudoPage() {
   }
 
   function coletarMedidas(): Record<string, string> {
-    const campos = ['nome', 'dtnasc', 'dtexame', 'convenio', 'solicitante', 'sexo', 'ritmo', 'peso', 'altura',
+    // 'convenio' REMOVIDO daqui (fonte única 16/05): convênio é canônico só
+    // no topo do exame (lido por Worklist/Extrato). Antes era duplicado em
+    // medidas.convenio e os dois divergiam. Load usa o fallback do topo.
+    const campos = ['nome', 'dtnasc', 'dtexame', 'solicitante', 'sexo', 'ritmo', 'peso', 'altura',
       'b7', 'b8', 'b9', 'b10', 'b11', 'b12', 'b13', 'b28', 'b29', 'b24', 'b25',
       'b19', 'b20', 'b21', 'b22', 'b23', 'b24_diast', 'b37', 'b38', 'b54', 'b32', 'b33', 'gls_ve', 'gls_vd', 'lars',
       'b34', 'b35', 'b34t', 'b36', 'b39', 'b40', 'b39p', 'b40p', 'psmap',
@@ -613,7 +616,10 @@ export default function LaudoPage() {
       // Dados extras pra consumo/log (server usa)
       pacienteNome: (exame?.pacienteNome as string) || identificacao.pacienteNome || '',
       tipoExame: (exame?.tipoExame as string) || '',
-      convenio: (exame?.convenio as string) || '',
+      // convenio: NÃO sobrescrever aqui. Vem de `...identificacao` (valor
+      // do DOM = o que o médico vê). A linha antiga jogava o `exame.convenio`
+      // STALE por cima → topo gravava "" mesmo com convênio digitado (bug
+      // 16/05: laudo mostrava PARTICULAR, Worklist/Extrato viam vazio).
       reemissao: jaEmitido,
       identificacaoAlterada: idMudou,
     };
