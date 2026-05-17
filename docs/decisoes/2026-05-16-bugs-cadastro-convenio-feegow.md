@@ -104,6 +104,60 @@ igual `removerDaFila`) → some. + checa que status manual = 'aguardando'
 `handleSalvarPaciente` (#1 silent-fail) — validar com cadastro manual
 real na clínica.
 
+## Sessão 17/05 — design D+E, modelo de dados, arquitetura
+
+### Modelo de 2 eixos (decidido c/ Dr. Sérgio)
+Escopo e custo são **independentes**:
+
+| Campo | Escopo | Custo edição |
+|---|---|---|
+| CPF | 🗂️ Paciente (a "pasta") | 🔒 1 crédito |
+| Nome | 🗂️ Paciente | 🔒 1 crédito |
+| Data nascimento | 🗂️ Paciente | 🔒 1 crédito |
+| Data do exame | 📄 Por exame | 🔒 1 crédito |
+| Médico solicitante | 📄 Por exame | 🟢 grátis |
+| Convênio | 📄 Por exame | 🟢 grátis |
+
+### D + E — plano final (escolhas A+A) — ⏳ aguarda "pode codar" do Dr. Sérgio
+- **D**: reescrever as 2 caixas em `SidebarLaudo.tsx` (275-296, FEEGOW e
+  não-FEEGOW) com texto verdadeiro: identidade 🔒 (Desbloquear=1 crédito),
+  convênio/solicitante corrigíveis aqui sem custo, "editar no Feegow NÃO
+  atualiza este exame" (não há auto-sync — confirmado no código).
+- **E**: convênio+solicitante editáveis em emitido, **sem crédito**, **regera PDF**:
+  - E1 `SidebarLaudo.tsx` 302-303: tirar `disabled={idBloqueado}`+🔒 só de
+    convênio/solicitante (nome/datas 297-300 continuam travados).
+  - E2 `page.tsx`: `handleCorrigirLaudo()` + botão "💾 Salvar correção (sem custo)"
+    visível só se emitido e mudou.
+  - E3 **novo** `/api/corrigir-laudo/route.ts`: update `exame.convenio`+
+    `exame.solicitante` (topo) + regera PDF + log `correcao_admin`. SEM billing.
+  - E4 extrair `gerarESalvarPdf` de `/api/emitir` → `src/lib/pdf-server.ts`
+    (1 pipeline; os 2 endpoints importam).
+- **D+E saem juntos** (mensagem precisa bater com o comportamento).
+
+### Decididos (futuro, design dedicado)
+- **#8a**: `editarPaciente`/save deve gravar `exame.cpf` também (fonte única).
+- **Soft-delete** de laudo emitido: arquiva (auditoria), some do Histórico.
+- **ACC no Histórico**: coluna informativa (NÃO copiável).
+- **#9 ficha-identidade no Histórico** (acesso = equipe): abre ficha (não laudo);
+  nome/CPF/datas com 🔒 → clica cadeado → msg custo (1 crédito); resto grátis.
+- **#10 re-associar exame**: no modelo CPF-pasta **vira a própria edição
+  travada do CPF** (não precisa operação especial). Per-exame → não corrompe
+  histórico dos outros.
+- **#6** reconciliar Feegow · **#8b** Wader reescrever `.wl` (deploy manual).
+
+### Direção arquitetural (diagnóstico honesto)
+Problema-raiz transversal: **dado duplicado sem fonte única + sem
+reconciliação** (convênio, CPF, identidade). Não é rewrite — consolidação
+incremental (Phase B já fez convênio=fonte-única; CPF a seguir). Norte:
+"1 dado = 1 dono" + identidade ancorada em **CPF** (modelo CPF-pasta).
+Avaliação: produto real/valioso, motor muito bem feito, dívida
+arquitetural conhecida e tratável (~7/10).
+
+### Perguntas abertas do modelo CPF-pasta
+1. Paciente sem CPF (estrangeiro) → chave de fallback (feegowId/id).
+2. Doc `paciente` vira cache? Verdade = exame agrupado por CPF.
+3. Nome divergente entre exames do mesmo CPF → política a definir.
+
 ## Diagnóstico (scripts untracked, raiz do repo — não commitar)
 `check-bug-cadastro.cjs`, `check-convenio-carotidas.cjs`,
 `check-feegow-appoints.cjs`, `check-manoel-full.cjs`,
