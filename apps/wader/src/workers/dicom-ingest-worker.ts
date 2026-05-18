@@ -1,5 +1,6 @@
 import { OrthancClient } from '../adapters/orthanc-client';
 import { processarEstudo, IngestResult } from './dicom-ingest';
+import { IngestStateStore } from './ingest-state';
 import { createLogger } from '../logger';
 
 const log = createLogger({ module: 'dicom-ingest-worker' });
@@ -8,41 +9,55 @@ export interface DicomIngestWorkerOptions {
   wsId: string;
   client: OrthancClient;
   intervalSec: number;
+  /** Caminho do arquivo de estado (default: <cwd>/.wader-ingest-state.json). */
+  stateFile?: string;
 }
 
 /**
- * Worker que monitora `/changes` do Orthanc e processa novos estudos.
+ * Worker que monitora `/changes` do Orthanc e processa estudos estáveis.
  *
- * Estratégia:
- *   - Mantém cursor `lastSeq` em memória (em produção, persistir em arquivo
- *     pra retomar após reinício)
- *   - Polling a cada `intervalSec` segundos
- *   - Pra cada change `StableStudy` (estudo finalizado), processa
- *   - Processados ficam em `processedStudyIds` pra evitar duplo-processamento
+ * ADR 2026-05-18 (wader-ingest-resiliente) — mudanças vs. versão antiga:
+ *
+ *   Fix 1 — cursor `lastSeq` PERSISTIDO em disco (IngestStateStore).
+ *     Restart retoma de onde parou; não re-varre 800+ changes do seq 0.
+ *
+ *   Fix 2 — re-avaliação por COMPLETUDE no lugar de blacklist eterna.
+ *     Antes: `processedStudyIds` (Set em memória) marcava estudo como
+ *     "visto pra sempre" — órfão que ganhava ACC depois, ou estudo que
+ *     estabilizou parcial (4 imgs, SR atrasado), ficava travado.
+ *     Agora: guardamos uma assinatura {nImg,nSR} por estudo; se o Orthanc
+ *     passa a ter mais imagens/SR do que gravamos (ou ainda não casou),
+ *     reprocessa. `processarEstudo` é idempotente (sobrescreve).
  *
  * Por que `StableStudy` e não `NewStudy`?
- *   - `NewStudy` dispara quando primeira instance chega — estudo ainda incompleto
- *   - `StableStudy` dispara quando Orthanc considera o estudo "completo"
- *     (configurável via StableAge no orthanc.json — default 60s sem novas instances)
+ *   - `NewStudy` dispara na 1ª instance — estudo incompleto.
+ *   - `StableStudy` dispara quando o Orthanc considera o estudo estável
+ *     (StableAge, default 60s sem novas instances). Cada nova
+ *     estabilização (mais imagens chegaram) gera um NOVO StableStudy.
  */
 export class DicomIngestWorker {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
-  private lastSeq = 0;
   private execCount = 0;
   private lastTickAt: Date | null = null;
   private lastError: string | null = null;
   private estudosProcessados = 0;
   private estudosOrfaos = 0;
-  private processedStudyIds = new Set<string>();
   private lastResults: IngestResult[] = [];
+  private readonly store: IngestStateStore;
 
-  constructor(private readonly opts: DicomIngestWorkerOptions) {}
+  constructor(private readonly opts: DicomIngestWorkerOptions) {
+    this.store = new IngestStateStore(opts.stateFile);
+  }
 
   start(): void {
     if (this.running) return;
     this.running = true;
-    log.info({ intervalSec: this.opts.intervalSec, wsId: this.opts.wsId }, 'DICOM ingest worker iniciado');
+    this.store.load();
+    log.info(
+      { intervalSec: this.opts.intervalSec, wsId: this.opts.wsId, lastSeq: this.store.getLastSeq() },
+      'DICOM ingest worker iniciado (cursor persistido)',
+    );
     this.tick();
     this.timer = setInterval(() => this.tick(), this.opts.intervalSec * 1000);
   }
@@ -52,6 +67,7 @@ export class DicomIngestWorker {
     this.running = false;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    this.store.flush();
     log.info('DICOM ingest worker parado');
   }
 
@@ -63,89 +79,105 @@ export class DicomIngestWorker {
     return {
       running: this.running,
       intervalSec: this.opts.intervalSec,
-      lastSeq: this.lastSeq,
+      lastSeq: this.store.getLastSeq(),
       execCount: this.execCount,
       estudosProcessados: this.estudosProcessados,
       estudosOrfaos: this.estudosOrfaos,
       lastTickAt: this.lastTickAt?.toISOString() ?? null,
       lastError: this.lastError,
-      cacheProcessados: this.processedStudyIds.size,
+      cacheProcessados: this.store.size(),
       ultimosResultados: this.lastResults.slice(-5),
     };
   }
 
-  /**
-   * Reseta cursor pra 0 (re-processa tudo).
-   * Útil pra debug / quando muda lógica de processamento.
-   */
+  /** Reseta cursor pra 0 (re-processa tudo). Debug / mudança de lógica. */
   resetCursor(): void {
-    this.lastSeq = 0;
-    this.processedStudyIds.clear();
-    log.info('Cursor de changes resetado pra 0');
+    this.store.reset();
+    log.info('Cursor de changes resetado pra 0 (estado persistido limpo)');
   }
 
   private async tick(): Promise<void> {
     this.execCount++;
     this.lastTickAt = new Date();
     try {
-      const changes = await this.opts.client.changes(this.lastSeq, 100);
-      this.lastSeq = changes.Last;
+      const desde = this.store.getLastSeq();
+      const changes = await this.opts.client.changes(desde, 100);
 
-      // Filtra estudos estáveis ainda não processados
-      const studiesToProcess = changes.Changes.filter(
-        (c) =>
-          c.ChangeType === 'StableStudy' &&
-          c.ResourceType === 'Study' &&
-          !this.processedStudyIds.has(c.ID),
-      );
-
-      if (studiesToProcess.length === 0) {
-        this.lastError = null;
-        return;
+      // Estudos estáveis nesta página, deduplicados por ID (fica o mais recente).
+      const stable = new Map<string, number>();
+      for (const c of changes.Changes) {
+        if (c.ChangeType === 'StableStudy' && c.ResourceType === 'Study') {
+          stable.set(c.ID, c.Seq);
+        }
       }
 
-      log.info({ count: studiesToProcess.length, lastSeq: this.lastSeq }, 'Novos estudos estáveis detectados');
+      if (stable.size > 0) {
+        log.info(
+          { count: stable.size, desde, ate: changes.Last },
+          'Estudos estáveis nesta página',
+        );
+      }
 
-      for (const change of studiesToProcess) {
-        // Marca processado ANTES da tentativa: evita loop infinito se o estudo
-        // sempre falhar (ex: imagem corrompida). Se quisermos retry, removemos
-        // do set abaixo quando `result.matched === false` (significa erro recuperável
-        // como rede ou Orthanc temporariamente offline na hora do preview).
-        this.processedStudyIds.add(change.ID);
+      for (const studyId of stable.keys()) {
         try {
+          // Contagem ATUAL no Orthanc (barata: só conta instances por
+          // modalidade, não baixa nada). Decide se precisa (re)processar.
+          let curImg = 0;
+          let curSR = 0;
+          try {
+            const series = await this.opts.client.getStudySeries(studyId);
+            for (const s of series) {
+              const n = (s.Instances ?? []).length;
+              if ((s.MainDicomTags?.Modality ?? '') === 'SR') curSR += n;
+              else curImg += n;
+            }
+          } catch {
+            // Estudo pode ter sido apagado entre o change e agora — ignora.
+            continue;
+          }
+
+          if (!this.store.precisaProcessar(studyId, curImg, curSR)) {
+            continue; // já processamos e está completo
+          }
+
           const result = await processarEstudo({
             client: this.opts.client,
-            orthancStudyId: change.ID,
+            orthancStudyId: studyId,
             wsId: this.opts.wsId,
           });
           this.lastResults.push(result);
           if (this.lastResults.length > 20) this.lastResults = this.lastResults.slice(-20);
+
           if (result.matched) {
             this.estudosProcessados++;
+            // Só grava assinatura quando casou E gravou de fato (matched só
+            // fica true em sucesso total no processarEstudo). Assim um
+            // parcial/órfão NÃO é marcado completo e será reavaliado.
+            this.store.setSignature(studyId, {
+              nImg: result.imagensProcessadas,
+              nSR: result.medidasExtraidas,
+              matched: true,
+              at: new Date().toISOString(),
+            });
           } else {
             this.estudosOrfaos++;
-            // Caso "erro-imagens" (exame existia no LEO mas download falhou):
-            // tira do set pra retentar. `exameIdNoLeo` preenchido distingue
-            // "exame não existe" (órfão genuíno, deixa marcado) de
-            // "exame existe mas download falhou" (retenta).
-            if (result.exameIdNoLeo) {
-              this.processedStudyIds.delete(change.ID);
-              log.info(
-                { orthancStudyId: change.ID, exameId: result.exameIdNoLeo },
-                'Removido de processedStudyIds — vai retentar próxima rodada',
-              );
-            }
+            // Órfão (sem exame no LEO ainda) ou falha: NÃO marca como
+            // completo. Quando o exame for cadastrado / reenviado com ACC,
+            // um novo StableStudy reaparece e reprocessamos.
           }
         } catch (err) {
-          // Erro inesperado (não capturado por processarEstudo). Remove pra retentar.
-          this.processedStudyIds.delete(change.ID);
-          log.error({ err, orthancStudyId: change.ID }, 'Falha ao processar estudo — vai retentar');
+          log.error({ err, orthancStudyId: studyId }, 'Falha ao processar estudo — reavaliará');
           this.lastError = (err as Error).message;
         }
       }
+
+      // Avança o cursor SÓ depois de processar a página (crash no meio ⇒
+      // reprocessa a página; processarEstudo é idempotente). Persiste já.
+      this.store.setLastSeq(changes.Last);
+      this.store.flush();
+      this.lastError = null;
     } catch (err) {
       this.lastError = (err as Error).message;
-      // Não loga em ERROR no tick recorrente — só warn (clínica pode estar offline temporariamente)
       log.warn({ err: this.lastError }, 'Tick falhou (Orthanc inacessível?)');
     }
   }

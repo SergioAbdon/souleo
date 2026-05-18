@@ -2,9 +2,47 @@ import { OrthancClient, OrthancStudy } from '../adapters/orthanc-client';
 import { uploadDicomPreview } from '../adapters/storage-uploader';
 import { extrairMedidasDoEstudo, SrParseResult } from '../adapters/dicom-sr-parser';
 import { getDb, FieldValue } from '../adapters/firebase';
+import { candidatos } from '../lib/acc';
 import { createLogger } from '../logger';
 
 const log = createLogger({ module: 'dicom-ingest' });
+
+/**
+ * Acha o AccessionNumber do estudo (ADR 2026-05-18, Fix 4).
+ *
+ * O nível-estudo do Orthanc fica VAZIO quando as séries têm ACCs
+ * inconsistentes (ex.: SR carimbado, imagens não). Então: se o
+ * study.MainDicomTags.AccessionNumber vier vazio, varremos as séries
+ * (1ª instance de cada) e usamos o primeiro ACC não-vazio que achar.
+ */
+async function resolverAccession(
+  client: OrthancClient,
+  study: OrthancStudy,
+  orthancStudyId: string,
+): Promise<string> {
+  const direto = (study.MainDicomTags.AccessionNumber ?? '').trim();
+  if (direto) return direto;
+
+  try {
+    const series = await client.getStudySeries(orthancStudyId);
+    for (const s of series) {
+      const inst = (s.Instances ?? [])[0];
+      if (!inst) continue;
+      const tags = await client.getInstanceSimplifiedTags(inst);
+      const acc = String((tags as Record<string, unknown>).AccessionNumber ?? '').trim();
+      if (acc) {
+        log.info(
+          { orthancStudyId, acc, serie: s.MainDicomTags?.Modality },
+          'ACC recuperado de série (nível-estudo vinha vazio)',
+        );
+        return acc;
+      }
+    }
+  } catch (err) {
+    log.warn({ err, orthancStudyId }, 'Falha ao varrer séries em busca de ACC');
+  }
+  return '';
+}
 
 export interface IngestResult {
   orthancStudyId: string;
@@ -54,7 +92,7 @@ export async function processarEstudo(opts: {
     return result;
   }
 
-  const accession = study.MainDicomTags.AccessionNumber ?? '';
+  const accession = await resolverAccession(opts.client, study, opts.orthancStudyId);
   result.accessionNumber = accession;
 
   if (!accession) {
@@ -75,17 +113,23 @@ export async function processarEstudo(opts: {
   let exameRef: FirebaseFirestore.DocumentReference | null = null;
   let exameId: string | null = null;
 
-  const porAcc = await examesCol.where('acc', '==', accession).limit(1).get();
-  if (!porAcc.empty) {
-    exameRef = porAcc.docs[0].ref;
-    exameId = porAcc.docs[0].id;
-  } else {
+  // Fix 4 (ADR 2026-05-18): tenta as formas plausíveis do ACC (com/sem
+  // prefixo `EX`, só dígitos). Bounded (≤3 queries) — nunca varre a coleção.
+  // Tolera a recepção ter digitado o ACC sem o "EX" no Vivid.
+  const formas = candidatos(accession);
+  for (const forma of formas) {
+    const porAcc = await examesCol.where('acc', '==', forma).limit(1).get();
+    if (!porAcc.empty) {
+      exameRef = porAcc.docs[0].ref;
+      exameId = porAcc.docs[0].id;
+      break;
+    }
     // Fallback legado: doc id == ACC
-    const legadoRef = examesCol.doc(accession);
-    const legadoSnap = await legadoRef.get();
+    const legadoSnap = await examesCol.doc(forma).get();
     if (legadoSnap.exists) {
-      exameRef = legadoRef;
-      exameId = accession;
+      exameRef = examesCol.doc(forma);
+      exameId = forma;
+      break;
     }
   }
 
