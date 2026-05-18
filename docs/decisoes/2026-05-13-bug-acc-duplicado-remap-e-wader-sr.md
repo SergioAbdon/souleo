@@ -684,3 +684,36 @@ CARMEN reprocessada veio com valores em **mm** (DDVE 50.29 mm, Septo 11.19 mm) �
 - Exames NOVOS fluem automático (Vivid → Orthanc → Wader → Leo completo)
 - CARMEN completa no Leo, pronta pra laudar
 - Pendências: ADMIR (amanhã), PAT ativo (Sergio revoga quando encerrar)
+
+---
+
+## 16. Rastreabilidade de versão do Wader + script de update — 16/05/2026
+
+### 16.1. Marcador de versão (local, não versionado)
+
+Criado `C:\Wader\DEPLOYED.json` na máquina da clínica — registra qual commit do repo o código Wader rodando corresponde:
+- `waderCodeCommit`: último commit que tocou `apps/wader/` (`1675f1a` — PR #27 status canônico)
+- `repoHeadNaAtualizacao`: HEAD do master quando atualizou (`d000eaf`)
+- `verificadoIdenticoAoRepo: true` (diff `apps/wader/src` × `C:\Wader\src` vazio)
+- fixes incluídos, backup anterior, quem/quando
+
+Estado LOCAL da máquina (não vai pro git). Regravado a cada update.
+
+### 16.2. Script de update versionado
+
+Criado `apps/wader/scripts/update-wader.ps1` (NO REPO, versionado, reusável). Automatiza o procedimento manual da §15.3:
+1. Backup `src` → `src.bak-AAAAMMDD-HHMM`
+2. Copia `apps/wader/src` → `C:\Wader\src`
+3. Preserva sa.json/config/node_modules/scripts (fora de src)
+4. `npm install` só se deps mudaram
+5. Mata + reinicia Wader
+6. Regrava `DEPLOYED.json`
+
+Uso na clínica: `cd C:\souleo && git pull && .\apps\wader\scripts\update-wader.ps1`
+
+Resolve o backlog da §15.5 (automatizar update). Próximo: idealmente virar serviço Windows com auto-start (Wader não sobe sozinho após reboot — §pendente).
+
+### 16.3. Estado de versão (16/05/2026)
+
+- **Wader rodando:** código de `apps/wader/` no commit `1675f1a`, idêntico ao repo HEAD `d000eaf` (commits posteriores do Notebook — Phase E, pdf-server — não tocaram apps/wader/)
+- Memória: `feedback_wader_deploy_manual.md` atualizada com o script
