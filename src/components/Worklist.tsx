@@ -51,6 +51,7 @@ type ExameItem = Record<string, unknown> & {
   id: string; pacienteId?: string; pacienteNome?: string; pacienteDtnasc?: string;
   status?: string; tipoExame?: string; dataExame?: string; horarioChegada?: string;
   convenio?: string; solicitante?: string; sexo?: string; origem?: string;
+  feegowAppointId?: string | number;
 };
 
 const TIPOS_EXAME: Record<string, string> = {
@@ -316,9 +317,20 @@ export default function Worklist() {
         return;
       }
 
-      // Nomes já na worklist para evitar duplicatas
+      // Dedup por AGENDAMENTO do Feegow (feegowAppointId), NÃO por nome.
+      // Um paciente pode ter 2+ exames no mesmo dia (ex.: eco + carótidas):
+      // cada agendamento tem feegowAppointId único. Deduplicar por nome
+      // descartava silenciosamente o 2º exame do paciente.
+      const apptsNaFila = new Set(
+        worklist.map(w => String(w.feegowAppointId ?? '')).filter(Boolean)
+      );
       const nomesNaFila = new Set(worklist.map(w => (w.pacienteNome || '').toUpperCase()));
-      const novos = data.pacientes.filter((p: Record<string, string>) => !nomesNaFila.has(p.pacienteNome));
+      const novos = data.pacientes.filter((p: Record<string, string>) => {
+        const appt = String(p.feegowAppointId ?? '');
+        if (appt) return !apptsNaFila.has(appt);
+        // Candidato sem feegowAppointId (raro): cai no dedup legado por nome.
+        return !nomesNaFila.has(p.pacienteNome);
+      });
 
       if (novos.length === 0) {
         alert('Todos os pacientes do Feegow já estão na fila.');
