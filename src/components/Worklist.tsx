@@ -12,7 +12,7 @@ import { abrirPdfUrl } from '@/lib/pdfUtils';
 import { dataLocalHoje } from '@/lib/utils';
 import { gerarAccessionNumber } from '@/lib/gerarAccessionNumber';
 import { db, auth } from '@/lib/firebase';
-import { doc, deleteDoc, collection, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, deleteDoc, collection, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { checkEmissao } from '@/lib/billing';
 import DicomGallery from '@/components/laudo/DicomGallery';
@@ -338,6 +338,36 @@ export default function Worklist() {
         return;
       }
 
+      // Idempotência por feegowAppointId (ADR 2026-06-22): doc id determinístico
+      // `fg-<appointId>` + checagem de existência. Assim re-clique, 2 abas ou
+      // import concorrente NÃO duplicam (colapsam no MESMO doc), e re-importar
+      // NÃO sobrescreve um exame que o médico já começou (existe → pula).
+      // Candidato sem feegowAppointId (raro) cai no id aleatório de sempre.
+      const comAppt = novos.filter((p: Record<string, string>) => p.feegowAppointId);
+      const semAppt = novos.filter((p: Record<string, string>) => !p.feegowAppointId);
+
+      const refsAppt = comAppt.map((p: Record<string, string>) =>
+        doc(db, 'workspaces', workspace.id, 'exames', `fg-${p.feegowAppointId}`),
+      );
+      const existentes = await Promise.all(refsAppt.map((r) => getDoc(r)));
+
+      const aCriar = [
+        ...comAppt
+          .map((pac: Record<string, string>, i: number) => ({ pac, exameRef: refsAppt[i], existe: existentes[i].exists() }))
+          .filter((x: { existe: boolean }) => !x.existe)
+          .map((x: { pac: Record<string, string>; exameRef: ReturnType<typeof doc> }) => ({ pac: x.pac, exameRef: x.exameRef })),
+        ...semAppt.map((pac: Record<string, string>) => ({
+          pac,
+          exameRef: doc(collection(db, 'workspaces', workspace.id, 'exames')),
+        })),
+      ];
+
+      if (aCriar.length === 0) {
+        alert('Todos os pacientes do Feegow já estão na fila.');
+        setFeegowLoading(false);
+        return;
+      }
+
       // v3: writeBatch — tudo ou nada (atomico)
       const batch = writeBatch(db);
       const examesCriados: Array<{ exameId: string; pac: Record<string, string> }> = [];
@@ -345,10 +375,13 @@ export default function Worklist() {
       // colisão de ACC quando loop roda em sub-centésimo de segundo.
       const baseTime = new Date();
 
-      for (let i = 0; i < novos.length; i++) {
-        const pac = novos[i];
-        // Criar paciente
-        const pacRef = doc(collection(db, 'workspaces', workspace.id, 'pacientes'));
+      for (let i = 0; i < aCriar.length; i++) {
+        const { pac, exameRef } = aCriar[i];
+        // Paciente: id determinístico por feegowPacienteId (não duplica o
+        // paciente quando ele tem 2 exames no dia). merge:true = não sobrescreve.
+        const pacRef = pac.feegowPacienteId
+          ? doc(db, 'workspaces', workspace.id, 'pacientes', `fg-${pac.feegowPacienteId}`)
+          : doc(collection(db, 'workspaces', workspace.id, 'pacientes'));
         batch.set(pacRef, {
           id: pacRef.id,
           nome: pac.pacienteNome,
@@ -358,10 +391,10 @@ export default function Worklist() {
           telefone: pac.telefone,
           feegowPacienteId: pac.feegowPacienteId,
           criadoEm: serverTimestamp(),
-        });
+        }, { merge: true });
 
-        // Criar exame vinculado
-        const exameRef = doc(collection(db, 'workspaces', workspace.id, 'exames'));
+        // Exame: id determinístico `fg-<appointId>` (os já existentes foram
+        // filtrados acima). set sem merge — não mexe em status de exame em curso.
         batch.set(exameRef, {
           id: exameRef.id,
           acc: gerarAccessionNumber(baseTime, i * 10),
