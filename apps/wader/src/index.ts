@@ -80,11 +80,13 @@ async function main(): Promise<void> {
 
   // ACC recovery worker (ADR 2026-05-18, Fix 3) — recuperação dirigida:
   // acha exame aguardando sem DICOM e busca o estudo no Orthanc por ACC,
-  // sem esperar o feed /changes paginar. Roda no intervalo do worklist-sync.
+  // sem esperar o feed /changes paginar.
+  // ADR 2026-06-22 (Fix C): intervalo próprio (default 20s) em vez de herdar
+  // os 60s do worklist-sync — exame casa mais rápido após cadastro/reenvio.
   const accWorker = new AccRecoveryWorker({
     wsId: config.wsId,
     client: orthancClient,
-    intervalSec: config.polling.worklistSyncSec,
+    intervalSec: config.polling.accRecoverySec ?? 20,
   });
   accWorker.start();
 

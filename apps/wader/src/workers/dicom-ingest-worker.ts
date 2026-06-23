@@ -136,26 +136,35 @@ export class DicomIngestWorker {
             continue;
           }
 
+          const sig = this.store.getSignature(studyId);
           if (!this.store.precisaProcessar(studyId, curImg, curSR)) {
             continue; // já processamos e está completo
           }
+
+          // Fix B (ADR 2026-06-22): força re-extração de SR só quando o Orthanc
+          // ganhou série SR nova (curSR subiu). Reprocesso disparado por imagem
+          // nova reusa as medidas já gravadas — não re-baixa/re-parseia o SR.
+          const forceSr = !!sig && curSR > sig.nSR;
 
           const result = await processarEstudo({
             client: this.opts.client,
             orthancStudyId: studyId,
             wsId: this.opts.wsId,
+            forceSr,
           });
           this.lastResults.push(result);
           if (this.lastResults.length > 20) this.lastResults = this.lastResults.slice(-20);
 
           if (result.matched) {
             this.estudosProcessados++;
-            // Só grava assinatura quando casou E gravou de fato (matched só
-            // fica true em sucesso total no processarEstudo). Assim um
-            // parcial/órfão NÃO é marcado completo e será reavaliado.
+            // Grava a assinatura do estado ATUAL do Orthanc. nImg = imagens
+            // subidas com sucesso (se faltou, curImg>nImg ⇒ retenta). nSR =
+            // nº de INSTANCES SR (curSR) — mesma unidade que precisaProcessar
+            // compara. Corrigido 2026-06-22: antes guardava nº de MEDIDAS, que
+            // nunca disparava reprocesso quando um SR novo chegava.
             this.store.setSignature(studyId, {
               nImg: result.imagensProcessadas,
-              nSR: result.medidasExtraidas,
+              nSR: curSR,
               matched: true,
               at: new Date().toISOString(),
             });

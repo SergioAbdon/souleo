@@ -7,6 +7,9 @@ import { createLogger } from '../logger';
 
 const log = createLogger({ module: 'dicom-ingest' });
 
+/** Quantas imagens baixar/subir em paralelo (Fix A, ADR 2026-06-22). */
+const IMG_CONCURRENCY = 4;
+
 /**
  * Acha o AccessionNumber do estudo (ADR 2026-05-18, Fix 4).
  *
@@ -57,19 +60,88 @@ export interface IngestResult {
   errors: string[];
 }
 
+interface ImagemDicom {
+  url: string;
+  path: string;
+  orthancInstanceId: string;
+}
+
 /**
- * Processa um estudo DICOM do Orthanc:
- *   1. Baixa metadados do estudo
- *   2. Match no Firestore via AccessionNumber (== exameId do LEO/Wader)
- *   3. Pra cada instance, baixa preview JPG do Orthanc + sobe pro Firebase Storage
- *   4. Atualiza `exames/{exameId}.imagensDicom` com URLs e metadados
+ * Baixa os previews das instances e sobe pro Storage EM PARALELO
+ * (Fix A, ADR 2026-06-22). Antes era serial (~1,7s/img ⇒ 9 imgs ~15s);
+ * com pool de `IMG_CONCURRENCY` cai pra ~3-4s.
  *
- * Idempotente: se exame já tem `imagensDicom`, sobreescreve (pra reprocessar).
+ * Pool simples: N "workers" puxam o próximo índice de um cursor compartilhado
+ * (`next`). Como JS é single-thread, `next++` é atômico entre awaits. Cada
+ * imagem mantém seu `seq` (= índice+1) pra preservar a ordem no array final
+ * e no caminho do Storage (`{seq}.jpg`), idêntico ao comportamento serial.
+ */
+async function baixarImagensParalelo(
+  client: OrthancClient,
+  wsId: string,
+  exameId: string,
+  instanceIds: string[],
+  result: IngestResult,
+): Promise<ImagemDicom[]> {
+  const comSeq: Array<ImagemDicom & { seq: number }> = [];
+  let next = 0;
+
+  async function runner(): Promise<void> {
+    for (;;) {
+      const i = next++;
+      if (i >= instanceIds.length) return;
+      const instanceId = instanceIds[i];
+      try {
+        const buffer = await client.getInstancePreview(instanceId);
+        const upload = await uploadDicomPreview({
+          wsId,
+          exameId,
+          seq: i + 1,
+          buffer,
+          contentType: 'image/jpeg',
+        });
+        comSeq.push({ url: upload.url, path: upload.path, orthancInstanceId: instanceId, seq: i + 1 });
+        result.imagensProcessadas++;
+        result.bytesTotais += upload.bytes;
+      } catch (err) {
+        result.imagensFalhadas++;
+        const msg = `Instance ${instanceId}: ${(err as Error).message}`;
+        log.error({ err, instanceId }, msg);
+        result.errors.push(msg);
+      }
+    }
+  }
+
+  const n = Math.min(IMG_CONCURRENCY, instanceIds.length);
+  await Promise.all(Array.from({ length: n }, () => runner()));
+
+  comSeq.sort((a, b) => a.seq - b.seq);
+  return comSeq.map(({ seq: _seq, ...img }) => img);
+}
+
+/**
+ * Processa um estudo DICOM do Orthanc, otimizado pra LATÊNCIA
+ * (ADR 2026-06-22 — baixa latência):
+ *
+ *   1. Metadados + match no Firestore via AccessionNumber.
+ *   2. SR PRIMEIRO (Fix 0): extrai medidas e grava num write #1 com
+ *      status/dicomStudyUid — o médico vê as MEDIDAS em ~1-2s, sem
+ *      esperar as imagens subirem.
+ *   3. Imagens EM PARALELO (Fix A) e grava num write #2.
+ *
+ * Fix B: se o exame já tem `medidasDicom` e o worker não sinalizou SR novo
+ * (`forceSr`), pula a (re)extração do SR — economiza um download+parse a
+ * cada reprocesso disparado só por imagem nova.
+ *
+ * Idempotente: reprocessar sobrescreve. Respeita a Trava 2 de status
+ * (nunca regride rascunho/emitido).
  */
 export async function processarEstudo(opts: {
   client: OrthancClient;
   orthancStudyId: string;
   wsId: string;
+  /** Worker passa true quando o Orthanc ganhou uma série SR nova (não pular). */
+  forceSr?: boolean;
 }): Promise<IngestResult> {
   const result: IngestResult = {
     orthancStudyId: opts.orthancStudyId,
@@ -112,6 +184,7 @@ export async function processarEstudo(opts: {
 
   let exameRef: FirebaseFirestore.DocumentReference | null = null;
   let exameId: string | null = null;
+  let exameData: Record<string, unknown> = {};
 
   // Fix 4 (ADR 2026-05-18): tenta as formas plausíveis do ACC (com/sem
   // prefixo `EX`, só dígitos). Bounded (≤3 queries) — nunca varre a coleção.
@@ -122,6 +195,7 @@ export async function processarEstudo(opts: {
     if (!porAcc.empty) {
       exameRef = porAcc.docs[0].ref;
       exameId = porAcc.docs[0].id;
+      exameData = porAcc.docs[0].data();
       break;
     }
     // Fallback legado: doc id == ACC
@@ -129,6 +203,7 @@ export async function processarEstudo(opts: {
     if (legadoSnap.exists) {
       exameRef = examesCol.doc(forma);
       exameId = forma;
+      exameData = legadoSnap.data() ?? {};
       break;
     }
   }
@@ -142,122 +217,101 @@ export async function processarEstudo(opts: {
   result.exameIdNoLeo = exameId;
   result.matched = true;
 
-  // 3) Lista instances + baixa cada preview + sobe pro Storage
-  const instanceIds = await opts.client.getStudyInstances(opts.orthancStudyId);
-  log.info(
-    { orthancStudyId: opts.orthancStudyId, exameId: accession, totalInstances: instanceIds.length },
-    'Estudo casado com exame, baixando previews',
-  );
+  // TRAVA 2 (status canônico, decisão 15/05/2026 — ver memória
+  // `feedback_status_exame_canonico.md` e ADR §13): o Wader NÃO regride o
+  // trabalho do médico. aguardando|nao-realizado → andamento; rascunho e
+  // emitido se mantêm. Só anexa imagens/medidas; status só avança.
+  const statusAtual = (exameData.status as string) || 'aguardando';
+  const statusFinal =
+    statusAtual === 'rascunho' || statusAtual === 'emitido' ? statusAtual : 'andamento';
 
-  const imagensDicom: Array<{ url: string; path: string; orthancInstanceId: string }> = [];
+  // ── ETAPA 1 (Fix 0): SR PRIMEIRO + write rápido ────────────────────────
+  // O dado clinicamente crítico (medidas) chega ao Leo já, sem esperar as
+  // imagens. Decisão 13/05/2026: Wader = produtor do SR (server-side, alcança
+  // o Orthanc local); Leo = consumidor (lê `medidasDicom` do Firestore).
+  const medidasAtuais = exameData.medidasDicom as Record<string, unknown> | undefined;
+  const jaTemMedidas = !!medidasAtuais && Object.keys(medidasAtuais).length > 0;
 
-  for (let i = 0; i < instanceIds.length; i++) {
-    const instanceId = instanceIds[i];
-    try {
-      const buffer = await opts.client.getInstancePreview(instanceId);
-      const upload = await uploadDicomPreview({
-        wsId: opts.wsId,
-        exameId: exameId,
-        seq: i + 1,
-        buffer,
-        contentType: 'image/jpeg',
-      });
-      imagensDicom.push({
-        url: upload.url,
-        path: upload.path,
-        orthancInstanceId: instanceId,
-      });
-      result.imagensProcessadas++;
-      result.bytesTotais += upload.bytes;
-    } catch (err) {
-      result.imagensFalhadas++;
-      const msg = `Instance ${instanceId}: ${(err as Error).message}`;
-      log.error({ err, instanceId }, msg);
-      result.errors.push(msg);
-    }
-  }
-
-  // 4) Extrair DICOM SR (medidas estruturadas)
-  //
-  // Decisão 13/05/2026 (substitui a de 11/05): pipeline DICOM AGORA processa
-  // SR também. Wader = produtor (server-side, alcança Orthanc na rede local).
-  // Leo = consumidor (lê `medidasDicom` direto do Firestore, sem chamar Orthanc).
-  //
-  // Motivação: o endpoint Leo Cloud `/api/orthanc?action=buscar_sr` roda no
-  // Vercel (internet pública), mas o `ortancUrl` é `http://192.168.x.x:8042`
-  // (IP da rede local da clínica). Vercel não alcança → botão "📡 Vivid"
-  // nunca funcionou em produção. Ver
-  // `docs/decisoes/2026-05-13-bug-acc-duplicado-remap-e-wader-sr.md` seção 5.
   let srResult: SrParseResult = {
     medidas: {},
     srInstanceId: null,
     totalMedidas: 0,
     metodoFallback: 'sem-sr',
   };
-  try {
-    srResult = await extrairMedidasDoEstudo({ client: opts.client, orthancStudyId: opts.orthancStudyId });
-    result.medidasExtraidas = srResult.totalMedidas;
-  } catch (err) {
-    // SR falhar não bloqueia a gravação de imagens — só loga e segue.
-    // `medidasDicom` fica vazio, médico pode digitar manualmente.
-    const msg = `Falha ao extrair SR: ${(err as Error).message}`;
-    log.warn({ err, orthancStudyId: opts.orthancStudyId }, msg);
-    result.errors.push(msg);
+  let extraiuSr = false;
+
+  if (opts.forceSr || !jaTemMedidas) {
+    // Extrai SR (Fix B: só quando não temos medidas ainda OU o worker viu SR novo).
+    try {
+      srResult = await extrairMedidasDoEstudo({ client: opts.client, orthancStudyId: opts.orthancStudyId });
+      result.medidasExtraidas = srResult.totalMedidas;
+      extraiuSr = true;
+    } catch (err) {
+      // SR falhar não bloqueia imagens — loga e segue (médico digita manual).
+      const msg = `Falha ao extrair SR: ${(err as Error).message}`;
+      log.warn({ err, orthancStudyId: opts.orthancStudyId }, msg);
+      result.errors.push(msg);
+    }
+  } else {
+    // Fix B: reaproveita medidas já gravadas — não re-baixa/re-parseia o SR.
+    result.medidasExtraidas = Object.keys(medidasAtuais!).length;
   }
 
-  // 5) Atualiza Firestore
-  //
-  // Mudança 13/05/2026 (substitui regra de 11/05):
-  //   - Status muda pra 'andamento' atomicamente junto com imagens+SR
-  //   - `medidasDicom` (Record<codigoLOINC, numero>) gravado em campo separado
-  //     de `medidas` (que é editado pelo médico/motor)
-  //   - Falha total nas imagens ainda bloqueia o update (matched=false → retry)
-  //   - SR falhar isolado NÃO bloqueia (só grava medidas vazias + segue)
+  const etapa1: Record<string, unknown> = {
+    dicomStudyUid: study.MainDicomTags.StudyInstanceUID ?? null,
+    dicomOrthancStudyId: opts.orthancStudyId,
+    dicomMeta: {
+      modality: study.MainDicomTags.Modality ?? 'US',
+      studyDate: study.MainDicomTags.StudyDate ?? '',
+      studyTime: study.MainDicomTags.StudyTime ?? '',
+      studyDescription: study.MainDicomTags.StudyDescription ?? '',
+    },
+    status: statusFinal,
+    atualizadoEm: FieldValue.serverTimestamp(),
+  };
+  if (extraiuSr) {
+    etapa1.medidasDicom = srResult.medidas;
+    etapa1.medidasDicomMeta = {
+      srInstanceId: srResult.srInstanceId,
+      metodoFallback: srResult.metodoFallback,
+      processadoEm: new Date().toISOString(),
+    };
+  }
+  await exameRef.update(etapa1);
+  log.info(
+    { exameId: accession, medidas: result.medidasExtraidas, reusouSr: !extraiuSr, status: statusFinal },
+    'Etapa 1 gravada (medidas + status) — médico já pode ver as medidas',
+  );
+
+  // ── ETAPA 2 (Fix A): imagens em paralelo + write ───────────────────────
+  const instanceIds = await opts.client.getStudyInstances(opts.orthancStudyId);
+  log.info(
+    { orthancStudyId: opts.orthancStudyId, exameId: accession, totalInstances: instanceIds.length, concorrencia: IMG_CONCURRENCY },
+    'Baixando previews em paralelo',
+  );
+
+  const imagensDicom = await baixarImagensParalelo(
+    opts.client,
+    opts.wsId,
+    exameId,
+    instanceIds,
+    result,
+  );
+
   const todasFalharam =
     instanceIds.length > 0 && result.imagensProcessadas === 0 && result.imagensFalhadas > 0;
   const semInstances = instanceIds.length === 0;
-  const sucessoTotal = !todasFalharam && !semInstances;
 
-  if (sucessoTotal) {
-    // TRAVA 2 (status canônico, decisão 15/05/2026 — ver memória
-    // `feedback_status_exame_canonico.md` e ADR §13):
-    // O Wader NÃO pode regredir o trabalho do médico. Ao processar DICOM:
-    //   aguardando | nao-realizado → andamento  (promove)
-    //   rascunho   → mantém rascunho            (médico já começou)
-    //   emitido    → mantém emitido             (documento legal)
-    //   qualquer outro (legado) → andamento     (defensivo)
-    // Só ANEXA imagens/medidas; status só avança, nunca regride.
-    const snap = await exameRef.get();
-    const statusAtual = (snap.data()?.status as string) || 'aguardando';
-    const statusFinal =
-      statusAtual === 'rascunho' || statusAtual === 'emitido'
-        ? statusAtual
-        : 'andamento';
-
+  if (!todasFalharam && !semInstances) {
     await exameRef.update({
       imagensDicom: imagensDicom.map((i) => i.url),
       imagensDicomDetalhes: imagensDicom,
-      medidasDicom: srResult.medidas,
-      medidasDicomMeta: {
-        srInstanceId: srResult.srInstanceId,
-        metodoFallback: srResult.metodoFallback,
-        processadoEm: new Date().toISOString(),
-      },
-      dicomStudyUid: study.MainDicomTags.StudyInstanceUID ?? null,
-      dicomOrthancStudyId: opts.orthancStudyId,
-      dicomMeta: {
-        modality: study.MainDicomTags.Modality ?? 'US',
-        studyDate: study.MainDicomTags.StudyDate ?? '',
-        studyTime: study.MainDicomTags.StudyTime ?? '',
-        studyDescription: study.MainDicomTags.StudyDescription ?? '',
-      },
-      status: statusFinal,
       atualizadoEm: FieldValue.serverTimestamp(),
     });
   } else {
-    // Falha total: marca matched=false pra retentar próxima rodada.
-    // Não escreve `dicomOrthancStudyId` pra deixar claro que ainda não processamos OK.
-    result.matched = false;
+    // Imagens falharam/ausentes: a etapa 1 (medidas+status) JÁ foi gravada,
+    // então NÃO regride matched. O worker reavalia por completude
+    // (`curImg > nImg`) e retenta as imagens no próximo ciclo.
     result.errors.push(
       semInstances
         ? 'Estudo sem instances no Orthanc'
@@ -272,12 +326,9 @@ export async function processarEstudo(opts: {
       imagensFalhadas: result.imagensFalhadas,
       medidasExtraidas: result.medidasExtraidas,
       bytes: result.bytesTotais,
-      sucesso: sucessoTotal,
       metodoSr: srResult.metodoFallback,
     },
-    sucessoTotal
-      ? `Estudo processado: ${result.imagensProcessadas} imgs + ${result.medidasExtraidas} medidas → status='andamento'`
-      : 'Estudo falhou — sem update no Firestore, retentará próxima rodada',
+    `Estudo processado: ${result.imagensProcessadas} imgs + ${result.medidasExtraidas} medidas → status='${statusFinal}'`,
   );
 
   return result;

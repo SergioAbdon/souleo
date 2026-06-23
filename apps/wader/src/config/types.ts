@@ -70,6 +70,12 @@ export interface PollingConfig {
   worklistSyncSec: number;
   /** Intervalo do worker de DICOM ingest (Orthanc /changes). Default 30s. */
   orthancChangesSec: number;
+  /**
+   * Intervalo do worker de recuperação por ACC. Default 20s (ADR 2026-06-22,
+   * Fix C — antes herdava worklistSyncSec=60s). Mais curto = exame casa mais
+   * rápido quando a recepção cadastra/reenvia. Query barata (single-field).
+   */
+  accRecoverySec?: number;
 }
 
 export interface UiConfig {
@@ -90,6 +96,7 @@ export const DEFAULT_CONFIG: Partial<WaderConfig> = {
   polling: {
     worklistSyncSec: 60,
     orthancChangesSec: 30,
+    accRecoverySec: 20,
   } as PollingConfig,
   ui: {
     port: 8043,

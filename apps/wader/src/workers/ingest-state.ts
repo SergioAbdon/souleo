@@ -28,7 +28,7 @@ const log = createLogger({ module: 'ingest-state' });
 export interface StudySignature {
   /** Nº de imagens (instances não-SR) já processadas com sucesso. */
   nImg: number;
-  /** Nº de medidas SR já extraídas. */
+  /** Nº de instances SR já vistas (mesma unidade que `precisaProcessar` compara). */
   nSR: number;
   /** Casou com um exame no LEO. */
   matched: boolean;
