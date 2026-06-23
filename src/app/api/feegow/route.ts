@@ -100,9 +100,21 @@ async function feegowFetch(endpoint: string, token: string) {
   }
 }
 
+// Data de HOJE no fuso da clinica (Belem, UTC-3) -- NAO do servidor.
+// BUG (22/06/2026): este endpoint roda no Vercel em UTC. Com `new Date()` do
+// servidor, depois das 21h de Brasilia (00h UTC) o "hoje" virava o dia seguinte,
+// e a query do Feegow (data_start/data_end=hoje) perdia os exames de hoje ainda
+// na sala de espera (ex.: carotida do Francisley). Tambem gravava dataExame no
+// dia errado, sumindo da worklist (que filtra pela data local). Fixar no fuso
+// da clinica resolve os dois sintomas.
+const CLINIC_TZ = 'America/Belem'; // UTC-3, sem horario de verao
 function dataLocalHoje(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: CLINIC_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
 }
 
 // ── Middleware: auth + rate limit ──
