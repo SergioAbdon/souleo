@@ -1,32 +1,36 @@
-# ════════════════════════════════════════════════════════════════════
-# update-wader.ps1 — Atualiza o Wader rodando na máquina da clínica
-# ════════════════════════════════════════════════════════════════════
+# ====================================================================
+# update-wader.ps1 -- Atualiza o Wader rodando na maquina da clinica
+# ====================================================================
 #
-# POR QUE EXISTE: o Wader (C:\Wader\) NÃO tem deploy automático. O Leo
-# deploya via Vercel no push pro master; o Wader é cópia MANUAL. Toda vez
-# que um PR que toca apps/wader/ é mergeado, alguém PRECISA rodar isto na
-# máquina da clínica pra o Wader em produção receber o código novo.
+# IMPORTANTE: arquivo em ASCII PURO de proposito. O Windows PowerShell 5.1
+# da clinica le .ps1 sem BOM como ANSI; travessoes/acentos/emojis viravam
+# erro de parse ("Unexpected token"). Nao reintroduza caracteres nao-ASCII.
 #
-# Histórico: em 16/05/2026 o Wader rodou 8 DIAS defasado (código de 08/05,
-# sem fixes #7/#15/#23/#27) porque ninguém atualizou manualmente. Exames
-# chegavam incompletos (2 de 14 imagens, 0 SR). Ver ADR §15 +
-# memória feedback_wader_deploy_manual.md.
+# POR QUE EXISTE: o Wader (C:\Wader\) NAO tem deploy automatico. O Leo
+# deploya via Vercel no push pro master; o Wader e copia MANUAL. Toda vez
+# que um PR que toca apps/wader/ e mergeado, alguem PRECISA rodar isto na
+# maquina da clinica pra o Wader em producao receber o codigo novo.
+#
+# Historico: em 16/05/2026 o Wader rodou 8 DIAS defasado (codigo de 08/05,
+# sem fixes #7/#15/#23/#27) porque ninguem atualizou manualmente. Exames
+# chegavam incompletos (2 de 14 imagens, 0 SR). Ver ADR secao 15 +
+# memoria feedback_wader_deploy_manual.md.
 #
 # O QUE FAZ (idempotente, seguro):
-#   1. Backup do C:\Wader\src atual → C:\Wader\src.bak-AAAAMMDD-HHMM
-#   2. Copia C:\souleo\apps\wader\src\* → C:\Wader\src\ (só código)
+#   1. Backup do C:\Wader\src atual -> C:\Wader\src.bak-AAAAMMDD-HHMM
+#   2. Copia C:\souleo\apps\wader\src\* -> C:\Wader\src\ (so codigo)
 #   3. Preserva intocados: sa.json, wader.config.json, node_modules, scripts
-#   4. npm install SÓ se package.json deps mudaram
+#   4. npm install SO se package.json deps mudaram
 #   5. Mata o Wader rodando + reinicia (npm start em janela nova)
-#   6. Grava C:\Wader\DEPLOYED.json (rastreabilidade da versão)
+#   6. Grava C:\Wader\DEPLOYED.json (rastreabilidade da versao)
 #
-# USO (PowerShell na máquina da clínica):
+# USO (PowerShell na maquina da clinica):
 #   cd C:\souleo ; git pull origin master
 #   .\apps\wader\scripts\update-wader.ps1
 #
 # Rollback: pare o Wader, apague src, renomeie o src.bak-* mais recente
 #           pra src, reinicie.
-# ════════════════════════════════════════════════════════════════════
+# ====================================================================
 
 $ErrorActionPreference = 'Stop'
 
@@ -36,8 +40,8 @@ $repoSrc = Join-Path $repo 'apps\wader\src'
 
 Write-Host "=== update-wader ===" -ForegroundColor Cyan
 
-if (-not (Test-Path $repoSrc))      { throw "Nao achei $repoSrc — repo souleo presente?" }
-if (-not (Test-Path "$wader\src"))  { throw "Nao achei $wader\src — Wader instalado?" }
+if (-not (Test-Path $repoSrc))      { throw "Nao achei $repoSrc -- repo souleo presente?" }
+if (-not (Test-Path "$wader\src"))  { throw "Nao achei $wader\src -- Wader instalado?" }
 
 # 1. Backup
 $stamp  = Get-Date -Format 'yyyyMMdd-HHmm'
@@ -45,14 +49,18 @@ $backup = Join-Path $wader "src.bak-$stamp"
 Write-Host "1. Backup -> $backup"
 Copy-Item "$wader\src" $backup -Recurse -Force
 
-# 2. Copia código novo (só src — credenciais/config/node_modules ficam fora)
+# 2. Copia codigo novo (so src -- credenciais/config/node_modules ficam fora)
 Write-Host "2. Copiando apps\wader\src -> C:\Wader\src"
 Copy-Item "$repoSrc\*" "$wader\src\" -Recurse -Force
 
-# 3. (preservados automaticamente — sa.json/config/node_modules/scripts estao fora de src\)
+# 2b. Remove arquivos de teste da producao (inertes, mas nao precisam ir).
+Get-ChildItem "$wader\src" -Recurse -Filter '*.test.ts' -EA SilentlyContinue |
+  ForEach-Object { Remove-Item $_.FullName -Force -EA SilentlyContinue }
+
+# 3. (preservados automaticamente -- sa.json/config/node_modules/scripts estao fora de src\)
 Write-Host "3. Preservados: sa.json, wader.config.json, node_modules, scripts (fora de src\)"
 
-# 4. npm install só se deps mudaram
+# 4. npm install so se deps mudaram
 $depsRepo  = (Get-Content (Join-Path $repo 'apps\wader\package.json') -Raw | ConvertFrom-Json).dependencies | ConvertTo-Json -Compress
 $depsWader = (Get-Content (Join-Path $wader 'package.json') -Raw | ConvertFrom-Json).dependencies | ConvertTo-Json -Compress
 Copy-Item (Join-Path $repo 'apps\wader\package.json') (Join-Path $wader 'package.json') -Force
@@ -71,7 +79,7 @@ Get-CimInstance Win32_Process -Filter "Name='node.exe'" -EA SilentlyContinue |
 Start-Sleep -Seconds 2
 Start-Process -FilePath 'cmd.exe' -ArgumentList '/c','cd /d C:\Wader && npm start' -WindowStyle Minimized
 
-# 6. Marcador de versão
+# 6. Marcador de versao
 Push-Location $repo
 $waderCommit = (git log -1 --format=%H -- apps/wader/)
 $waderShort  = (git log -1 --format=%h -- apps/wader/)
@@ -89,6 +97,6 @@ $deployed = [ordered]@{
 $deployed | ConvertTo-Json | Out-File -FilePath (Join-Path $wader 'DEPLOYED.json') -Encoding utf8
 
 Write-Host ""
-Write-Host "✅ Wader atualizado (waderCommit=$waderShort, repoHEAD=$headShort) e reiniciando." -ForegroundColor Green
-Write-Host "   Confira: http://localhost:8043  |  log na janela cmd minimizada"
+Write-Host "OK Wader atualizado (waderCommit=$waderShort, repoHEAD=$headShort) e reiniciando." -ForegroundColor Green
+Write-Host "   Confira: http://127.0.0.1:8043/health  |  log na janela cmd minimizada"
 Write-Host "   Rollback: pare o Wader, restaure $backup -> src, reinicie"
