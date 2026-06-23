@@ -284,10 +284,16 @@ export async function processarEstudo(opts: {
   );
 
   // ── ETAPA 2 (Fix A): imagens em paralelo + write ───────────────────────
-  const instanceIds = await opts.client.getStudyInstances(opts.orthancStudyId);
+  // Só instances NÃO-SR: o /preview de uma instance SR devolve 415 (não há
+  // JPG de Structured Report). Filtrar evita 2 "falhas" eternas por estudo e
+  // mantém imagensProcessadas alinhado com o curImg do worker (também não-SR).
+  const seriesEstudo = await opts.client.getStudySeries(opts.orthancStudyId);
+  const instanceIds = seriesEstudo
+    .filter((s) => (s.MainDicomTags?.Modality ?? '') !== 'SR')
+    .flatMap((s) => s.Instances ?? []);
   log.info(
-    { orthancStudyId: opts.orthancStudyId, exameId: accession, totalInstances: instanceIds.length, concorrencia: IMG_CONCURRENCY },
-    'Baixando previews em paralelo',
+    { orthancStudyId: opts.orthancStudyId, exameId: accession, imagens: instanceIds.length, concorrencia: IMG_CONCURRENCY },
+    'Baixando previews em paralelo (séries SR excluídas)',
   );
 
   const imagensDicom = await baixarImagensParalelo(
