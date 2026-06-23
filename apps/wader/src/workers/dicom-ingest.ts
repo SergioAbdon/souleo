@@ -244,7 +244,6 @@ export async function processarEstudo(opts: {
     // Extrai SR (Fix B: só quando não temos medidas ainda OU o worker viu SR novo).
     try {
       srResult = await extrairMedidasDoEstudo({ client: opts.client, orthancStudyId: opts.orthancStudyId });
-      result.medidasExtraidas = srResult.totalMedidas;
       extraiuSr = true;
     } catch (err) {
       // SR falhar não bloqueia imagens — loga e segue (médico digita manual).
@@ -252,10 +251,17 @@ export async function processarEstudo(opts: {
       log.warn({ err, orthancStudyId: opts.orthancStudyId }, msg);
       result.errors.push(msg);
     }
-  } else {
-    // Fix B: reaproveita medidas já gravadas — não re-baixa/re-parseia o SR.
-    result.medidasExtraidas = Object.keys(medidasAtuais!).length;
   }
+
+  // Usa o SR recém-extraído SÓ se rendeu medidas — ou se não havia nada antes.
+  // Senão preserva as medidas já gravadas: um re-parse vazio (SR transitório/
+  // ilegível, mas sem exceção) NÃO pode apagar medidas boas (perda de dado).
+  const usaNovoSr = extraiuSr && (srResult.totalMedidas > 0 || !jaTemMedidas);
+  result.medidasExtraidas = usaNovoSr
+    ? srResult.totalMedidas
+    : jaTemMedidas
+      ? Object.keys(medidasAtuais!).length
+      : 0;
 
   const etapa1: Record<string, unknown> = {
     dicomStudyUid: study.MainDicomTags.StudyInstanceUID ?? null,
@@ -269,7 +275,7 @@ export async function processarEstudo(opts: {
     status: statusFinal,
     atualizadoEm: FieldValue.serverTimestamp(),
   };
-  if (extraiuSr) {
+  if (usaNovoSr) {
     etapa1.medidasDicom = srResult.medidas;
     etapa1.medidasDicomMeta = {
       srInstanceId: srResult.srInstanceId,
@@ -279,7 +285,7 @@ export async function processarEstudo(opts: {
   }
   await exameRef.update(etapa1);
   log.info(
-    { exameId: accession, medidas: result.medidasExtraidas, reusouSr: !extraiuSr, status: statusFinal },
+    { exameId: accession, medidas: result.medidasExtraidas, reusouSr: !usaNovoSr, status: statusFinal },
     'Etapa 1 gravada (medidas + status) — médico já pode ver as medidas',
   );
 
