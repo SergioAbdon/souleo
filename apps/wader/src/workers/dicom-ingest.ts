@@ -142,6 +142,12 @@ export async function processarEstudo(opts: {
   wsId: string;
   /** Worker passa true quando o Orthanc ganhou uma série SR nova (não pular). */
   forceSr?: boolean;
+  /**
+   * Vínculo MANUAL (console de reconciliação, ADR 2026-06-26): processa este
+   * estudo NESTE exame (doc id), ignorando o ACC/identidade do DICOM. Resolve
+   * órfão sem ACC e identidade trocada, sem mexer no Vivid.
+   */
+  exameIdOverride?: string;
 }): Promise<IngestResult> {
   const result: IngestResult = {
     orthancStudyId: opts.orthancStudyId,
@@ -167,16 +173,15 @@ export async function processarEstudo(opts: {
   const accession = await resolverAccession(opts.client, study, opts.orthancStudyId);
   result.accessionNumber = accession;
 
-  if (!accession) {
+  // Sem ACC só é órfão no caminho automático. No vínculo manual (override) o
+  // ACC é irrelevante — a operadora já escolheu o exame.
+  if (!accession && !opts.exameIdOverride) {
     result.errors.push('Estudo sem AccessionNumber — não dá pra fazer match');
     log.warn({ orthancStudyId: opts.orthancStudyId }, 'Estudo órfão (sem AccessionNumber)');
     return result;
   }
 
-  // 2) Match no Firestore — busca exame onde campo `acc` == AccessionNumber DICOM.
-  // Antes da Fase 4.6 o doc id era usado como ACC; após Fase 4.6 o ACC vive no campo
-  // `acc` (formato EX{ddmmaa}{hhmmsscc}, 16 chars). Tentamos por `acc` primeiro;
-  // fallback pra doc-id-as-acc cobre exames legados ainda sem o campo `acc`.
+  // 2) Resolve o exame alvo.
   const examesCol = getDb()
     .collection('workspaces')
     .doc(opts.wsId)
@@ -186,32 +191,47 @@ export async function processarEstudo(opts: {
   let exameId: string | null = null;
   let exameData: Record<string, unknown> = {};
 
-  // Fix 4 (ADR 2026-05-18): tenta as formas plausíveis do ACC (com/sem
-  // prefixo `EX`, só dígitos). Bounded (≤3 queries) — nunca varre a coleção.
-  // Tolera a recepção ter digitado o ACC sem o "EX" no Vivid.
-  const formas = candidatos(accession);
-  for (const forma of formas) {
-    const porAcc = await examesCol.where('acc', '==', forma).limit(1).get();
-    if (!porAcc.empty) {
-      exameRef = porAcc.docs[0].ref;
-      exameId = porAcc.docs[0].id;
-      exameData = porAcc.docs[0].data();
-      break;
+  if (opts.exameIdOverride) {
+    // Vínculo MANUAL (console, ADR 2026-06-26): exame escolhido pela operadora,
+    // ignora ACC/identidade do DICOM. Resolve órfão sem ACC e troca de identidade.
+    const ref = examesCol.doc(opts.exameIdOverride);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      result.errors.push(`Exame ${opts.exameIdOverride} não existe em workspaces/${opts.wsId}/exames`);
+      log.warn({ exameIdOverride: opts.exameIdOverride, wsId: opts.wsId }, 'Vínculo manual: exame alvo não existe');
+      return result;
     }
-    // Fallback legado: doc id == ACC
-    const legadoSnap = await examesCol.doc(forma).get();
-    if (legadoSnap.exists) {
-      exameRef = examesCol.doc(forma);
-      exameId = forma;
-      exameData = legadoSnap.data() ?? {};
-      break;
+    exameRef = ref;
+    exameId = opts.exameIdOverride;
+    exameData = snap.data() ?? {};
+  } else {
+    // Match automático por ACC (== AccessionNumber DICOM).
+    // Fix 4 (ADR 2026-05-18): tenta as formas plausíveis do ACC (com/sem
+    // prefixo `EX`, só dígitos). Bounded (≤3 queries) — nunca varre a coleção.
+    const formas = candidatos(accession);
+    for (const forma of formas) {
+      const porAcc = await examesCol.where('acc', '==', forma).limit(1).get();
+      if (!porAcc.empty) {
+        exameRef = porAcc.docs[0].ref;
+        exameId = porAcc.docs[0].id;
+        exameData = porAcc.docs[0].data();
+        break;
+      }
+      // Fallback legado: doc id == ACC
+      const legadoSnap = await examesCol.doc(forma).get();
+      if (legadoSnap.exists) {
+        exameRef = examesCol.doc(forma);
+        exameId = forma;
+        exameData = legadoSnap.data() ?? {};
+        break;
+      }
     }
-  }
 
-  if (!exameRef || !exameId) {
-    result.errors.push(`Exame com acc=${accession} não encontrado em workspaces/${opts.wsId}/exames`);
-    log.warn({ accession, wsId: opts.wsId }, 'Estudo sem exame correspondente');
-    return result;
+    if (!exameRef || !exameId) {
+      result.errors.push(`Exame com acc=${accession} não encontrado em workspaces/${opts.wsId}/exames`);
+      log.warn({ accession, wsId: opts.wsId }, 'Estudo sem exame correspondente');
+      return result;
+    }
   }
 
   result.exameIdNoLeo = exameId;

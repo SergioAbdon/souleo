@@ -1,9 +1,16 @@
 import { FastifyInstance } from 'fastify';
 import { OrthancClient, OrthancStudy } from '../../adapters/orthanc-client';
-import { getDb } from '../../adapters/firebase';
+import { getDb, FieldValue } from '../../adapters/firebase';
 import { digitos } from '../../lib/acc';
+import { processarEstudo } from '../../workers/dicom-ingest';
 import { createLogger } from '../../logger';
 import { WaderConfig } from '../../config/types';
+
+/** Campos do exame que a console pode editar (whitelist — nunca status/dicom*). */
+const CAMPOS_EDITAVEIS = [
+  'pacienteNome', 'acc', 'tipoExame', 'horarioChegada',
+  'convenio', 'solicitante', 'pacienteDtnasc', 'cpf', 'sexo',
+] as const;
 
 const log = createLogger({ module: 'api-reconciliacao' });
 
@@ -66,6 +73,72 @@ export function registerReconciliacaoRoutes(
       return reply.status(500).send({ ok: false, error: (err as Error).message });
     }
   });
+
+  // POST /api/reconciliacao/vincular { orthancStudyId, exameId }
+  // Linka/reatribui um estudo a um exame escolhido pela operadora, ignorando o
+  // ACC/identidade do DICOM (resolve órfão sem ACC e identidade trocada).
+  app.post<{ Body: { orthancStudyId?: string; exameId?: string } }>(
+    '/api/reconciliacao/vincular',
+    async (req, reply) => {
+      const { orthancStudyId, exameId } = req.body ?? {};
+      if (!orthancStudyId || !exameId) {
+        return reply.status(400).send({ ok: false, error: 'orthancStudyId e exameId são obrigatórios' });
+      }
+      if (!client) {
+        return reply.status(409).send({ ok: false, error: 'Orthanc não configurado nesta instância' });
+      }
+      try {
+        const result = await processarEstudo({
+          client,
+          orthancStudyId,
+          wsId: config.wsId,
+          exameIdOverride: exameId,
+        });
+        log.info(
+          { orthancStudyId, exameId, matched: result.matched, imgs: result.imagensProcessadas, medidas: result.medidasExtraidas },
+          'Vínculo manual processado',
+        );
+        return reply.send({ ok: result.matched, ...result });
+      } catch (err) {
+        log.error({ err, orthancStudyId, exameId }, 'Falha no vínculo manual');
+        return reply.status(500).send({ ok: false, error: (err as Error).message });
+      }
+    },
+  );
+
+  // POST /api/reconciliacao/editar-exame { exameId, campos }
+  // Edita campos do exame (nome, ACC, etc.) pra facilitar o envio/match.
+  app.post<{ Body: { exameId?: string; campos?: Record<string, unknown> } }>(
+    '/api/reconciliacao/editar-exame',
+    async (req, reply) => {
+      const { exameId, campos } = req.body ?? {};
+      if (!exameId || !campos || typeof campos !== 'object') {
+        return reply.status(400).send({ ok: false, error: 'exameId e campos são obrigatórios' });
+      }
+      const update: Record<string, unknown> = {};
+      for (const k of CAMPOS_EDITAVEIS) {
+        if (k in campos && campos[k] !== undefined) update[k] = campos[k];
+      }
+      if (Object.keys(update).length === 0) {
+        return reply.status(400).send({ ok: false, error: 'Nenhum campo editável informado', editaveis: CAMPOS_EDITAVEIS });
+      }
+      try {
+        const ref = getDb().collection('workspaces').doc(config.wsId).collection('exames').doc(exameId);
+        const snap = await ref.get();
+        if (!snap.exists) {
+          return reply.status(404).send({ ok: false, error: `Exame ${exameId} não existe` });
+        }
+        update.atualizadoEm = FieldValue.serverTimestamp();
+        await ref.update(update);
+        const atualizados = Object.keys(update).filter((k) => k !== 'atualizadoEm');
+        log.info({ exameId, campos: atualizados }, 'Exame editado pela console');
+        return reply.send({ ok: true, exameId, atualizados });
+      } catch (err) {
+        log.error({ err, exameId }, 'Falha ao editar exame');
+        return reply.status(500).send({ ok: false, error: (err as Error).message });
+      }
+    },
+  );
 }
 
 async function montarReconciliacao(
