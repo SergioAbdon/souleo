@@ -51,46 +51,58 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // Valida pasta de worklists. Falhar NÃO derruba Wader — só desativa worklist sync.
-  const wlPathValidation = validarWorklistPath(config.orthanc.worklistPath);
+  // Modo UI-only (WADER_UI_ONLY=1): sobe servidor + console SEM os workers.
+  // Permite rodar uma instância de DEV noutra porta sem dois Waders
+  // processarem os mesmos exames (escrita dupla). Ver ADR 2026-06-26.
+  const uiOnly = process.env.WADER_UI_ONLY === '1' || process.env.WADER_UI_ONLY === 'true';
+
+  // OrthancClient é sempre necessário (UI server + endpoint de reconciliação).
+  const orthancClient = new OrthancClient(new WorkspaceRepo(config.wsId));
+
   let worklistWorker: WorklistSyncWorker | null = null;
-  if (!wlPathValidation.ok) {
-    log.warn(
-      { path: config.orthanc.worklistPath, error: wlPathValidation.error, hint: wlPathValidation.hint },
-      'Pasta worklists inválida — sync de worklist ficará desativado',
-    );
+  let dicomWorker: DicomIngestWorker | null = null;
+  let accWorker: AccRecoveryWorker | null = null;
+
+  if (uiOnly) {
+    log.warn('WADER_UI_ONLY ativo — workers DESLIGADOS (modo dev/console; não processa exames)');
   } else {
-    worklistWorker = new WorklistSyncWorker({
+    // Valida pasta de worklists. Falhar NÃO derruba Wader — só desativa worklist sync.
+    const wlPathValidation = validarWorklistPath(config.orthanc.worklistPath);
+    if (!wlPathValidation.ok) {
+      log.warn(
+        { path: config.orthanc.worklistPath, error: wlPathValidation.error, hint: wlPathValidation.hint },
+        'Pasta worklists inválida — sync de worklist ficará desativado',
+      );
+    } else {
+      worklistWorker = new WorklistSyncWorker({
+        wsId: config.wsId,
+        worklistPath: config.orthanc.worklistPath,
+        intervalSec: config.polling.worklistSyncSec,
+        scheduledStationName: config.orthanc.scheduledStationName,
+      });
+      worklistWorker.start();
+    }
+
+    // DICOM ingest worker — não derruba se Orthanc estiver fora; tenta a cada tick
+    dicomWorker = new DicomIngestWorker({
       wsId: config.wsId,
-      worklistPath: config.orthanc.worklistPath,
-      intervalSec: config.polling.worklistSyncSec,
-      scheduledStationName: config.orthanc.scheduledStationName,
+      client: orthancClient,
+      intervalSec: config.polling.orthancChangesSec,
     });
-    worklistWorker.start();
+    dicomWorker.start();
+
+    // ACC recovery worker (ADR 2026-05-18, Fix 3) — recuperação dirigida:
+    // acha exame aguardando sem DICOM e busca o estudo no Orthanc por ACC.
+    // ADR 2026-06-22 (Fix C): intervalo próprio (default 20s).
+    accWorker = new AccRecoveryWorker({
+      wsId: config.wsId,
+      client: orthancClient,
+      intervalSec: config.polling.accRecoverySec ?? 20,
+    });
+    accWorker.start();
   }
 
-  // DICOM ingest worker — não derruba se Orthanc estiver fora; tenta a cada tick
-  const orthancClient = new OrthancClient(new WorkspaceRepo(config.wsId));
-  const dicomWorker = new DicomIngestWorker({
-    wsId: config.wsId,
-    client: orthancClient,
-    intervalSec: config.polling.orthancChangesSec,
-  });
-  dicomWorker.start();
-
-  // ACC recovery worker (ADR 2026-05-18, Fix 3) — recuperação dirigida:
-  // acha exame aguardando sem DICOM e busca o estudo no Orthanc por ACC,
-  // sem esperar o feed /changes paginar.
-  // ADR 2026-06-22 (Fix C): intervalo próprio (default 20s) em vez de herdar
-  // os 60s do worklist-sync — exame casa mais rápido após cadastro/reenvio.
-  const accWorker = new AccRecoveryWorker({
-    wsId: config.wsId,
-    client: orthancClient,
-    intervalSec: config.polling.accRecoverySec ?? 20,
-  });
-  accWorker.start();
-
-  const app = await startUiServer(config, { worklistWorker, dicomWorker });
+  const app = await startUiServer(config, { worklistWorker, dicomWorker, orthancClient });
 
   registerShutdownHandlers(app, { worklistWorker, dicomWorker, accWorker });
 

@@ -6,11 +6,13 @@ import { createLogger } from '../logger';
 import { WaderConfig } from '../config/types';
 import { WorklistSyncWorker } from '../workers/worklist-sync-worker';
 import { DicomIngestWorker } from '../workers/dicom-ingest-worker';
+import { OrthancClient } from '../adapters/orthanc-client';
 import { registerAgendamentosRoutes } from './api/agendamentos';
 import { registerProcedimentosRoutes } from './api/procedimentos';
 import { registerOrthancConfigRoutes } from './api/orthanc-config';
 import { registerWorklistRoutes } from './api/worklist';
 import { registerDicomRoutes } from './api/dicom';
+import { registerReconciliacaoRoutes } from './api/reconciliacao';
 
 const log = createLogger({ module: 'ui-server' });
 const PAGES_DIR = path.join(__dirname, 'pages');
@@ -30,6 +32,7 @@ const PAGES_DIR = path.join(__dirname, 'pages');
 export interface UiServerExtras {
   worklistWorker: WorklistSyncWorker | null;
   dicomWorker?: DicomIngestWorker | null;
+  orthancClient?: OrthancClient | null;
 }
 
 export async function startUiServer(
@@ -56,6 +59,7 @@ export async function startUiServer(
   registerOrthancConfigRoutes(app, config);
   registerWorklistRoutes(app, config, extras.worklistWorker);
   registerDicomRoutes(app, config, extras.dicomWorker ?? null);
+  registerReconciliacaoRoutes(app, config, extras.orthancClient ?? null);
 
   await app.listen({ host: '127.0.0.1', port: config.ui.port });
 
