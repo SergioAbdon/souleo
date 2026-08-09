@@ -244,6 +244,26 @@ metade) e checklist de tela.
 
 ---
 
+## 8.1 O que a tríade pegou (09/08, depois do Plano 1)
+
+Revisão em três óticas sobre o branch inteiro — Codex (bugs), Ruflo (arquitetura),
+Ponytail (o que deletar). Três defeitos que os 87 testes não pegavam:
+
+| # | Achado | Onde doeu |
+|---|---|---|
+| 1 | **A tranca publicada quebrou o cadastro.** A regra exigia o campo `superadmin` ausente; `createProfile()` sempre envia `superadmin: false`. O teste passava porque usava payload inventado, sem o campo. | Produção, das 18:34 às 22:53 |
+| 2 | **Consulta de locais por `contaId` era negada.** Regra de `list` no Firestore não filtra resultado — precisa ser satisfeita pelos campos que a **consulta** fixa. A consulta fixa `contaId`, a regra olhava `ownerUid`. | Travaria o login de todo migrado quando o Plano 2 subisse |
+| 3 | **`subscriptions/{contaId}` é retrato congelado.** Quem debita a franquia (`/api/emitir`, `billing.ts`) continua no documento antigo; a tela mostraria número parado. | Mesma coisa |
+
+Lição que vale para o resto do projeto: **teste com payload de mentira prova
+mentira.** O teste de cadastro usava `{nome, crm}`; o app manda doze campos, um
+deles fatal. Daqui em diante, teste de regra copia o payload real do código.
+
+Também corrigidos: `vinculos` podia ser fabricado apontando para clínica alheia e
+reescrito depois (papel incluído); `empresas` era legível por qualquer autenticado;
+`AuthContext` sem `try/finally` prendia a tela em "carregando"; e o caminho novo
+assumia a sessão mesmo cobrindo só parte dos locais do usuário.
+
 ## 9. Fora de escopo (Seção 1 não resolve)
 
 - Gateway de pagamento real (Stripe/Asaas).
