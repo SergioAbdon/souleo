@@ -908,6 +908,14 @@ async function main() {
   for (const ws of workspaces.docs) {
     const w = ws.data();
 
+    // `wader-dev` (ambiente de teste do Wader) nao tem dono nem vinculo nem
+    // assinatura — nao e cliente, nao vira conta. O Wader fala com ele por
+    // Admin SDK, que ignora as regras.
+    if (!w.ownerUid) {
+      console.log(`- local ${ws.id} ("${w.nomeClinica ?? ''}") sem ownerUid — ambiente de teste, pulando`);
+      continue;
+    }
+
     if (w.contaId) {
       console.log(`- local ${ws.id}: ja tem contaId=${w.contaId}, pulando criacao de conta`);
       continue;
