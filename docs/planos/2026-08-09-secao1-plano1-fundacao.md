@@ -962,10 +962,17 @@ async function main() {
       console.log(`  ATENCAO: local ${ws.id} nao tem assinatura`);
     } else {
       if (subs.length > 1) console.log(`  ATENCAO: local ${ws.id} tem ${subs.length} assinaturas; usando a primeira (${subs[0].id})`);
-      const s = subs[0].data();
+      // O `workspaceId` NAO vai para a assinatura nova. Se fosse junto, o
+      // getSubscription() atual (where workspaceId == wsId, limit 1) passaria a
+      // casar com DOIS documentos e o consumo de franquia cairia ora num, ora
+      // noutro. A nova e endereçada por contaId; a origem fica no marcador.
+      const { workspaceId: wsOrigem, ...restoSub } = subs[0].data();
       plano.push({
         o: 'criar assinatura', ref: db.collection('subscriptions').doc(contaRef.id),
-        dados: { ...s, id: contaRef.id, contaId: contaRef.id, [MARCA]: { origemSub: subs[0].id } },
+        dados: {
+          ...restoSub, id: contaRef.id, contaId: contaRef.id,
+          [MARCA]: { origemSub: subs[0].id, workspaceIdOrigem: wsOrigem },
+        },
       });
       plano.push({ o: 'marcar assinatura antiga', ref: subs[0].ref, dados: { [MARCA + 'Substituida']: contaRef.id }, merge: true });
     }
