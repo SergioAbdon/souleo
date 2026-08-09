@@ -63,7 +63,7 @@ A ideia estava certa desde abril; o app é que nunca gravou o vínculo nesse for
 | D4 | **Local** é escolhido ao entrar (contexto de sessão), não por exame |
 | D5 | **Caminho A — camada acima.** `workspaces` continua sendo o *local*; nasce `contas` por cima. Nenhum exame ou paciente muda de lugar |
 | D6 | **Uma franquia por conta**, somando todos os locais — coerente com a precificação aprovada em 11-12/04/2026 (PF paga por local extra; PJ tem locais ilimitados e cobra por usuário adicional) |
-| D7 | Dentro de uma conta, **todo médico vê a fila toda e lê qualquer laudo; edita só os seus** |
+| D7 | Dentro de uma conta, **todo médico vê a fila toda e lê qualquer laudo; edita só os seus**. "Fila toda" = dos locais a que o vínculo dá acesso (ver `locais` em §3): lista vazia = todos os locais da conta; lista preenchida = só aqueles. Vale para todos os papéis |
 | D8 | **Cancelar devolve o laudo à franquia.** Transferir → o novo médico consome de novo. Saldo justo: 1 laudo por exame. Abuso vigiado pelo log |
 | D9 | **Fase 6 (segredos + Wader) é do Claude da clínica**, só após as Fases 1-5 |
 
