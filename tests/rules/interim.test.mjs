@@ -1,0 +1,250 @@
+// Testes da TRANCA PROVISORIA (firestore.rules).
+// Usa os IDs REAIS do inventario de 09/08/2026 para provar duas coisas:
+//   A) o Dr. Sergio continua trabalhando exatamente como hoje
+//   B) qualquer outro usuario logado para de enxergar os dados dele
+// Roda no emulador. Nao toca producao.
+import { test, before, after, describe } from 'node:test';
+import { readFileSync } from 'node:fs';
+import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
+import {
+  doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection, getDocs, query, where,
+} from 'firebase/firestore';
+
+// IDs reais (inventario 09/08/2026)
+const SERGIO = 'PK7UMR0fBDOdiaRLA9XzxtsUVQw2';   // superadmin, dono do MedCardio
+const OUTRO  = 'w3FQAZG4DnbcWxo1X4jotPr7Udl1';   // dono do "Consultorio"
+const INVASOR = 'uidRecemCadastrado';            // qualquer um que se cadastre hoje
+
+const WS_MEDCARDIO = 'LDRtedkanx3bUvxpdmiL';     // 191 exames, 208 pacientes, segredos
+const WS_OUTRO     = '5RmlZvXtJSeHlPi4ll9q';
+const WS_WADER     = 'wader-dev';                // sem ownerUid
+
+let env;
+
+before(async () => {
+  env = await initializeTestEnvironment({
+    projectId: 'leo-testes',
+    firestore: { rules: readFileSync('firestore.rules', 'utf8'), host: '127.0.0.1', port: 8080 },
+  });
+
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'profissionais', SERGIO), { nome: 'SERGIO', superadmin: true });
+    await setDoc(doc(db, 'profissionais', OUTRO), { nome: 'Outro', superadmin: false });
+    await setDoc(doc(db, 'profissionais', INVASOR), { nome: 'Invasor', superadmin: false });
+
+    await setDoc(doc(db, 'workspaces', WS_MEDCARDIO), {
+      ownerUid: SERGIO, nomeClinica: 'Grupo MedCardio',
+      feegowToken: 'TOKEN-SECRETO', ortancUser: 'orthanc', ortancPass: 'SENHA-SECRETA',
+    });
+    await setDoc(doc(db, 'workspaces', WS_OUTRO), { ownerUid: OUTRO, nomeClinica: 'Consultorio' });
+    await setDoc(doc(db, 'workspaces', WS_WADER), { nomeClinica: 'Wader Dev' }); // sem ownerUid
+
+    await setDoc(doc(db, `workspaces/${WS_MEDCARDIO}/exames`, 'ex1'), {
+      pacienteNome: 'Paciente Real', medicoUid: SERGIO, status: 'emitido',
+    });
+    await setDoc(doc(db, `workspaces/${WS_MEDCARDIO}/pacientes`, 'pac1'), { nome: 'Paciente Real', cpf: '000' });
+    await setDoc(doc(db, `workspaces/${WS_MEDCARDIO}/config`, 'honorarios'), { UNIMED: 120 });
+    await setDoc(doc(db, `workspaces/${WS_WADER}/exames`, 'exw'), { pacienteNome: 'Teste Wader' });
+
+    await setDoc(doc(db, 'subscriptions', 'sub-medcardio'), {
+      workspaceId: WS_MEDCARDIO, tipo: 'trial', franquiaMensal: 600, franquiaUsada: 225,
+    });
+    await setDoc(doc(db, 'vinculos', 'v-sergio'), {
+      medicoUid: SERGIO, workspaceId: WS_MEDCARDIO, role: 'medico', status: 'ativo',
+    });
+    await setDoc(doc(db, 'configPlanos', 'atual'), { planos: [] });
+  });
+});
+
+after(async () => { await env.cleanup(); });
+
+const como = (uid) => env.authenticatedContext(uid).firestore();
+
+// ══════════════════════════════════════════════════════════════════
+// A) O QUE NAO PODE QUEBRAR — o dia a dia do Dr. Sergio
+// ══════════════════════════════════════════════════════════════════
+describe('A) o trabalho do Dr. Sergio continua', () => {
+  test('le o proprio local (timbre, config)', async () => {
+    await assertSucceeds(getDoc(doc(como(SERGIO), 'workspaces', WS_MEDCARDIO)));
+  });
+
+  test('lista os exames do proprio local (worklist)', async () => {
+    await assertSucceeds(getDocs(collection(como(SERGIO), `workspaces/${WS_MEDCARDIO}/exames`)));
+  });
+
+  test('cria exame (cadastro manual / import Feegow)', async () => {
+    await assertSucceeds(setDoc(doc(como(SERGIO), `workspaces/${WS_MEDCARDIO}/exames`, 'novo1'), {
+      pacienteNome: 'Novo', status: 'aguardando',
+    }));
+  });
+
+  test('atualiza exame (salvar laudo)', async () => {
+    await assertSucceeds(updateDoc(doc(como(SERGIO), `workspaces/${WS_MEDCARDIO}/exames`, 'ex1'), {
+      conclusoes: 'texto',
+    }));
+  });
+
+  test('apaga exame (remover da fila)', async () => {
+    await assertSucceeds(deleteDoc(doc(como(SERGIO), `workspaces/${WS_MEDCARDIO}/exames`, 'novo1')));
+  });
+
+  test('cria e le paciente', async () => {
+    await assertSucceeds(setDoc(doc(como(SERGIO), `workspaces/${WS_MEDCARDIO}/pacientes`, 'pac2'), { nome: 'X' }));
+    await assertSucceeds(getDoc(doc(como(SERGIO), `workspaces/${WS_MEDCARDIO}/pacientes`, 'pac1')));
+  });
+
+  test('salva honorarios (subcolecao config, usada pelo Extrato)', async () => {
+    await assertSucceeds(setDoc(doc(como(SERGIO), `workspaces/${WS_MEDCARDIO}/config`, 'honorarios'), { UNIMED: 130 }));
+  });
+
+  test('le a assinatura por consulta (franquia no dashboard)', async () => {
+    await assertSucceeds(getDocs(query(
+      collection(como(SERGIO), 'subscriptions'), where('workspaceId', '==', WS_MEDCARDIO),
+    )));
+  });
+
+  test('consome franquia (updateDoc na assinatura)', async () => {
+    await assertSucceeds(updateDoc(doc(como(SERGIO), 'subscriptions', 'sub-medcardio'), { franquiaUsada: 226 }));
+  });
+
+  test('le e edita o proprio perfil', async () => {
+    await assertSucceeds(getDoc(doc(como(SERGIO), 'profissionais', SERGIO)));
+    await assertSucceeds(updateDoc(doc(como(SERGIO), 'profissionais', SERGIO), { telefone: '91999' }));
+  });
+
+  test('grava log de auditoria', async () => {
+    await assertSucceeds(addDoc(collection(como(SERGIO), 'logs'), { tipo: 'teste', ts: 1 }));
+  });
+
+  test('le a tabela de planos', async () => {
+    await assertSucceeds(getDoc(doc(como(SERGIO), 'configPlanos', 'atual')));
+  });
+
+  test('Direx: superadmin lista todos os locais e assinaturas', async () => {
+    await assertSucceeds(getDocs(collection(como(SERGIO), 'workspaces')));
+    await assertSucceeds(getDocs(collection(como(SERGIO), 'subscriptions')));
+    await assertSucceeds(getDocs(collection(como(SERGIO), 'profissionais')));
+  });
+
+  test('o outro usuario continua dono do local dele', async () => {
+    await assertSucceeds(getDoc(doc(como(OUTRO), 'workspaces', WS_OUTRO)));
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════
+// B) O QUE TEM QUE FECHAR — o buraco de 06/04/2026
+// ══════════════════════════════════════════════════════════════════
+describe('B) o estranho para de enxergar', () => {
+  test('nao le exame de outra clinica', async () => {
+    await assertFails(getDoc(doc(como(INVASOR), `workspaces/${WS_MEDCARDIO}/exames`, 'ex1')));
+  });
+
+  test('nao lista exames de outra clinica', async () => {
+    await assertFails(getDocs(collection(como(INVASOR), `workspaces/${WS_MEDCARDIO}/exames`)));
+  });
+
+  test('nao le paciente de outra clinica', async () => {
+    await assertFails(getDoc(doc(como(INVASOR), `workspaces/${WS_MEDCARDIO}/pacientes`, 'pac1')));
+  });
+
+  test('nao escreve nem apaga exame de outra clinica', async () => {
+    await assertFails(updateDoc(doc(como(INVASOR), `workspaces/${WS_MEDCARDIO}/exames`, 'ex1'), { status: 'x' }));
+    await assertFails(deleteDoc(doc(como(INVASOR), `workspaces/${WS_MEDCARDIO}/exames`, 'ex1')));
+  });
+
+  test('nao le o documento do local (onde moram token Feegow e senha Orthanc)', async () => {
+    await assertFails(getDoc(doc(como(INVASOR), 'workspaces', WS_MEDCARDIO)));
+  });
+
+  test('nao lista todos os locais', async () => {
+    await assertFails(getDocs(collection(como(INVASOR), 'workspaces')));
+  });
+
+  test('nao se promove a superadmin', async () => {
+    await assertFails(updateDoc(doc(como(INVASOR), 'profissionais', INVASOR), { superadmin: true }));
+  });
+
+  test('nao se da adminRole', async () => {
+    await assertFails(updateDoc(doc(como(INVASOR), 'profissionais', INVASOR), { adminRole: 'financeiro' }));
+  });
+
+  test('nao lista profissionais (vazamento de CPF)', async () => {
+    await assertFails(getDocs(collection(como(INVASOR), 'profissionais')));
+  });
+
+  test('nao le nem altera assinatura alheia', async () => {
+    await assertFails(getDoc(doc(como(INVASOR), 'subscriptions', 'sub-medcardio')));
+    await assertFails(updateDoc(doc(como(INVASOR), 'subscriptions', 'sub-medcardio'), { franquiaUsada: 0 }));
+  });
+
+  test('nao le o vinculo de outra pessoa', async () => {
+    await assertFails(getDoc(doc(como(INVASOR), 'vinculos', 'v-sergio')));
+  });
+
+  test('nao forja vinculo para entrar em local alheio', async () => {
+    await assertFails(setDoc(doc(como(INVASOR), 'vinculos', 'forjado'), {
+      medicoUid: SERGIO, workspaceId: WS_MEDCARDIO, role: 'medico', status: 'ativo',
+    }));
+  });
+
+  test('nao cria local no nome de outro', async () => {
+    await assertFails(setDoc(doc(como(INVASOR), 'workspaces', 'wsFalso'), { ownerUid: SERGIO }));
+  });
+
+  test('nao le o ambiente de testes do Wader (sem dono)', async () => {
+    await assertFails(getDoc(doc(como(INVASOR), `workspaces/${WS_WADER}/exames`, 'exw')));
+  });
+
+  test('nao le o financeiro do Direx', async () => {
+    await assertFails(getDocs(collection(como(INVASOR), 'pagamentos')));
+    await assertFails(getDocs(collection(como(INVASOR), 'historicoFinanceiro')));
+    await assertFails(getDocs(collection(como(INVASOR), 'logs')));
+  });
+
+  test('o dono de OUTRO local tambem nao enxerga o MedCardio', async () => {
+    await assertFails(getDoc(doc(como(OUTRO), `workspaces/${WS_MEDCARDIO}/exames`, 'ex1')));
+    await assertFails(getDoc(doc(como(OUTRO), 'workspaces', WS_MEDCARDIO)));
+  });
+
+  test('nao autenticado nao le nada', async () => {
+    const anon = env.unauthenticatedContext().firestore();
+    await assertFails(getDoc(doc(anon, `workspaces/${WS_MEDCARDIO}/exames`, 'ex1')));
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════
+// C) O CADASTRO ATUAL (browser) TEM QUE CONTINUAR FUNCIONANDO
+//    ate o Plano 2 mover isso para o servidor
+// ══════════════════════════════════════════════════════════════════
+describe('C) cadastro pelo navegador ainda funciona', () => {
+  const NOVO = 'uidNovoCadastro';
+
+  test('cria o proprio perfil, sem superadmin', async () => {
+    await assertSucceeds(setDoc(doc(como(NOVO), 'profissionais', NOVO), { nome: 'Novo', crm: '123' }));
+  });
+
+  test('nao consegue nascer superadmin', async () => {
+    await assertFails(setDoc(doc(como('uidEsperto'), 'profissionais', 'uidEsperto'), {
+      nome: 'Esperto', superadmin: true,
+    }));
+  });
+
+  test('cria o proprio local, vinculo e assinatura', async () => {
+    await assertSucceeds(setDoc(doc(como(NOVO), 'workspaces', 'wsNovo'), {
+      ownerUid: NOVO, tipo: 'PF', nomeClinica: 'Consultorio',
+    }));
+    await assertSucceeds(setDoc(doc(como(NOVO), 'vinculos', 'vNovo'), {
+      medicoUid: NOVO, workspaceId: 'wsNovo', role: 'medico', status: 'ativo',
+    }));
+    await assertSucceeds(setDoc(doc(como(NOVO), 'subscriptions', 'subNovo'), {
+      workspaceId: 'wsNovo', tipo: 'trial', franquiaMensal: 600, franquiaUsada: 0,
+    }));
+  });
+
+  test('nao cria assinatura pendurada em local alheio', async () => {
+    await assertFails(setDoc(doc(como(NOVO), 'subscriptions', 'subPirata'), {
+      workspaceId: WS_MEDCARDIO, tipo: 'remido',
+    }));
+  });
+});
