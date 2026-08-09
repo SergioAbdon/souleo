@@ -12,7 +12,7 @@ import { abrirPdfUrl } from '@/lib/pdfUtils';
 import { dataLocalHoje } from '@/lib/utils';
 import { gerarAccessionNumber } from '@/lib/gerarAccessionNumber';
 import { db, auth } from '@/lib/firebase';
-import { doc, getDoc, deleteDoc, collection, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, deleteDoc, collection, writeBatch, serverTimestamp, type DocumentReference } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { checkEmissao } from '@/lib/billing';
 import DicomGallery from '@/components/laudo/DicomGallery';
@@ -349,7 +349,7 @@ export default function Worklist() {
       const refsAppt = comAppt.map((p: Record<string, string>) =>
         doc(db, 'workspaces', workspace.id, 'exames', `fg-${p.feegowAppointId}`),
       );
-      const existentes = await Promise.all(refsAppt.map((r) => getDoc(r)));
+      const existentes = await Promise.all(refsAppt.map((r: DocumentReference) => getDoc(r)));
 
       const aCriar = [
         ...comAppt
