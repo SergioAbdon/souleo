@@ -10,6 +10,7 @@ import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { getProfile, getMemberships, getWorkspace } from '@/lib/firestore';
 import { getSubscription } from '@/lib/billing';
+import { getVinculosDoUsuario, getConta, getLocaisDaConta, getSubscriptionDaConta, type Conta, type Papel } from '@/lib/contas';
 
 // Tipos
 export type Profile = Record<string, unknown> & { id: string; nome?: string; crm?: string; ufCrm?: string; especialidade?: string; tipoPerfil?: string; cpf?: string; sigB64?: string; };
@@ -21,6 +22,8 @@ type Contexto = {
   membership: Membership;
   workspace: Workspace;
   subscription: Subscription | null;
+  conta?: Conta | null;
+  papel?: Papel;
 };
 
 type AuthState = {
@@ -63,6 +66,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // v3: Carregar contextos (workspaces) em PARALELO
         if (prof) {
+          // Caminho novo: conta → locais. Se nao houver vinculo migrado, cai no antigo.
+          const vincs = await getVinculosDoUsuario(fbUser.uid);
+          if (vincs.length > 0) {
+            const ctxNovos: Contexto[] = [];
+            for (const v of vincs) {
+              const [conta, locais, sub] = await Promise.all([
+                getConta(v.contaId),
+                getLocaisDaConta(v.contaId, v.locais ?? []),
+                getSubscriptionDaConta(v.contaId),
+              ]);
+              for (const local of locais) {
+                ctxNovos.push({
+                  membership: { id: v.id, role: v.papel, workspaceId: local.id } as Membership,
+                  workspace: local as Workspace,
+                  subscription: sub as Subscription | null,
+                  conta, papel: v.papel,
+                });
+              }
+            }
+            if (ctxNovos.length > 0) {
+              setContextos(ctxNovos);
+              if (ctxNovos.length === 1) selecionarContexto(ctxNovos[0]);
+              setLoading(false);
+              return;
+            }
+          }
+          // ── caminho antigo (pre-migracao) daqui para baixo ──
           const memberships = await getMemberships(fbUser.uid);
           const ctxResults = await Promise.all(
             memberships
