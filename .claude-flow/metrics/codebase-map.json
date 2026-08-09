@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-08-09T14:12:26.481Z",
+  "projectRoot": "C:\\Users\\sergi\\Desktop\\souleo",
+  "structure": {
+    "hasPackageJson": true,
+    "hasTsConfig": true,
+    "hasClaudeConfig": true,
+    "hasClaudeFlow": true
+  },
+  "scannedAt": 1786284746481
+}

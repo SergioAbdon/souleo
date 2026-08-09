@@ -1,0 +1,122 @@
+Gerando signed URLs (validas por 24h)...
+
+========================================
+MANOEL - Eco TT (10:00)
+Doc: uj1U5egIB7ox8CzbNRV8
+========================================
+   10 imagens encontradas
+
+    1. 001.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/uj1U5egIB7ox8CzbNRV8/001.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=VZ9r2bbc4M1%2FISzx96qjO5n3jv3H7Z6GkEvgO6Nd7iWrMwUQaPysQ3T2ihSrzAGZaDpUKXGKqgCQ%2B6lwhoW6yjKpU6r9EUktHdLA3oy0GPPScTCd2oxmQ0qH7csEmCqqvRzSM9w6jXjqv1ItQ1gYUGOxWe9a%2Fs%2BtRG1P5tiQbLVm9JyCG0VyAQUomh%2F91gRyRcl9bQFAi%2Bk7bePMP61hYSql7rwH8U4ZBvE4KdexTD6t%2Fr78KkBA7cOVDvB%2BYAqhPnOHIkqPgg%2F0Z50ma77xdPtQqphJCB6QW%2F8ia%2FMp%2B7T1oiaymAdnaR11ZP8cXTuh8HHa3PdteCFnmf91oFuILw%3D%3D
+
+    2. 002.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/uj1U5egIB7ox8CzbNRV8/002.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=KYfOxzwXkBQ459izwm9Twoy6H9hJV5Hx%2Bk2CM%2BaclAm1YX4XfSREIIxyqhKIiCDV8mB5r7F%2BKX3G%2BTihXzBxAFAUElaYv1xieB00YwgAP8V2DyEjxIxQNZHq0kxKe2DHhgsR9imlTS8SUPi36DWqbeJfu8l2A2Fcv%2BbRHdzCvO7CsxoG2ydsYZt9FGI92WlPHvDIcASXiiEkrmdZS29NOXLNDbJJeCPhJSQggF4e16IifyMB0LBMypazNLJikTu3raONElmtMKadp1%2BvCDZIZwON2gi7mxgamE2nXN%2F519Q9nm4zI0JnPzgncyL523R%2FZnkhRFbZ9b%2BPNDGFJR7nyw%3D%3D
+
+    3. 003.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/uj1U5egIB7ox8CzbNRV8/003.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=pGIarpGbH%2FMOxIIOiRLzEIPRqutWmUV%2BsxxAtlICD41JhXDivxQ8J1ed8BFMFCc1o9kFCOlJEkVZ8KGBS6GNOkx9yfO3xGsyoSus9aQrZxErvd8m47oyydJz6BNQiI7yDVw%2FPyCYykH2BtR9jaWaPrkZqdWY%2BuZrup2VZxlK8EGnIFnZQnSrxS9Hm0JbPspsTHS8NyBq3DDBrMyk%2F6%2FKhzm7m%2B8jzu1gjHRxpH6Qn9BU75aBgj4LD7GQLdn78Bd2PWLknfYgHQzNX8zcPIsJjtKiuiBa1h%2FrN6AvbSUG50M4oPzTaYwN8VCdphOPfDaFX7DsXkCuhSL8EertX2X4%2BQ%3D%3D
+
+    4. 004.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/uj1U5egIB7ox8CzbNRV8/004.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=QS0qRtURBTtmACmMsoN362Pqiz3O9J%2FaTzvXnydDLPWfTEsGfUdPwP%2BxFA%2FL63acuFqVi1gDIvsEjmC5%2FvvSBmt7Qdc9sxo1pwUS3nsOdLltIKLggNL7yYVZpLZUkRtEodXGs3Gux4%2B5WVECZet6ioyHO1KUEO1TKGxgoywmOFYdWt6u%2FD6%2BE47sY1%2ByyHt7jEqPrEQQSHsLWFw%2BbtPvc%2FmXYBykIroEpeAR48IIz2qzU4%2FYr%2F1oZWD4Dl3h1VdO0z%2FTwnH48Wq3pJ99%2BMG923Cs62%2BQctPsehP5r9Q%2FBpYJeR2cs76K1%2BKj4QxHIDtqqywlqFFQRGK4vYS7XoEe8Q%3D%3D
+
+    5. 005.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/uj1U5egIB7ox8CzbNRV8/005.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=ZJHrdSXkorxcIl%2FYPosAyXg68ZXQ%2FQatikfDOPzDYQUvsrnDWNVN2UV37sm7M55O%2F1EU2ztsEDWPsuHl0sdCRSXbun3rZqc9hqqkXRj0xCsUSt6CNXxUkt2%2B81gHZPVh%2BjEY9v5w578XJgU9VoTcrMmZk1otuF%2FL9LWa1Fqwr6Ktf%2FLHyAIsUJDu87T7zGYF2WEgvDdP8pMlwN32TMVCyWe%2Bk5ndEQBk5HDPXu2q672N53MY%2B9HflCL0%2FiRBWY6Uii%2BICCPwsHiEtgZrC06fIEOBqYxX%2BisbdkFBTVbkioaZvs9sttAQ15dhxsbmpkBH1PQ959p%2BN6NeXpc6tw7Hvw%3D%3D
+
+    6. 006.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/uj1U5egIB7ox8CzbNRV8/006.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=W91IwUZ%2FIkKStEsk%2B1rACGSFhRJI%2FKUiU%2FrvGsR5s4vGa7dXTxBGsXZ%2FKmTQTwxFoS2HaEWcwzN45W4TBq6tB%2FLBGK8sZMxOUUAUXrPYbYaFNOn%2By0dsbWtwg0o5kXaHrJakGvr6iYhD27IlX8MzFAEDAuQb5l7fUqYiJo9B%2FZDjn0a%2BNQjGeCNCBi%2B65uTDSrCsdu72%2BCyQDkCW%2BOthsb0IAWCEpAJJdGeSpkFFgv9fV8VX9a7SCRh8UlvQN7phgbfJe7iowvVV9mfeGcIv8YTAA9oV1jhZCSSwhS8DMrWdJnFirLsQPHfeU8e4c1mY3MjMC75417G4ui85O4pu8g%3D%3D
+
+    7. 007.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/uj1U5egIB7ox8CzbNRV8/007.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=krlbr20KHdi2V22fmSJEujcAEmdCyXnA0u3AGgmpG469GilRH%2FmZZWYSPiCdjPN%2BqBv%2FdVbm%2FrFEmzPA7VfBMlotisAT4yahaacElm9U%2BceXP1Xkmp5ylNyY8PutJt17e%2BhOvT56lDhhPZ4DtKj9IuwDxzPMEJ3H6%2B1taWexHqx8dqBXxGls3f3ze%2Fh%2FGSf8rP1POOdu3D3RsdNm6nLmIyKPmsddMcRRlmgL9H1qKIYospNYenCEHa1O4nhXgTDbNjmhESTrW7KpAwIIlZzcw1WOpXNVDGZvW8Tb9JDCPkxgu4PEap5gwOJHujebQE%2BQrv9mqvZhcgZ8eN1WTq9ipg%3D%3D
+
+    8. 008.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/uj1U5egIB7ox8CzbNRV8/008.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=IXKIy9SwUA%2FGGlhN0E0Th6io1yBWvZP%2Bhr%2FtXhA4YMBIP3ydd05WVdPYpgi5atgJlE3i%2BZ5nPIFcaPnZDFsNFi%2Br1jZ0I0sPLMjF0tIPzAzj70aeyES5SdkkAJFb3JhSnJGQekYvmPQHA%2FqLMz5k4Cz4gtRT%2Fnz97aPQAikHX6r%2FvDxjiJDSLQ5J5L%2FfrmtgTw4TkZY8e95b%2FpPy9AkchnB2AovjzLqAEW8NqAIx1bsEdCcARxH73oMT%2FUa0pusVDT%2FMqUmLGn5I5OdJ5ZTqQXJSdaDK3eeX%2BvdRk1rC4FYh4dpAUfWw%2F4PKbkT41%2Fiy9XUisaqFaljLfV8Q9NVJEQ%3D%3D
+
+    9. 009.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/uj1U5egIB7ox8CzbNRV8/009.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=eiCLbkrh09d8klfTZpHVe%2FzSgOE%2Br4FcUe8jLVz1SvU14Z5CIJu%2BFOKhSn7f9IEEcsDAC%2F4NxYZdSMu8sugtFoKg5p%2Byi7zRVtVwvfEGw0q0cRYy06YI%2BAp3Q2BFZ0CBKTqChr0d0OrXKPj5s0e4dlNEDHDbM07RBzNjQo9C0%2BnBFkDEzspL0JnJhocFhCizw4wSBCRhpCWyl%2FCGvzlLj%2BkLxiDZEGEU7QSTRb3%2Bvfa8wYDfPToqIKI2s5ct9Eg%2BOM%2BFo774njnc2Fqkm%2BMIZR3YUlV3LrTq2DRzIpC6v1XKRqbfSQ%2Fx7EtWciiP9TY4eSU9LDY1QBoZTRriC3%2Bzng%3D%3D
+
+   10. 010.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/uj1U5egIB7ox8CzbNRV8/010.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=W8Xj6gWWtEx0voxrcA4yVuAHNpu%2BbhBBz0ptCxf4OyeG8n%2FT8CFR8YZa2TotjtH%2FJWlId8Wq%2Fp5KyqidF4ok36qRlYsrxRNHvJ%2BWuPh4i20XWpyV0LbXZq60HN5S24aIcb%2FcXSjocyTxZtq%2BqZ6k6aocyUOC%2BwnagYbEN8heYb4ibLqFthTjWrk0SreUTcDVm0wsDX9wZlgR17fn0S0afBYAPJ7bMhT0WoAaxE6TK7Lc5UdYaN9TsUajNhXq1ErFbfWmkX%2BE18zbZsHEVA1Sok98YQBR14JP7CK288KEc%2B9%2FZWj7bfHefTQHtymEmzU1Z40gzeQZJOuzwbKKEozCGw%3D%3D
+
+
+========================================
+SONIA - Eco TT (11:30)
+Doc: v7JvTfjOhJBzCMcNuNIk
+========================================
+   10 imagens encontradas
+
+    1. 001.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/v7JvTfjOhJBzCMcNuNIk/001.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=YD3%2Bi4iOmfI2HGT5o0QmbasUVOjDAj0m5ZlHRwxctVbDJhIQsWmd0LJDp%2F7pLZ47Tc1XJ%2B4vvaZzWAf69piPn89jceS7aYKM6OgkmIrPlLn2Giewx2upOtPksn48LjUxOwUGDllp%2FppuK3NwGDUG9uwh5MhYKpupWEOdMRcthASpx8jrhBXGgU5RXCaTa8ODmTtJgxwMvgeiMi6XDiYbUAXu77nUwhDRDnCIStM0o1pYliYO5X7fGOKlQdArKR6Ud8OLD9KpuCqHfDhFG93zEfgCjdvzoZDIh9yesmHDvZHyqhTJrrMeVKg626cb0gxrzRKhQsB1kx%2Fqa4FCLEPHyw%3D%3D
+
+    2. 002.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/v7JvTfjOhJBzCMcNuNIk/002.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=iJ5W9%2FI04OuQDPMLREpqAr%2BhDiOB4%2B7bka6YYaWAgmq2kx%2FZH3HZQ59MuhXS90e4QWkEmjFErK22oEUkfrkCg4KLHcH96Og3Wxvz0MciU1mAqXesXSSmXfRTrjJQfNYNuqXE6hVkBSnHVhkE1afXbCx7IVi9yFHkQboiDRPCq7lGjC99jVU%2B%2FkEgEI3wTyROFeZCARd8cVn4ST8D%2Fx6yK41ooQIoy4mcZvnzpniLWo%2F0J2M5D75%2FzEzH1lrXauXAII%2FMbymRFE04Z3%2FwAqZtjHMBt5kMCSU%2BlVUHqc5D2bCycqJu%2FCGGKoEU4S1msU6C11Tsxz6c8wwAod%2FE5w%2FyLw%3D%3D
+
+    3. 003.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/v7JvTfjOhJBzCMcNuNIk/003.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=pXIOU%2F0QNHQkmz0tP4L0C3ldEiYifrc3%2Fp%2BjM8XTsY3sO9ia5oKbGsQZg0%2BpbkF0U7pNlIusSfCY%2BDe%2Be32vKjD6SDJJoBcLLTOPJNAG3wc37UEgW3wTsZnxesZinYbNsY4Wt%2BcZdbVH8lzF%2FWaZeWihQ%2BW3CNkRvVnMj%2BLkHokApQVndFcTs5boTI6CIMBWxEbFxJTG8FhsMKTRBSZj%2FteoVODt2e7fh4QfPu6NTlf%2F%2FSzuPVXOmKbMwVnryMEle8qtzLC93ZcMbgdlO1UxRJ1pGSIrOxCc6LjQD%2B6znZ%2B%2FsE4frEEnC%2FUJbwhU1tgDjrgB0qAHLM%2FTlvxggAZoOg%3D%3D
+
+    4. 004.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/v7JvTfjOhJBzCMcNuNIk/004.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=XmFe5AfUcs0zgLMQ11VLNAKpNlmAhwm6sF8t2R67TTcEw1MUCEu3IQ0wV7YaXKFTAp9FgPv0Nl8YG%2FkGMKlqCAu9wPTAVnBl36yAHfsrAHAEaXHzbuBn57Lqp23PYYG66xmW0IBdjryZk56jdtFCua3%2FcbVb5QGMer1CMs1kxGKcL7MnAnNUMi6MNzpcSWcELaNSKF9%2BrTc4mJ%2Fi0hSkrKuqM%2FpCWzVvXjikKnqJZWGRo5OI0gMDLMfPWBLcU17zn62XViYdLPBpuRlVAFgFhFrT2QZUirugTMrJt9YTU2WI0MF%2FDXuDzgq0Q3Sv3vkWlThvWuUtZDFWaIbkt92New%3D%3D
+
+    5. 005.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/v7JvTfjOhJBzCMcNuNIk/005.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=h42G0MphYTlVpfZzgBkxucuOnAO90VZodEe2tEnrBf9s0z3FmWedRb%2BHt0XmY02EFrcww%2BN3P0bOBFZ20cy4rMAeMH%2FYXrM6Y%2BiAE2TGGCg37Ij8I21iu2DmJ%2BVG4Kb4HqhnER7juakuSvNcIsUuL9%2FGVf2v518IFzcOtcvpoq96q64o5Va1YUN7ab1OlcDDV3IaMBamArO2EubT7Wgfw4nX3FVWzQDtj7wVXXhtCmATG5tXnQto0cocQFyOHpp4Uw7nu%2FX9dDfr72W2VgJ9IINhzqiXXF8b%2FY6ryvHrzOezz9QljtuoPS4GHKz5FEJ8N8HDvRViXq%2F4VfQnlaszkA%3D%3D
+
+    6. 006.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/v7JvTfjOhJBzCMcNuNIk/006.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=c6HffIZxP%2BAiet5Rat3MLRYTQrGia6Wa%2FCIPiqLog2Z7EZx0GiGYK3FKDmX9O9egoHHFZKksxty%2F32j3wxsU1oZIfscQJ05BUxLtRCiVAN515mf4UOvyO0F3xnsSaWd0mlYaqDMGHMUn%2BTJLEPtkCxIBEAfi0PacuaodN9R63klJOA0LS3V6e7pRiaQUVxUWb3zHyTVlwXcDMnfTXmzIe77eSMO1TrScYI9NXKc%2BOudS5I9opPMAbkQSEYmzk6wROzOSEhjBS862LZPkx3co0BUJvXBY1CCbHSOckpHojiU1XrYhsR2%2B18CsZfSagPSnsVu9e0OiQMWXs7ROnTnlUA%3D%3D
+
+    7. 007.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/v7JvTfjOhJBzCMcNuNIk/007.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=SwAi8ejkAWTmpkaa7PmfS5TpX0c8aqfFpddbRo%2Fodv%2B0BEyngtZFxZB3nvBQqmzXBaYo2P5UEO7E6PXhDwYpxz5ZxYg9TFM91tKlX32xq%2BETmcPl%2FqyKf%2BePYKdAH3WUtUjTWSLGOHso6CSxT5CVHEb99xG8rcnRV3LBogdZZU3lMkO9Pz0MWbGPZ%2BAvFo2hCBazOUWnfARSd64G865pGc%2F2l6CIZXf9l0kIAbv%2FVzIhczBhAfgVfySOidnrKbRGFRbgEXCQKYicbpp3XfLjuU%2BfSXRRA%2BCMy7YOM6NPSHRc9bGr6ppeNYFrLJNOb%2Brwe839AKr20eEyHrBfAzOQOw%3D%3D
+
+    8. 008.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/v7JvTfjOhJBzCMcNuNIk/008.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=aJaiH28wmTZZ1X8y3y2hRtPi09qVsSCsmlYM%2F124U530EohrO%2BiJNRstkctamMMRKCrTtKAmjBNeCuhXaj8LgXDm80ptWmHRCqogYFKFQjwXda9gWYw3h4bZ76IYLM09uUvNvUPDP5TrMz4nVN8X6y1J15h8UecvllFlgR3499WD6DTiRgkbSNO2Y61FmGYLJAcJNWjT79qrp9vyyW10Kv59LKVJpyb5sSObjmXNvCGzC0s8t3Rk6fUUj7ellVH0ACJqTeuarba0EcWkQeYAqTUJjQFeIRY0k6KqifFEsA4sDp741Fg%2BTVwoSAQxRkdCzGoQ3G%2BZyivrOhwMF2JZiw%3D%3D
+
+    9. 009.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/v7JvTfjOhJBzCMcNuNIk/009.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=Bfdx3ZP8rRiK2RAOynCpHQxsDb26TVP%2FBPZ7q3QR2O2lfw%2FTWTa6fhyVcm3uUD2P543eDSum%2Faoc32un2jQwqmGqqXUxcpncHCw0zgvTrb9OG8NNJKmWU7Iddimovj2lkCRIV1PqtYvDP%2BcdQbx5cmucWy7tjS6p6Te89rOseMZR%2BxSbnkm4QN0yfpjhadAIAeiDDXAaItsdU5Y7DrWW6iXNlcfljIbafMk5%2FEl%2FCngmDF90Dqsx%2Bh%2F0gE9Qd3JcCU2Aw1%2BMRU5SMbeo997oajdCq9aH4YaSsY0bL%2BUfkmJmh88KkeEEy%2FkYmpiy0guzOljwvl0%2FEuOepJgmEjeO8A%3D%3D
+
+   10. 010.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/v7JvTfjOhJBzCMcNuNIk/010.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=AGKtHiLFzT6Z%2BGHzLeJOYGAiRZbhxGtJinosh9GsytWoAnXTmZpKeQq3hqb7E9sl8PRPa0Fo84lBgve8cyyQrowS7KTSfTLcNraJ8F6EKuwxOLVOtuqGqwF5RFQ0aQwFlYG1XaLqbnqJcPvpZV1ffbhggGk9X7siSkruzpw%2Fh1i0oVvH6u5MYjca5i78f6oSM1WV1%2FueUlNDGrF9G74hEs%2BAfy1m7Xn7mH7A8K1xdR9gmuE9FLUIsgTOeXe%2BH%2F%2FdMvG1LRjEytnofd5IabGWoqNdExDkrc5Nc3HWnvK8o82yNVj293kyZWgtFruVKp%2FChVouMZr%2B%2Fon8OnYDgBFoTQ%3D%3D
+
+
+========================================
+SONIA - Carotidas (11:45)
+Doc: He5dXgFCv1oft6xNlUlL
+========================================
+   12 imagens encontradas
+
+    1. 001.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/He5dXgFCv1oft6xNlUlL/001.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=kDgAzMAX9EFAXEiWs34DS9B0EEeUIx1pR2WXoeBBBTA3Y6hIzkCIRbxsIO2zoCRwAeozcAYVWxRQsV6o%2BCwLOjhXmPgHYe6AT5LMKQkNLgTJYHJoG57mdUV1Z2UeetTcEmK47U5pHPFyoXUo9nqTYRjIFoQyU9LMxl5gHRS5yBendvK6xMOt46DXXdhSkE%2FSTx3kEDAj%2FtZ279lXyvdJKTWMANFhSH0yAV9ELvLQ5Xbj7ZKNFz%2FXZFbRM4pdR09y9nSNhse73iuvMnzJL%2B4mR%2FxoZHpL4MQ1DVQekC07TJ1P3IjHyvL23oPTFpwbNVEAyvIm5zhU1sM1dhjvCKFMxw%3D%3D
+
+    2. 002.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/He5dXgFCv1oft6xNlUlL/002.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=n%2Fqz90zU25AFxVH6%2FZoI8CHsWdye%2Fq2uymgZOjnbTIIfbLZIshIalEsTs74%2FcHUaCJkeer2zPtVy7GVMVCO716xZU1qpvP%2F%2F%2BI5MwWI2ODtaT9alilUeLVxMzr6NkUb1cudsfNamqzNShBKSNuyubMzPcv95XNe5dwUqGVPVaTWbTQXmJI5zzztKvRbL8g1dx7AY9v4xa6655cUEGFQ6tkLArm2t1Kq9nKkoXnX14dGwvq0sVYCtgTpA1zfi2RznmuJ%2Fl76woUYm0xy306RL5xdBI7gFTx2Q0sTCHuY%2FxXG4xP7iGrDp4hlW3S1%2BDB9YuRv4fRHy4W1%2F6Zs7rwrENw%3D%3D
+
+    3. 003.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/He5dXgFCv1oft6xNlUlL/003.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=fhDInBNUehTWNcWUrHJpRGM0ZiMkSmYTDLWU0lJbVFQSek3wdiRepPRoyxdgty5SZcD4LvCdBZNO4%2FYEyU6VP9%2BSx5TYsaCMuBG3a08VOM7HJ029QgQJL8WX3iMk75mGCu%2F2pz5AjEbP8G7P3yQZXRsXp3iuMtRsV3dcYWwLBq%2FF7ir8YCISRCj92nE2r7DEnr1wUIH%2Ba7x4X8U62fCV0DFKtfUqlXW5uqC5TKl8q9dKlz%2F0M28oxPCVLqbEBeb81HdmuuIMLaoLlx7MuHV2dTGTol3p8CGusD1VdCukI3MCDh%2FF%2BXpO4Yt6SXuDhvWELI9Qx6bS%2FsLfSZJ5YMwbDg%3D%3D
+
+    4. 004.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/He5dXgFCv1oft6xNlUlL/004.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=KuToOOPQQCoFNa5kji%2BIV5f9hIkd7XygKzsN1HRcm5tS2wvUnNXMSLGBHAJ06peMoZupFlUyOfffHXCQjea9waFrLTtwNkXOs9LD9XFJwTtzR4kSKN2Fk49538C%2FnJw0OV3o9BdBvoI9RNuBIZJiwBmtqgqiZyqJwgU%2Fy68orSNtUkINfzyNUnrye3aAZBQynzojUe93sLWuscxcbrXcrD0d%2FcnVuHB1HzFWqIRcj2BEGos9FvMls1k6Dsb6bxoy0M9IOU5Ku5wBGn%2FKT34P9UTMux4ZdAnKZzxZJG6r%2BSY0E6i%2B%2FrsaOU6iNiueGA5HrBBSA1eV4DqFB5FA4Pxoeg%3D%3D
+
+    5. 005.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/He5dXgFCv1oft6xNlUlL/005.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=kb2kmVX9IxY99XT7NHZo8nwpLzj2kmRDU6kKaBFL6fxnuofYyMzOT%2FIk%2FOgxLR9fvyGKd%2F8w8VUOjIOiB9l4X5TgMXisEr1ZSnHma%2B7Cd6%2B6RgRmPttxzmBlEmlzIGNBHCI10cRo5i%2B%2BGWPLNvDsAo%2FZFP8T0CkteN1wEvxdJ9W%2FOmk0D%2B04RFF5A07Uw47hkpf3DwvEZpJR%2BVoP70nhmLcJoNVzyniFoAropbKvgSdMhUL0XyIQf%2BlR89yfGl3C0ZYJee1PeQ5oMqlW1jvBVrAa0rKzArornLcyhi0q72TzHFI1kyojhTg1iTCnC4HGPsRud8%2FVNXnMpYIwWE9TWg%3D%3D
+
+    6. 006.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/He5dXgFCv1oft6xNlUlL/006.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=CMZuesoduNbFUF0m9thCXDEGPovQpGSJSwJuKXUK9QEi6pzVPlaSt%2FHRygKmaGpgNV7oTqDDaELSIAPizegku4vL99UZLhV1tN%2BRMkjdn0ZKjkwRHB%2FyD5FUGPTrv9Jiotj2SyOJDauq7k5yaTN1F%2BpzMzTTQ1zEhyfOjCce2cFKIdal1p3YPJhhPjHX3eO9E96un%2FbodKoYtf0EMlViCuL6bXoK%2BYYRBUFphrs7WzGZM8QSEVCkiemDg13pNg7FKLjoTafY1gRMs7t%2Bq9Wf2vj%2FvHuvTGOjZCK%2BOcApbIOJ5xY6hMJ5ML%2FlwmphZvjPxye8cbmXGJioCJUK0yP38g%3D%3D
+
+    7. 007.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/He5dXgFCv1oft6xNlUlL/007.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=f9uNeL7CG71M21j1bi8h%2B5LfN0MDZNqn2z8NHmT6WaMT4mJSongwMciTjYuaJ91moXbfoAumct0RTDepEmp3CYhcc9oewlbFCTWusaMLnnM2f7pvdnYgVVImpbkd%2FNY8MtYVagynaR9ZZ7w3cnM785%2BtO6Wxu5uC%2FvAjFlJx8EURJvBNXcjOR2t6IAxW6jqvaSY9Fow82pCw5G%2BSEVJU053xo%2F%2BkqOK40mnKZk3NvmITohCiQvaFaHjWsHXJw%2FAlOkxMWkzsTcPnwswOr3GrD1e5HJjMDTa2rIp0zdOYYK80OoOEy%2FbLf4fW9EWHj6Sa7PGtzV4uqtR%2BMvFdhw%2FZ9g%3D%3D
+
+    8. 008.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/He5dXgFCv1oft6xNlUlL/008.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=SA24DMFt9UcnqDprWxwwcjxUOmKM6kVQWUh8aEyc8U9UoD2LTzl6GS%2BA9w%2BudrVhbwcKw58uWRPZ9lR1ns%2BdgRowEjdOyfbVr8rO5fAs3enSiTIACgbJpW3ph3IG69WAGspBmBmv4AIKB%2Bfw1xEswd6cXj8237WeZHgyxnsztmksvgO8JLmoES%2BEnxjO%2FzgdT2SIV0KNFo4bR9cHLVbA4b9DyuWfQo2aoiKGtLCf0%2B84fAwaG0Fx%2FQQEoi3iXEBYxNjxD33WB3S439IWR%2FGlvPmQopdxW2ixZPs%2BMkmBQxAY%2BMenQfy1glRyxjRcYI%2B0u%2BrBovYVZW%2BypepYntxjQQ%3D%3D
+
+    9. 009.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/He5dXgFCv1oft6xNlUlL/009.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=VwqG8Ym4Lp6ZMtt35DpPyRg9dAmOUbaCMR9LmzNj4VlWmfiwbvan0u8DJJNaERFF3IwjaLqtguJOismFbz6b6RrQfJliuLHWhPyNWbyX4tl4d4WZx0Yt6Et57OK9lqlqTDCvl8xxzw%2FB3fZzAuqDm6dZHf1gXko%2BkKcRhA%2F9fabJy4PjeZ%2FQufgmZgFg%2BLQTL0h5RgFOR%2Bd4bM1lZpKbUEt57m9fAJ963RXgNT0l%2B4%2FLKLBy1s1rrWY9Skqiw7qF9qsT60ASRqGN1i%2FF5IMSTsPshoiD%2Fzz1ipo8TiTGBx%2B%2BcxSQ%2F87YGuexJMsTno%2Fq7XjzCVkBJLsL0SBjvQtHBw%3D%3D
+
+   10. 010.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/He5dXgFCv1oft6xNlUlL/010.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=NYXlTlkW7%2F7%2F0yzMF2dIvaF9u0qfwBz1tgmvl6qMaXQp%2FCMZdg9Mtslged%2B9mK6NUMH50AXyqThDup0k2b2WKI9uBfEUnIVl1vZyquw2iK1GMsBNRwgFMBvf76FK89yqAol8ngUBElt3HcoWq60v73kaBbAehK4AyRWkHQtgIzgaPYtTAFw8Cutj7OOaj8Ent9ql2bgx%2BoOHBJNM1bWHSxBZL8Ig%2Fua1ktinAT5jrfrjVuqa9PWC70cukyKNfLuK0kemevXOFtHd3l%2FO%2FaOaivBGS4Mz5bh2N8geqfggKpEvQEAyDAoCwK9DRcbfK93heX8wSLUiQ988BBXHi0YGDg%3D%3D
+
+   11. 011.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/He5dXgFCv1oft6xNlUlL/011.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=MC6VMTSGVz4kVbOD1iAEGjK6IXe6cLqsItFCc26jsRFRC%2BzLckvq5pJWaTmZNkVa9CmyHzlyLXgnK5eSBBGR4nrYFYDti8EnZypK4z4BEwP3hiyvrQXPTPRBE5A%2BMSixUl9iI0MqY6D7kIikQWiSnOC1W%2BOR9EucE18dmRwW5%2Fa3rbl%2F3y1sqTTgLbDg7wyCbld1XYxowRbzUBk9LHrIYK1Wbgx%2F%2FoucJ76IeG9wJVBj7fbci2pnBIqk1Wx3zuzDcFDeLmedRendGOSI8%2BKd8YL5gbSeblG%2BQY0FpaFpfx0XmjduNxWu4SRVJSl7I%2BE7Yup1%2BMN8dMYDep56dXGljg%3D%3D
+
+   12. 012.jpg
+       https://storage.googleapis.com/leo-sistema-laudos.firebasestorage.app/dicom/LDRtedkanx3bUvxpdmiL/He5dXgFCv1oft6xNlUlL/012.jpg?GoogleAccessId=firebase-adminsdk-fbsvc%40leo-sistema-laudos.iam.gserviceaccount.com&Expires=1778843913&Signature=cUTXm9s%2FE6bWjGifr6hqAmOQ2SZinhHU8N1AuuCPGk2yLX1BVR3u%2FoftgeWqcF7bIN%2FI07LNW6cCzW41HIdzrtpQBuEdH7ycG%2FiCrjNRMjauHyknreqDdUaWvbnaIuwBTH1lbNFpJ3%2F%2Bv23jT67jliwze7PrfE5F6SqvlbhpTGq9DYRJdU9U99LWh%2FSE%2ByzuoulSVKVs6nJy7rrs5brCZoDyCBSXaCI9qwlpuQsQWQ8OkW3el4bKqiNUNTdYgY4U%2Buv3z13nunrYuHKnGgipMKdLHAC7eqU5IXeARQfzB7J8CQgLrzl40%2FkxhH4RMEBDpYjE8h5vLWK0b2TbWUE8dg%3D%3D
+
+
+========================================
+Total: signed URLs validas ate 15/05/2026, 08:18:33
+========================================

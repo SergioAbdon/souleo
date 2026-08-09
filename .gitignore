@@ -56,3 +56,8 @@ TOKENS/
 next-env.d.ts
 
 .vercel
+
+# worktrees e estado local de agentes (nao versionar)
+.claude/worktrees/
+.claude-flow/logs/
+.claude-flow/daemon-state.json
