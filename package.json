@@ -10,7 +10,8 @@
         "typecheck": "tsc --noEmit",
         "secao1:inventario": "node --env-file=.env.local scripts/secao1/00-inventario.mjs",
         "secao1:regras-publicadas": "node --env-file=.env.local scripts/secao1/00-regras-publicadas.mjs",
-        "test:rules": "npx firebase emulators:exec --only firestore --project leo-testes \"node --test tests/rules/interim.test.mjs\""
+        "test:rules": "npx firebase emulators:exec --only firestore --project leo-testes \"node --test tests/rules/interim.test.mjs\"",
+        "test:rules:definitiva": "npx firebase emulators:exec --only firestore --project leo-testes \"node --test tests/rules/definitiva.test.mjs\""
     },
     "dependencies": {
         "@anthropic-ai/sdk": "^0.88.0",
