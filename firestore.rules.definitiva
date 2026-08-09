@@ -57,9 +57,15 @@ service cloud.firestore {
       return alcancaLocal(wsId) && vinc(contaDoLocal(wsId)).papel in ['dono', 'medico'];
     }
 
+    // Precisa resistir a setDoc() sem merge: nesse caso a operacao ainda e
+    // classificada como 'update', mas request.resource.data so tem os
+    // campos enviados — o campo protegido pode desaparecer do resultado.
+    // Por isso nao basta checar ausencia; se existia antes, tem que
+    // continuar existindo com o mesmo valor.
     function intacto(campo) {
-      return !(campo in request.resource.data)
-        || (campo in resource.data && request.resource.data[campo] == resource.data[campo]);
+      return (campo in resource.data)
+        ? (campo in request.resource.data && request.resource.data[campo] == resource.data[campo])
+        : !(campo in request.resource.data);
     }
 
     // ── CONTAS ── so o servidor cria e altera
@@ -90,16 +96,24 @@ service cloud.firestore {
       match /exames/{exameId} {
         // Todo membro do local ve a fila e le o laudo do colega (D7 do spec)
         allow read:   if superadmin() || alcancaLocal(wsId);
-        allow create: if alcancaLocal(wsId);
-        // Conteudo do laudo: so o autor. O dono ajusta o administrativo.
-        allow update: if (ehMedicoNoLocal(wsId) && resource.data.medicoUid == uid())
-                      || ehDonoDoLocal(wsId);
+        // medicoUid so pode vir vazio (recepcao cadastra sem autor), ser o
+        // proprio uid de quem cria, ou ser definido pelo dono do local.
+        allow create: if alcancaLocal(wsId)
+                      && (!('medicoUid' in request.resource.data)
+                          || request.resource.data.medicoUid == uid()
+                          || ehDonoDoLocal(wsId));
+        // Conteudo do laudo: o autor edita; um exame sem autor ainda pode
+        // ser assumido por qualquer medico do local. O dono ajusta qualquer um.
+        allow update: if ehDonoDoLocal(wsId)
+                      || (ehMedicoNoLocal(wsId)
+                          && (!('medicoUid' in resource.data) || resource.data.medicoUid == uid()));
         // Apagar/cancelar/transferir passam pelo servidor (log + franquia)
         allow delete: if false;
       }
 
-      // Honorarios, extratos e demais ajustes do local
-      match /config/{docId}   { allow read, write: if alcancaLocal(wsId); }
+      // Honorarios, extratos e demais ajustes do local: financeiro, so quem
+      // atende (medico) ou o dono — recepcao nao ve valor por convenio.
+      match /config/{docId}   { allow read, write: if ehMedicoNoLocal(wsId); }
       match /extratos/{docId} { allow read, write: if ehMedicoNoLocal(wsId); }
     }
 

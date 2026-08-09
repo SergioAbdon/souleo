@@ -14,6 +14,7 @@ let env;
 const CONTA_A = 'contaA', CONTA_B = 'contaB';
 const LOCAL_A1 = 'localA1', LOCAL_A2 = 'localA2', LOCAL_B = 'localB';
 const DR_A = 'uidDrA', DR_A2 = 'uidDrA2', RITA = 'uidRita', DR_B = 'uidDrB', ADMIN = 'uidAdmin';
+const INATIVO = 'uidInativo'; // vinculo com status != 'ativo', usado na secao 11
 
 before(async () => {
   env = await initializeTestEnvironment({
@@ -47,11 +48,21 @@ before(async () => {
     await setDoc(doc(db, `workspaces/${LOCAL_A1}/pacientes`, 'pac1'), { nome: 'Paciente A1' });
     await setDoc(doc(db, `workspaces/${LOCAL_A1}/config`, 'honorarios'), { UNIMED: 120 });
 
+    // Exame cadastrado pela recepcao, ainda sem medico definido (secao 10).
+    await setDoc(doc(db, `workspaces/${LOCAL_A1}/exames`, 'exSemAutor'), {
+      pacienteNome: 'Sem Autor', status: 'aguardando',
+    });
+
+    // Log ja existente, pra testar update contra um doc real (secao 8, item 3).
+    await setDoc(doc(db, 'logs', 'log1'), { tipo: 'evento original' });
+
     // Vinculos com id deterministico. Rita so alcanca o LOCAL_A1.
     await setDoc(doc(db, 'vinculos', `${CONTA_A}_${DR_A}`),  { contaId: CONTA_A, medicoUid: DR_A,  papel: 'dono',     locais: [], status: 'ativo' });
     await setDoc(doc(db, 'vinculos', `${CONTA_A}_${DR_A2}`), { contaId: CONTA_A, medicoUid: DR_A2, papel: 'medico',   locais: [], status: 'ativo' });
     await setDoc(doc(db, 'vinculos', `${CONTA_A}_${RITA}`),  { contaId: CONTA_A, medicoUid: RITA,  papel: 'recepcao', locais: [LOCAL_A1], status: 'ativo' });
     await setDoc(doc(db, 'vinculos', `${CONTA_B}_${DR_B}`),  { contaId: CONTA_B, medicoUid: DR_B,  papel: 'dono',     locais: [], status: 'ativo' });
+    // Usuario novo, vinculado a conta A mas ainda nao ativado (secao 11).
+    await setDoc(doc(db, 'vinculos', `${CONTA_A}_${INATIVO}`), { contaId: CONTA_A, medicoUid: INATIVO, papel: 'medico', locais: [], status: 'inativo' });
 
     await setDoc(doc(db, 'profissionais', DR_A), { nome: 'Dr A', superadmin: false });
     await setDoc(doc(db, 'profissionais', DR_B), { nome: 'Dr B', superadmin: false });
@@ -111,6 +122,13 @@ describe('2. papeis', () => {
   test('recepcao nao edita o conteudo do laudo', async () => {
     await assertFails(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'ex1'), { conclusoes: 'x' }));
   });
+  test('recepcao nao le honorarios (financeiro)', async () => {
+    await assertFails(getDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/config`, 'honorarios')));
+  });
+  test('medico le e escreve honorarios', async () => {
+    await assertSucceeds(getDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/config`, 'honorarios')));
+    await assertSucceeds(setDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/config`, 'honorarios'), { UNIMED: 150 }));
+  });
 });
 
 describe('3. locais restritos', () => {
@@ -141,6 +159,9 @@ describe('4. autoria do laudo', () => {
   });
   test('dono ajusta exame que nao e dele (administrativo)', async () => {
     await assertSucceeds(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A2}/exames`, 'ex2'), { convenio: 'UNIMED' }));
+  });
+  test('medico comum (nao dono), autor do exame, edita com sucesso', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A2), `workspaces/${LOCAL_A2}/exames`, 'ex2'), { conclusoes: 'medico comum ok' }));
   });
   test('ninguem apaga exame pelo navegador (apagar passa pelo servidor)', async () => {
     await assertFails(deleteDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'ex1')));
@@ -217,10 +238,58 @@ describe('8. Direx e trilhas', () => {
     await assertSucceeds(getDocs(collection(como(ADMIN), 'logs')));
   });
   test('log nao pode ser alterado depois de escrito', async () => {
-    await assertFails(updateDoc(doc(como(ADMIN), 'logs', 'qualquer'), { tipo: 'adulterado' }));
+    // log1 existe de verdade (criado na fixture) — testa a regra, nao um
+    // doc inexistente que falharia de qualquer jeito.
+    await assertFails(updateDoc(doc(como(ADMIN), 'logs', 'log1'), { tipo: 'adulterado' }));
   });
   test('todos leem a tabela de planos; so o Direx escreve', async () => {
     await assertSucceeds(getDoc(doc(como(RITA), 'configPlanos', 'atual')));
     await assertFails(setDoc(doc(como(DR_A), 'configPlanos', 'atual'), { planos: ['pirata'] }));
+  });
+});
+
+describe('9. campos protegidos resistem a setDoc sem merge', () => {
+  test('setDoc sem merge nao apaga superadmin do proprio perfil', async () => {
+    // Sem merge: so 'nome' e enviado. superadmin (que era false) some do
+    // resultado se intacto() so checar ausencia — tem que negar.
+    await assertFails(setDoc(doc(como(DR_A), 'profissionais', DR_A), { nome: 'Dr A sem campo' }));
+  });
+  test('setDoc sem merge nao apaga contaId do proprio local', async () => {
+    // O dono do local nao pode, nem sem querer, apagar contaId do local —
+    // isso travaria o acesso de todo mundo (inclusive dele) aquele local.
+    await assertFails(setDoc(doc(como(DR_A), 'workspaces', LOCAL_A1), { nomeClinica: 'Sala sem contaId' }));
+  });
+});
+
+describe('10. autoria do exame: create nao forja, update sem autor pode ser assumido', () => {
+  test('recepcao nao cria exame carimbado com medicoUid de outra pessoa', async () => {
+    await assertFails(setDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exForjado'), {
+      pacienteNome: 'Forjado', status: 'aguardando', medicoUid: DR_A2,
+    }));
+  });
+  test('recepcao cria exame sem medicoUid', async () => {
+    await assertSucceeds(setDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exSemAutorNovo'), {
+      pacienteNome: 'Sem Autor Novo', status: 'aguardando',
+    }));
+  });
+  test('medico assume e edita exame sem medicoUid', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/exames`, 'exSemAutor'), {
+      medicoUid: DR_A2, conclusoes: 'assumido',
+    }));
+  });
+  test('medico continua sem editar exame de outro medico', async () => {
+    await assertFails(updateDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/exames`, 'ex1'), { conclusoes: 'y' }));
+  });
+});
+
+describe('11. vinculo inativo nao alcanca nada', () => {
+  test('vinculo inativo nao le exame', async () => {
+    await assertFails(getDoc(doc(como(INATIVO), `workspaces/${LOCAL_A1}/exames`, 'ex1')));
+  });
+  test('vinculo inativo nao le o local', async () => {
+    await assertFails(getDoc(doc(como(INATIVO), 'workspaces', LOCAL_A1)));
+  });
+  test('vinculo inativo nao le a conta', async () => {
+    await assertFails(getDoc(doc(como(INATIVO), 'contas', CONTA_A)));
   });
 });
