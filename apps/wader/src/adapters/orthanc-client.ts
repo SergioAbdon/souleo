@@ -137,6 +137,24 @@ export class OrthancClient {
   }
 
   /**
+   * Busca estudos por AccessionNumber via `POST /tools/find` — O(1) no
+   * Orthanc, NÃO pagina o feed de /changes (ADR 2026-05-18, Fix 3).
+   *
+   * Usa wildcard `*{digitos}*` pra casar mesmo se o ACC no DICOM veio sem
+   * o prefixo `EX` (erro comum de digitação manual quando o Feegow cai).
+   * Retorna IDs internos de estudo do Orthanc.
+   */
+  async findStudiesByAccession(accDigits: string): Promise<string[]> {
+    if (!accDigits) return [];
+    return this.post<string[]>('/tools/find', {
+      Level: 'Study',
+      Query: { AccessionNumber: `*${accDigits}*` },
+      Expand: false,
+      Limit: 20,
+    });
+  }
+
+  /**
    * Lista IDs de instâncias de um estudo.
    * Útil pra iterar e baixar todas as imagens.
    */
@@ -205,6 +223,36 @@ export class OrthancClient {
     const t = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
     try {
       const res = await fetch(url, { headers, signal: controller.signal });
+      if (!res.ok) {
+        throw new OrthancError(`Orthanc ${res.status}: ${res.statusText}`, res.status, url);
+      }
+      return (await res.json()) as T;
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') {
+        throw new OrthancError(`Timeout (${DEFAULT_TIMEOUT_MS}ms) chamando ${url}`);
+      }
+      if (err instanceof OrthancError) throw err;
+      throw new OrthancError(`Falha de rede: ${(err as Error).message}`, undefined, url);
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+  private async post<T>(path: string, body: unknown): Promise<T> {
+    const conn = await this.resolveConn();
+    const url = conn.url + path;
+    const headers = this.buildHeaders(conn, 'application/json');
+    headers['Content-Type'] = 'application/json';
+
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
       if (!res.ok) {
         throw new OrthancError(`Orthanc ${res.status}: ${res.statusText}`, res.status, url);
       }

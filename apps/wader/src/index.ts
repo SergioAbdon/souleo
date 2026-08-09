@@ -24,6 +24,7 @@ import { WorkspaceRepo } from './adapters/workspace-repo';
 import { validarWorklistPath } from './workers/worklist-path-validator';
 import { WorklistSyncWorker } from './workers/worklist-sync-worker';
 import { DicomIngestWorker } from './workers/dicom-ingest-worker';
+import { AccRecoveryWorker } from './workers/acc-recovery-worker';
 import type { FastifyInstance } from 'fastify';
 
 const log = createLogger({ module: 'main' });
@@ -77,18 +78,35 @@ async function main(): Promise<void> {
   });
   dicomWorker.start();
 
+  // ACC recovery worker (ADR 2026-05-18, Fix 3) — recuperação dirigida:
+  // acha exame aguardando sem DICOM e busca o estudo no Orthanc por ACC,
+  // sem esperar o feed /changes paginar.
+  // ADR 2026-06-22 (Fix C): intervalo próprio (default 20s) em vez de herdar
+  // os 60s do worklist-sync — exame casa mais rápido após cadastro/reenvio.
+  const accWorker = new AccRecoveryWorker({
+    wsId: config.wsId,
+    client: orthancClient,
+    intervalSec: config.polling.accRecoverySec ?? 20,
+  });
+  accWorker.start();
+
   const app = await startUiServer(config, { worklistWorker, dicomWorker });
 
-  registerShutdownHandlers(app, { worklistWorker, dicomWorker });
+  registerShutdownHandlers(app, { worklistWorker, dicomWorker, accWorker });
 
   log.info('Wader rodando. Acesse http://localhost:%d', config.ui.port);
 }
 
 function registerShutdownHandlers(
   app: FastifyInstance,
-  workers: { worklistWorker: WorklistSyncWorker | null; dicomWorker: DicomIngestWorker | null } = {
+  workers: {
+    worklistWorker: WorklistSyncWorker | null;
+    dicomWorker: DicomIngestWorker | null;
+    accWorker: AccRecoveryWorker | null;
+  } = {
     worklistWorker: null,
     dicomWorker: null,
+    accWorker: null,
   },
 ): void {
   const shutdown = async (signal: string) => {
@@ -96,6 +114,7 @@ function registerShutdownHandlers(
     try {
       workers.worklistWorker?.stop();
       workers.dicomWorker?.stop();
+      workers.accWorker?.stop();
       await app.close();
       log.info('Servidor encerrado com sucesso.');
       process.exit(0);
