@@ -178,16 +178,30 @@ Superadmin/Direx continua fora deste modelo.
 
 | Fase | O que | Quebra? | Quem |
 |---|---|---|---|
-| **0** | Verificar regras publicadas no console + script read-only de inventário | Nada | Dr. Sérgio (console) + Claude notebook |
-| **1** | Criar 1 `conta` por workspace; gravar `contaId` no workspace | Nada | notebook |
-| **2** | Copiar assinatura para `subscriptions/{contaId}`, mantendo a antiga marcada; leitura com fallback | Nada | notebook |
-| **3** | Recriar vínculos com id `{contaId}_{uid}` + papel derivado (`ownerUid`→dono, `tipoPerfil` medico→medico, assistente→recepcao) | Nada | notebook |
+| **0** | ✅ **FEITO 09/08** — script lê a regra publicada pela Rules API (não precisou do console) + inventário | Nada | notebook |
+| **0.5** | ✅ **FEITO 09/08 18:34 — TRANCA PROVISÓRIA PUBLICADA.** Fase inexistente no plano original, criada porque a Fase 0 achou o banco aberto. Isolamento por `workspaces.ownerUid`, 35 testes | Nada quebrou | notebook |
+| **1** | ✅ **FEITO 09/08** — 2 contas criadas (`wader-dev` pulado: sem dono, não é cliente) | Nada | notebook |
+| **2** | ✅ **FEITO 09/08** — `subscriptions/{contaId}`, **sem** copiar `workspaceId` (senão duas assinaturas casariam na busca antiga e a franquia oscilaria entre elas) | Nada | notebook |
+| **3** | ✅ **FEITO 09/08** — vínculos `{contaId}_{uid}` com papel. Os dois vínculos existentes viraram `dono` porque em ambos `medicoUid == ownerUid` | Nada | notebook |
 | **4** | Deploy web: signup no servidor, seletor único, papéis na UI, convites, PJ | Reverter = deploy anterior | notebook |
-| **5** | **Publicar a fechadura.** Testar com conta de teste ANTES | Ponto de virada; reverter = republicar a regra anterior | notebook |
+| **5** | **Publicar a fechadura definitiva** (`firestore.rules.definitiva`, 52 testes, já escrita e testada). Substitui a tranca provisória | Ponto de virada; reverter = republicar a anterior | notebook |
 | **6** | Segredos: gravar nos dois lugares → Wader passa a ler do novo (3 linhas em `workspace-repo.ts`) → deploy `update-wader.ps1` → só então apagar o campo antigo | Na ordem certa, o Wader nunca fica sem credencial | **Claude da clínica** |
 | **7** | Limpeza: vínculos antigos, fallbacks `profiles`/`memberships`, `profissionalId` | Nada | notebook |
 
-**Fase 0 trava tudo.** Se a regra publicada estiver frouxa, a Fase 5 sobe na fila.
+> **Plano 1 concluído em 09/08/2026** (branch `feat/secao1-contas`). Fases 0 a 3
+> feitas, mais a Fase 0.5 que não existia. Dois arquivos de regra convivem, e a
+> distinção é vital:
+>
+> | Arquivo | O que é |
+> |---|---|
+> | `firestore.rules` | **O que está NO AR.** Tranca provisória por `ownerUid`. 35 testes. |
+> | `firestore.rules.definitiva` | A fechadura do modelo de contas. 52 testes. **Não publicada** — publicar antes do cadastro server-side quebraria o cadastro em produção. É a Fase 5, última tarefa do Plano 2. |
+>
+> Regra de ouro: **`firestore.rules` sempre reflete exatamente o que está publicado.**
+
+**A Fase 0 travava tudo — e o que ela encontrou reordenou o plano.** A regra
+publicada estava aberta (§1.1), então a Fase 0.5 furou a fila e trancou o banco no
+mesmo dia, sem esperar o modelo de contas.
 
 ### ⚠️ Instruções para o Claude da clínica (Fase 6)
 
