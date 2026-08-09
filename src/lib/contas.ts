@@ -36,8 +36,7 @@ export async function getLocaisDaConta(contaId: string, permitidos: string[]) {
   return permitidos.length === 0 ? todos : todos.filter(w => permitidos.includes(w.id));
 }
 
-/** Assinatura da conta. Doc id = contaId (formato novo). */
-export async function getSubscriptionDaConta(contaId: string) {
-  const snap = await getDoc(doc(db, 'subscriptions', contaId));
-  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
-}
+// A leitura de `subscriptions/{contaId}` sai daqui de proposito: enquanto o
+// /api/emitir debitar a franquia no documento antigo (por local), ler o novo
+// mostraria um numero congelado. O AuthContext usa getSubscription(localId).
+// Volta no Plano 2, junto com a migracao do billing — sao 4 linhas.

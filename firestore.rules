@@ -40,6 +40,13 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/workspaces/$(wsId)).data.ownerUid == uid();
     }
 
+    // A migracao de 09/08 criou `contas`; a conta herda o ownerUid do local.
+    function donoDaConta(contaId) {
+      return auth()
+        && exists(/databases/$(database)/documents/contas/$(contaId))
+        && get(/databases/$(database)/documents/contas/$(contaId)).data.ownerUid == uid();
+    }
+
     // Campo nao foi alterado nesta escrita?
     function intacto(campo) {
       return !(campo in request.resource.data)
@@ -50,7 +57,13 @@ service cloud.firestore {
     // Subarvore = exames, pacientes, extratos, config. Onde moram os dados
     // clinicos. So o dono do local (ou o superadmin) entra.
     match /workspaces/{wsId} {
-      allow get, list: if superadmin() || (auth() && resource.data.ownerUid == uid());
+      // O 3o termo existe porque o app consulta locais por `contaId`. Regra de
+      // `list` no Firestore nao filtra: ela precisa ser satisfeita pelos campos
+      // que a CONSULTA fixa. Como a consulta fixa `contaId` e nao `ownerUid`,
+      // sem este termo o Firestore nega a consulta inteira. (Provado por teste.)
+      allow get, list: if superadmin()
+                       || (auth() && resource.data.ownerUid == uid())
+                       || (auth() && donoDaConta(resource.data.contaId));
       allow create:    if auth() && request.resource.data.ownerUid == uid();
       allow update:    if superadmin()
                        || (auth() && resource.data.ownerUid == uid() && intacto('ownerUid'));
@@ -65,34 +78,56 @@ service cloud.firestore {
     match /profissionais/{profId} {
       allow get:    if auth() && (profId == uid() || superadmin());
       allow list:   if superadmin();
+      // `createProfile()` (src/lib/firestore.ts) SEMPRE envia superadmin:false.
+      // Exigir o campo ausente quebraria todo cadastro novo — o que hoje ele
+      // nao pode e nascer com superadmin:true ou com adminRole.
       allow create: if auth() && profId == uid()
-                    && !('superadmin' in request.resource.data)
+                    && (!('superadmin' in request.resource.data)
+                        || request.resource.data.superadmin == false)
                     && !('adminRole' in request.resource.data);
       allow update: if superadmin()
                     || (auth() && profId == uid() && intacto('superadmin') && intacto('adminRole'));
       allow delete: if false;
     }
 
-    // ── VINCULOS ── o proprio vinculo
+    // ── CONTAS ── criadas pela migracao (Admin SDK). Cliente so le a propria.
+    match /contas/{contaId} {
+      allow get, list: if superadmin() || (auth() && resource.data.ownerUid == uid());
+      allow write:     if false;
+    }
+
+    // ── VINCULOS ── o proprio vinculo, e so para local que ja e seu
     match /vinculos/{vincId} {
       allow get, list: if superadmin() || (auth() && resource.data.medicoUid == uid());
-      allow create:    if auth() && request.resource.data.medicoUid == uid();
-      allow update:    if superadmin() || (auth() && resource.data.medicoUid == uid());
-      allow delete:    if false;
+      // Cadastro cria o vinculo logo depois de criar o proprio local. Sem a
+      // checagem do local, qualquer autenticado fabricaria vinculo apontando
+      // para a clinica alheia.
+      allow create:    if auth() && request.resource.data.medicoUid == uid()
+                       && donoDoLocal(request.resource.data.workspaceId);
+      // Nada no app altera vinculo hoje (aceitar convite nao tem tela). Deixar
+      // aberto permitiria reescrever medicoUid/papel/locais — a fundacao da
+      // autorizacao. Convite e mudanca de papel serao rota de servidor.
+      allow update, delete: if false;
     }
 
-    // ── ASSINATURAS ── so o dono do local que ela paga
+    // ── ASSINATURAS ── duas formas convivem durante a migracao:
+    //   antiga: doc com workspaceId  ·  nova: doc id = contaId, sem workspaceId
     match /subscriptions/{subId} {
-      allow get, list: if superadmin() || donoDoLocal(resource.data.workspaceId);
+      allow get, list: if superadmin()
+                       || ('workspaceId' in resource.data && donoDoLocal(resource.data.workspaceId))
+                       || ('contaId' in resource.data && donoDaConta(resource.data.contaId));
       allow create:    if auth() && donoDoLocal(request.resource.data.workspaceId);
       allow update:    if superadmin()
-                       || (donoDoLocal(resource.data.workspaceId) && intacto('workspaceId'));
+                       || ('workspaceId' in resource.data
+                           && donoDoLocal(resource.data.workspaceId) && intacto('workspaceId'));
       allow delete:    if false;
     }
 
-    // ── EMPRESAS ── leitura autenticada (resolucao de contexto), escrita so Direx
+    // ── EMPRESAS ── so o Direx. Nenhuma tela de cliente le esta colecao hoje
+    // (o unico leitor e /direx/painel/clientes) e ela tem CNPJ e endereco de
+    // todas as clinicas.
     match /empresas/{empId} {
-      allow read:  if auth();
+      allow read:  if superadmin();
       allow write: if superadmin();
     }
 

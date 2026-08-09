@@ -33,11 +33,14 @@ before(async () => {
     await setDoc(doc(db, 'profissionais', OUTRO), { nome: 'Outro', superadmin: false });
     await setDoc(doc(db, 'profissionais', INVASOR), { nome: 'Invasor', superadmin: false });
 
+    // contaId presente porque a migracao de 09/08 ja marcou os locais reais
     await setDoc(doc(db, 'workspaces', WS_MEDCARDIO), {
-      ownerUid: SERGIO, nomeClinica: 'Grupo MedCardio',
+      ownerUid: SERGIO, contaId: 'contaMedCardio', nomeClinica: 'Grupo MedCardio',
       feegowToken: 'TOKEN-SECRETO', ortancUser: 'orthanc', ortancPass: 'SENHA-SECRETA',
     });
-    await setDoc(doc(db, 'workspaces', WS_OUTRO), { ownerUid: OUTRO, nomeClinica: 'Consultorio' });
+    await setDoc(doc(db, 'workspaces', WS_OUTRO), {
+      ownerUid: OUTRO, contaId: 'contaOutro', nomeClinica: 'Consultorio',
+    });
     await setDoc(doc(db, 'workspaces', WS_WADER), { nomeClinica: 'Wader Dev' }); // sem ownerUid
 
     await setDoc(doc(db, `workspaces/${WS_MEDCARDIO}/exames`, 'ex1'), {
@@ -50,6 +53,18 @@ before(async () => {
     await setDoc(doc(db, 'subscriptions', 'sub-medcardio'), {
       workspaceId: WS_MEDCARDIO, tipo: 'trial', franquiaMensal: 600, franquiaUsada: 225,
     });
+
+    // Modelo novo (migracao 09/08). OUTRO nao e superadmin — e com ele que se
+    // prova a regra de dono; com o SERGIO o superadmin curto-circuita tudo.
+    await setDoc(doc(db, 'contas', 'contaMedCardio'), { ownerUid: SERGIO, nome: 'Grupo MedCardio' });
+    await setDoc(doc(db, 'contas', 'contaOutro'), { ownerUid: OUTRO, nome: 'Consultorio' });
+    await setDoc(doc(db, 'subscriptions', 'contaMedCardio'), {
+      contaId: 'contaMedCardio', tipo: 'trial', franquiaMensal: 600, franquiaUsada: 225,
+    });
+    await setDoc(doc(db, 'subscriptions', 'contaOutro'), {
+      contaId: 'contaOutro', tipo: 'trial', franquiaMensal: 600, franquiaUsada: 0,
+    });
+    await setDoc(doc(db, 'empresas', 'emp1'), { cnpj: '00000000000000', razaoSocial: 'MedCardio Ltda' });
     await setDoc(doc(db, 'vinculos', 'v-sergio'), {
       medicoUid: SERGIO, workspaceId: WS_MEDCARDIO, role: 'medico', status: 'ativo',
     });
@@ -220,8 +235,30 @@ describe('B) o estranho para de enxergar', () => {
 describe('C) cadastro pelo navegador ainda funciona', () => {
   const NOVO = 'uidNovoCadastro';
 
-  test('cria o proprio perfil, sem superadmin', async () => {
-    await assertSucceeds(setDoc(doc(como(NOVO), 'profissionais', NOVO), { nome: 'Novo', crm: '123' }));
+  // ⚠️ Payload REAL de createProfile() (src/lib/firestore.ts:39). Ele SEMPRE
+  // manda superadmin:false. A primeira versao deste teste usava um payload
+  // inventado, sem o campo — e por isso nao pegou que a regra quebrava todo
+  // cadastro novo em producao. Teste com dado de mentira prova mentira.
+  const payloadRealCreateProfile = (uid) => ({
+    uid, nome: 'Novo Usuario', email: 'novo@exemplo.com',
+    crm: '123', ufCrm: 'PA', especialidade: 'Cardiologia',
+    cpf: '', rqe: '', tipoPerfil: 'assistente',
+    superadmin: false,
+    criadoEm: new Date(), atualizadoEm: new Date(),
+  });
+
+  test('cria o proprio perfil com o payload REAL do app (superadmin:false)', async () => {
+    await assertSucceeds(setDoc(doc(como(NOVO), 'profissionais', NOVO), payloadRealCreateProfile(NOVO)));
+  });
+
+  test('cria o proprio perfil sem o campo superadmin', async () => {
+    await assertSucceeds(setDoc(doc(como('uidSemCampo'), 'profissionais', 'uidSemCampo'), { nome: 'Novo', crm: '123' }));
+  });
+
+  test('nao nasce com adminRole', async () => {
+    await assertFails(setDoc(doc(como('uidAdminRole'), 'profissionais', 'uidAdminRole'), {
+      ...payloadRealCreateProfile('uidAdminRole'), adminRole: 'financeiro',
+    }));
   });
 
   test('nao consegue nascer superadmin', async () => {
@@ -246,5 +283,62 @@ describe('C) cadastro pelo navegador ainda funciona', () => {
     await assertFails(setDoc(doc(como(NOVO), 'subscriptions', 'subPirata'), {
       workspaceId: WS_MEDCARDIO, tipo: 'remido',
     }));
+  });
+
+  test('nao cria vinculo apontando para local alheio', async () => {
+    await assertFails(setDoc(doc(como(NOVO), 'vinculos', 'vPirata'), {
+      medicoUid: NOVO, workspaceId: WS_MEDCARDIO, role: 'medico', status: 'ativo',
+    }));
+  });
+
+  test('nao reescreve o proprio vinculo depois de criado', async () => {
+    await assertFails(updateDoc(doc(como(NOVO), 'vinculos', 'vNovo'), { role: 'master' }));
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════
+// D) MODELO NOVO (migracao de 09/08) convivendo com a tranca
+//    A conta e a assinatura por conta precisam ser legiveis pelo dono,
+//    senao o AuthContext novo trava a tela de carregamento.
+// ══════════════════════════════════════════════════════════════════
+describe('D) contas e assinatura por conta', () => {
+  // ⚠️ Os testes de PERMITIDO usam OUTRO, que NAO e superadmin. Com o SERGIO
+  // (superadmin) a regra libera antes de olhar o dono — passaria mesmo se a
+  // checagem de dono estivesse quebrada.
+
+  test('dono nao-superadmin le a propria conta', async () => {
+    await assertSucceeds(getDoc(doc(como(OUTRO), 'contas', 'contaOutro')));
+  });
+
+  test('dono nao le a conta de outro', async () => {
+    await assertFails(getDoc(doc(como(OUTRO), 'contas', 'contaMedCardio')));
+  });
+
+  test('estranho nao le conta nenhuma', async () => {
+    await assertFails(getDoc(doc(como(INVASOR), 'contas', 'contaMedCardio')));
+  });
+
+  test('ninguem escreve em contas pelo navegador, nem o superadmin', async () => {
+    await assertFails(setDoc(doc(como(SERGIO), 'contas', 'contaFalsa'), { ownerUid: SERGIO }));
+    await assertFails(updateDoc(doc(como(OUTRO), 'contas', 'contaOutro'), { nome: 'Renomeada' }));
+  });
+
+  test('dono nao-superadmin le a assinatura por conta (sem workspaceId)', async () => {
+    await assertSucceeds(getDoc(doc(como(OUTRO), 'subscriptions', 'contaOutro')));
+  });
+
+  test('nao le a assinatura por conta de outro', async () => {
+    await assertFails(getDoc(doc(como(OUTRO), 'subscriptions', 'contaMedCardio')));
+    await assertFails(getDoc(doc(como(INVASOR), 'subscriptions', 'contaMedCardio')));
+  });
+
+  test('consulta de locais por contaId funciona para o dono nao-superadmin', async () => {
+    await assertSucceeds(getDocs(query(collection(como(OUTRO), 'workspaces'), where('contaId', '==', 'contaOutro'))));
+  });
+
+  test('empresas: so o Direx le', async () => {
+    await assertFails(getDocs(collection(como(INVASOR), 'empresas')));
+    await assertFails(getDocs(collection(como(OUTRO), 'empresas')));
+    await assertSucceeds(getDocs(collection(como(SERGIO), 'empresas')));
   });
 });
