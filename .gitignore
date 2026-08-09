@@ -64,3 +64,5 @@ next-env.d.ts
 
 # settings locais do Claude (contem tokens) — NUNCA commitar
 .claude/settings.local.json
+
+firestore.rules.PUBLICADA.txt

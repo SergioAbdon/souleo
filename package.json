@@ -7,7 +7,9 @@
                     "build":  "next build",
                     "start":  "next start",
                     "lint":  "eslint",
-                    "typecheck":  "tsc --noEmit"
+                    "typecheck":  "tsc --noEmit",
+                    "secao1:inventario":  "node --env-file=.env.local scripts/secao1/00-inventario.mjs",
+                    "secao1:regras-publicadas":  "node --env-file=.env.local scripts/secao1/00-regras-publicadas.mjs"
                 },
     "dependencies":  {
                          "@anthropic-ai/sdk":  "^0.88.0",
