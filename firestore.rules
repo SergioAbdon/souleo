@@ -47,6 +47,33 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/contas/$(contaId)).data.ownerUid == uid();
     }
 
+    // ── Membro da conta (modelo migrado em 09/08) ──
+    function vincRef(contaId) {
+      return /databases/$(database)/documents/vinculos/$(contaId + '_' + uid());
+    }
+    function membroDaConta(contaId) {
+      return auth() && exists(vincRef(contaId))
+        && get(vincRef(contaId)).data.status == 'ativo';
+    }
+    function papelNaConta(contaId) { return get(vincRef(contaId)).data.papel; }
+
+    function contaDoLocal(wsId) {
+      return get(/databases/$(database)/documents/workspaces/$(wsId)).data.contaId;
+    }
+    // Alcanca o local: e dono dele, ou tem vinculo ativo na conta dele e o
+    // local esta na lista permitida (lista vazia = todos os locais da conta).
+    function alcancaLocal(wsId) {
+      return donoDoLocal(wsId)
+        || (membroDaConta(contaDoLocal(wsId))
+            && (get(vincRef(contaDoLocal(wsId))).data.locais.size() == 0
+                || wsId in get(vincRef(contaDoLocal(wsId))).data.locais));
+    }
+    // Papel de quem assina laudo e ve dinheiro.
+    function medicoNoLocal(wsId) {
+      return donoDoLocal(wsId)
+        || (alcancaLocal(wsId) && papelNaConta(contaDoLocal(wsId)) in ['dono', 'medico']);
+    }
+
     // Campo nao foi alterado nesta escrita?
     function intacto(campo) {
       return !(campo in request.resource.data)
@@ -63,15 +90,33 @@ service cloud.firestore {
       // sem este termo o Firestore nega a consulta inteira. (Provado por teste.)
       allow get, list: if superadmin()
                        || (auth() && resource.data.ownerUid == uid())
-                       || (auth() && donoDaConta(resource.data.contaId));
-      allow create:    if auth() && request.resource.data.ownerUid == uid();
+                       || (auth() && donoDaConta(resource.data.contaId))
+                       || (auth() && membroDaConta(resource.data.contaId));
+      // Editar o local (timbre, endereco, integracoes) e so do dono.
       allow update:    if superadmin()
                        || (auth() && resource.data.ownerUid == uid() && intacto('ownerUid'));
+      allow create:    if auth() && request.resource.data.ownerUid == uid();
       allow delete:    if false;
 
-      match /{documento=**} {
-        allow read, write: if superadmin() || donoDoLocal(wsId);
-      }
+      // Honorarios e extratos sao dinheiro: medico ou dono, nunca recepcao.
+      match /config/{docId}   { allow read, write: if superadmin() || medicoNoLocal(wsId); }
+      match /extratos/{docId} { allow read, write: if superadmin() || medicoNoLocal(wsId); }
+
+      // Fila, pacientes e laudos: todo membro que alcanca o local.
+      // ajuste (fora do brief): o brief pedia match /{documento=**} aqui, mas
+      // um coringa recursivo tambem casa com config/extratos E com o proprio
+      // doc do local (path vazio) — Firestore usa OR entre TODOS os match
+      // que casam o mesmo caminho, entao o coringa reabria honorarios e a
+      // edicao do local para a recepcao por cima da regra especifica acima
+      // (confirmado pelos 2 testes falhando). Listar as subcolecoes reais
+      // (exames, pacientes) em vez do coringa evita a sobreposicao — mesmo
+      // padrao ja usado em firestore.rules.definitiva.
+      // ponytail: a recepcao ainda pode escrever no conteudo do laudo aqui —
+      // a separacao "so o autor edita" e da fechadura definitiva (Plano 2),
+      // que ja esta escrita e testada. Aqui o que importa e o isolamento
+      // entre clinicas e o financeiro; o resto a tela cobre por enquanto.
+      match /exames/{docId}    { allow read, write: if superadmin() || alcancaLocal(wsId); }
+      match /pacientes/{docId} { allow read, write: if superadmin() || alcancaLocal(wsId); }
     }
 
     // ── PROFISSIONAIS ── proprio perfil, sem autopromocao, sem listar todos
@@ -92,7 +137,9 @@ service cloud.firestore {
 
     // ── CONTAS ── criadas pela migracao (Admin SDK). Cliente so le a propria.
     match /contas/{contaId} {
-      allow get, list: if superadmin() || (auth() && resource.data.ownerUid == uid());
+      allow get, list: if superadmin()
+                       || (auth() && resource.data.ownerUid == uid())
+                       || membroDaConta(contaId);
       allow write:     if false;
     }
 
@@ -115,7 +162,9 @@ service cloud.firestore {
     match /subscriptions/{subId} {
       allow get, list: if superadmin()
                        || ('workspaceId' in resource.data && donoDoLocal(resource.data.workspaceId))
-                       || ('contaId' in resource.data && donoDaConta(resource.data.contaId));
+                       || ('contaId' in resource.data && donoDaConta(resource.data.contaId))
+                       || ('contaId' in resource.data && membroDaConta(resource.data.contaId)
+                           && papelNaConta(resource.data.contaId) in ['dono', 'medico']);
       allow create:    if auth() && donoDoLocal(request.resource.data.workspaceId);
       allow update:    if superadmin()
                        || ('workspaceId' in resource.data

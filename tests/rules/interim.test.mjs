@@ -69,6 +69,22 @@ before(async () => {
       medicoUid: SERGIO, workspaceId: WS_MEDCARDIO, role: 'medico', status: 'ativo',
     });
     await setDoc(doc(db, 'configPlanos', 'atual'), { planos: [] });
+
+    // Membros da conta do MedCardio (modelo migrado): recepcao e um 2o medico.
+    await setDoc(doc(db, 'profissionais', 'uidRecepcao'), { nome: 'Recepcao', superadmin: false });
+    await setDoc(doc(db, 'profissionais', 'uidMedico2'), { nome: 'Medico 2', superadmin: false });
+    await setDoc(doc(db, 'vinculos', 'contaMedCardio_uidRecepcao'), {
+      contaId: 'contaMedCardio', medicoUid: 'uidRecepcao',
+      papel: 'recepcao', locais: [], status: 'ativo',
+    });
+    await setDoc(doc(db, 'vinculos', 'contaMedCardio_uidMedico2'), {
+      contaId: 'contaMedCardio', medicoUid: 'uidMedico2',
+      papel: 'medico', locais: [], status: 'ativo',
+    });
+    await setDoc(doc(db, 'vinculos', 'contaMedCardio_uidInativo'), {
+      contaId: 'contaMedCardio', medicoUid: 'uidInativo',
+      papel: 'medico', locais: [], status: 'inativo',
+    });
   });
 });
 
@@ -340,5 +356,69 @@ describe('D) contas e assinatura por conta', () => {
     await assertFails(getDocs(collection(como(INVASOR), 'empresas')));
     await assertFails(getDocs(collection(como(OUTRO), 'empresas')));
     await assertSucceeds(getDocs(collection(como(SERGIO), 'empresas')));
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════
+// E) MEMBRO DA CONTA (a recepcao entra segunda-feira)
+//    A tranca so reconhecia o dono. Agora reconhece quem tem vinculo
+//    ativo na conta do local, com limite por papel.
+// ══════════════════════════════════════════════════════════════════
+describe('E) membro da conta', () => {
+  const RECEPCAO = 'uidRecepcao', MEDICO2 = 'uidMedico2', INATIVO = 'uidInativo';
+
+  test('recepcao ve a fila do local (worklist)', async () => {
+    await assertSucceeds(getDocs(collection(como(RECEPCAO), `workspaces/${WS_MEDCARDIO}/exames`)));
+  });
+
+  test('recepcao cadastra paciente e exame', async () => {
+    await assertSucceeds(setDoc(doc(como(RECEPCAO), `workspaces/${WS_MEDCARDIO}/pacientes`, 'pacR'), { nome: 'Novo' }));
+    await assertSucceeds(setDoc(doc(como(RECEPCAO), `workspaces/${WS_MEDCARDIO}/exames`, 'exR'), {
+      pacienteNome: 'Novo', status: 'aguardando',
+    }));
+  });
+
+  test('recepcao le o local (precisa do timbre e do nome da clinica)', async () => {
+    await assertSucceeds(getDoc(doc(como(RECEPCAO), 'workspaces', WS_MEDCARDIO)));
+  });
+
+  test('recepcao NAO edita o local', async () => {
+    await assertFails(updateDoc(doc(como(RECEPCAO), 'workspaces', WS_MEDCARDIO), { nomeClinica: 'X' }));
+  });
+
+  test('recepcao NAO le a assinatura (financeiro)', async () => {
+    await assertFails(getDoc(doc(como(RECEPCAO), 'subscriptions', 'contaMedCardio')));
+    await assertFails(getDoc(doc(como(RECEPCAO), 'subscriptions', 'sub-medcardio')));
+  });
+
+  test('recepcao NAO le honorarios nem extratos', async () => {
+    await assertFails(getDoc(doc(como(RECEPCAO), `workspaces/${WS_MEDCARDIO}/config`, 'honorarios')));
+  });
+
+  test('medico da conta le a assinatura e os honorarios', async () => {
+    await assertSucceeds(getDoc(doc(como(MEDICO2), 'subscriptions', 'contaMedCardio')));
+    await assertSucceeds(getDoc(doc(como(MEDICO2), `workspaces/${WS_MEDCARDIO}/config`, 'honorarios')));
+  });
+
+  test('membro le a conta a que pertence', async () => {
+    await assertSucceeds(getDoc(doc(como(RECEPCAO), 'contas', 'contaMedCardio')));
+  });
+
+  test('vinculo INATIVO nao da acesso a nada', async () => {
+    await assertFails(getDoc(doc(como(INATIVO), `workspaces/${WS_MEDCARDIO}/exames`, 'ex1')));
+    await assertFails(getDoc(doc(como(INATIVO), 'workspaces', WS_MEDCARDIO)));
+    await assertFails(getDoc(doc(como(INATIVO), 'contas', 'contaMedCardio')));
+  });
+
+  test('membro da conta A nao alcanca o local da conta B', async () => {
+    await assertFails(getDoc(doc(como(RECEPCAO), `workspaces/${WS_OUTRO}`)));
+  });
+
+  test('membro nao vira dono reescrevendo o proprio vinculo', async () => {
+    await assertFails(updateDoc(doc(como(RECEPCAO), 'vinculos', 'contaMedCardio_uidRecepcao'), { papel: 'dono' }));
+  });
+
+  test('estranho sem vinculo continua sem ver nada', async () => {
+    await assertFails(getDocs(collection(como(INVASOR), `workspaces/${WS_MEDCARDIO}/exames`)));
   });
 });
