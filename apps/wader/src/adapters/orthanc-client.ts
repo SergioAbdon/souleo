@@ -155,6 +155,19 @@ export class OrthancClient {
   }
 
   /**
+   * Lista estudos (expandidos, com tags) — usado pela console de reconciliação
+   * (ADR 2026-06-26) pra cruzar o que o Vivid mandou com a agenda do LEO.
+   */
+  async listStudies(limit = 80): Promise<OrthancStudy[]> {
+    return this.post<OrthancStudy[]>('/tools/find', {
+      Level: 'Study',
+      Query: {},
+      Expand: true,
+      Limit: limit,
+    });
+  }
+
+  /**
    * Lista IDs de instâncias de um estudo.
    * Útil pra iterar e baixar todas as imagens.
    */

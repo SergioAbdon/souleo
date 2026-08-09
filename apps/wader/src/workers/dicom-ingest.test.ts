@@ -32,12 +32,17 @@ vi.mock('../adapters/firebase', () => {
                 },
               }),
             }),
-            doc: (forma: string) => ({
-              get: async () => {
-                const data = exameStore[forma];
-                return data ? { exists: true, ref: makeRef(data), data: () => data } : { exists: false };
-              },
-            }),
+            doc: (forma: string) => {
+              const data = exameStore[forma];
+              return {
+                id: forma,
+                get: async () => (data ? { exists: true, ref: makeRef(data), data: () => data } : { exists: false }),
+                update: async (obj: Record<string, unknown>) => {
+                  updates.push({ id: forma, obj });
+                  if (data) Object.assign(data, obj);
+                },
+              };
+            },
           }),
         }),
       }),
@@ -230,5 +235,26 @@ describe('processarEstudo — two-stage / paralelo / Fix B', () => {
     const r = await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
     expect(r.accessionNumber).toBe('EX999');
     expect(r.matched).toBe(true);
+  });
+
+  it('VÍNCULO MANUAL (override): estudo com ACC vazio entra no exame escolhido', async () => {
+    exameStore['alvo-1'] = { __id: 'alvo-1', status: 'aguardando' };
+    // ACC vazio em tudo (nível-estudo e séries) — sem override seria órfão.
+    const client = makeClient({ accStudyLevel: '' });
+    const r = await processarEstudo({ client, orthancStudyId: 's1', wsId: WS, exameIdOverride: 'alvo-1' });
+    expect(r.matched).toBe(true);
+    expect(r.exameIdNoLeo).toBe('alvo-1');
+    expect(r.imagensProcessadas).toBe(3);
+    expect(updates).toHaveLength(2); // etapa1 (medidas/status) + etapa2 (imagens)
+    expect(updates[0].obj.status).toBe('andamento');
+    expect(updates[1].obj.imagensDicom).toEqual(['url_1', 'url_2', 'url_3']);
+  });
+
+  it('VÍNCULO MANUAL (override): exame inexistente → matched=false, nenhum write', async () => {
+    const client = makeClient({ accStudyLevel: '' });
+    const r = await processarEstudo({ client, orthancStudyId: 's1', wsId: WS, exameIdOverride: 'nao-existe' });
+    expect(r.matched).toBe(false);
+    expect(updates).toHaveLength(0);
+    expect(r.errors.some((e) => e.includes('não existe'))).toBe(true);
   });
 });
