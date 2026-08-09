@@ -367,77 +367,102 @@ git commit -m "chore(secao1): emulador do Firestore + node --test para as regras
 
 ---
 
-## Task 3: Escrever a fechadura e provar que ela fecha
+## Task 3: Escrever a fechadura definitiva e provar que ela fecha
+
+> **Mudança em relação à versão original deste plano (09/08/2026, após a Fase 0):**
+> a Fase 0 revelou que a regra publicada em produção era `allow read, write: if
+> request.auth != null` em `/{document=**}` — banco inteiro aberto a qualquer
+> autenticado. Uma **tranca provisória** (isolamento por `workspaces.ownerUid`) já
+> foi escrita, testada com 35 testes e **publicada em 09/08/2026 18:34**. Ela vive
+> em `firestore.rules`, que é o arquivo que o `firebase.json` declara e o que o
+> deploy publica.
+>
+> Por isso esta tarefa **NÃO** escreve em `firestore.rules`. A fechadura definitiva
+> (modelo de contas) vai para **`firestore.rules.definitiva`**, um arquivo à parte,
+> testado mas não publicável por acidente. A troca acontece na última tarefa do
+> Plano 2, quando o cadastro server-side existir. Regra de ouro: **`firestore.rules`
+> sempre reflete exatamente o que está no ar.**
 
 **Files:**
-- Create: `tests/rules/regras.test.mjs`
-- Modify: `firestore.rules` (substituir todo o conteúdo)
+- Create: `firestore.rules.definitiva`
+- Create: `tests/rules/definitiva.test.mjs`
+- Modify: `package.json` (script `test:rules:definitiva`)
 
 **Interfaces:**
-- Consumes: modelo do spec §3 (`contas`, `workspaces.contaId`, `vinculos/{contaId}_{uid}` com `papel` e `locais`).
-- Produces: `firestore.rules` pronta para publicar no Plano 2.
+- Consumes: modelo do spec §3 — `contas/{contaId}`, `workspaces.contaId`,
+  `vinculos/{contaId}_{uid}` com `papel` ('dono'|'medico'|'recepcao') e `locais` (array;
+  vazio = todos os locais da conta), `subscriptions/{contaId}`.
+- Produces: `firestore.rules.definitiva`, pronta para substituir `firestore.rules` no Plano 2.
 
-- [ ] **Step 1: Escrever os testes primeiro (todos devem falhar)**
+- [ ] **Step 1: Escrever os testes primeiro**
 
-`tests/rules/regras.test.mjs`:
+`tests/rules/definitiva.test.mjs`:
 
 ```javascript
+// Fechadura DEFINITIVA (modelo de contas). Le firestore.rules.definitiva.
+// Nao e a regra publicada — essa e firestore.rules (tranca provisoria).
 import { test, before, after, describe } from 'node:test';
 import { readFileSync } from 'node:fs';
+import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import {
-  initializeTestEnvironment, assertFails, assertSucceeds,
-} from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, collection, getDocs } from 'firebase/firestore';
+  doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection, getDocs, query, where,
+} from 'firebase/firestore';
 
 let env;
 
-// Cenario: conta A (Dr. A dono/medico, Rita recepcao) e conta B (Dr. B).
+// Conta A (clinica): Dr. A dono+medico, Dr. A2 medico, Rita recepcao, 2 locais.
+// Conta B (outra clinica): Dr. B.
 const CONTA_A = 'contaA', CONTA_B = 'contaB';
-const LOCAL_A = 'localA', LOCAL_B = 'localB';
-const DR_A = 'uidDrA', DR_A2 = 'uidDrA2', RITA = 'uidRita', DR_B = 'uidDrB';
+const LOCAL_A1 = 'localA1', LOCAL_A2 = 'localA2', LOCAL_B = 'localB';
+const DR_A = 'uidDrA', DR_A2 = 'uidDrA2', RITA = 'uidRita', DR_B = 'uidDrB', ADMIN = 'uidAdmin';
 
 before(async () => {
   env = await initializeTestEnvironment({
-    projectId: 'leo-testes',
-    firestore: { rules: readFileSync('firestore.rules', 'utf8'), host: '127.0.0.1', port: 8080 },
+    projectId: 'leo-testes-definitiva',
+    firestore: { rules: readFileSync('firestore.rules.definitiva', 'utf8'), host: '127.0.0.1', port: 8080 },
   });
 
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
+
     await setDoc(doc(db, 'contas', CONTA_A), { tipo: 'PJ', nome: 'Clinica A', ownerUid: DR_A });
     await setDoc(doc(db, 'contas', CONTA_B), { tipo: 'PF', nome: 'Dr B', ownerUid: DR_B });
 
-    await setDoc(doc(db, 'workspaces', LOCAL_A), { contaId: CONTA_A, nomeClinica: 'Sala 1' });
+    await setDoc(doc(db, 'workspaces', LOCAL_A1), { contaId: CONTA_A, nomeClinica: 'Sala 1' });
+    await setDoc(doc(db, 'workspaces', LOCAL_A2), { contaId: CONTA_A, nomeClinica: 'Sala 2' });
     await setDoc(doc(db, 'workspaces', LOCAL_B), { contaId: CONTA_B, nomeClinica: 'Consultorio B' });
 
-    await setDoc(doc(db, `workspaces/${LOCAL_A}/privado`, 'integracoes'), {
-      feegowToken: 'segredo', ortancUser: 'orthanc', ortancPass: 'senha',
+    await setDoc(doc(db, `workspaces/${LOCAL_A1}/privado`, 'integracoes'), {
+      feegowToken: 'SEGREDO', ortancUser: 'orthanc', ortancPass: 'SENHA',
     });
 
-    await setDoc(doc(db, `workspaces/${LOCAL_A}/exames`, 'ex1'), {
-      pacienteNome: 'Paciente A', medicoUid: DR_A, status: 'emitido',
+    await setDoc(doc(db, `workspaces/${LOCAL_A1}/exames`, 'ex1'), {
+      pacienteNome: 'Paciente A1', medicoUid: DR_A, status: 'emitido',
     });
-    await setDoc(doc(db, `workspaces/${LOCAL_B}/exames`, 'ex2'), {
+    await setDoc(doc(db, `workspaces/${LOCAL_A2}/exames`, 'ex2'), {
+      pacienteNome: 'Paciente A2', medicoUid: DR_A2, status: 'emitido',
+    });
+    await setDoc(doc(db, `workspaces/${LOCAL_B}/exames`, 'exB'), {
       pacienteNome: 'Paciente B', medicoUid: DR_B, status: 'emitido',
     });
+    await setDoc(doc(db, `workspaces/${LOCAL_A1}/pacientes`, 'pac1'), { nome: 'Paciente A1' });
+    await setDoc(doc(db, `workspaces/${LOCAL_A1}/config`, 'honorarios'), { UNIMED: 120 });
 
-    await setDoc(doc(db, 'vinculos', `${CONTA_A}_${DR_A}`), {
-      contaId: CONTA_A, medicoUid: DR_A, papel: 'dono', locais: [], status: 'ativo',
-    });
-    await setDoc(doc(db, 'vinculos', `${CONTA_A}_${DR_A2}`), {
-      contaId: CONTA_A, medicoUid: DR_A2, papel: 'medico', locais: [], status: 'ativo',
-    });
-    await setDoc(doc(db, 'vinculos', `${CONTA_A}_${RITA}`), {
-      contaId: CONTA_A, medicoUid: RITA, papel: 'recepcao', locais: [], status: 'ativo',
-    });
-    await setDoc(doc(db, 'vinculos', `${CONTA_B}_${DR_B}`), {
-      contaId: CONTA_B, medicoUid: DR_B, papel: 'dono', locais: [], status: 'ativo',
-    });
+    // Vinculos com id deterministico. Rita so alcanca o LOCAL_A1.
+    await setDoc(doc(db, 'vinculos', `${CONTA_A}_${DR_A}`),  { contaId: CONTA_A, medicoUid: DR_A,  papel: 'dono',     locais: [], status: 'ativo' });
+    await setDoc(doc(db, 'vinculos', `${CONTA_A}_${DR_A2}`), { contaId: CONTA_A, medicoUid: DR_A2, papel: 'medico',   locais: [], status: 'ativo' });
+    await setDoc(doc(db, 'vinculos', `${CONTA_A}_${RITA}`),  { contaId: CONTA_A, medicoUid: RITA,  papel: 'recepcao', locais: [LOCAL_A1], status: 'ativo' });
+    await setDoc(doc(db, 'vinculos', `${CONTA_B}_${DR_B}`),  { contaId: CONTA_B, medicoUid: DR_B,  papel: 'dono',     locais: [], status: 'ativo' });
 
     await setDoc(doc(db, 'profissionais', DR_A), { nome: 'Dr A', superadmin: false });
     await setDoc(doc(db, 'profissionais', DR_B), { nome: 'Dr B', superadmin: false });
+    await setDoc(doc(db, 'profissionais', RITA), { nome: 'Rita', superadmin: false });
+    await setDoc(doc(db, 'profissionais', ADMIN), { nome: 'Direx', superadmin: true });
 
     await setDoc(doc(db, 'subscriptions', CONTA_A), { contaId: CONTA_A, tipo: 'expert', franquiaMensal: 600, franquiaUsada: 10 });
+    await setDoc(doc(db, 'subscriptions', CONTA_B), { contaId: CONTA_B, tipo: 'trial', franquiaMensal: 600, franquiaUsada: 0 });
+    await setDoc(doc(db, 'configPlanos', 'atual'), { planos: [] });
+    await setDoc(doc(db, 'pagamentos', 'pg1'), { valor: 100 });
   });
 });
 
@@ -445,127 +470,201 @@ after(async () => { await env.cleanup(); });
 
 const como = (uid) => env.authenticatedContext(uid).firestore();
 
-describe('isolamento entre contas', () => {
-  test('1. medico da conta A NAO le exame da conta B', async () => {
-    await assertFails(getDoc(doc(como(DR_A), `workspaces/${LOCAL_B}/exames`, 'ex2')));
+describe('1. isolamento entre contas', () => {
+  test('medico da conta A nao le exame da conta B', async () => {
+    await assertFails(getDoc(doc(como(DR_A), `workspaces/${LOCAL_B}/exames`, 'exB')));
   });
-
-  test('1b. medico da conta A LE exame da propria conta', async () => {
-    await assertSucceeds(getDoc(doc(como(DR_A), `workspaces/${LOCAL_A}/exames`, 'ex1')));
+  test('medico da conta A nao escreve exame da conta B', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_B}/exames`, 'exB'), { status: 'x' }));
   });
-
-  test('1c. medico da conta A NAO escreve exame da conta B', async () => {
-    await assertFails(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_B}/exames`, 'ex2'), { status: 'rascunho' }));
+  test('medico da conta A le exame do proprio local', async () => {
+    await assertSucceeds(getDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'ex1')));
+  });
+  test('nao membro nao le a conta', async () => {
+    await assertFails(getDoc(doc(como(DR_B), 'contas', CONTA_A)));
+  });
+  test('nao autenticado nao le nada', async () => {
+    const anon = env.unauthenticatedContext().firestore();
+    await assertFails(getDoc(doc(anon, `workspaces/${LOCAL_A1}/exames`, 'ex1')));
   });
 });
 
-describe('papeis', () => {
-  test('2. recepcao NAO le a assinatura (financeiro) da conta', async () => {
+describe('2. papeis', () => {
+  test('recepcao nao le a assinatura (financeiro)', async () => {
     await assertFails(getDoc(doc(como(RITA), 'subscriptions', CONTA_A)));
   });
-
-  test('2b. dono LE a assinatura da conta', async () => {
+  test('dono le a assinatura', async () => {
     await assertSucceeds(getDoc(doc(como(DR_A), 'subscriptions', CONTA_A)));
   });
-
-  test('2c. medico (nao dono) NAO edita o local', async () => {
-    await assertFails(updateDoc(doc(como(DR_A2), 'workspaces', LOCAL_A), { nomeClinica: 'Hackeado' }));
+  test('medico le a assinatura', async () => {
+    await assertSucceeds(getDoc(doc(como(DR_A2), 'subscriptions', CONTA_A)));
   });
-
-  test('2d. dono edita o local', async () => {
-    await assertSucceeds(updateDoc(doc(como(DR_A), 'workspaces', LOCAL_A), { nomeClinica: 'Sala 1 renomeada' }));
+  test('medico nao dono nao edita o local', async () => {
+    await assertFails(updateDoc(doc(como(DR_A2), 'workspaces', LOCAL_A1), { nomeClinica: 'X' }));
   });
-});
-
-describe('autopromocao', () => {
-  test('3. usuario NAO escreve superadmin em si mesmo', async () => {
-    await assertFails(updateDoc(doc(como(DR_A), 'profissionais', DR_A), { superadmin: true }));
+  test('dono edita o local', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A), 'workspaces', LOCAL_A1), { nomeClinica: 'Sala 1 nova' }));
   });
-
-  test('3b. usuario NAO escreve adminRole em si mesmo', async () => {
-    await assertFails(updateDoc(doc(como(DR_A), 'profissionais', DR_A), { adminRole: 'financeiro' }));
+  test('recepcao cadastra exame e paciente', async () => {
+    await assertSucceeds(setDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'novo'), { pacienteNome: 'Novo', status: 'aguardando' }));
+    await assertSucceeds(setDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/pacientes`, 'pac9'), { nome: 'Novo' }));
   });
-
-  test('3c. usuario edita o proprio nome', async () => {
-    await assertSucceeds(updateDoc(doc(como(DR_A), 'profissionais', DR_A), { nome: 'Dr A Silva' }));
-  });
-
-  test('3d. usuario NAO lista todos os profissionais (vazamento de CPF)', async () => {
-    await assertFails(getDocs(collection(como(DR_A), 'profissionais')));
+  test('recepcao nao edita o conteudo do laudo', async () => {
+    await assertFails(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'ex1'), { conclusoes: 'x' }));
   });
 });
 
-describe('autoria do laudo', () => {
-  test('4. medico que nao e o autor NAO edita o laudo', async () => {
-    await assertFails(updateDoc(doc(como(DR_A2), `workspaces/${LOCAL_A}/exames`, 'ex1'), { conclusoes: 'alterado' }));
+describe('3. locais restritos', () => {
+  test('recepcao restrita ao LOCAL_A1 nao le exame do LOCAL_A2', async () => {
+    await assertFails(getDoc(doc(como(RITA), `workspaces/${LOCAL_A2}/exames`, 'ex2')));
   });
-
-  test('4b. medico que nao e autor LE o laudo do colega', async () => {
-    await assertSucceeds(getDoc(doc(como(DR_A2), `workspaces/${LOCAL_A}/exames`, 'ex1')));
+  test('medico sem restricao le os dois locais da conta', async () => {
+    await assertSucceeds(getDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/exames`, 'ex1')));
+    await assertSucceeds(getDoc(doc(como(DR_A2), `workspaces/${LOCAL_A2}/exames`, 'ex2')));
   });
-
-  test('4c. o autor edita o proprio laudo', async () => {
-    await assertSucceeds(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A}/exames`, 'ex1'), { conclusoes: 'ok' }));
+  test('consulta de locais por contaId funciona para membro', async () => {
+    await assertSucceeds(getDocs(query(collection(como(DR_A), 'workspaces'), where('contaId', '==', CONTA_A))));
   });
-});
-
-describe('segredos', () => {
-  test('5. dono NAO le os segredos de integracao pelo navegador', async () => {
-    await assertFails(getDoc(doc(como(DR_A), `workspaces/${LOCAL_A}/privado`, 'integracoes')));
-  });
-
-  test('5b. dono NAO escreve direto na gaveta de segredos', async () => {
-    await assertFails(setDoc(doc(como(DR_A), `workspaces/${LOCAL_A}/privado`, 'integracoes'), { feegowToken: 'x' }));
+  test('consulta de locais de outra conta e negada', async () => {
+    await assertFails(getDocs(query(collection(como(DR_A), 'workspaces'), where('contaId', '==', CONTA_B))));
   });
 });
 
-describe('criacao so pelo servidor', () => {
-  test('6. cliente NAO cria conta', async () => {
+describe('4. autoria do laudo', () => {
+  test('medico que nao e autor nao edita', async () => {
+    await assertFails(updateDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/exames`, 'ex1'), { conclusoes: 'x' }));
+  });
+  test('medico que nao e autor LE o laudo do colega', async () => {
+    await assertSucceeds(getDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/exames`, 'ex1')));
+  });
+  test('o autor edita o proprio laudo', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'ex1'), { conclusoes: 'ok' }));
+  });
+  test('dono ajusta exame que nao e dele (administrativo)', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A2}/exames`, 'ex2'), { convenio: 'UNIMED' }));
+  });
+  test('ninguem apaga exame pelo navegador (apagar passa pelo servidor)', async () => {
+    await assertFails(deleteDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'ex1')));
+  });
+});
+
+describe('5. segredos', () => {
+  test('dono nao le a gaveta de segredos', async () => {
+    await assertFails(getDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/privado`, 'integracoes')));
+  });
+  test('dono nao escreve na gaveta de segredos', async () => {
+    await assertFails(setDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/privado`, 'integracoes'), { feegowToken: 'x' }));
+  });
+  test('superadmin tambem nao le a gaveta pelo navegador', async () => {
+    await assertFails(getDoc(doc(como(ADMIN), `workspaces/${LOCAL_A1}/privado`, 'integracoes')));
+  });
+});
+
+describe('6. criacao so pelo servidor', () => {
+  test('cliente nao cria conta', async () => {
     await assertFails(setDoc(doc(como(DR_A), 'contas', 'contaFalsa'), { tipo: 'PF', ownerUid: DR_A }));
   });
-
-  test('6b. cliente NAO cria vinculo (papel forjado)', async () => {
+  test('cliente nao cria vinculo (papel forjado)', async () => {
     await assertFails(setDoc(doc(como(DR_B), 'vinculos', `${CONTA_A}_${DR_B}`), {
       contaId: CONTA_A, medicoUid: DR_B, papel: 'dono', locais: [], status: 'ativo',
     }));
   });
-
-  test('6c. cliente NAO cria nem altera assinatura (plano forjado)', async () => {
+  test('cliente nao altera o proprio papel', async () => {
+    await assertFails(updateDoc(doc(como(RITA), 'vinculos', `${CONTA_A}_${RITA}`), { papel: 'dono' }));
+  });
+  test('cliente nao cria nem altera assinatura', async () => {
     await assertFails(setDoc(doc(como(DR_A), 'subscriptions', 'contaFalsa'), { tipo: 'remido' }));
     await assertFails(updateDoc(doc(como(DR_A), 'subscriptions', CONTA_A), { franquiaUsada: 0 }));
   });
+  test('cliente nao cria local', async () => {
+    await assertFails(setDoc(doc(como(DR_A), 'workspaces', 'wsFalso'), { contaId: CONTA_A }));
+  });
+});
 
-  test('6d. nao-membro NAO le a conta', async () => {
-    await assertFails(getDoc(doc(como(DR_B), 'contas', CONTA_A)));
+describe('7. perfil e autopromocao', () => {
+  test('nao escreve superadmin em si mesmo', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), 'profissionais', DR_A), { superadmin: true }));
+  });
+  test('nao escreve adminRole em si mesmo', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), 'profissionais', DR_A), { adminRole: 'financeiro' }));
+  });
+  test('edita o proprio nome', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A), 'profissionais', DR_A), { nome: 'Dr A Silva' }));
+  });
+  test('nao lista todos os profissionais (vazamento de CPF)', async () => {
+    await assertFails(getDocs(collection(como(DR_A), 'profissionais')));
+  });
+  test('nao nasce superadmin', async () => {
+    await assertFails(setDoc(doc(como('uidNovo'), 'profissionais', 'uidNovo'), { nome: 'Novo', superadmin: true }));
+  });
+  test('cria o proprio perfil sem superadmin', async () => {
+    await assertSucceeds(setDoc(doc(como('uidNovo2'), 'profissionais', 'uidNovo2'), { nome: 'Novo 2' }));
+  });
+});
+
+describe('8. Direx e trilhas', () => {
+  test('superadmin lista contas, locais e assinaturas', async () => {
+    await assertSucceeds(getDocs(collection(como(ADMIN), 'contas')));
+    await assertSucceeds(getDocs(collection(como(ADMIN), 'workspaces')));
+    await assertSucceeds(getDocs(collection(como(ADMIN), 'subscriptions')));
+  });
+  test('usuario comum nao le o financeiro do Direx', async () => {
+    await assertFails(getDocs(collection(como(DR_A), 'pagamentos')));
+    await assertFails(getDocs(collection(como(DR_A), 'historicoFinanceiro')));
+  });
+  test('qualquer autenticado grava log; so o Direx le', async () => {
+    await assertSucceeds(addDoc(collection(como(RITA), 'logs'), { tipo: 'teste' }));
+    await assertFails(getDocs(collection(como(RITA), 'logs')));
+    await assertSucceeds(getDocs(collection(como(ADMIN), 'logs')));
+  });
+  test('log nao pode ser alterado depois de escrito', async () => {
+    await assertFails(updateDoc(doc(como(ADMIN), 'logs', 'qualquer'), { tipo: 'adulterado' }));
+  });
+  test('todos leem a tabela de planos; so o Direx escreve', async () => {
+    await assertSucceeds(getDoc(doc(como(RITA), 'configPlanos', 'atual')));
+    await assertFails(setDoc(doc(como(DR_A), 'configPlanos', 'atual'), { planos: ['pirata'] }));
   });
 });
 ```
 
-- [ ] **Step 2: Rodar e confirmar que falham**
+- [ ] **Step 2: Registrar o script de teste**
 
-```bash
-npm run test:rules
+Adicionar em `"scripts"` do `package.json`, mantendo os existentes:
+
+```json
+"test:rules:definitiva": "npx firebase emulators:exec --only firestore --project leo-testes \"node --test tests/rules/definitiva.test.mjs\""
 ```
 
-Esperado: **FALHA**. Os testes `assertFails` passam por acidente (a regra de abril nega quase nada, mas nega o suficiente em alguns pontos), e os `assertSucceeds` sobre `contas`/`subscriptions` falham, porque a regra de abril nem conhece `contas`. Anotar quantos falharam.
+- [ ] **Step 3: Rodar e confirmar que falha**
 
-- [ ] **Step 3: Escrever a fechadura**
+```bash
+npm run test:rules:definitiva
+```
 
-Substituir **todo** o conteúdo de `firestore.rules`:
+Esperado: **FALHA** — `firestore.rules.definitiva` ainda não existe (erro de leitura de arquivo). É a confirmação de que o teste está mesmo lendo o arquivo certo.
+
+- [ ] **Step 4: Escrever a fechadura definitiva**
+
+Criar `firestore.rules.definitiva` com exatamente este conteúdo:
 
 ```javascript
 rules_version = '2';
 
 // ════════════════════════════════════════════════════════════════════
-// LEO · Firestore Security Rules
+// LEO · Firestore Security Rules — FECHADURA DEFINITIVA (modelo de contas)
+// ════════════════════════════════════════════════════════════════════
+// ⚠️ ESTE ARQUIVO NAO E O PUBLICADO. O publicado e `firestore.rules`
+//    (tranca provisoria por ownerUid, no ar desde 09/08/2026 18:34).
+//    Esta versao so pode substituir aquela na ULTIMA tarefa do Plano 2,
+//    depois que o cadastro passar a ser feito no servidor — ela proibe o
+//    navegador de criar conta, vinculo e assinatura, que e exatamente o
+//    que o cadastro atual faz.
+//
 // Modelo: CONTA (paga) → LOCAL (workspaces) → exames/pacientes
 //         MEMBRO = vinculos/{contaId}_{uid} com papel + locais
 // Spec: docs/decisoes/2026-08-09-secao1-contas-e-acesso.md
 //
-// Regra de ouro: o cliente LÊ o que é da conta dele e ESCREVE muito pouco.
-// Criar conta, vinculo, assinatura, emitir, cancelar, transferir e apagar
-// passam por rota de servidor (Admin SDK), que ignora estas regras.
-// O Wader tambem usa Admin SDK — nao e afetado por nada aqui.
+// O Wader usa Service Account (Admin SDK) e nao e afetado por nada aqui.
 // ════════════════════════════════════════════════════════════════════
 
 service cloud.firestore {
@@ -574,6 +673,12 @@ service cloud.firestore {
     // ── Fundamentos ──
     function auth() { return request.auth != null; }
     function uid()  { return request.auth.uid; }
+
+    function superadmin() {
+      return auth()
+        && exists(/databases/$(database)/documents/profissionais/$(uid()))
+        && get(/databases/$(database)/documents/profissionais/$(uid())).data.superadmin == true;
+    }
 
     function vincRef(contaId) {
       return /databases/$(database)/documents/vinculos/$(contaId + '_' + uid());
@@ -585,122 +690,137 @@ service cloud.firestore {
     function vinc(contaId) { return get(vincRef(contaId)).data; }
     function ehPapel(contaId, p) { return temVinculo(contaId) && vinc(contaId).papel == p; }
 
-    // Local pertence a conta? E a pessoa alcanca esse local?
-    // alcancaConta() recebe o contaId pronto — serve tanto para `get` quanto
-    // para `list` (numa consulta, `resource` e cada documento avaliado, e nao
-    // da para chamar get() do proprio doc sendo listado).
+    // Recebe o contaId pronto: serve para `get` E para `list` (numa consulta,
+    // `resource` e cada documento avaliado — nao da para get() do proprio doc).
     function alcancaConta(contaId, wsId) {
       return temVinculo(contaId)
         && (vinc(contaId).locais.size() == 0 || wsId in vinc(contaId).locais);
     }
-    // Para subcolecoes (exames/pacientes) o doc do local nao esta em `resource`,
-    // entao aqui o get() e inevitavel — 2 gets no total, longe do limite de 10.
+    // Em subcolecoes o doc do local nao esta em `resource`: aqui o get() e
+    // inevitavel. Sao 2 gets no total, longe do limite de 10.
     function contaDoLocal(wsId) {
       return get(/databases/$(database)/documents/workspaces/$(wsId)).data.contaId;
     }
-    function alcancaLocal(wsId) {
-      return alcancaConta(contaDoLocal(wsId), wsId);
-    }
+    function alcancaLocal(wsId) { return alcancaConta(contaDoLocal(wsId), wsId); }
     function ehDonoDoLocal(wsId) { return ehPapel(contaDoLocal(wsId), 'dono'); }
     function ehMedicoNoLocal(wsId) {
-      return alcancaLocal(wsId)
-        && vinc(contaDoLocal(wsId)).papel in ['dono', 'medico'];
+      return alcancaLocal(wsId) && vinc(contaDoLocal(wsId)).papel in ['dono', 'medico'];
     }
 
-    function superadmin() {
-      return auth()
-        && exists(/databases/$(database)/documents/profissionais/$(uid()))
-        && get(/databases/$(database)/documents/profissionais/$(uid())).data.superadmin == true;
-    }
-
-    // Campo nao foi tocado nesta escrita?
     function intacto(campo) {
       return !(campo in request.resource.data)
         || (campo in resource.data && request.resource.data[campo] == resource.data[campo]);
     }
 
-    // ── CONTAS ── só o servidor cria e altera
+    // ── CONTAS ── so o servidor cria e altera
     match /contas/{contaId} {
-      allow read: if temVinculo(contaId) || superadmin();
+      allow get, list: if superadmin() || temVinculo(contaId);
       allow create, update, delete: if false;
     }
 
-    // ── LOCAIS (workspaces) ──
+    // ── LOCAIS ──
     match /workspaces/{wsId} {
-      // `resource.data.contaId` funciona em get E em list — o app consulta
-      // workspaces por contaId (getLocaisDaConta), e uma consulta so passa se
-      // a regra valer para TODO documento que ela poderia devolver.
-      allow read:   if resource != null && alcancaConta(resource.data.contaId, wsId)
-                    || superadmin();
-      allow update: if ehDonoDoLocal(wsId) && intacto('contaId');
+      allow get, list: if superadmin()
+                       || (resource != null && alcancaConta(resource.data.contaId, wsId));
+      allow update:    if superadmin()
+                       || (ehDonoDoLocal(wsId) && intacto('contaId'));
       allow create, delete: if false;
 
-      // Gaveta de segredos: ninguem pelo navegador. So Admin SDK.
-      match /privado/{doc=**} {
+      // Gaveta de segredos: ninguem pelo navegador, nem o superadmin.
+      match /privado/{documento=**} {
         allow read, write: if false;
       }
 
       match /pacientes/{pacId} {
-        allow read:   if alcancaLocal(wsId);
+        allow read: if superadmin() || alcancaLocal(wsId);
         allow create, update: if alcancaLocal(wsId);
         allow delete: if ehDonoDoLocal(wsId);
       }
 
       match /exames/{exameId} {
-        // Todo membro do local le (medico ve a fila do colega — D7 do spec)
-        allow read: if alcancaLocal(wsId);
-        // Recepcao cria exame (cadastro/Feegow)
+        // Todo membro do local ve a fila e le o laudo do colega (D7 do spec)
+        allow read:   if superadmin() || alcancaLocal(wsId);
         allow create: if alcancaLocal(wsId);
-        // Conteudo do laudo: so o autor. Dono ajusta o administrativo.
-        allow update: if ehMedicoNoLocal(wsId) && resource.data.medicoUid == uid()
+        // Conteudo do laudo: so o autor. O dono ajusta o administrativo.
+        allow update: if (ehMedicoNoLocal(wsId) && resource.data.medicoUid == uid())
                       || ehDonoDoLocal(wsId);
         // Apagar/cancelar/transferir passam pelo servidor (log + franquia)
         allow delete: if false;
       }
+
+      // Honorarios, extratos e demais ajustes do local
+      match /config/{docId}   { allow read, write: if alcancaLocal(wsId); }
+      match /extratos/{docId} { allow read, write: if ehMedicoNoLocal(wsId); }
     }
 
     // ── VINCULOS ── leitura do proprio e do dono da conta; escrita so servidor
     match /vinculos/{vincId} {
       allow get:  if auth() && (resource.data.medicoUid == uid()
                     || ehPapel(resource.data.contaId, 'dono') || superadmin());
-      // `list` per-documento: a consulta so passa se for restrita ao proprio
+      // `list` por documento: a consulta so passa se for restrita ao proprio
       // usuario (where medicoUid == uid). Sem isso, um logado listaria o mapa
       // de quem pertence a que conta.
-      allow list: if auth() && resource.data.medicoUid == uid();
+      allow list: if superadmin() || (auth() && resource.data.medicoUid == uid());
       allow create, update, delete: if false;
     }
 
     // ── ASSINATURAS ── id = contaId. Recepcao nao ve financeiro.
     match /subscriptions/{contaId} {
-      allow read: if (temVinculo(contaId) && vinc(contaId).papel in ['dono', 'medico'])
-                     || superadmin();
+      allow get, list: if superadmin()
+                       || (temVinculo(contaId) && vinc(contaId).papel in ['dono', 'medico']);
       allow create, update, delete: if false;
     }
 
-    // ── PROFISSIONAIS ── proprio perfil, sem se autopromover, sem listar todos
+    // ── PROFISSIONAIS ── proprio perfil, sem autopromocao, sem listar todos
     match /profissionais/{profId} {
       allow get:    if auth() && (profId == uid() || superadmin());
       allow list:   if superadmin();
       allow create: if auth() && profId == uid()
                     && !('superadmin' in request.resource.data)
                     && !('adminRole' in request.resource.data);
-      allow update: if auth() && profId == uid()
-                    && intacto('superadmin') && intacto('adminRole')
-                    || superadmin();
+      allow update: if superadmin()
+                    || (auth() && profId == uid() && intacto('superadmin') && intacto('adminRole'));
       allow delete: if false;
     }
 
-    // ── EMPRESAS ── so servidor escreve
+    // ── EMPRESAS ── escrita so pelo servidor/Direx
     match /empresas/{empId} {
       allow read:  if auth();
-      allow write: if false;
+      allow write: if superadmin();
     }
 
-    // ── LOGS ── qualquer autenticado registra; so superadmin le
+    // ── Trilhas append-only ──
     match /logs/{logId} {
       allow create: if auth();
       allow read:   if superadmin();
       allow update, delete: if false;
+    }
+    match /consumo/{consumoId} {
+      allow create: if auth();
+      allow read:   if superadmin();
+      allow update, delete: if false;
+    }
+    match /creditosLog/{logId} {
+      allow create, read: if superadmin();
+      allow update, delete: if false;
+    }
+
+    // ── Direx ──
+    match /configPlanos/{docId} {
+      allow read:  if auth();
+      allow write: if superadmin();
+    }
+    match /pagamentos/{pagId}          { allow read, write: if superadmin(); }
+    match /historicoFinanceiro/{mesId} { allow read, write: if superadmin(); }
+
+    // ── Legado (some no Plano 3) ──
+    match /profiles/{profId} {
+      allow get:   if auth() && (profId == uid() || superadmin());
+      allow write: if false;
+    }
+    match /memberships/{memId} {
+      allow get, list: if superadmin() || (auth() && resource.data.medicoUid == uid());
+      allow write:     if false;
     }
 
     // ── Tudo o mais: fechado ──
@@ -711,21 +831,33 @@ service cloud.firestore {
 }
 ```
 
-- [ ] **Step 4: Rodar os testes até passarem**
+- [ ] **Step 5: Rodar os testes até passarem**
 
 ```bash
-npm run test:rules
+npm run test:rules:definitiva
 ```
 
-Esperado: **todos passam**. Se algum falhar, ler a mensagem do emulador (ele diz qual linha da regra negou) e corrigir a regra — **não** afrouxar o teste.
+Esperado: **todos passam**. Se algum falhar, o emulador diz qual linha da regra
+negou — corrija a **regra**, nunca afrouxe o teste.
 
-Armadilha conhecida: `alcancaLocal()` faz `get()` no workspace e no vínculo. O limite é 10 `get()` por avaliação; as regras acima ficam em 2-3. Se aparecer erro de limite, é sinal de recursão acidental numa função.
+Armadilha conhecida: `alcancaLocal()` faz `get()` no local e no vínculo. O limite é
+10 `get()` por avaliação; estas regras ficam em 2-3. Erro de limite indica recursão
+acidental numa função.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Confirmar que a regra publicada NÃO foi tocada**
 
 ```bash
-git add firestore.rules tests/rules/regras.test.mjs
-git commit -m "feat(secao1): fechadura do Firestore + 20 testes de isolamento, papel e autoria"
+git status --short firestore.rules
+```
+
+Esperado: **nenhuma saída** — `firestore.rules` (a que está no ar) permanece intacta.
+Se aparecer modificada, desfaça: `git checkout firestore.rules`.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add firestore.rules.definitiva tests/rules/definitiva.test.mjs package.json
+git commit -m "feat(secao1): fechadura definitiva (modelo de contas) escrita e testada, ainda nao publicada"
 ```
 
 ---
