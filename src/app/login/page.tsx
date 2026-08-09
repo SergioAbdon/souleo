@@ -9,7 +9,8 @@ import { auth } from '@/lib/firebase';
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  sendEmailVerification
+  sendEmailVerification,
+  sendPasswordResetEmail
 } from 'firebase/auth';
 import { createProfile, createWorkspace, createMembership } from '@/lib/firestore';
 import { createSubscription } from '@/lib/billing';
@@ -22,6 +23,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
+  // Aparece quando o login é barrado por e-mail não verificado
+  const [precisaVerificar, setPrecisaVerificar] = useState(false);
 
   // Campos login
   const [email, setEmail] = useState('');
@@ -39,11 +42,14 @@ export default function LoginPage() {
   // ── Login ──
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    setErro(''); setLoading(true);
+    setErro('');
+    setSucesso(''); setPrecisaVerificar(false);
+    setLoading(true);
     try {
       const cred = await signInWithEmailAndPassword(auth, email, senha);
       if (!cred.user.emailVerified) {
         setErro('Verifique seu email antes de entrar. Cheque sua caixa de entrada.');
+        setPrecisaVerificar(true);
         await auth.signOut();
         setLoading(false);
         return;
@@ -58,6 +64,45 @@ export default function LoginPage() {
       } else {
         setErro('Erro ao entrar. Tente novamente.');
       }
+    }
+    setLoading(false);
+  }
+
+  // ── Esqueci minha senha ──
+  async function handleResetSenha() {
+    setErro(''); setSucesso('');
+    if (!email) { setErro('Digite seu email no campo acima e clique de novo.'); return; }
+    setLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setSucesso(`Enviamos um link de nova senha para ${email}. Cheque também o spam.`);
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code || '';
+      // Nao revelamos se o email existe ou nao — dizer "esse email nao existe"
+      // entrega a lista de quem usa o sistema para quem estiver testando.
+      if (code === 'auth/invalid-email') setErro('Email inválido.');
+      else if (code === 'auth/too-many-requests') setErro('Muitas tentativas. Aguarde alguns minutos.');
+      else setSucesso(`Se houver conta para ${email}, o link foi enviado. Cheque também o spam.`);
+    }
+    setLoading(false);
+  }
+
+  // ── Reenviar o email de verificação ──
+  // Precisa estar autenticado para reenviar: entramos, mandamos, saímos.
+  async function handleReenviarVerificacao() {
+    setErro(''); setSucesso('');
+    if (!email || !senha) { setErro('Preencha email e senha para reenviar a verificação.'); return; }
+    setLoading(true);
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email, senha);
+      await sendEmailVerification(cred.user);
+      await auth.signOut();
+      setSucesso(`Reenviamos a verificação para ${email}. Cheque também o spam.`);
+      setPrecisaVerificar(false);
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code || '';
+      if (code === 'auth/too-many-requests') setErro('Muitas tentativas. Aguarde alguns minutos.');
+      else setErro('Não consegui reenviar. Confira email e senha.');
     }
     setLoading(false);
   }
@@ -165,6 +210,21 @@ export default function LoginPage() {
                   className="w-full bg-[#1E3A5F] text-white py-3 rounded-lg font-semibold text-sm hover:bg-[#2563EB] transition disabled:opacity-50">
                   {loading ? 'Entrando...' : 'Entrar'}
                 </button>
+
+                <button type="button" onClick={handleResetSenha} disabled={loading}
+                  className="w-full text-center text-xs text-[#1E3A5F] hover:underline disabled:opacity-50">
+                  Esqueci minha senha
+                </button>
+
+                {precisaVerificar && (
+                  <div className="bg-amber-50 text-amber-800 text-xs p-3 rounded-lg space-y-2">
+                    <p>Seu email ainda não foi verificado. Sem isso não é possível entrar.</p>
+                    <button type="button" onClick={handleReenviarVerificacao} disabled={loading}
+                      className="font-semibold underline disabled:opacity-50">
+                      Reenviar email de verificação
+                    </button>
+                  </div>
+                )}
               </form>
             )}
 
