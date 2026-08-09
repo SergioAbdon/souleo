@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>LEO — Preview Layout Cabeçalho e Rodapé</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --P1:#8B1A1A;
+  --P2:#1E3A5F;
+  --font:'IBM Plex Sans',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:var(--font);background:#D8DEE8;display:flex;flex-direction:column;align-items:center;padding:30px 20px;min-height:100vh;}
+
+/* ══ FOLHA A4 ══ */
+.sheet{
+  width:700px;background:#fff;box-shadow:0 4px 24px rgba(0,0,0,.12);
+  border-radius:4px;padding:30px 40px;min-height:500px;
+}
+
+/* ══ CABEÇALHO — 2 linhas ══ */
+.laudo-header{
+  padding-bottom:8px;border-bottom:2.5px solid var(--P1);margin-bottom:10px;
+}
+
+/* Linha 1: Logo + Nome + Slogan abaixo */
+.hdr-linha1{
+  display:flex;align-items:center;gap:10px;margin-bottom:-2px;
+}
+.hdr-clinica-logo{width:42px;height:42px;border-radius:5px;object-fit:contain;background:#f5f5f5;border:1px solid #eee;}
+.hdr-clinica-info{display:flex;flex-direction:column;}
+.hdr-clinica-text{font-size:14pt;font-weight:700;color:var(--P1);letter-spacing:-.3px;white-space:nowrap;line-height:1.1;}
+.hdr-clinica-slogan{font-size:7.5pt;font-weight:400;color:#888;margin-top:1px;}
+
+/* Linha 2: Título do exame */
+.hdr-titulo{
+  font-size:10.5pt;font-weight:700;color:var(--P1);text-align:center;
+  white-space:nowrap;letter-spacing:.3px;
+}
+
+/* ══ IDENTIFICAÇÃO ══ */
+.id-grid{border:1px solid var(--P1);border-radius:3px;padding:4px 8px;margin-bottom:12px;}
+.id-row{display:flex;gap:8px;margin-bottom:3px;}
+.id-item{flex:1;}
+.id-item .lbl{display:block;font-size:5.5pt;font-weight:600;color:var(--P1);text-transform:uppercase;letter-spacing:.3px;}
+.id-item .val{display:block;font-size:9pt;font-weight:500;color:#1a1a1a;}
+
+/* ══ CORPO PLACEHOLDER ══ */
+.body-placeholder{
+  background:repeating-linear-gradient(0deg,#f9f9f9,#f9f9f9 20px,#fff 20px,#fff 40px);
+  height:200px;border-radius:4px;border:1px dashed #ddd;
+  display:flex;align-items:center;justify-content:center;color:#bbb;font-size:12px;
+}
+
+/* ══ RODAPÉ ══ */
+.laudo-footer{
+  padding-top:8px;border-top:1.5px solid var(--P1);
+  display:flex;justify-content:space-between;align-items:flex-end;gap:10px;margin-top:20px;
+}
+.ftr-local{font-size:6.8pt;color:#888;line-height:1.6;}
+.ftr-local strong{color:var(--P1);font-size:8pt;}
+.ftr-assinatura{text-align:center;font-size:7pt;color:#888;flex-shrink:0;}
+.ftr-assinatura .linha{border-top:1px solid #888;width:150px;margin:20px auto 3px;}
+.ftr-leo{
+  text-align:center;width:100%;margin-top:8px;padding-top:5px;
+  border-top:0.5px solid #e0e0e0;font-size:6.5pt;color:#aaa;letter-spacing:.3px;
+}
+.ftr-leo img{height:14px;vertical-align:middle;margin-right:4px;opacity:.6;}
+</style>
+</head>
+<body>
+
+<!-- ══ FOLHA A4 ══ -->
+<div class="sheet">
+
+  <!-- CABEÇALHO -->
+  <div class="laudo-header">
+    <div class="hdr-linha1">
+      <img class="hdr-clinica-logo" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='6' fill='%23f0f0f0'/%3E%3Ctext x='24' y='30' text-anchor='middle' font-size='18' fill='%23ccc' font-family='sans-serif'%3E%F0%9F%8F%A5%3C/text%3E%3C/svg%3E" alt="Logo Clínica"/>
+      <div class="hdr-clinica-info">
+        <span class="hdr-clinica-text">Grupo MedCardio</span>
+        <span class="hdr-clinica-slogan">Consultas e Exames</span>
+      </div>
+    </div>
+    <div class="hdr-titulo">ECOCARDIOGRAMA TRANSTORÁCICO</div>
+  </div>
+
+  <!-- IDENTIFICAÇÃO -->
+  <div class="id-grid">
+    <div class="id-row">
+      <div class="id-item" style="flex:2"><span class="lbl">Nome</span><span class="val">AMANDA MAGNO DE PARIJOS ABDON RODRIGUES</span></div>
+      <div class="id-item"><span class="lbl">Idade</span><span class="val">39 anos</span></div>
+      <div class="id-item"><span class="lbl">Data de Nascimento</span><span class="val">17/07/1986</span></div>
+    </div>
+    <div class="id-row">
+      <div class="id-item"><span class="lbl">Convênio</span><span class="val">UNIMED</span></div>
+      <div class="id-item"><span class="lbl">Médico Solicitante</span><span class="val">SERGIO ABDON</span></div>
+      <div class="id-item"><span class="lbl">Data do Exame</span><span class="val">08/04/2026</span></div>
+    </div>
+  </div>
+
+  <!-- CORPO (placeholder) -->
+  <div class="body-placeholder">Corpo do laudo (parâmetros, comentários, conclusão)</div>
+
+  <!-- RODAPÉ -->
+  <div class="laudo-footer">
+    <div class="ftr-local">
+      <strong>Grupo MedCardio</strong><br/>
+      Rua Arcipreste Manoel Teodoro, 145 · 66023-700 · Batista Campos · Belém/PA<br/>
+      &#9742; 91 3222.3875 / 3085.4000
+    </div>
+    <div class="ftr-assinatura">
+      <div class="linha"></div>
+      <div style="font-size:7pt;white-space:pre-line;">Dr. Sérgio Roberto Abdon Rodrigues
+Cardiologia e Ecocardiografia
+CRM/PA 7952</div>
+    </div>
+  </div>
+  <div class="ftr-leo">
+    <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 20'%3E%3Crect width='60' height='20' rx='3' fill='%231E3A5F'/%3E%3Ctext x='30' y='14' text-anchor='middle' font-size='11' fill='%23fff' font-family='sans-serif' font-weight='bold'%3ELEO%3C/text%3E%3C/svg%3E" alt="LEO"/>
+    Laudo emitido com ajuda do <strong>LEO</strong> &middot; www.souleo.com.br
+  </div>
+
+</div>
+
+</body>
+</html>

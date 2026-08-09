@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>LEO — Teste API Feegow</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'IBM Plex Sans',sans-serif;background:#0F172A;color:#E2E8F0;min-height:100vh;padding:30px;}
+h1{font-size:20px;color:#fff;margin-bottom:4px;}
+p{font-size:12px;color:#64748B;margin-bottom:20px;}
+.card{background:#1E293B;border-radius:12px;padding:20px;margin-bottom:16px;}
+label{font-size:11px;font-weight:700;color:#94A3B8;text-transform:uppercase;display:block;margin-bottom:4px;}
+input{width:100%;padding:10px 14px;background:#0F172A;border:1px solid #334155;border-radius:8px;color:#E2E8F0;font-size:13px;font-family:'IBM Plex Mono',monospace;outline:none;margin-bottom:12px;}
+input:focus{border-color:#2563EB;}
+.btns{display:flex;gap:8px;flex-wrap:wrap;}
+button{padding:8px 18px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;border:none;font-family:inherit;}
+.btn-blue{background:#2563EB;color:#fff;}
+.btn-green{background:#059669;color:#fff;}
+.btn-gray{background:#334155;color:#94A3B8;}
+#resultado{background:#0F172A;border:1px solid #334155;border-radius:8px;padding:14px;font-family:'IBM Plex Mono',monospace;font-size:11px;max-height:500px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin-top:12px;}
+.ok{color:#4ADE80;} .err{color:#F87171;} .info{color:#60A5FA;}
+</style>
+</head>
+<body>
+
+<h1>🫀 LEO — Teste de Integração Feegow</h1>
+<p>Testes de leitura (GET). Nenhum dado é alterado no Feegow.</p>
+
+<div class="card">
+  <label>Token da API Feegow (cole aqui)</label>
+  <input type="password" id="token" placeholder="eyJ0eXAiOiJKV1Qi..."/>
+  <label>URL Base</label>
+  <input type="text" id="url-base" value="https://api.feegow.com/v1/api"/>
+</div>
+
+<div class="card">
+  <div class="btns">
+    <button class="btn-blue" onclick="teste('specialties/list','GET')">1. Listar especialidades</button>
+    <button class="btn-blue" onclick="teste('professional/list','GET')">2. Listar profissionais</button>
+    <button class="btn-blue" onclick="teste('patient/list?limit=3','GET')">3. Listar pacientes (3)</button>
+    <button class="btn-green" onclick="teste('appoints/search?data_inicio='+hoje()+'&data_fim='+hoje(),'GET')">4. Agendamentos de HOJE</button>
+    <button class="btn-green" onclick="teste('appoints/status','GET')">5. Status possíveis</button>
+    <button class="btn-gray" onclick="teste('medical-reports/get-laudos-list?limit=3','GET')">6. Laudos (3)</button>
+  </div>
+  <div id="resultado">Aguardando teste...</div>
+</div>
+
+<div class="card" style="font-size:11px;color:#475569;">
+  <strong>Segurança:</strong> O token NÃO é enviado para nenhum servidor externo além do Feegow.
+  O teste roda inteiramente no seu navegador (localhost). O token fica apenas na memória do navegador e some ao fechar a página.
+</div>
+
+<script>
+function hoje(){
+  return new Date().toISOString().split('T')[0];
+}
+
+async function teste(endpoint, method){
+  const token = document.getElementById('token').value.trim();
+  const base = document.getElementById('url-base').value.trim();
+  const el = document.getElementById('resultado');
+
+  if(!token){
+    el.innerHTML = '<span class="err">Cole o token primeiro!</span>';
+    return;
+  }
+
+  el.innerHTML = '<span class="info">Chamando: '+method+' '+base+'/'+endpoint+'...</span>\n';
+
+  try{
+    const resp = await fetch(base+'/'+endpoint, {
+      method: method,
+      headers: {
+        'x-access-token': token,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const status = resp.status;
+    el.innerHTML += '<span class="'+(status===200?'ok':'err')+'">Status: '+status+'</span>\n\n';
+
+    const data = await resp.json();
+    el.innerHTML += JSON.stringify(data, null, 2);
+
+    // Contar resultados
+    if(data.content && Array.isArray(data.content)){
+      el.innerHTML += '\n\n<span class="ok">Total de registros: '+data.content.length+'</span>';
+    }
+
+  }catch(e){
+    el.innerHTML += '<span class="err">Erro: '+e.message+'</span>\n';
+    el.innerHTML += '<span class="info">Nota: Se der erro de CORS, é normal para arquivo local.\nTente abrir via um servidor local ou peça para eu criar uma Cloud Function de teste.</span>';
+  }
+}
+</script>
+
+</body>
+</html>

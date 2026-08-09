@@ -1,0 +1,1369 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LEO · Sistema de Laudos v7.0</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🫀</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/leo.css">
+<link rel="stylesheet" href="css/leo-motor.css">
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+
+<!-- LEO v7 Módulos -->
+<script src="js/01-firebase-config.js"></script>
+<script src="js/02-utils.js"></script>
+<script src="js/03-firestore.js"></script>
+<script src="js/04-billing.js"></script>
+<script src="js/05-auth.js"></script>
+<script src="js/06-dashboard.js"></script>
+<script src="js/07-worklist.js"></script>
+<script src="js/09-config.js"></script>
+<script src="js/10-export.js"></script>
+</head>
+<body>
+
+<!-- ══ LOGIN OVERLAY ══════════════════════════════════════════════ -->
+<div id="login-overlay">
+  <div id="tela-seletor" class="sel-wrapper">
+    <div class="sel-logo-area">
+      <span class="sel-logo-icon">🫀</span>
+      <span class="sel-logo-title">LEO</span>
+      <span class="sel-logo-sub">Sistema de Laudos · Ecocardiografia</span>
+    </div>
+    <div class="sel-cards">
+      <div class="sel-card" onclick="selecionarPerfil('usuario')">
+        <span class="sel-card-icon">👨‍⚕️</span>
+        <div class="sel-card-title">Profissional</div>
+        <div class="sel-card-desc">Médico, assistente ou operador</div>
+      </div>
+      <div class="sel-card pj-card" onclick="selecionarPerfil('empresa')">
+        <span class="sel-card-icon">🏥</span>
+        <div class="sel-card-title">Cadastrar Empresa</div>
+        <div class="sel-card-desc">Clínica ou instituição (PJ)</div>
+      </div>
+    </div>
+    <div class="sel-footer">LEO · Laudos Ecocardiográficos Online</div>
+  </div>
+
+  <!-- Login/Cadastro PF -->
+  <div class="auth-card" id="card-usuario" style="display:none;">
+    <div class="auth-header"><span class="auth-icon">🫀</span><h2>LEO · Sistema de Laudos</h2><span class="auth-type-badge">Acesso Profissional</span></div>
+    <button class="auth-back" onclick="voltarSeletor()">← Voltar</button>
+    <div class="auth-tabs"><button class="auth-tab ativa" id="tab-login" onclick="mostrarTab('login')">Entrar</button><button class="auth-tab" id="tab-cadastro" onclick="mostrarTab('cadastro')">Criar conta</button></div>
+    <div class="auth-panel ativo" id="painel-login">
+      <div class="auth-msg erro" id="login-error"><span>⚠️</span><span id="login-error-msg"></span></div>
+      <div class="auth-field"><label>Email</label><input type="email" id="login-email" placeholder="seu@email.com" autocomplete="email"/></div>
+      <div class="auth-field"><label>Senha</label><div class="auth-field-wrap"><input type="password" id="login-pass" placeholder="Sua senha" autocomplete="current-password"/><button class="btn-eye" onclick="togglePass('login-pass',this)">👁</button></div></div>
+      <button class="btn-auth" id="btn-login" onclick="tentarLogin()">Entrar no sistema</button>
+    </div>
+    <div class="auth-panel" id="painel-cadastro" style="padding:16px 24px;">
+      <div class="auth-msg erro" id="cad-error"><span>⚠️</span><span id="cad-error-msg"></span></div>
+      <div style="margin-bottom:12px;"><label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:6px;">Eu sou:</label><div style="display:flex;gap:8px;"><label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 14px;border:2px solid #2563EB;border-radius:8px;cursor:pointer;background:#EFF6FF;font-size:13px;font-weight:600;color:#1E40AF;" id="cad-tipo-medico-label"><input type="radio" name="cad-tipo" value="medico" checked onchange="cadTipoChanged()" style="accent-color:#2563EB;"/> 🩺 Médico</label><label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 14px;border:2px solid #E5E7EB;border-radius:8px;cursor:pointer;background:#F9FAFB;font-size:13px;font-weight:600;color:#6B7280;" id="cad-tipo-assist-label"><input type="radio" name="cad-tipo" value="assistente" onchange="cadTipoChanged()" style="accent-color:#2563EB;"/> 📋 Assistente</label></div></div>
+      <div class="auth-field"><label>Nome completo <span class="req">*</span></label><input type="text" id="cad-nome" placeholder="Nome Sobrenome"/></div>
+      <div class="auth-field"><label>Email <span class="req">*</span></label><input type="email" id="cad-email" placeholder="seu@email.com"/></div>
+      <div id="cad-campos-medico"><div style="display:flex;gap:8px;"><div class="auth-field" style="flex:1;"><label>CRM <span class="req">*</span></label><input type="text" id="cad-crm" placeholder="0000"/></div><div class="auth-field" style="flex:0 0 80px;"><label>UF <span class="req">*</span></label><input type="text" id="cad-uf" placeholder="PA" maxlength="2" style="text-transform:uppercase;"/></div></div><div class="auth-field"><label>Especialidade</label><input type="text" id="cad-especialidade" placeholder="Ex: Cardiologia"/></div></div>
+      <div class="auth-field"><label>Senha <span class="req">*</span></label><div class="auth-field-wrap"><input type="password" id="cad-pass" placeholder="Mínimo 8 caracteres"/><button class="btn-eye" onclick="togglePass('cad-pass',this)">👁</button></div></div>
+      <div class="auth-field"><label>Confirmar senha <span class="req">*</span></label><div class="auth-field-wrap"><input type="password" id="cad-pass2" placeholder="Repita a senha"/><button class="btn-eye" onclick="togglePass('cad-pass2',this)">👁</button></div></div>
+      <button class="btn-auth" id="btn-cadastro" onclick="realizarCadastro()">Criar minha conta</button>
+      <div class="auth-footer-txt">Ao criar sua conta você terá <b>30 dias grátis</b></div>
+    </div>
+    <div class="auth-panel" id="confirm-panel"><div style="text-align:center;padding:20px;"><span style="font-size:48px;">📬</span><h3 style="margin:10px 0 4px;font-size:16px;">Verifique seu email!</h3><div style="font-size:13px;color:#2563EB;font-weight:600;margin:6px 0;" id="confirm-email-dest"></div><p style="font-size:12px;color:#6B7280;">Clique no link de confirmação enviado ao seu email.</p><button class="btn-auth" onclick="mostrarTab('login')" style="margin-top:12px;">Já confirmei — Entrar</button></div></div>
+  </div>
+
+  <!-- Cadastro PJ -->
+  <div class="auth-card" id="card-empresa" style="display:none;">
+    <div class="auth-header" style="background:linear-gradient(135deg,#1E3A5F,#2563EB);"><span class="auth-icon">🏥</span><h2>LEO · Cadastro Institucional</h2><span class="auth-type-badge">Pessoa Jurídica</span></div>
+    <button class="auth-back" onclick="voltarSeletor()">← Voltar</button>
+    <div style="padding:16px 24px;max-height:60vh;overflow-y:auto;">
+      <div class="auth-msg erro" id="pj-error"><span>⚠️</span><span id="pj-error-msg"></span></div>
+      <div class="auth-section-title">Dados da empresa</div>
+      <div class="auth-field"><label>CNPJ</label><input type="text" id="pj-cnpj" placeholder="00.000.000/0000-00" maxlength="18" oninput="mascaraCNPJ(this)"/></div>
+      <div class="auth-field"><label>Razão Social</label><input type="text" id="pj-razao" placeholder="Nome oficial"/></div>
+      <div class="auth-field"><label>Nome Fantasia</label><input type="text" id="pj-fantasia" placeholder="Como é conhecida"/></div>
+      <div class="auth-field"><label>Telefone</label><input type="text" id="pj-tel" placeholder="(00) 00000-0000" maxlength="15" oninput="mascaraTelefone(this)"/></div>
+      <div class="auth-field"><label>Endereço</label><input type="text" id="pj-end" placeholder="Endereço completo"/></div>
+      <div class="auth-section-title" style="margin-top:14px;border-top:1px solid #E5E7EB;padding-top:14px;">Responsável (Master)</div>
+      <div class="auth-field"><label>CPF</label><input type="text" id="pj-cpf" placeholder="000.000.000-00" maxlength="14" oninput="mascaraCPFInput(this);buscarCpfPJ()"/><div id="pj-cpf-status" style="font-size:11px;margin-top:3px;color:#6B7280;"></div></div>
+      <div class="auth-field"><label>Nome</label><input type="text" id="pj-nome" placeholder="Dr. Nome Sobrenome"/></div>
+      <div style="display:flex;gap:8px;"><div class="auth-field" style="flex:1;"><label>CRM</label><input type="text" id="pj-crm" placeholder="0000"/></div><div class="auth-field" style="flex:0 0 80px;"><label>UF</label><input type="text" id="pj-uf" placeholder="PA" maxlength="2" style="text-transform:uppercase;"/></div></div>
+      <div class="auth-field"><label>Email</label><input type="email" id="pj-email" placeholder="responsavel@clinica.com"/></div>
+      <div class="auth-field"><label>Senha</label><div class="auth-field-wrap"><input type="password" id="pj-pass" placeholder="Mínimo 8 caracteres"/><button class="btn-eye" onclick="togglePass('pj-pass',this)">👁</button></div></div>
+      <div class="auth-field"><label>Confirmar</label><div class="auth-field-wrap"><input type="password" id="pj-pass2" placeholder="Repita"/><button class="btn-eye" onclick="togglePass('pj-pass2',this)">👁</button></div></div>
+      <button class="btn-auth" id="btn-cadastro-pj" onclick="realizarCadastroPJ()" style="background:linear-gradient(135deg,#1E3A5F,#2563EB);">Cadastrar empresa</button>
+      <div class="auth-footer-txt">Trial institucional <b>30 dias grátis</b></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CONTEXTO OVERLAY ═══════════════════════════════════════════ -->
+<div id="ctx-overlay">
+  <div class="ctx-loading" id="ctx-loading"><div class="ctx-spinner"></div><span>Carregando...</span></div>
+  <div id="ctx-conteudo" style="display:none;"><div class="ctx-header"><span style="font-size:28px;">🫀</span><h2>Olá, <span id="ctx-nome-medico">Médico</span></h2><p>Selecione o ambiente</p></div><div class="ctx-cards" id="ctx-cards"></div></div>
+  <div id="sem-ctx" style="display:none;" class="ctx-sem"><span>⚠️</span><p>Nenhum ambiente ativo.</p></div>
+</div>
+
+<!-- ══ MODAL CONVITE ══════════════════════════════════════════════ -->
+<div class="modal-ov" id="convite-ov" style="display:none;">
+  <div class="modal-box" style="max-width:440px;">
+    <div class="modal-hdr"><div style="font-size:18px;font-weight:700;">Convidar profissional</div><div style="font-size:11px;opacity:.8;" id="convite-ws-nome"></div></div>
+    <div style="padding:18px 22px;">
+      <div class="auth-msg erro" id="convite-error" style="display:none;"><span>⚠️</span><span id="convite-error-msg"></span></div>
+      <div class="auth-msg" id="convite-ok" style="display:none;background:#ECFDF5;border-color:#6EE7B7;"><span>✅</span><span id="convite-ok-msg"></span></div>
+      <div class="auth-field"><label>CPF</label><input type="text" id="conv-cpf" placeholder="000.000.000-00" maxlength="14" oninput="mascaraCPFInput(this);buscarCpfConvite()"/><div id="conv-cpf-status" style="font-size:11px;margin-top:3px;"></div></div>
+      <div class="auth-field"><label>Nome</label><input type="text" id="conv-nome" placeholder="Dr. Nome"/></div>
+      <div style="display:flex;gap:8px;"><div class="auth-field" style="flex:1;"><label>CRM</label><input type="text" id="conv-crm"/></div><div class="auth-field" style="flex:0 0 80px;"><label>UF</label><input type="text" id="conv-uf" maxlength="2" style="text-transform:uppercase;"/></div></div>
+      <div class="auth-field"><label>Email</label><input type="email" id="conv-email"/></div>
+      <div style="margin-bottom:16px;"><label style="font-size:12px;font-weight:600;">Papel</label><div style="display:flex;gap:10px;margin-top:6px;"><label style="font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;"><input type="radio" name="conv-papel" value="medico" checked/> Médico</label><label style="font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;"><input type="radio" name="conv-papel" value="assistente"/> Assistente</label></div></div>
+      <div style="display:flex;gap:10px;"><button class="btn-auth-ghost" onclick="fecharConviteModal()">Cancelar</button><button class="btn-auth" id="btn-enviar-convite" onclick="enviarConviteUI()">Enviar convite</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     DASHBOARD PRINCIPAL
+══════════════════════════════════════════════════════════════ -->
+<div id="tela-clinica" class="oculta">
+
+  <!-- TOPBAR -->
+  <div class="dash-topbar">
+    <div class="dash-topbar-brand"><span>🫀</span> LEO</div>
+    <div class="dash-topbar-sep"></div>
+    <div class="dash-topbar-info">
+      <strong id="dash-topbar-nome">Profissional</strong>
+      <span id="dash-topbar-sub">CRM</span>
+    </div>
+    <div style="flex:1;"></div>
+    <!-- Local de trabalho centralizado com seletor -->
+    <div style="text-align:center;flex:1;">
+      <div style="font-size:10px;color:rgba(255,255,255,.5);margin-bottom:2px;">Local de trabalho</div>
+      <select id="dash-topbar-local-select" onchange="trocarLocalTopbar(this.value)" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;padding:5px 12px;border-radius:6px;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;outline:none;text-align:center;min-width:180px;">
+        <option>—</option>
+      </select>
+    </div>
+    <div style="flex:1;"></div>
+    <div class="dash-topbar-actions">
+      <button class="dash-topbar-btn equipe" id="dash-btn-equipe" style="display:none;" onclick="abrirConviteModal()">👥 Equipe</button>
+      <button class="dash-topbar-btn admin" id="dash-btn-admin" style="display:none;" onclick="window.open('../admin/index.html','_blank')">👑 Admin</button>
+      <button class="dash-topbar-btn sair" onclick="fazerLogout()">Sair</button>
+    </div>
+  </div>
+
+  <!-- LAYOUT 2 COLUNAS -->
+  <div class="dash-layout">
+
+    <!-- SIDEBAR ESQUERDA: PERFIL -->
+    <div class="dash-sidebar">
+      <div style="text-align:center;margin-bottom:14px;">
+        <div id="dash-avatar" class="dash-avatar">U</div>
+        <div class="dash-sb-nome" id="dash-sb-nome">Profissional</div>
+        <div style="font-size:10px;color:#2563EB;font-weight:600;margin-top:4px;" id="dash-sb-tipo-badge"></div>
+        <div style="font-size:10px;color:#94A3B8;margin-top:2px;" id="dash-sb-email-top"></div>
+        <button class="dash-sb-btn" onclick="abrirPerfilModal()">Editar perfil</button>
+      </div>
+      <hr class="dash-sb-hr">
+      <div class="dash-sb-section"><div class="dash-sb-title">Locais de trabalho</div><div id="dash-sb-locais"></div><button class="dash-sb-add" onclick="abrirLocalModal()">+ Adicionar local</button></div>
+      <hr class="dash-sb-hr">
+      <div class="dash-sb-section" id="dash-sb-sec-assistentes"><div class="dash-sb-title">Assistentes</div><div id="dash-sb-assistentes"></div><button class="dash-sb-add" id="btn-convidar-assist" onclick="abrirConviteModal()">+ Convidar assistente</button></div>
+      <!-- Assinatura movida para modal Editar Perfil -->
+      <div id="dash-sig-nome" style="display:none;"></div>
+      <div id="dash-sig-crm" style="display:none;"></div>
+    </div>
+
+    <!-- COLUNA PRINCIPAL -->
+    <div class="dash-main">
+      <div class="dash-resumo">
+        <div class="dash-resumo-item"><div class="dash-resumo-label">Plano</div><div class="dash-resumo-valor" id="dash-plano-tipo">—</div><div class="dash-resumo-sub" id="dash-plano-renova">—</div></div>
+        <div class="dash-resumo-item"><div class="dash-resumo-label">Franquia do mês</div><div class="dash-resumo-valor" id="dash-franquia-valor">—</div><div class="dash-resumo-sub" id="dash-franquia-sub">—</div><div class="dash-resumo-barra"><div class="dash-resumo-barra-fill" id="dash-franquia-barra"></div></div></div>
+        <div class="dash-resumo-item"><div class="dash-resumo-label">Créditos extras</div><div class="dash-resumo-valor" id="dash-creditos">0</div><div class="dash-resumo-sub">Não expiram</div></div>
+        <div class="dash-resumo-item"><div class="dash-resumo-label">Emitidos hoje</div><div class="dash-resumo-valor" id="dash-emitidos-hoje">0</div><div class="dash-resumo-sub" id="dash-emitidos-mes">0 no mês</div></div>
+      </div>
+
+      <div class="dash-tabs">
+        <div class="dash-tab ativa" onclick="dashTab('worklist',this)">📋 Worklist <span class="dash-tab-badge" id="dash-wl-badge">0</span></div>
+        <div class="dash-tab" onclick="dashTab('historico',this)">📂 Histórico</div>
+        <div class="dash-tab" onclick="dashTab('extrato',this)">📊 Extrato</div>
+      </div>
+      <hr style="border:none;border-top:1px solid #E2E8F0;margin:0 20px;">
+
+      <div class="dash-conteudo">
+        <!-- WORKLIST -->
+        <div class="dash-section ativa" id="dash-sec-worklist">
+          <div class="dash-toolbar">
+            <input class="dash-toolbar-input" id="dash-wl-busca" placeholder="Buscar paciente..." oninput="dashFiltrarWorklist()" style="flex:1;max-width:300px;"/>
+            <button class="dash-toolbar-btn dash-toolbar-btn-primary" onclick="abrirNovoPaciente()">+ Paciente</button>
+            <button class="dash-toolbar-btn dash-toolbar-btn-ghost" onclick="abrirLaudoVazio()">📋 Laudo rápido</button>
+          </div>
+          <div class="dash-lista" id="dash-wl-lista"><div style="text-align:center;padding:40px;color:#94A3B8;font-size:13px;"><span style="font-size:32px;display:block;margin-bottom:8px;">📋</span>Carregando worklist...</div></div>
+        </div>
+        <!-- HISTORICO -->
+        <div class="dash-section" id="dash-sec-historico">
+          <div class="dash-toolbar">
+            <input class="dash-toolbar-input" placeholder="Buscar por nome ou CPF..." style="flex:1;max-width:300px;"/>
+            <input class="dash-toolbar-input" type="date" id="dash-hist-de" style="width:140px;"/>
+            <span style="font-size:12px;color:#64748B;">até</span>
+            <input class="dash-toolbar-input" type="date" id="dash-hist-ate" style="width:140px;"/>
+          </div>
+          <div style="text-align:center;padding:40px;color:#94A3B8;font-size:13px;"><span style="font-size:32px;display:block;margin-bottom:8px;">📂</span>Busque um paciente para ver o histórico</div>
+        </div>
+        <!-- EXTRATO -->
+        <div class="dash-section" id="dash-sec-extrato">
+          <div class="dash-toolbar">
+            <span style="font-size:12px;font-weight:600;color:#475569;">Período:</span>
+            <input class="dash-toolbar-input" type="date" id="dash-ext-de" style="width:140px;"/>
+            <span style="font-size:12px;color:#64748B;">até</span>
+            <input class="dash-toolbar-input" type="date" id="dash-ext-ate" style="width:140px;"/>
+            <button class="dash-toolbar-btn dash-toolbar-btn-primary" onclick="dashGerarExtrato()">Gerar extrato</button>
+            <button class="dash-toolbar-btn dash-toolbar-btn-ghost" onclick="window.print()">🖨 Imprimir</button>
+          </div>
+          <div id="dash-ext-resultado"><div style="text-align:center;padding:40px;color:#94A3B8;font-size:13px;"><span style="font-size:32px;display:block;margin-bottom:8px;">📊</span>Selecione o período e clique em "Gerar extrato"</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════
+     TELA DE LAUDO (Motor V8 MP4)
+     Acoplado ao chassi v7f.html em 08/04/2026
+══════════════════════════════════════════════════════════════ -->
+<div id="tela-laudo" class="tela-laudo oculta">
+<!-- ══════════════ SIDEBAR ══════════════════════════════════════ -->
+<div class="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-header-row">
+      <h1 id="hdr-titulo">🫀 Laudo ECO · <span id="hdr-clinica">MedCardio</span></h1>
+      <div class="hdr-btns">
+        <button class="btn-hdr" onclick="voltarWorklist()">← Voltar</button>
+      </div>
+    </div>
+    <p id="hdr-subtitulo">Dr. Sérgio Abdon · CRM/PA 7952 · Leo v2.4</p>
+  </div>
+
+  <!-- IDENTIFICAÇÃO -->
+  <div class="section" id="sec-id">
+    <div class="section-title" onclick="tog('sec-id')">👤 Identificação <span class="toggle">▾</span></div>
+    <div class="section-body single">
+      <div class="field"><label>Nome completo</label>
+        <input type="text" id="nome" oninput="calc()"/></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px 12px;">
+        <div class="field"><label>Data de nascimento</label>
+          <input type="date" id="dtnasc" oninput="calc()"/></div>
+        <div class="field"><label>Data do exame</label>
+          <input type="date" id="dtexame" oninput="calc()"/></div>
+        <div class="field"><label>Convênio</label>
+          <input type="text" id="convenio" oninput="calc()"/></div>
+        <div class="field"><label>Médico solicitante</label>
+          <input type="text" id="solicitante" oninput="calc()"/></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MEDIDAS GERAIS -->
+  <div class="section" id="sec-med">
+    <div class="section-title" onclick="tog('sec-med')">📏 Medidas Gerais <span class="toggle">▾</span></div>
+    <div class="section-body">
+      <div class="field"><label>Sexo</label>
+        <select id="sexo" onchange="calc()">
+          <option value="">—</option>
+          <option value="M">Masculino</option>
+          <option value="F">Feminino</option>
+        </select></div>
+      <div class="field"><label>Ritmo</label>
+        <select id="ritmo" onchange="calc()">
+          <option value="S">Regular</option>
+          <option value="N">Irregular</option>
+        </select></div>
+      <div class="field"><label>Peso <span class="ref">kg</span></label>
+        <input type="number" id="peso" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Altura <span class="ref">cm</span></label>
+        <input type="number" id="altura" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>IMC <span class="ref">kg/m²</span></label>
+        <div class="calc" id="calc-imc">—</div></div>
+      <div class="field"><label>ASC <span class="ref">m²</span></label>
+        <div class="calc" id="calc-asc">—</div></div>
+    </div>
+  </div>
+
+  <!-- CÂMARAS -->
+  <div class="section" id="sec-cam">
+    <div class="section-title" onclick="tog('sec-cam')">📐 Câmaras <span class="toggle">▾</span></div>
+    <div class="section-body">
+      <div class="field"><label>Raiz Aórtica <span class="ref">mm</span></label>
+        <input type="number" id="b7" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Átrio Esquerdo <span class="ref">mm</span></label>
+        <input type="number" id="b8" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>DDVE <span class="ref">mm</span></label>
+        <input type="number" id="b9" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Septo IV <span class="ref">mm</span></label>
+        <input type="number" id="b10" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Parede Posterior <span class="ref">mm</span></label>
+        <input type="number" id="b11" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>DSVE <span class="ref">mm</span></label>
+        <input type="number" id="b12" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Ventrículo Direito <span class="ref">mm</span></label>
+        <input type="number" id="b13" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Aorta Ascendente <span class="ref">mm</span></label>
+        <input type="number" id="b28" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Arco Aórtico <span class="ref">mm</span></label>
+        <input type="number" id="b29" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>AE Vol. index <span class="ref">ml/m²</span></label>
+        <input type="number" id="b24" step="0.1" oninput="sincronizarLAVI(this,'b24_diast')"/></div>
+      <div class="field"><label>AD Vol. index <span class="ref">ml/m²</span></label>
+        <input type="number" id="b25" step="0.1" oninput="calc()"/></div>
+    </div>
+    <div class="section-body" style="border-top:1px dashed var(--border);padding-top:6px;">
+      <div class="field"><label>VDF VE <span class="ref">ml</span></label><div class="calc" id="calc-vdf">—</div></div>
+      <div class="field"><label>VSF VE <span class="ref">ml</span></label><div class="calc" id="calc-vsf">—</div></div>
+      <div class="field"><label>FE Teichholz</label><div class="calc" id="calc-fe">—</div></div>
+      <div class="field"><label>Fração Encurt.</label><div class="calc" id="calc-fs">—</div></div>
+      <div class="field"><label>Massa VE <span class="ref">g</span></label><div class="calc" id="calc-massa">—</div></div>
+      <div class="field"><label>Índice Massa <span class="ref">g/m²</span></label><div class="calc" id="calc-im">—</div></div>
+      <div class="field"><label>Esp. Relativa</label><div class="calc" id="calc-er">—</div></div>
+      <div class="field"><label>Relação Ao/AE</label><div class="calc" id="calc-aoae">—</div></div>
+    </div>
+  </div>
+
+  <!-- DIASTÓLICA (movida para depois de Câmaras, com toggle Auto/Manual) -->
+  <div class="section" id="sec-diast">
+    <div class="section-title" onclick="tog('sec-diast')">📊 Função Diastólica
+      <div onclick="event.stopPropagation();" style="display:inline-flex;background:rgba(30,58,95,.15);border-radius:4px;overflow:hidden;margin-left:8px;">
+        <button id="btn-diast-auto" onclick="trocarDiastModo('auto')" style="padding:2px 8px;font-size:9px;font-weight:600;border:none;cursor:pointer;font-family:inherit;background:var(--navy);color:#fff;">Auto</button>
+        <button id="btn-diast-manual" onclick="trocarDiastModo('manual')" style="padding:2px 8px;font-size:9px;font-weight:600;border:none;cursor:pointer;font-family:inherit;background:transparent;color:var(--navy);">Manual</button>
+      </div>
+      <span class="toggle">▾</span>
+    </div>
+    <!-- Campos de medida (aparecem sempre) -->
+    <div class="section-body">
+      <div class="field"><label>Onda E <span class="ref">cm/s</span></label>
+        <input type="number" id="b19" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Relação E/A</label>
+        <input type="number" id="b20" step="0.01" oninput="calc()"/></div>
+      <div class="field"><label>e' septal <span class="ref">cm/s</span></label>
+        <input type="number" id="b21" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Relação E/e'</label>
+        <input type="number" id="b22" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Vol. AE index <span class="ref">ml/m²</span></label>
+        <input type="number" id="b24_diast" step="0.1" oninput="sincronizarLAVI(this,'b24')"/></div>
+      <div class="field"><label>LA strain <span class="ref">% · VR≥18</span></label>
+        <input type="number" id="lars" step="0.1" placeholder="reservoir" oninput="calc()"/></div>
+      <div class="field"><label>Vel. IT <span class="ref">m/s</span></label>
+        <input type="number" id="b23" step="0.01" oninput="alertaIT();calc()"/></div>
+      <div class="field">
+        <label>PSAP <span class="ref">mmHg</span></label>
+        <input type="number" id="b37" step="1" oninput="alertaIT();calc()"/>
+        <span class="field-alert-msg" id="alerta-psap">⚠ Preencha a PSAP — Vel. IT registrada</span>
+      </div>
+      <div class="field"><label>Sinais indir. HP</label>
+        <select id="b38" onchange="calc()">
+          <option value="">— Ausente —</option>
+          <option value="S">S — Presente</option>
+        </select></div>
+    </div>
+    <!-- Seleção manual (escondida por padrão) -->
+    <div id="diast-manual-panel" style="display:none;padding:8px 20px 12px;border-top:1px dashed var(--border);">
+      <div style="font-size:9px;color:var(--gray-mid);font-weight:600;margin-bottom:6px;">Selecione a avaliação:</div>
+      <div id="diast-opcoes" style="display:flex;flex-direction:column;gap:3px;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:10px;cursor:pointer;padding:4px 8px;border:1px solid var(--border);border-radius:4px;" onclick="selDiastManual(0)"><input type="radio" name="diast-sel" style="accent-color:var(--navy);"/>Índices diastólicos preservados</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:10px;cursor:pointer;padding:4px 8px;border:1px solid var(--border);border-radius:4px;" onclick="selDiastManual(1)"><input type="radio" name="diast-sel"/>Disfunção diastólica grau I (alteração de relaxamento)</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:10px;cursor:pointer;padding:4px 8px;border:1px solid var(--border);border-radius:4px;" onclick="selDiastManual(2)"><input type="radio" name="diast-sel"/>Disfunção diastólica grau II (padrão pseudonormal)</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:10px;cursor:pointer;padding:4px 8px;border:1px solid var(--border);border-radius:4px;" onclick="selDiastManual(3)"><input type="radio" name="diast-sel"/>Disfunção diastólica grau III (padrão restritivo)</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:10px;cursor:pointer;padding:4px 8px;border:1px solid var(--border);border-radius:4px;" onclick="selDiastManual(4)"><input type="radio" name="diast-sel"/>Função diastólica indeterminada</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:10px;cursor:pointer;padding:4px 8px;border:1px solid var(--border);border-radius:4px;" onclick="selDiastManual(5)"><input type="radio" name="diast-sel"/>Avaliação limitada (arritmia cardíaca)</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:10px;cursor:pointer;padding:4px 8px;border:1px solid var(--border);border-radius:4px;" onclick="selDiastManual(6)"><input type="radio" name="diast-sel"/>Não avaliar</label>
+      </div>
+      <input type="text" id="diast-livre" placeholder="Ou texto livre..." oninput="setDiastTextoLivre(this.value);calc();" style="width:100%;margin-top:6px;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:10px;font-family:var(--font);"/>
+      <div id="diast-aviso" style="display:none;margin-top:6px;padding:6px 10px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:4px;font-size:9px;color:#92400E;"></div>
+    </div>
+  </div>
+
+  <!-- SISTÓLICA -->
+  <div class="section" id="sec-sist">
+    <div class="section-title" onclick="tog('sec-sist')">💓 Função Sistólica <span class="toggle">▾</span></div>
+    <div class="section-body">
+      <div class="field"><label>Simpson VE <span class="ref">%</span></label>
+        <input type="number" id="b54" step="0.1" placeholder="se disponível" oninput="calc()"/></div>
+      <div class="field"><label>Disfunção VD</label>
+        <select id="b32" onchange="calc()">
+          <option value="">— Preservada —</option>
+          <option value="L">L — Leve</option>
+          <option value="LM">LM — Leve-Moderada</option>
+          <option value="M">M — Moderada</option>
+          <option value="MI">MI — Mod-Importante</option>
+          <option value="I">I — Importante</option>
+        </select></div>
+      <div class="field"><label>TAPSE <span class="ref">mm · VR≥20</span></label>
+        <input type="number" id="b33" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>GLS do VE <span class="ref">% · VR≥-18</span></label>
+        <input type="number" id="gls_ve" step="0.1" placeholder="ex: -21" oninput="calc()"/></div>
+      <div class="field"><label>GLS do VD <span class="ref">% · VR≥-20</span></label>
+        <input type="number" id="gls_vd" step="0.1" placeholder="ex: -24" oninput="calc()"/></div>
+    </div>
+  </div>
+
+  <!-- CONTRATILIDADE SEGMENTAR -->
+  <div class="section collapsed" id="sec-seg">
+    <div class="section-title" onclick="tog('sec-seg')">🗺️ Contratilidade Segmentar <span class="toggle">▾</span></div>
+    <div class="section-body single" style="font-size:10px;color:var(--gray-mid);padding-bottom:4px;">
+      <em>H=Hipocin · A=Acin · D=Discin · B=basal · MB=médiobasal · M=média · MA=médioapical · A=apical</em>
+    </div>
+    <div class="section-body">
+      <div class="field"><label>Região Apical</label>
+        <select id="b55" onchange="calc()">
+          <option value="">— Normal —</option>
+          <option value="H">H — Hipocinesia</option>
+          <option value="A">A — Acinesia</option>
+          <option value="D">D — Discinesia</option>
+        </select></div>
+      <div class="field"><label>P. Anterior</label><select id="b56" onchange="calc()"></select></div>
+      <div class="field"><label>P. Septalanterior</label><select id="b57" onchange="calc()"></select></div>
+      <div class="field"><label>P. Septalinferior</label><select id="b58" onchange="calc()"></select></div>
+      <div class="field"><label>P. Lateral</label><select id="b59" onchange="calc()"></select></div>
+      <div class="field"><label>P. Inferior</label><select id="b60" onchange="calc()"></select></div>
+      <div class="field"><label>P. Inferolateral</label><select id="b61" onchange="calc()"></select></div>
+      <div class="field"><label>Demais paredes</label>
+        <select id="b62" onchange="calc()">
+          <option value="NL">NL — Preservadas</option>
+          <option value="HD">HD — Hipocin. difusa</option>
+          <option value="HR">HR — Hipocin. demais</option>
+          <option value="AD">AD — Acinesia difusa</option>
+          <option value="DD">DD — Discinesia difusa</option>
+        </select></div>
+    </div>
+  </div>
+
+  <!-- DIASTÓLICA removida daqui — movida para depois de Câmaras -->
+
+  <!-- VÁLVULAS -->
+  <div class="section" id="sec-valv">
+    <div class="section-title" onclick="tog('sec-valv')">🔵 Válvulas <span class="toggle">▾</span></div>
+    <div class="section-body">
+      <div class="field"><label>Válvula Mitral</label>
+        <select id="b34" onchange="calc()">
+          <option value="">— Normal —</option>
+          <option value="EL">EL — Espessada leve</option>
+          <option value="ELM">ELM — Espessada leve-mod</option>
+          <option value="EM">EM — Espessada moderada</option>
+          <option value="EMI">EMI — Espessada mod-imp</option>
+          <option value="EI">EI — Espessada importante</option>
+          <option value="FL">FL — Fibrocalcif. leve</option>
+          <option value="FLM">FLM — Fibrocalcif. leve-mod</option>
+          <option value="FM">FM — Fibrocalcif. moderada</option>
+          <option value="FMI">FMI — Fibrocalcif. mod-imp</option>
+          <option value="FI">FI — Fibrocalcif. importante</option>
+          <option value="EFL">EFL — Esp/Fibrocalcif. leve</option>
+          <option value="EFLM">EFLM — Esp/Fibrocalcif. leve-mod</option>
+          <option value="EFM">EFM — Esp/Fibrocalcif. moderada</option>
+          <option value="EFMI">EFMI — Esp/Fibrocalcif. mod-imp</option>
+          <option value="EFI">EFI — Esp/Fibrocalcif. importante</option>
+        </select></div>
+      <div class="field"><label>Refluxo Mitral</label>
+        <select id="b35" onchange="calc()">
+          <option value="">— Ausente —</option>
+          <option value="L">L — Leve</option><option value="LM">LM — Leve-Mod</option>
+          <option value="M">M — Moderado</option><option value="MI">MI — Mod-Imp</option>
+          <option value="I">I — Importante</option>
+        </select></div>
+      <div class="field"><label>Válvula Tricúspide</label>
+        <select id="b34t" onchange="calc()">
+          <option value="">— Normal —</option>
+          <option value="EL">EL — Espessada leve</option>
+          <option value="ELM">ELM — Espessada leve-mod</option>
+          <option value="EM">EM — Espessada moderada</option>
+          <option value="EMI">EMI — Espessada mod-imp</option>
+          <option value="EI">EI — Espessada importante</option>
+          <option value="FL">FL — Fibrocalcif. leve</option>
+          <option value="FLM">FLM — Fibrocalcif. leve-mod</option>
+          <option value="FM">FM — Fibrocalcif. moderada</option>
+          <option value="FMI">FMI — Fibrocalcif. mod-imp</option>
+          <option value="FI">FI — Fibrocalcif. importante</option>
+          <option value="EFL">EFL — Esp/Fibrocalcif. leve</option>
+          <option value="EFLM">EFLM — Esp/Fibrocalcif. leve-mod</option>
+          <option value="EFM">EFM — Esp/Fibrocalcif. moderada</option>
+          <option value="EFMI">EFMI — Esp/Fibrocalcif. mod-imp</option>
+          <option value="EFI">EFI — Esp/Fibrocalcif. importante</option>
+        </select></div>
+      <div class="field"><label>Refluxo Tricúspide</label>
+        <select id="b36" onchange="calc()">
+          <option value="">— Ausente —</option>
+          <option value="L">L — Leve</option><option value="LM">LM — Leve-Mod</option>
+          <option value="M">M — Moderado</option><option value="MI">MI — Mod-Imp</option>
+          <option value="I">I — Importante</option>
+        </select></div>
+      <div class="field"><label>Válvula Aórtica</label>
+        <select id="b39" onchange="calc()">
+          <option value="">— Normal —</option>
+          <option value="EL">EL — Espessada leve</option>
+          <option value="ELM">ELM — Espessada leve-mod</option>
+          <option value="EM">EM — Espessada moderada</option>
+          <option value="EMI">EMI — Espessada mod-imp</option>
+          <option value="EI">EI — Espessada importante</option>
+          <option value="FL">FL — Fibrocalcif. leve</option>
+          <option value="FLM">FLM — Fibrocalcif. leve-mod</option>
+          <option value="FM">FM — Fibrocalcif. moderada</option>
+          <option value="FMI">FMI — Fibrocalcif. mod-imp</option>
+          <option value="FI">FI — Fibrocalcif. importante</option>
+          <option value="EFL">EFL — Esp/Fibrocalcif. leve</option>
+          <option value="EFLM">EFLM — Esp/Fibrocalcif. leve-mod</option>
+          <option value="EFM">EFM — Esp/Fibrocalcif. moderada</option>
+          <option value="EFMI">EFMI — Esp/Fibrocalcif. mod-imp</option>
+          <option value="EFI">EFI — Esp/Fibrocalcif. importante</option>
+        </select></div>
+      <div class="field"><label>Refluxo Aórtico</label>
+        <select id="b40" onchange="calc()">
+          <option value="">— Ausente —</option>
+          <option value="L">L — Leve</option><option value="LM">LM — Leve-Mod</option>
+          <option value="M">M — Moderado</option><option value="MI">MI — Mod-Imp</option>
+          <option value="I">I — Importante</option>
+        </select></div>
+      <div class="field"><label>Válvula Pulmonar</label>
+        <select id="b39p" onchange="calc()">
+          <option value="">— Normal —</option>
+          <option value="EL">EL — Espessada leve</option>
+          <option value="ELM">ELM — Espessada leve-mod</option>
+          <option value="EM">EM — Espessada moderada</option>
+          <option value="EMI">EMI — Espessada mod-imp</option>
+          <option value="EI">EI — Espessada importante</option>
+          <option value="FL">FL — Fibrocalcif. leve</option>
+          <option value="FLM">FLM — Fibrocalcif. leve-mod</option>
+          <option value="FM">FM — Fibrocalcif. moderada</option>
+          <option value="FMI">FMI — Fibrocalcif. mod-imp</option>
+          <option value="FI">FI — Fibrocalcif. importante</option>
+          <option value="EFL">EFL — Esp/Fibrocalcif. leve</option>
+          <option value="EFLM">EFLM — Esp/Fibrocalcif. leve-mod</option>
+          <option value="EFM">EFM — Esp/Fibrocalcif. moderada</option>
+          <option value="EFMI">EFMI — Esp/Fibrocalcif. mod-imp</option>
+          <option value="EFI">EFI — Esp/Fibrocalcif. importante</option>
+        </select></div>
+      <div class="field"><label>Refluxo Pulmonar</label>
+        <select id="b40p" onchange="refluxoPulmonar();calc()">
+          <option value="">— Ausente —</option>
+          <option value="L">L — Leve</option><option value="LM">LM — Leve-Mod</option>
+          <option value="M">M — Moderado</option><option value="MI">MI — Mod-Imp</option>
+          <option value="I">I — Importante</option>
+        </select></div>
+      <div class="field" id="field-psmap" style="display:none;">
+        <label>Pressão Sist. Média AP <span class="ref">mmHg</span></label>
+        <input type="number" id="psmap" step="1" oninput="calc()"/>
+      </div>
+      <div class="field"><label>Derrame Pericárdico</label>
+        <select id="b41" onchange="calc()">
+          <option value="">— Ausente —</option>
+          <option value="L">L — Leve</option><option value="LM">LM — Leve-Mod</option>
+          <option value="M">M — Moderado</option><option value="MI">MI — Mod-Imp</option>
+          <option value="I">I — Importante</option>
+        </select></div>
+      <div class="field"><label>Placas Arco Aórtico</label>
+        <select id="b42" onchange="calc()">
+          <option value="">— Não —</option>
+          <option value="s">Sim — Calcificadas</option>
+          <option value="nv">Não visualizado</option>
+        </select></div>
+    </div>
+    <!-- Estenoses -->
+    <div class="section-body" style="border-top:1px dashed var(--border);padding-top:6px;">
+      <div style="grid-column:1/-1;font-size:10.5px;font-weight:600;color:var(--navy);">Estenose Mitral</div>
+      <div class="field"><label>Grad. máx. mitral <span class="ref">mmHg</span></label>
+        <input type="number" id="b45" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Grad. médio mitral <span class="ref">mmHg</span></label>
+        <input type="number" id="b46" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Área mitral <span class="ref">cm²</span></label>
+        <input type="number" id="b47" step="0.01" oninput="calc()"/></div>
+      <!-- Wilkins & Block toggle -->
+      <div style="grid-column:1/-1;">
+        <label style="display:flex;align-items:center;gap:8px;font-size:10.5px;font-weight:600;color:var(--navy);cursor:pointer;">
+          <input type="checkbox" id="wilkins-toggle" onchange="toggleWilkins()" style="width:14px;height:14px;accent-color:var(--red);"/>
+          Escore de Wilkins &amp; Block
+        </label>
+      </div>
+      <div id="wilkins-fields" style="display:none;grid-column:1/-1;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px 12px;">
+          <div style="grid-column:1/-1;font-size:10px;color:var(--gray-mid);">Mobilidade · Espessamento · Calcificação · Subvalvar (0–4 pts cada)</div>
+          <div class="field" style="grid-column:1/-1;"><label>Mobilidade do folheto <span class="ref">0–4</span></label>
+            <select id="wk-mob" onchange="calc()">
+              <option value="0">0 — Normal</option>
+              <option value="1">1 — Boa mobilidade, restrição apenas na ponta</option>
+              <option value="2">2 — Redução na porção média e na base</option>
+              <option value="3">3 — Mobilidade somente na base dos folhetos</option>
+              <option value="4">4 — Nenhum ou mínimo movimento</option>
+            </select></div>
+          <div class="field" style="grid-column:1/-1;"><label>Espessamento valvar <span class="ref">0–4</span></label>
+            <select id="wk-esp" onchange="calc()">
+              <option value="0">0 — Normal</option>
+              <option value="1">1 — Espessura próxima do normal (4–5 mm)</option>
+              <option value="2">2 — Grande espessamento nas margens do folheto</option>
+              <option value="3">3 — Espessamento de todo o folheto (5–8 mm)</option>
+              <option value="4">4 — Grande espessamento de todo o folheto (&gt;8–10 mm)</option>
+            </select></div>
+          <div class="field" style="grid-column:1/-1;"><label>Calcificação valvar <span class="ref">0–4</span></label>
+            <select id="wk-cal" onchange="calc()">
+              <option value="0">0 — Sem calcificação</option>
+              <option value="1">1 — Uma única área de calcificação</option>
+              <option value="2">2 — Calcificações nas margens dos folhetos</option>
+              <option value="3">3 — Calcificações extensivas à porção média</option>
+              <option value="4">4 — Extensa calcificação em todo o folheto</option>
+            </select></div>
+          <div class="field" style="grid-column:1/-1;"><label>Espessamento subvalvar <span class="ref">0–4</span></label>
+            <select id="wk-sub" onchange="calc()">
+              <option value="0">0 — Normal</option>
+              <option value="1">1 — Espessamento mínimo da corda logo abaixo da valva</option>
+              <option value="2">2 — Espessamento da corda até terço proximal</option>
+              <option value="3">3 — Espessamento da corda até terço distal</option>
+              <option value="4">4 — Extenso espessamento e encurtamento até músculo papilar</option>
+            </select></div>
+          <div class="field"><label>Escore Total</label>
+            <div class="calc" id="calc-wilkins">—</div></div>
+        </div>
+      </div>
+      <div style="grid-column:1/-1;font-size:10.5px;font-weight:600;color:var(--navy);margin-top:4px;">Estenose Tricúspide</div>
+      <div class="field"><label>Grad. médio tricúspide <span class="ref">mmHg</span></label>
+        <input type="number" id="b46t" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Área tricúspide <span class="ref">cm²</span></label>
+        <input type="number" id="b47t" step="0.01" oninput="calc()"/></div>
+      <div style="grid-column:1/-1;font-size:10.5px;font-weight:600;color:var(--navy);margin-top:4px;">Estenose Aórtica</div>
+      <div class="field"><label>Grad. máx. aórtico <span class="ref">mmHg</span></label>
+        <input type="number" id="b50" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Grad. médio aórtico <span class="ref">mmHg</span></label>
+        <input type="number" id="b51" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Área aórtica <span class="ref">cm²</span></label>
+        <input type="number" id="b52" step="0.01" oninput="calc()"/></div>
+      <div style="grid-column:1/-1;font-size:10.5px;font-weight:600;color:var(--navy);margin-top:4px;">Estenose Pulmonar</div>
+      <div class="field"><label>Grad. máx. pulmonar <span class="ref">mmHg</span></label>
+        <input type="number" id="b50p" step="0.1" oninput="calc()"/></div>
+    </div>
+  </div>
+
+  <!-- ══ MODO EDIÇÃO (visível enquanto editando) ══ -->
+  <div id="modo-edicao">
+    <button class="btn-salvar-emitir" onclick="abrirSalvarEmitir()">💾 Salvar / Emitir Laudo</button>
+    <button class="btn-limpar" onclick="limpar()">🗑️ Limpar formulário</button>
+  </div>
+
+  <!-- ══ MODO EMITIDO (visível após emitir — campos travados) ══ -->
+  <div id="modo-emitido" style="display:none;padding:0 20px 16px;">
+    <div class="emitido-badge">🔒 Laudo Emitido</div>
+    <div class="emitido-btns">
+      <button class="emitido-btn emitido-btn-voltar" onclick="voltarWorklist()">📋 Voltar ao Worklist</button>
+      <button class="emitido-btn emitido-btn-finalizar" onclick="finalizarAtendimento()">✅ Finalizar Atendimento</button>
+      <button class="emitido-btn emitido-btn-editar" onclick="desbloquearEdicao()">✏️ Editar Laudo</button>
+    </div>
+    <!-- EXPORTAR DROPDOWN (só aparece após emitir) -->
+    <div class="export-wrap-emitido">
+      <button class="btn-export" onclick="toggleExport(event)">
+        <span>📤 Exportar / Compartilhar</span><span>▾</span>
+      </button>
+      <div class="export-menu" id="export-menu">
+        <div class="exp-item" onclick="imprimirLaudo();fecharExport()">
+          <span class="exp-ico">🖨️</span>
+          <div class="exp-info">
+            <div class="exp-title">Imprimir / Salvar PDF</div>
+            <div class="exp-sub">Abre janela de impressão A4</div>
+          </div>
+        </div>
+        <div class="exp-item" onclick="copiarFormatado()">
+          <span class="exp-ico">📄</span>
+          <div class="exp-info">
+            <div class="exp-title">Copiar formatado</div>
+            <div class="exp-sub">Tasy · MV · Soul · Word · Google Docs</div>
+          </div>
+        </div>
+        <div class="exp-item" onclick="copiarTextoSimples()">
+          <span class="exp-ico">📋</span>
+          <div class="exp-info">
+            <div class="exp-title">Copiar texto simples</div>
+            <div class="exp-sub">Hapvida · prontuários básicos</div>
+          </div>
+        </div>
+        <div class="exp-item" onclick="baixarDocx()">
+          <span class="exp-ico">📥</span>
+          <div class="exp-info">
+            <div class="exp-title">Baixar .docx</div>
+            <div class="exp-sub">Word nativo editável</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- POPUP SALVAR / EMITIR -->
+  <div class="popup-overlay" id="popup-salvar-emitir" onclick="fecharSalvarEmitir(event)">
+    <div class="popup-card" onclick="event.stopPropagation()">
+      <div class="popup-header">Finalizar Laudo</div>
+      <div class="popup-body">
+        <button class="popup-btn popup-btn-rascunho" onclick="salvarRascunho()">
+          <span class="popup-btn-ico">📝</span>
+          <div>
+            <div class="popup-btn-title">Salvar Rascunho</div>
+            <div class="popup-btn-desc">Salva e continua editando</div>
+          </div>
+        </button>
+        <button class="popup-btn popup-btn-emitir" onclick="emitirLaudo()">
+          <span class="popup-btn-ico">✅</span>
+          <div>
+            <div class="popup-btn-title">Emitir Laudo</div>
+            <div class="popup-btn-desc">Finaliza e assina o laudo</div>
+          </div>
+        </button>
+      </div>
+      <button class="popup-btn-cancelar" onclick="fecharSalvarEmitir()">Cancelar</button>
+    </div>
+  </div>
+</div><!-- /sidebar -->
+<!-- ══════════════ PREVIEW ══════════════════════════════════════ -->
+<div class="preview">
+  <div class="preview-label">Pré-visualização — edite os textos diretamente no laudo</div>
+
+  <div class="sheet" id="laudo-sheet">
+  <table class="print-layout">
+    <thead><tr><td>
+      <div class="print-header-fixed">
+      <div class="laudo-header">
+        <div class="hdr-linha1">
+          <img id="laudo-logo-clinica" class="hdr-clinica-logo" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='6' fill='%23f0f0f0'/%3E%3Ctext x='24' y='30' text-anchor='middle' font-size='18' fill='%23ccc' font-family='sans-serif'%3E%F0%9F%8F%A5%3C/text%3E%3C/svg%3E" alt="Logo"/>
+          <div class="hdr-clinica-info">
+            <span class="hdr-clinica-text" id="hdr-clinica-nome">Grupo MedCardio</span>
+            <span class="hdr-clinica-slogan" id="hdr-clinica-slogan">Consultas e Exames</span>
+          </div>
+        </div>
+        <div class="laudo-title" id="laudo-titulo-exame">ECOCARDIOGRAMA TRANSTORÁCICO</div>
+      </div>
+      <div class="id-grid">
+        <div class="id-row" style="margin-bottom:3px;">
+          <div class="id-item" style="flex:2"><span class="lbl">Nome</span><span class="val" id="out-nome">—</span></div>
+          <div class="id-item"><span class="lbl">Idade</span><span class="val" id="out-idade">—</span></div>
+          <div class="id-item"><span class="lbl">Data de Nascimento</span><span class="val" id="out-dtnasc">—</span></div>
+        </div>
+        <div class="id-row">
+          <div class="id-item"><span class="lbl">Convênio</span><span class="val" id="out-convenio">—</span></div>
+          <div class="id-item"><span class="lbl">Médico Solicitante</span><span class="val" id="out-solicitante">—</span></div>
+          <div class="id-item"><span class="lbl">Data do Exame</span><span class="val" id="out-dtexame">—</span></div>
+        </div>
+      </div><!-- /id-grid -->
+      </div><!-- /print-header-fixed -->
+    </td></tr></thead>
+
+    <tfoot><tr><td>
+      <div class="print-footer-fixed">
+      <div class="laudo-footer">
+        <div class="ftr-local">
+          <strong id="ftr-clinica">Grupo MedCardio</strong><br/>
+          <span id="ftr-end">Rua Arcipreste Manoel Teodoro, 145 · 66023-700 · Batista Campos · Belém/PA</span><br/>
+          ☎ <span id="ftr-tel">91 3222.3875 / 3085.4000</span>
+        </div>
+        <div class="footer-assinatura" id="ftr-assinatura"><div class="linha"></div><div id="ftr-sig-texto" style="font-size:7pt;white-space:pre-line;">Dr. Sérgio Roberto Abdon Rodrigues
+Cardiologia e Ecocardiografia
+CRM/PA 7952</div></div>
+      </div><!-- /laudo-footer -->
+      <div class="footer-leo">
+        <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 20'%3E%3Crect width='60' height='20' rx='3' fill='%231E3A5F'/%3E%3Ctext x='30' y='14' text-anchor='middle' font-size='11' fill='%23fff' font-family='sans-serif' font-weight='bold'%3ELEO%3C/text%3E%3C/svg%3E" alt="LEO"/>
+        Laudo emitido com ajuda do <strong>LEO</strong> · www.souleo.com.br
+      </div>
+      </div><!-- /print-footer-fixed -->
+    </td></tr></tfoot>
+
+    <tbody><tr><td>
+      <!-- Parâmetros -->
+      <div class="laudo-section">
+        <div class="laudo-section-title">MEDIDAS E PARÂMETROS</div>
+        <div class="laudo-section-body" style="padding:0;">
+          <table class="params-table">
+            <thead><tr>
+              <th style="width:22%">Parâmetro</th><th style="width:8%">Valor</th>
+              <th style="width:6%">Unid.</th><th style="width:16%">Referência</th>
+              <th class="params-divider" style="width:22%">Parâmetro</th><th style="width:8%">Valor</th>
+              <th style="width:6%">Unid.</th><th style="width:12%">Referência</th>
+            </tr></thead>
+            <tbody id="params-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <!-- Comentários -->
+      <div class="laudo-section">
+        <div class="laudo-section-title">COMENTÁRIOS</div>
+        <div class="laudo-section-body" id="achados-body"></div>
+      </div>
+      <!-- Conclusão -->
+      <div class="laudo-section">
+        <div class="laudo-section-title">CONCLUSÃO</div>
+        <div class="laudo-section-body">
+          <ul class="conclusao-list" id="conclusao-list"></ul>
+        </div>
+      </div>
+    </td></tr></tbody>
+  </table>
+  </div>
+</div><!-- /preview -->
+</div>
+
+
+<!-- ══ MODAL: ADICIONAR/EDITAR LOCAL DE TRABALHO ══════════════ -->
+<div class="modal-ov" id="local-ov">
+  <div class="modal-box" style="max-width:640px;">
+    <div class="modal-hdr" style="padding:14px 22px;">
+      <div style="font-size:16px;font-weight:700;" id="local-modal-titulo">Adicionar local de trabalho</div>
+    </div>
+    <div style="padding:16px 22px;max-height:75vh;overflow-y:auto;">
+      <div class="auth-msg erro" id="local-error" style="display:none;"><span>⚠️</span><span id="local-error-msg"></span></div>
+
+      <!-- Nome + Slogan -->
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <div style="flex:2;"><label class="pac-lbl">Nome do local <span class="req">*</span></label><input type="text" id="local-nome" class="pac-input" placeholder="Ex: Consultório Centro" oninput="atualizarLocalPreview()"/></div>
+        <div style="flex:1;"><label class="pac-lbl">Subtítulo</label><input type="text" id="local-slogan" class="pac-input" placeholder="Cardiologia e Eco" oninput="atualizarLocalPreview()"/></div>
+      </div>
+
+      <!-- Endereço + Número -->
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <div style="flex:3;"><label class="pac-lbl">Endereço</label><input type="text" id="local-rua" class="pac-input" placeholder="Rua, Avenida, Travessa..."/></div>
+        <div style="flex:0 0 80px;"><label class="pac-lbl">Número</label><input type="text" id="local-num" class="pac-input" placeholder="123"/></div>
+        <div style="flex:1;"><label class="pac-lbl">Complemento</label><input type="text" id="local-compl" class="pac-input" placeholder="Sala 01"/></div>
+      </div>
+
+      <!-- Bairro + Cidade + Estado + CEP -->
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <div style="flex:1;"><label class="pac-lbl">Bairro</label><input type="text" id="local-bairro" class="pac-input" placeholder="Bairro"/></div>
+        <div style="flex:1;"><label class="pac-lbl">Cidade</label><input type="text" id="local-cidade" class="pac-input" placeholder="Belém"/></div>
+        <div style="flex:0 0 60px;"><label class="pac-lbl">UF</label><input type="text" id="local-uf" class="pac-input" maxlength="2" placeholder="PA" style="text-transform:uppercase;"/></div>
+        <div style="flex:0 0 100px;"><label class="pac-lbl">CEP</label><input type="text" id="local-cep" class="pac-input" placeholder="00000-000" maxlength="9" oninput="mascaraCEP(this)"/></div>
+      </div>
+
+      <!-- Telefones -->
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <div style="flex:1;"><label class="pac-lbl">Telefone 1</label><input type="text" id="local-tel" class="pac-input" placeholder="(00) 00000-0000" maxlength="15" oninput="mascaraTelefone(this)"/></div>
+        <div style="flex:1;"><label class="pac-lbl">Telefone 2</label><input type="text" id="local-tel2" class="pac-input" placeholder="(00) 00000-0000" maxlength="15" oninput="mascaraTelefone(this)"/></div>
+      </div>
+
+      <!-- ── IDENTIDADE VISUAL ── -->
+      <div style="border-top:1px solid #E2E8F0;padding-top:12px;margin-top:4px;">
+        <div style="font-size:11px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Identidade visual (aparece no laudo)</div>
+
+        <!-- Logo -->
+        <div style="display:flex;gap:14px;margin-bottom:10px;align-items:center;">
+          <div style="width:80px;height:80px;border:2px dashed #D1D5DB;border-radius:10px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#F9FAFB;flex-shrink:0;cursor:pointer;" onclick="document.getElementById('local-logo-input').click()">
+            <img id="local-logo-preview" style="max-width:100%;max-height:100%;object-fit:contain;display:none;"/>
+            <span id="local-logo-placeholder" style="font-size:10px;color:#94A3B8;text-align:center;">Clique para<br>upload logo</span>
+          </div>
+          <input type="file" id="local-logo-input" accept="image/*" style="display:none;" onchange="uploadLocalLogo(this)"/>
+          <div style="flex:1;">
+            <div style="font-size:11px;color:#475569;font-weight:600;margin-bottom:4px;">Logo da clínica/consultório</div>
+            <div style="font-size:10px;color:#94A3B8;">PNG ou JPG, máx 2MB. Aparece no cabeçalho do laudo.</div>
+            <button class="dash-sb-btn" style="margin-top:6px;font-size:9px;" onclick="removerLocalLogo()">Remover logo</button>
+          </div>
+        </div>
+
+        <!-- Paleta de cores -->
+        <div style="margin-bottom:10px;">
+          <label class="pac-lbl">Paleta de cores</label>
+          <div id="local-paletas" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;"></div>
+        </div>
+
+        <!-- Cores customizadas -->
+        <div style="display:flex;gap:12px;margin-bottom:8px;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <label class="pac-lbl" style="margin:0;white-space:nowrap;">Cor primária</label>
+            <input type="color" id="local-cor1" value="#1E3A5F" style="width:32px;height:28px;border:1px solid #D1D5DB;border-radius:4px;cursor:pointer;padding:0;" oninput="document.getElementById('local-cor1-hex').value=this.value;renderLocalPaletas();atualizarLocalPreview()"/>
+            <input type="text" id="local-cor1-hex" value="#1E3A5F" class="pac-input" style="width:80px;font-size:11px;font-family:'IBM Plex Mono',monospace;" oninput="syncLocalCor('cor1')"/>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <label class="pac-lbl" style="margin:0;white-space:nowrap;">Cor secundária</label>
+            <input type="color" id="local-cor2" value="#2563EB" style="width:32px;height:28px;border:1px solid #D1D5DB;border-radius:4px;cursor:pointer;padding:0;" oninput="document.getElementById('local-cor2-hex').value=this.value;renderLocalPaletas();atualizarLocalPreview()"/>
+            <input type="text" id="local-cor2-hex" value="#2563EB" class="pac-input" style="width:80px;font-size:11px;font-family:'IBM Plex Mono',monospace;" oninput="syncLocalCor('cor2')"/>
+          </div>
+        </div>
+
+        <!-- Preview do cabeçalho -->
+        <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:10px;margin-top:6px;">
+          <div style="font-size:9px;color:#94A3B8;margin-bottom:4px;">Preview do cabeçalho do laudo:</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-bottom:2px solid #1E3A5F;" id="local-preview-hdr">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <img id="local-preview-logo" style="max-height:28px;display:none;"/>
+              <div>
+                <div style="font-size:11px;font-weight:700;color:#1E3A5F;" id="local-preview-nome">Nome do local</div>
+                <div style="font-size:8px;color:#94A3B8;" id="local-preview-slogan">Subtítulo</div>
+              </div>
+            </div>
+            <div style="font-size:8px;color:#94A3B8;text-align:right;">ECOCARDIOGRAMA<br>TRANSTORÁCICO</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Botões -->
+      <div style="display:flex;gap:8px;margin-top:14px;">
+        <button class="btn-auth-ghost" onclick="fecharLocalModal()" style="height:38px;padding:0 18px;font-size:12px;">Cancelar</button>
+        <button class="btn-auth" id="btn-salvar-local" onclick="salvarLocal()" style="height:38px;padding:0 24px;font-size:12px;width:auto;">Salvar local</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: EDITAR PERFIL DO PROFISSIONAL ═══════════════════ -->
+<div class="modal-ov" id="perfil-ov">
+  <div class="modal-box" style="max-width:540px;">
+    <div class="modal-hdr" style="padding:14px 22px;">
+      <div style="font-size:16px;font-weight:700;">Editar perfil</div>
+    </div>
+    <div style="padding:16px 22px;">
+      <div class="auth-msg erro" id="perfil-error" style="display:none;"><span>⚠️</span><span id="perfil-error-msg"></span></div>
+
+      <!-- Linha 1: Nome -->
+      <div style="margin-bottom:8px;">
+        <label class="pac-lbl">Nome completo <span class="req">*</span></label>
+        <input type="text" id="perf-nome" class="pac-input"/>
+      </div>
+
+      <!-- Linha 2: Tipo + CRM + UF + RQE (CRM/UF/RQE bloqueados se assistente) -->
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <div style="flex:0 0 120px;">
+          <label class="pac-lbl">Tipo profissional</label>
+          <select id="perf-tipo" class="pac-input" style="cursor:pointer;" onchange="perfilTipoChanged()">
+            <option value="medico">Médico</option>
+            <option value="assistente">Assistente</option>
+          </select>
+        </div>
+        <div style="flex:1;" id="perf-crm-wrap"><label class="pac-lbl">CRM <span class="req">*</span></label><input type="text" id="perf-crm" class="pac-input"/></div>
+        <div style="flex:0 0 70px;" id="perf-uf-wrap"><label class="pac-lbl">UF <span class="req">*</span></label><input type="text" id="perf-uf" class="pac-input" maxlength="2" style="text-transform:uppercase;"/></div>
+        <div style="flex:1;" id="perf-rqe-wrap"><label class="pac-lbl">RQE</label><input type="text" id="perf-rqe" class="pac-input"/></div>
+      </div>
+
+      <!-- Linha 3: Telefone + Especialidade -->
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <div style="flex:1;"><label class="pac-lbl">Telefone</label><input type="text" id="perf-tel" class="pac-input" placeholder="(00) 00000-0000" maxlength="15" oninput="mascaraTelefone(this)"/></div>
+        <div style="flex:2;" id="perf-titulo-wrap"><label class="pac-lbl">Especialidade (aparece no laudo)</label><input type="text" id="perf-titulo" class="pac-input" placeholder="Cardiologia e Ecocardiografia"/></div>
+      </div>
+
+      <!-- Assinatura do laudo -->
+      <div style="border-top:1px solid #E2E8F0;padding-top:10px;margin-top:4px;margin-bottom:10px;" id="perf-sec-assinatura">
+        <div style="font-size:11px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Assinatura do laudo</div>
+        <div style="display:flex;gap:12px;align-items:center;">
+          <div style="width:160px;min-height:60px;border:1.5px dashed #D1D5DB;border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#F9FAFB;cursor:pointer;" onclick="document.getElementById('perf-sig-input').click()">
+            <img id="perf-sig-preview" style="max-width:100%;max-height:60px;object-fit:contain;display:none;"/>
+            <span id="perf-sig-placeholder" style="font-size:9px;color:#94A3B8;text-align:center;">Clique para<br>upload assinatura</span>
+          </div>
+          <input type="file" id="perf-sig-input" accept="image/*" style="display:none;" onchange="uploadPerfilSig(this)"/>
+          <div style="flex:1;">
+            <div style="display:flex;gap:4px;margin-bottom:4px;">
+              <button class="dash-sb-btn" style="font-size:9px;" onclick="document.getElementById('perf-sig-input').click()">Enviar imagem</button>
+              <button class="dash-sb-btn" style="font-size:9px;" onclick="removerPerfilSig()">Remover</button>
+            </div>
+            <button style="width:100%;padding:5px;border:1.5px solid #7C3AED;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;background:#F5F3FF;color:#7C3AED;font-family:inherit;">🔐 VIDaaS (CRM Digital)</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CPF + Email (somente leitura — só admin pode alterar) -->
+      <div style="display:flex;gap:8px;margin-bottom:12px;padding:8px 12px;background:#F8FAFC;border-radius:6px;border:1px solid #E2E8F0;">
+        <div style="flex:1;"><label class="pac-lbl" style="color:#94A3B8;">CPF (só admin altera)</label><input type="text" id="perf-cpf" class="pac-input" disabled style="background:#E2E8F0;color:#94A3B8;font-family:'IBM Plex Mono',monospace;"/></div>
+        <div style="flex:1;"><label class="pac-lbl" style="color:#94A3B8;">Email (só admin altera)</label><input type="email" id="perf-email" class="pac-input" disabled style="background:#E2E8F0;color:#94A3B8;"/></div>
+      </div>
+
+      <!-- Botões -->
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn-auth-ghost" onclick="fecharPerfilModal()" style="height:38px;padding:0 18px;font-size:12px;">Cancelar</button>
+        <button class="btn-auth" id="btn-salvar-perfil" onclick="salvarPerfil()" style="height:38px;padding:0 24px;font-size:12px;width:auto;">Salvar perfil</button>
+        <span id="perfil-ok-msg" style="display:none;color:#059669;font-size:12px;font-weight:600;">✅ Salvo!</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: NOVO/EDITAR PACIENTE ═════════════════════════════ -->
+<div class="modal-ov" id="pac-ov">
+  <div class="modal-box" style="max-width:680px;">
+    <div class="modal-hdr" style="padding:14px 22px;">
+      <div style="font-size:16px;font-weight:700;" id="pac-modal-titulo">➕ Novo Paciente</div>
+    </div>
+    <div style="padding:14px 22px;">
+      <!-- Linha 1: Nome + CPF + Sexo -->
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <div style="flex:2;"><label class="pac-lbl">Nome completo <span class="req">*</span></label><input type="text" id="pac-nome" placeholder="Nome do paciente" class="pac-input"/></div>
+        <div style="flex:1;"><label class="pac-lbl">CPF</label><input type="text" id="pac-cpf" placeholder="000.000.000-00" maxlength="14" oninput="mascaraCPFInput(this)" class="pac-input"/></div>
+        <div style="flex:0 0 80px;"><label class="pac-lbl">Sexo</label><select id="pac-sexo" class="pac-input" style="cursor:pointer;"><option value="">—</option><option value="M">M</option><option value="F">F</option></select></div>
+      </div>
+      <!-- Linha 2: Nascimento + Telefone -->
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <div style="flex:1;"><label class="pac-lbl">Nascimento</label><input type="date" id="pac-dtnasc" class="pac-input"/></div>
+        <div style="flex:1;"><label class="pac-lbl">Telefone</label><input type="text" id="pac-tel" placeholder="(00) 00000-0000" maxlength="15" oninput="mascaraTelefone(this)" class="pac-input"/></div>
+      </div>
+      <!-- Campos ocultos: preenchidos automaticamente -->
+      <input type="hidden" id="pac-dtexame"/>
+      <input type="hidden" id="pac-hora"/>
+      <!-- Linha 3: Tipo exame + Convênio + Solicitante + Botões -->
+      <div style="display:flex;gap:8px;align-items:flex-end;">
+        <div style="flex:0 0 140px;"><label class="pac-lbl">Tipo de exame</label><select id="pac-tipo-exame" class="pac-input" style="cursor:pointer;"><option value="eco_tt">Eco TT</option><option value="doppler_carotidas">Doppler Carótidas</option><option value="eco_te">Eco TE</option><option value="eco_stress">Eco Stress</option></select></div>
+        <div style="flex:1;"><label class="pac-lbl">Convênio</label><input type="text" id="pac-convenio" placeholder="Unimed, SUS..." class="pac-input"/></div>
+        <div style="flex:1;"><label class="pac-lbl">Médico solicitante</label><input type="text" id="pac-solicitante" placeholder="Dr. Nome" class="pac-input"/></div>
+        <button class="btn-auth-ghost" onclick="fecharPacModal()" style="height:36px;padding:0 16px;font-size:12px;">Cancelar</button>
+        <button class="btn-auth" onclick="salvarPaciente()" style="height:36px;padding:0 20px;font-size:12px;width:auto;">Salvar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Session badge (oculto — topbar já mostra as infos) -->
+<div id="session-badge" style="display:none;"><span id="sb-nome"></span></div>
+
+<script>
+function mostrarTab(tab){
+  document.querySelectorAll('.auth-panel').forEach(p=>p.classList.remove('ativo'));
+  document.querySelectorAll('.auth-tab').forEach(t=>t.classList.remove('ativa'));
+  if(tab==='login'){ document.getElementById('painel-login').classList.add('ativo'); document.getElementById('tab-login').classList.add('ativa'); }
+  else if(tab==='cadastro'){ document.getElementById('painel-cadastro').classList.add('ativo'); document.getElementById('tab-cadastro').classList.add('ativa'); }
+}
+function togglePass(id,btn){ const el=document.getElementById(id); if(!el)return; el.type=el.type==='password'?'text':'password'; btn.textContent=el.type==='password'?'👁':'🙈'; }
+
+// appIniciado e wlRenderLista agora estão em 07-worklist.js
+function mostrarTrocarContexto(){
+  document.getElementById('tela-clinica').classList.add('oculta');
+  document.getElementById('ctx-overlay').classList.add('open');
+  document.getElementById('ctx-loading').style.display='none';
+  document.getElementById('ctx-conteudo').style.display='block';
+  if(_fbProfile && _fbContextos) mostrarSeletorContextos(_fbProfile, _fbContextos);
+}
+// ══ ASSINATURA DO PERFIL ═════════════════════════════════════════
+
+let _perfilSigB64 = '';
+
+function uploadPerfilSig(inp){
+  const f=inp.files[0]; if(!f) return;
+  if(f.size>1*1024*1024){ alert('Máx 1MB.'); return; }
+  const rd=new FileReader();
+  rd.onload=e=>{
+    _perfilSigB64=e.target.result;
+    const pv=document.getElementById('perf-sig-preview');
+    if(pv){pv.src=_perfilSigB64;pv.style.display='block';}
+    const ph=document.getElementById('perf-sig-placeholder');
+    if(ph) ph.style.display='none';
+  };
+  rd.readAsDataURL(f);
+}
+
+function removerPerfilSig(){
+  _perfilSigB64='';
+  const pv=document.getElementById('perf-sig-preview'); if(pv) pv.style.display='none';
+  const ph=document.getElementById('perf-sig-placeholder'); if(ph) ph.style.display='';
+}
+
+// ══ LOCAL DE TRABALHO ════════════════════════════════════════════
+
+let _editLocalId = null;
+
+function abrirLocalModal(localId){
+  _editLocalId = localId || null;
+  document.getElementById('local-modal-titulo').textContent = localId ? 'Editar local de trabalho' : 'Adicionar local de trabalho';
+  const errEl = document.getElementById('local-error'); if(errEl) errEl.style.display='none';
+
+  const campos = ['local-nome','local-slogan','local-rua','local-num','local-compl','local-bairro','local-cidade','local-uf','local-cep','local-tel','local-tel2'];
+
+  if(localId){
+    const cls = getClinicas();
+    const cl = cls.find(c=>c.id===localId);
+    if(cl){
+      document.getElementById('local-nome').value = cl.nome || '';
+      document.getElementById('local-slogan').value = cl.slogan || '';
+      document.getElementById('local-rua').value = cl.rua || '';
+      document.getElementById('local-num').value = cl.num || '';
+      document.getElementById('local-compl').value = cl.compl || '';
+      document.getElementById('local-bairro').value = cl.bairro || '';
+      document.getElementById('local-cidade').value = cl.cidade || '';
+      document.getElementById('local-uf').value = cl.uf || '';
+      document.getElementById('local-cep').value = cl.cep || '';
+      document.getElementById('local-tel').value = cl.tel || '';
+      document.getElementById('local-tel2').value = cl.tel2 || '';
+      // Identidade visual
+      document.getElementById('local-cor1').value = cl.p1 || '#1E3A5F';
+      document.getElementById('local-cor1-hex').value = cl.p1 || '#1E3A5F';
+      document.getElementById('local-cor2').value = cl.p2 || '#2563EB';
+      document.getElementById('local-cor2-hex').value = cl.p2 || '#2563EB';
+      _localLogoB64 = cl.logoB64 || '';
+      if(_localLogoB64){
+        const pv=document.getElementById('local-logo-preview'); pv.src=_localLogoB64; pv.style.display='block';
+        document.getElementById('local-logo-placeholder').style.display='none';
+      }
+    }
+  } else {
+    campos.forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+    document.getElementById('local-cor1').value='#1E3A5F';
+    document.getElementById('local-cor1-hex').value='#1E3A5F';
+    document.getElementById('local-cor2').value='#2563EB';
+    document.getElementById('local-cor2-hex').value='#2563EB';
+    _localLogoB64 = '';
+    const pv=document.getElementById('local-logo-preview'); if(pv){pv.style.display='none';}
+    const ph=document.getElementById('local-logo-placeholder'); if(ph){ph.style.display='';}
+  }
+  renderLocalPaletas();
+  atualizarLocalPreview();
+  document.getElementById('local-ov').classList.add('open');
+}
+
+function fecharLocalModal(){
+  document.getElementById('local-ov').classList.remove('open');
+  _editLocalId = null;
+}
+
+let _localLogoB64 = '';
+
+async function salvarLocal(){
+  const nome = document.getElementById('local-nome').value.trim();
+  const slogan = document.getElementById('local-slogan').value.trim();
+  const rua = document.getElementById('local-rua').value.trim();
+  const num = document.getElementById('local-num').value.trim();
+  const compl = document.getElementById('local-compl').value.trim();
+  const bairro = document.getElementById('local-bairro').value.trim();
+  const cidade = document.getElementById('local-cidade').value.trim();
+  const uf = document.getElementById('local-uf').value.trim().toUpperCase();
+  const cep = document.getElementById('local-cep').value.trim();
+  const tel = document.getElementById('local-tel').value.trim();
+  const tel2 = document.getElementById('local-tel2').value.trim();
+  const p1 = document.getElementById('local-cor1').value || '#1E3A5F';
+  const p2 = document.getElementById('local-cor2').value || '#2563EB';
+  const errEl = document.getElementById('local-error');
+  const errMsg = document.getElementById('local-error-msg');
+
+  errEl.style.display='none';
+  if(!nome){ errMsg.textContent='Nome do local é obrigatório.'; errEl.style.display='flex'; return; }
+
+  const endCompleto = [rua+(num?' '+num:''), compl, bairro, cidade+(uf?'/'+uf:''), cep].filter(Boolean).join(' · ');
+  const cls = getClinicas();
+
+  // Dados para salvar (localStorage + Firestore)
+  const dadosLocal = {
+    nome, slogan, tel, tel2,
+    rua, num, compl, bairro, cidade, uf, cep,
+    end:endCompleto, p1, p2, logoB64:_localLogoB64
+  };
+
+  // Dados para Firestore
+  const dadosFirestore = {
+    nomeClinica:nome, slogan, corPrimaria:p1, corSecundaria:p2,
+    endereco:endCompleto, telefone:tel, telefone2:tel2,
+    rua, num, compl, bairro, cidade, uf, cep,
+    logoB64:_localLogoB64
+  };
+
+  if(_editLocalId){
+    const cl = cls.find(c=>c.id===_editLocalId);
+    if(cl) Object.assign(cl, dadosLocal);
+    setClinicas(cls);
+    showToast('✅ Local atualizado!');
+  } else {
+    const novoId = uid();
+    cls.push({ id:novoId, ...dadosLocal, valor:0, padrao:cls.length===0 });
+    setClinicas(cls);
+    showToast('✅ Local adicionado!');
+  }
+
+  // Gravar no Firestore (workspace)
+  if(_fbWorkspace && _fbWorkspace.id){
+    try{
+      await fsUpdateWorkspace(_fbWorkspace.id, dadosFirestore);
+      console.log('✅ Local salvo no Firestore:', _fbWorkspace.id);
+    }catch(e){
+      console.error('❌ Erro ao salvar local no Firestore:', e);
+      showToast('⚠️ Erro ao salvar na nuvem');
+    }
+  } else {
+    console.warn('⚠️ _fbWorkspace não disponível, local salvo apenas localmente');
+  }
+
+  fecharLocalModal();
+  try{ initDashboard(); }catch(e){}
+}
+
+// ── Upload logo do local ──
+function uploadLocalLogo(inp){
+  const f=inp.files[0]; if(!f) return;
+  if(f.size>2*1024*1024){ alert('Máx 2MB.'); return; }
+  const rd=new FileReader();
+  rd.onload=e=>{
+    _localLogoB64=e.target.result;
+    const pv=document.getElementById('local-logo-preview');
+    pv.src=_localLogoB64; pv.style.display='block';
+    document.getElementById('local-logo-placeholder').style.display='none';
+    atualizarLocalPreview();
+  };
+  rd.readAsDataURL(f);
+}
+
+function removerLocalLogo(){
+  _localLogoB64='';
+  const pv=document.getElementById('local-logo-preview'); if(pv) pv.style.display='none';
+  const ph=document.getElementById('local-logo-placeholder'); if(ph) ph.style.display='';
+  const pvl=document.getElementById('local-preview-logo'); if(pvl) pvl.style.display='none';
+}
+
+// ── Paletas ──
+const LOCAL_PALETAS = [
+  {nome:'Azul LEO', p1:'#1E3A5F', p2:'#2563EB'},
+  {nome:'Clássico', p1:'#8B1A1A', p2:'#1E3A5F'},
+  {nome:'Verde', p1:'#065F46', p2:'#059669'},
+  {nome:'Roxo', p1:'#5B21B6', p2:'#7C3AED'},
+  {nome:'Cinza', p1:'#374151', p2:'#6B7280'},
+  {nome:'Teal', p1:'#134E4A', p2:'#14B8A6'},
+];
+
+function renderLocalPaletas(){
+  const el=document.getElementById('local-paletas'); if(!el) return;
+  const p1Atual=document.getElementById('local-cor1').value;
+  el.innerHTML=LOCAL_PALETAS.map((p,i)=>{
+    const sel=p.p1===p1Atual;
+    return `<div onclick="aplicarLocalPaleta(${i})" style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:2px solid ${sel?'#2563EB':'#E5E7EB'};border-radius:6px;cursor:pointer;font-size:10px;${sel?'background:#EFF6FF;':''}">
+      <span style="width:14px;height:14px;border-radius:50%;background:${p.p1};display:inline-block;"></span>
+      <span style="width:14px;height:14px;border-radius:50%;background:${p.p2};display:inline-block;"></span>
+      ${p.nome}
+    </div>`;
+  }).join('');
+}
+
+function aplicarLocalPaleta(i){
+  const p=LOCAL_PALETAS[i];
+  document.getElementById('local-cor1').value=p.p1;
+  document.getElementById('local-cor1-hex').value=p.p1;
+  document.getElementById('local-cor2').value=p.p2;
+  document.getElementById('local-cor2-hex').value=p.p2;
+  renderLocalPaletas();
+  atualizarLocalPreview();
+}
+
+function syncLocalCor(which){
+  const hex=document.getElementById('local-'+which+'-hex').value.trim();
+  if(/^#[0-9a-fA-F]{6}$/.test(hex)){
+    document.getElementById('local-'+which).value=hex;
+  }
+  renderLocalPaletas();
+  atualizarLocalPreview();
+}
+
+// ── Preview do cabeçalho ──
+function atualizarLocalPreview(){
+  const nome=document.getElementById('local-nome')?.value||'Nome do local';
+  const slogan=document.getElementById('local-slogan')?.value||'Subtítulo';
+  const p1=document.getElementById('local-cor1')?.value||'#1E3A5F';
+  const pNome=document.getElementById('local-preview-nome'); if(pNome){pNome.textContent=nome;pNome.style.color=p1;}
+  const pSlogan=document.getElementById('local-preview-slogan'); if(pSlogan) pSlogan.textContent=slogan;
+  const pHdr=document.getElementById('local-preview-hdr'); if(pHdr) pHdr.style.borderBottomColor=p1;
+  const pLogo=document.getElementById('local-preview-logo');
+  if(pLogo){
+    if(_localLogoB64){pLogo.src=_localLogoB64;pLogo.style.display='block';}
+    else pLogo.style.display='none';
+  }
+}
+
+// Trocar local de trabalho pela topbar
+function trocarLocalTopbar(idx){
+  const cls = getClinicas();
+  const cl = cls[parseInt(idx)];
+  if(!cl) return;
+  WL_CLINICA_ATIVA = cl;
+  lsSet(CLINICA_ATIVA_KEY, cl);
+  if(typeof aplicarCoresClinica === 'function') aplicarCoresClinica(cl);
+  if(typeof dashRenderWorklist === 'function') dashRenderWorklist();
+  showToast('📍 ' + cl.nome);
+}
+
+// applyConfig e loadConfig agora em 09-config.js
+// Motor cardíaco agora carregado via motorv8mp4.js
+// calc() definido em motorv8mp4.js
+
+// ══ EDITAR PERFIL ════════════════════════════════════════════════
+
+function perfilTipoChanged(){
+  const tipo = document.getElementById('perf-tipo').value;
+  const ehAssistente = tipo === 'assistente';
+  // CRM, UF, RQE, Especialidade — bloqueados se assistente
+  ['perf-crm','perf-uf','perf-rqe','perf-titulo'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el){
+      el.disabled = ehAssistente;
+      el.style.background = ehAssistente ? '#E2E8F0' : '#F9FAFB';
+      el.style.color = ehAssistente ? '#94A3B8' : '#111827';
+      if(ehAssistente) el.value = '';
+    }
+  });
+}
+
+function abrirPerfilModal(){
+  const p = _fbProfile || {};
+  document.getElementById('perf-nome').value = p.nome || '';
+  document.getElementById('perf-cpf').value = p.cpf ? formatarCPF(p.cpf) : '—';
+  document.getElementById('perf-crm').value = p.crm || '';
+  document.getElementById('perf-uf').value = p.ufCrm || '';
+  document.getElementById('perf-rqe').value = p.rqe || '';
+  // perf-esp removido — especialidade agora é via perf-titulo
+  document.getElementById('perf-email').value = p.email || _fbUser?.email || '';
+  document.getElementById('perf-tel').value = p.telefone || '';
+  document.getElementById('perf-tipo').value = p.tipoPerfil || 'medico';
+  // Tipo: SEMPRE bloqueado aqui — só editável no painel admin
+  const selTipo = document.getElementById('perf-tipo');
+  selTipo.disabled = true;
+  selTipo.style.background = '#E2E8F0';
+  selTipo.style.color = '#94A3B8';
+  document.getElementById('perf-titulo').value = p.titulo || p.especialidade || '';
+  // Assinatura
+  _perfilSigB64 = p.sigB64 || '';
+  const sigPv = document.getElementById('perf-sig-preview');
+  const sigPh = document.getElementById('perf-sig-placeholder');
+  if(_perfilSigB64 && sigPv){ sigPv.src=_perfilSigB64; sigPv.style.display='block'; if(sigPh) sigPh.style.display='none'; }
+  else{ if(sigPv) sigPv.style.display='none'; if(sigPh) sigPh.style.display=''; }
+  // Esconder assinatura se assistente
+  const secSig = document.getElementById('perf-sec-assinatura');
+  if(secSig) secSig.style.display = (p.tipoPerfil==='assistente') ? 'none' : 'block';
+  const errEl = document.getElementById('perfil-error'); if(errEl) errEl.style.display='none';
+  document.getElementById('perfil-ov').classList.add('open');
+  perfilTipoChanged();
+}
+
+function fecharPerfilModal(){
+  document.getElementById('perfil-ov').classList.remove('open');
+}
+
+async function salvarPerfil(){
+  const nome = document.getElementById('perf-nome').value.trim();
+  const crm = document.getElementById('perf-crm').value.trim();
+  const uf = document.getElementById('perf-uf').value.trim().toUpperCase();
+  const rqe = document.getElementById('perf-rqe').value.trim();
+  const tel = document.getElementById('perf-tel').value.trim();
+  const tipo = document.getElementById('perf-tipo').value;
+  const titulo = document.getElementById('perf-titulo').value.trim();
+  const errEl = document.getElementById('perfil-error');
+  const errMsg = document.getElementById('perfil-error-msg');
+  const btn = document.getElementById('btn-salvar-perfil');
+
+  errEl.style.display='none';
+
+  if(!nome){ errMsg.textContent='Nome é obrigatório.'; errEl.style.display='flex'; return; }
+  if(tipo==='medico' && (!crm||!uf)){ errMsg.textContent='CRM e UF são obrigatórios para médicos.'; errEl.style.display='flex'; return; }
+
+  btn.disabled=true; btn.textContent='Salvando...';
+
+  await fsUpdateProfile(_fbUser.uid, {
+    nome, crm, ufCrm: uf, rqe,
+    especialidade: titulo, titulo,
+    telefone: tel, tipoPerfil: tipo,
+    sigB64: _perfilSigB64
+  });
+
+  // Recarregar perfil
+  _fbProfile = await fsGetProfile(_fbUser.uid);
+
+  btn.disabled=false; btn.textContent='Salvar perfil';
+
+  // Fechar modal e atualizar dashboard
+  fecharPerfilModal();
+
+  // Atualizar dashboard
+  try{ initDashboard(); }catch(e){}
+}
+</script>
+
+<!-- Motor de laudo (carrega após DOM) -->
+<script src="js/08-laudo.js"></script>
+<script src="motores/motorv8mp4.js"></script>
+<script src="motores/adaptador-motor.js"></script>
+<script src="js/11-laudo-ui.js"></script>
+</body>
+</html>

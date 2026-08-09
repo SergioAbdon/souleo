@@ -14,3 +14,8 @@
 [2026-08-09T14:14:26.491Z] [INFO] Worker audit completed in 12ms
 [2026-08-09T14:16:26.494Z] [INFO] Starting worker: optimize (1/2 concurrent)
 [2026-08-09T14:16:26.493Z] [INFO] Worker optimize completed in 9ms
+[2026-08-09T14:18:26.491Z] [INFO] Starting worker: consolidate (1/2 concurrent)
+[2026-08-09T14:18:26.496Z] [INFO] Consolidate worker: distillation skipped (no-db)
+[2026-08-09T14:18:26.497Z] [INFO] Worker consolidate completed in 20ms
+[2026-08-09T14:20:26.491Z] [INFO] Starting worker: testgaps (1/2 concurrent)
+[2026-08-09T14:20:26.492Z] [INFO] Worker testgaps completed in 9ms
