@@ -61,3 +61,6 @@ next-env.d.ts
 .claude/worktrees/
 .claude-flow/logs/
 .claude-flow/daemon-state.json
+
+# settings locais do Claude (contem tokens) — NUNCA commitar
+.claude/settings.local.json

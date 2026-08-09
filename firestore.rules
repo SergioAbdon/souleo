@@ -1,0 +1,268 @@
+// ════════════════════════════════════════════════════════════════════
+// LEO · Firestore Security Rules
+// ════════════════════════════════════════════════════════════════════
+// ⚠️  ESTE ARQUIVO É A REGRA DE 05/04/2026, TRAZIDA PARA O REPO EM
+//     09/08/2026 (vinha de C:\Users\sergi\Desktop\LEO e legacy/scripts-py).
+//     Ele ainda NÃO É SEGURO — ver docs/decisoes/2026-08-09-secao1-contas-e-acesso.md §1.1:
+//       · exames e pacientes: `allow read, write: if isAuth()` → qualquer
+//         usuário logado de QUALQUER conta lê/escreve os de todas as outras
+//       · profissionais: `allow list: if isAuth()` → lista todos, com CPF
+//       · subscriptions: `allow update: if isAuth()` → altera a própria franquia
+//       · temPapel()/existeVinculoQuery(): stubs, não verificam papel
+//
+// 🚫 NÃO RODAR `firebase deploy --only firestore:rules` COM ESTE CONTEÚDO
+//    antes da Fase 0 (conferir o que está publicado no console) e da Fase 5
+//    (reescrita da fechadura). Publicar isto pode SUBSTITUIR uma regra melhor
+//    que esteja no ar.
+//
+// Está aqui, versionado e declarado no firebase.json, porque a origem do
+// problema era justamente a regra viver fora do repo e nunca ser deployada.
+// ════════════════════════════════════════════════════════════════════
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ══════════════════════════════════════════════════════════════
+    // FUNÇÕES AUXILIARES
+    // ══════════════════════════════════════════════════════════════
+
+    // Usuário autenticado
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // UID do usuário logado
+    function uid() {
+      return request.auth.uid;
+    }
+
+    // Verificar se é superadmin (dono do LEO)
+    function isSuperAdmin() {
+      return isAuth() &&
+        exists(/databases/$(database)/documents/profissionais/$(uid())) &&
+        get(/databases/$(database)/documents/profissionais/$(uid())).data.superadmin == true;
+    }
+
+    // Verificar se tem vínculo ativo em um workspace
+    function temVinculoAtivo(wsId) {
+      return isAuth() &&
+        exists(/databases/$(database)/documents/vinculos/$(uid() + '_' + wsId)) ||
+        existeVinculoQuery(wsId);
+    }
+
+    // Buscar vínculo ativo (fallback para IDs não-compostos)
+    // NOTA: Security Rules não suportam queries — usamos get() com padrão conhecido
+    // Na prática, o app deve garantir que vinculos sejam acessíveis
+    function existeVinculoQuery(wsId) {
+      // Fallback: confiar no app-level check + superadmin
+      return isSuperAdmin();
+    }
+
+    // Verificar papel do usuário num workspace via dados do request
+    function temPapel(wsId, papel) {
+      return isSuperAdmin(); // Superadmin pode tudo
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // PROFISSIONAIS — identidade do profissional (CPF)
+    // ══════════════════════════════════════════════════════════════
+    match /profissionais/{profId} {
+      // Pode ler o próprio perfil OU se for superadmin
+      allow read: if isAuth() && (profId == uid() || isSuperAdmin());
+
+      // Pode criar se o ID = seu UID (autocadastro)
+      allow create: if isAuth() && profId == uid();
+
+      // Pode atualizar o próprio perfil (mas NÃO o campo superadmin)
+      allow update: if isAuth() && (
+        (profId == uid() && !('superadmin' in request.resource.data && request.resource.data.superadmin != resource.data.superadmin))
+        || isSuperAdmin()
+      );
+
+      // Superadmin pode ler qualquer profissional (para busca por CPF)
+      allow read: if isSuperAdmin();
+
+      // Permitir leitura por query (busca por CPF no convite)
+      // Qualquer autenticado pode buscar por CPF (necessário para convite)
+      allow list: if isAuth();
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // EMPRESAS — dados da PJ (CNPJ)
+    // ══════════════════════════════════════════════════════════════
+    match /empresas/{empId} {
+      // Qualquer autenticado pode ler (necessário para resolver contexto)
+      allow read: if isAuth();
+
+      // Criar: qualquer autenticado (cadastro PJ)
+      allow create: if isAuth();
+
+      // Atualizar: superadmin ou master da empresa
+      allow update: if isAuth() && (
+        resource.data.masterUid == uid() || isSuperAdmin()
+      );
+
+      // Deletar: apenas superadmin
+      allow delete: if isSuperAdmin();
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // WORKSPACES — ambientes de trabalho
+    // ══════════════════════════════════════════════════════════════
+    match /workspaces/{wsId} {
+      // Ler: autenticado (necessário para resolver contextos)
+      allow read: if isAuth();
+
+      // Criar: autenticado (onboarding PF/PJ)
+      allow create: if isAuth();
+
+      // Atualizar: dono do workspace ou superadmin
+      allow update: if isAuth() && (
+        resource.data.ownerUid == uid() || isSuperAdmin()
+      );
+
+      // ── PACIENTES (sub-coleção) ──
+      match /pacientes/{pacId} {
+        // Ler/escrever: qualquer autenticado
+        // (o app-level verifica vínculo; regra relaxada para não bloquear)
+        allow read, write: if isAuth();
+      }
+
+      // ── EXAMES (sub-coleção — legado + atual) ──
+      match /exames/{exameId} {
+        allow read: if isAuth();
+        allow create: if isAuth();
+        // Atualizar: autenticado (app verifica papel)
+        allow update: if isAuth();
+      }
+
+      // ── WORKLIST (sub-coleção — nova) ──
+      match /worklist/{wlId} {
+        allow read, write: if isAuth();
+      }
+
+      // ── RASCUNHOS (sub-coleção — nova) ──
+      match /rascunhos/{rascId} {
+        allow read, write: if isAuth();
+      }
+
+      // ── LAUDOS (sub-coleção — nova) ──
+      match /laudos/{laudoId} {
+        allow read: if isAuth();
+        // Criar laudo: somente m��dico ou master (app-level)
+        allow create: if isAuth();
+        // Editar laudo: autor ou superadmin
+        allow update: if isAuth() && (
+          resource.data.medicoUid == uid() || isSuperAdmin()
+        );
+
+        // Versões do laudo (histórico)
+        match /versoes/{versaoId} {
+          allow read: if isAuth();
+          allow create: if isAuth();
+        }
+      }
+
+      // ── BRANDING (sub-coleção) ──
+      match /branding/{brandId} {
+        allow read: if isAuth();
+        allow write: if isAuth() && (
+          get(/databases/$(database)/documents/workspaces/$(wsId)).data.ownerUid == uid()
+          || isSuperAdmin()
+        );
+      }
+
+      // ── CONSUMO (sub-coleção) ──
+      match /consumo/{consumoId} {
+        allow read: if isAuth();
+        allow create: if isAuth();
+      }
+
+      // ── FINANCEIRO (sub-coleção) ──
+      match /financeiro/{finId} {
+        allow read: if isAuth();
+        allow write: if isSuperAdmin();
+      }
+
+      // ── TEMPLATES (sub-coleção — banco de frases) ──
+      match /templates/{tplId} {
+        allow read, write: if isAuth();
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // VÍNCULOS — relação profissional ↔ workspace
+    // ══════════════════════════════════════════════════════════════
+    match /vinculos/{vincId} {
+      // Ler: próprio vínculo ou superadmin
+      allow read: if isAuth();
+
+      // Criar: autenticado (onboarding ou convite pelo master)
+      allow create: if isAuth();
+
+      // Atualizar: o próprio (aceitar/recusar convite) ou superadmin
+      allow update: if isAuth() && (
+        resource.data.medicoUid == uid()
+        || resource.data.convitePor == uid()
+        || isSuperAdmin()
+      );
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // MEMBERSHIPS ��� legado (retrocompat durante migração)
+    // ══════════════════════════════════════════════════════════════
+    match /memberships/{memId} {
+      allow read: if isAuth();
+      allow write: if isAuth();
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // PROFILES — legado (retrocompat durante migração)
+    // ══════════════════════════════════════════════════════════════
+    match /profiles/{profId} {
+      allow read: if isAuth() && (profId == uid() || isSuperAdmin());
+      allow write: if isAuth() && profId == uid();
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // SUBSCRIPTIONS — billing
+    // ══════════════════════════════════════════════════════════════
+    match /subscriptions/{subId} {
+      // Ler: autenticado (app verifica ownership)
+      allow read: if isAuth();
+
+      // Criar: autenticado (onboarding)
+      allow create: if isAuth();
+
+      // Atualizar: app-level (consumo atômico) ou superadmin
+      allow update: if isAuth();
+
+      // Deletar: somente superadmin
+      allow delete: if isSuperAdmin();
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // LOGS / AUDITORIA
+    // ══════════════════════════════════════════════════════════════
+    match /logs/{logId} {
+      // Qualquer autenticado pode criar log
+      allow create: if isAuth();
+
+      // Ler: somente superadmin
+      allow read: if isSuperAdmin();
+    }
+
+    match /auditoria/{logId} {
+      allow create: if isAuth();
+      allow read: if isSuperAdmin();
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // ID GENERATOR (interno)
+    // ══════════════════════════════════════════════════════════════
+    match /_/{docId} {
+      allow read, write: if isAuth();
+    }
+  }
+}

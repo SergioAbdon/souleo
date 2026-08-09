@@ -24,6 +24,10 @@ escolhido pelo Dr. Sérgio, é **arrumar a fundação (modelo de dados)** — n�
   (`C:\Users\sergi\Desktop\LEO\firestore.rules`) e uma cópia divergente em
   `legacy/scripts-py/firestore.rules`, que o `legacy/README.md` chama de "antigo".
 - **Não se sabe se alguma está publicada.** Verificar no console é a Fase 0.
+- **09/08/2026:** o arquivo foi trazido para a **raiz do repo** (`firestore.rules`) e
+  declarado em `firebase.json`. ⚠️ **NÃO deployar** com esse conteúdo antes das Fases 0 e 5
+  — publicar a regra de abril pode substituir uma regra melhor que esteja no ar. O
+  cabeçalho do arquivo repete esse aviso.
 
 O que essa regra antiga faz, se estiver no ar:
 
