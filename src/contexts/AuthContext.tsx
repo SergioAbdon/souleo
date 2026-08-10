@@ -185,6 +185,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Decide a entrada a partir dos locais acessiveis (A2 do spec):
   // 0 → aviso "conta sem local"; 1 → entra direto; 2+ → escolher.
   function aplicarEntrada(ctxs: Contexto[]) {
+    setLocalAtivo(null);
     setSemLocal(false);
     setPrecisaEscolher(false);
     const modo = modoEntrada(ctxs.length);
