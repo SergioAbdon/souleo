@@ -417,6 +417,13 @@ regra publicada), e exige `profissionais/{uid}.tipoPerfil == 'medico'` (403
 `nao_medico` — matriz §4: dono assistente administra tudo menos a caneta; campo
 ausente conta como médico, que é o default do resto do app).
 
+**Último elo (Codex, 3ª rodada adversarial):** `tipoPerfil` era autoeditável — um
+assistente-dono se autopromovia a "médico" e passava no gate novo do emitir. Agora
+é imutável no self-update (`intacto('tipoPerfil')`, `firestore.rules`); só o
+superadmin muda; reenviar o mesmo valor (PerfilModal) continua passando. Limitação
+residual conhecida: `tipoPerfil` é **autodeclarado no cadastro** (sem validação de
+CRM) — verificação de identidade médica é produto, pendência do Plano 2B.
+
 **Pendências aceitas, com destino:**
 
 - `/api/corrigir-laudo` sem verificação de token → **Plano 2B**.

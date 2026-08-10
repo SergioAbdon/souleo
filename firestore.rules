@@ -171,8 +171,14 @@ service cloud.firestore {
                     && (!('superadmin' in request.resource.data)
                         || request.resource.data.superadmin == false)
                     && !('adminRole' in request.resource.data);
+      // `tipoPerfil` tambem e imutavel pelo proprio: /api/emitir exige perfil
+      // medico para assinar laudo (matriz §4), e sem isso um assistente com
+      // papel dono se autopromovia a medico e passava no gate. Reenviar o MESMO
+      // valor continua valendo (intacto permite igual) — o PerfilModal manda o
+      // campo em todo save; so a MUDANCA e negada. O Direx (branch separado) muda.
       allow update: if superadmin()
-                    || (auth() && profId == uid() && intacto('superadmin') && intacto('adminRole'));
+                    || (auth() && profId == uid()
+                        && intacto('superadmin') && intacto('adminRole') && intacto('tipoPerfil'));
       allow delete: if false;
     }
 

@@ -407,3 +407,30 @@ describe('12. triade do Plano 2A: ledger e cancelamento sao do servidor', () => 
     }));
   });
 });
+
+// tipoPerfil e o gate de "quem assina laudo" no /api/emitir. Se o proprio
+// usuario pode troca-lo, um assistente com papel dono se autopromove a medico
+// e o gate nao vale nada.
+describe('13. tipoPerfil nao e autoeditavel', () => {
+  const ASSIST = 'uidAssistente';
+  before(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'profissionais', ASSIST), {
+        ...payloadCreateProfile(ASSIST), tipoPerfil: 'assistente',
+      });
+    });
+  });
+  test('assistente NAO se promove a medico', async () => {
+    await assertFails(updateDoc(doc(como(ASSIST), 'profissionais', ASSIST), { tipoPerfil: 'medico' }));
+  });
+  test('edita o proprio nome reenviando o mesmo tipoPerfil (PerfilModal)', async () => {
+    await assertSucceeds(updateDoc(doc(como(ASSIST), 'profissionais', ASSIST), {
+      nome: 'Assistente Editado', crm: '', ufCrm: '', rqe: '',
+      especialidade: 'Secretaria', telefone: '91999990000',
+      tipoPerfil: 'assistente', atualizadoEm: new Date(),
+    }));
+  });
+  test('superadmin muda o tipoPerfil de outro', async () => {
+    await assertSucceeds(updateDoc(doc(como(ADMIN), 'profissionais', ASSIST), { tipoPerfil: 'medico' }));
+  });
+});
