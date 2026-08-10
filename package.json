@@ -13,7 +13,8 @@
         "secao1:migrar": "node --env-file=.env.local scripts/secao1/01-migrar-contas.mjs",
         "secao1:vincular": "node --env-file=.env.local scripts/secao1/02-vincular-membro.mjs",
         "test:rules": "npx firebase emulators:exec --only firestore --project leo-testes \"node --test tests/rules/interim.test.mjs\"",
-        "test:rules:definitiva": "npx firebase emulators:exec --only firestore --project leo-testes \"node --test tests/rules/definitiva.test.mjs\""
+        "test:rules:definitiva": "npx firebase emulators:exec --only firestore --project leo-testes \"node --test tests/rules/definitiva.test.mjs\"",
+        "test:api": "npx firebase emulators:exec --only firestore,auth --project leo-testes \"node --test tests/api/*.test.mjs\""
     },
     "dependencies": {
         "@anthropic-ai/sdk": "^0.88.0",
