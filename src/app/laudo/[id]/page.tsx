@@ -664,6 +664,9 @@ export default function LaudoPage() {
         sem_saldo: 'Franquia esgotada e sem creditos extras.',
         nao_autenticado: 'Sessao expirada. Entre de novo para emitir.',
         sem_permissao: 'Voce nao tem permissao de emitir neste local.',
+        nao_medico: 'Somente perfil medico assina laudo.',
+        exame_de_outro_medico: 'Este laudo e de outro medico. Peca a transferencia ao responsavel.',
+        nao_encontrado: 'Exame nao encontrado. Recarregue a lista.',
         erro: 'Erro ao emitir. Tente novamente.',
       };
       toast(msgs[resultado.motivo || 'erro'] || 'Erro ao emitir.');

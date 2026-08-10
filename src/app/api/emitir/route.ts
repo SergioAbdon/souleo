@@ -47,12 +47,22 @@ export async function POST(req: NextRequest) {
 
     // Autorizacao: papel de medico/dono NESTE local (mesmo criterio da regra
     // `ehMedicoNoLocal`), e o laudo sai assinado por quem esta logado.
-    const papel = await resolverPapel(dbAdmin, wsId, uid);
+    const [papel, perfil] = await Promise.all([
+      resolverPapel(dbAdmin, wsId, uid),
+      dbAdmin.doc(`profissionais/${uid}`).get(),
+    ]);
     if (papel !== 'dono' && papel !== 'medico') {
       return NextResponse.json({ ok: false, motivo: 'sem_permissao' }, { status: 403 });
     }
     if (medicoUid !== uid) {
       return NextResponse.json({ ok: false, motivo: 'sem_permissao' }, { status: 403 });
+    }
+    // Matriz §4 (D2): quem assina laudo e medico. Dono da conta que e assistente
+    // administra tudo menos a caneta. Campo ausente conta como medico — e o
+    // default do resto do app (createProfile, dashboard, painel Direx), e exigir
+    // presenca travaria perfil antigo em producao.
+    if ((perfil.data()?.tipoPerfil ?? 'medico') !== 'medico') {
+      return NextResponse.json({ ok: false, motivo: 'nao_medico' }, { status: 403 });
     }
 
     // ══ 1. TRANSACAO ATOMICA: emitir + cobrar + ledger ══
@@ -60,6 +70,7 @@ export async function POST(req: NextRequest) {
     // try/catch silencioso — se falhava, a franquia ficava debitada sem
     // registro e a devolucao liquida (/api/exame) nao tinha o que devolver.
     const consumoRef = dbAdmin.collection('consumo').doc();
+    const exameRef = dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`);
     const resultado = await dbAdmin.runTransaction(async (transaction) => {
       // Assinatura por contaId (fallback legado) — mesma chave do /api/exame.
       const assinatura = await resolverAssinatura(dbAdmin, wsId);
@@ -67,9 +78,22 @@ export async function POST(req: NextRequest) {
         return { ok: false, motivo: 'sem_plano' as const };
       }
       const subRef = assinatura.ref;
-      const subSnap = await transaction.get(subRef);
+      // Leituras ANTES de qualquer escrita (exigencia da transacao).
+      const [subSnap, exameSnap] = await Promise.all([
+        transaction.get(subRef),
+        transaction.get(exameRef),
+      ]);
       if (!subSnap.exists) {
         return { ok: false, motivo: 'sem_plano' as const };
+      }
+      if (!exameSnap.exists) {
+        return { ok: false, motivo: 'nao_encontrado' as const };
+      }
+      // Caneta do autor (D2): laudo com autor definido so o proprio emite —
+      // igual a regra publicada ("autor ou sem autor"). Sem autor pode assumir.
+      const autor = exameSnap.data()!.medicoUid as string | undefined;
+      if (autor && autor !== uid) {
+        return { ok: false, motivo: 'exame_de_outro_medico' as const };
       }
 
       const sub = subSnap.data()!;
@@ -90,7 +114,6 @@ export async function POST(req: NextRequest) {
         return { ok: false, motivo: 'sem_saldo' as const };
       }
 
-      const exameRef = dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`);
       transaction.update(exameRef, {
         ...dadosFinais,
         status: 'emitido',
@@ -121,7 +144,8 @@ export async function POST(req: NextRequest) {
     });
 
     if (!resultado.ok) {
-      return NextResponse.json(resultado);
+      const status: Record<string, number> = { nao_encontrado: 404, exame_de_outro_medico: 403 };
+      return NextResponse.json(resultado, { status: status[resultado.motivo ?? ''] ?? 200 });
     }
 
     // ══ 2. AUDIT LOG (nao critico) ══

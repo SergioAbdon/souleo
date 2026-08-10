@@ -409,6 +409,14 @@ usuários); ledger de cancelamento registra só o que foi aplicado (0 quando nã
 assinatura); `signup-server` virou `runTransaction` (duplo-clique podia apagar o
 Auth user recém-criado).
 
+**Fechamento do furo remanescente no #4 (verificação adversarial do Codex, 10/08):**
+`/api/emitir` também confere, **dentro da transação e antes das escritas**, que o
+exame existe (404 `nao_encontrado`) e que o `medicoUid` já gravado é o próprio
+emissor (403 `exame_de_outro_medico`; exame sem autor pode ser assumido, igual à
+regra publicada), e exige `profissionais/{uid}.tipoPerfil == 'medico'` (403
+`nao_medico` — matriz §4: dono assistente administra tudo menos a caneta; campo
+ausente conta como médico, que é o default do resto do app).
+
 **Pendências aceitas, com destino:**
 
 - `/api/corrigir-laudo` sem verificação de token → **Plano 2B**.
