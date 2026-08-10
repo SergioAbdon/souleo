@@ -466,6 +466,35 @@ describe('E) membro da conta', () => {
     )));
   });
 
+  // ── A recepcao nao pode "emitir" por fora do /api/emitir ──
+  test('recepcao NAO cria exame ja marcado como emitido', async () => {
+    await assertFails(setDoc(doc(como(RECEPCAO), `workspaces/${WS_MEDCARDIO}/exames`, 'exFalso'), {
+      pacienteNome: 'Fraude', status: 'emitido', conclusoes: 'laudo inventado',
+    }));
+  });
+
+  test('recepcao NAO marca exame da fila como emitido', async () => {
+    await assertSucceeds(setDoc(doc(como(RECEPCAO), `workspaces/${WS_MEDCARDIO}/exames`, 'exFila2'), {
+      pacienteNome: 'Na fila', status: 'aguardando',
+    }));
+    await assertFails(updateDoc(doc(como(RECEPCAO), `workspaces/${WS_MEDCARDIO}/exames`, 'exFila2'), {
+      status: 'emitido', conclusoes: 'laudo inventado',
+    }));
+  });
+
+  test('medico marca como emitido normalmente', async () => {
+    await assertSucceeds(updateDoc(doc(como(MEDICO2), `workspaces/${WS_MEDCARDIO}/exames`, 'exFila2'), {
+      status: 'emitido',
+    }));
+  });
+
+  // ── intacto() robusto: setDoc sem merge nao apaga campo protegido ──
+  test('dono NAO apaga o ownerUid do proprio local com setDoc sem merge', async () => {
+    await assertFails(setDoc(doc(como(OUTRO), 'workspaces', WS_OUTRO), {
+      nomeClinica: 'Sem dono agora', contaId: 'contaOutro',
+    }));
+  });
+
   // ── Vinculo malformado nao vale ──
   test('vinculo ativo SEM papel nao concede acesso', async () => {
     await assertFails(getDoc(doc(como('uidSemPapel'), `workspaces/${WS_MEDCARDIO}/exames`, 'ex1')));

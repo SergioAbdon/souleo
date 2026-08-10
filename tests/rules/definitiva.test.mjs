@@ -222,6 +222,65 @@ describe('7. perfil e autopromocao', () => {
   });
 });
 
+describe('7.1 sincronia com a regra publicada (achados da auditoria)', () => {
+  // Payload REAL de createProfile() — o app manda superadmin:false sempre.
+  // Sem este teste, a definitiva repetiria o apagao de cadastro de 09/08.
+  const payloadRealCreateProfile = (uid) => ({
+    uid, nome: 'Novo Usuario', email: 'novo@exemplo.com',
+    crm: '123', ufCrm: 'PA', especialidade: 'Cardiologia',
+    cpf: '', rqe: '', tipoPerfil: 'assistente',
+    superadmin: false,
+    criadoEm: new Date(), atualizadoEm: new Date(),
+  });
+
+  test('cadastro real (superadmin:false) e aceito', async () => {
+    await assertSucceeds(setDoc(doc(como('uidCadastroReal'), 'profissionais', 'uidCadastroReal'),
+      payloadRealCreateProfile('uidCadastroReal')));
+  });
+
+  test('cadastro com superadmin:true e negado', async () => {
+    await assertFails(setDoc(doc(como('uidEsperto2'), 'profissionais', 'uidEsperto2'), {
+      ...payloadRealCreateProfile('uidEsperto2'), superadmin: true,
+    }));
+  });
+
+  test('vinculo ativo SEM papel nao concede acesso', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'vinculos', `${CONTA_A}_uidSemPapel`), {
+        contaId: CONTA_A, medicoUid: 'uidSemPapel', locais: [], status: 'ativo',
+      });
+    });
+    await assertFails(getDoc(doc(como('uidSemPapel'), `workspaces/${LOCAL_A1}/exames`, 'ex1')));
+    await assertFails(getDoc(doc(como('uidSemPapel'), 'contas', CONTA_A)));
+  });
+
+  test('empresas: so o Direx le', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'empresas', 'emp1'), { cnpj: '000', razaoSocial: 'X' });
+    });
+    await assertFails(getDoc(doc(como(DR_A), 'empresas', 'emp1')));
+    await assertSucceeds(getDoc(doc(como(ADMIN), 'empresas', 'emp1')));
+  });
+
+  test('autor NAO transfere o laudo trocando medicoUid na edicao', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'ex1'), {
+      medicoUid: DR_A2, conclusoes: 'transferido na surdina',
+    }));
+  });
+
+  test('dono NAO troca o medicoUid ao ajustar o administrativo', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A2}/exames`, 'ex2'), {
+      medicoUid: DR_A, convenio: 'UNIMED',
+    }));
+  });
+
+  test('dono ajusta o administrativo sem tocar no autor', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A2}/exames`, 'ex2'), {
+      convenio: 'PARTICULAR',
+    }));
+  });
+});
+
 describe('8. Direx e trilhas', () => {
   test('superadmin lista contas, locais e assinaturas', async () => {
     await assertSucceeds(getDocs(collection(como(ADMIN), 'contas')));

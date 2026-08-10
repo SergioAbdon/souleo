@@ -33,9 +33,12 @@ service cloud.firestore {
     function vincRef(contaId) {
       return /databases/$(database)/documents/vinculos/$(contaId + '_' + uid());
     }
+    // Exige papel valido: vinculo ativo mas sem `papel` (malformado ou
+    // meio-criado) nao pode conceder acesso clinico so por existir.
     function temVinculo(contaId) {
       return auth() && exists(vincRef(contaId))
-        && get(vincRef(contaId)).data.status == 'ativo';
+        && get(vincRef(contaId)).data.status == 'ativo'
+        && get(vincRef(contaId)).data.papel in ['dono', 'medico', 'recepcao'];
     }
     function vinc(contaId) { return get(vincRef(contaId)).data; }
     function ehPapel(contaId, p) { return temVinculo(contaId) && vinc(contaId).papel == p; }
@@ -104,9 +107,14 @@ service cloud.firestore {
                           || ehDonoDoLocal(wsId));
         // Conteudo do laudo: o autor edita; um exame sem autor ainda pode
         // ser assumido por qualquer medico do local. O dono ajusta qualquer um.
-        allow update: if ehDonoDoLocal(wsId)
+        // `intacto('medicoUid')` fecha a transferencia disfarcada de edicao: sem
+        // ela, o autor trocava o medicoUid para outro medico na mesma escrita,
+        // passando por cima da rota de servidor que faz log e acerta franquia.
+        // Assumir exame sem autor continua valendo (medicoUid nao existia).
+        allow update: if (ehDonoDoLocal(wsId) && intacto('medicoUid'))
                       || (ehMedicoNoLocal(wsId)
-                          && (!('medicoUid' in resource.data) || resource.data.medicoUid == uid()));
+                          && (!('medicoUid' in resource.data) || resource.data.medicoUid == uid())
+                          && ('medicoUid' in resource.data ? intacto('medicoUid') : true));
         // Apagar/cancelar/transferir passam pelo servidor (log + franquia)
         allow delete: if false;
       }
@@ -139,17 +147,23 @@ service cloud.firestore {
     match /profissionais/{profId} {
       allow get:    if auth() && (profId == uid() || superadmin());
       allow list:   if superadmin();
+      // `createProfile()` (src/lib/firestore.ts) SEMPRE envia superadmin:false.
+      // Exigir o campo ausente quebra TODO cadastro novo — foi o que derrubou o
+      // cadastro em producao das 18:34 as 22:53 de 09/08. O que nao pode e
+      // nascer com superadmin:true ou com adminRole.
       allow create: if auth() && profId == uid()
-                    && !('superadmin' in request.resource.data)
+                    && (!('superadmin' in request.resource.data)
+                        || request.resource.data.superadmin == false)
                     && !('adminRole' in request.resource.data);
       allow update: if superadmin()
                     || (auth() && profId == uid() && intacto('superadmin') && intacto('adminRole'));
       allow delete: if false;
     }
 
-    // ── EMPRESAS ── escrita so pelo servidor/Direx
+    // ── EMPRESAS ── so o Direx. Tem CNPJ e endereco de todas as clinicas, e o
+    // unico leitor no app e /direx/painel/clientes.
     match /empresas/{empId} {
-      allow read:  if auth();
+      allow read:  if superadmin();
       allow write: if superadmin();
     }
 
