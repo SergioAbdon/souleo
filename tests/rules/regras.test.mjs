@@ -1,5 +1,4 @@
-// Fechadura DEFINITIVA (modelo de contas). Le firestore.rules.definitiva.
-// Nao e a regra publicada — essa e firestore.rules (tranca provisoria).
+// Fechadura DEFINITIVA (modelo de contas). Le firestore.rules — a regra publicada.
 import { test, before, after, describe } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
@@ -20,7 +19,7 @@ const INATIVO = 'uidInativo'; // vinculo com status != 'ativo', usado na secao 1
 before(async () => {
   env = await initializeTestEnvironment({
     projectId: 'leo-testes-definitiva',
-    firestore: { rules: readFileSync('firestore.rules.definitiva', 'utf8'), host: '127.0.0.1', port: 8080 },
+    firestore: { rules: readFileSync('firestore.rules', 'utf8'), host: '127.0.0.1', port: 8080 },
   });
 
   await env.withSecurityRulesDisabled(async (ctx) => {
