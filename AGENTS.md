@@ -35,6 +35,31 @@ num prompt para esses MCPs, perguntar ao Sergio — a decisão de expor é dele.
    Claude acima). Ao fim da sessão, espelhar um resumo curto no vault Obsidian
    (`Leo/Decisões/`) para visão cross-projeto.
 
+### Pipeline padrão de FEATURE (fechado com o Sergio em 10/08/2026)
+
+Feature não-trivial (toca 3+ arquivos, muda fluxo ou segurança) segue esta esteira,
+que é o que deu certo no Plano 2A. Cada etapa é uma skill do superpowers:
+
+1. **`superpowers:brainstorming`** — levantamento (ler o fluxo real de ponta a ponta)
+   + design aprovado pelo Sergio ANTES de qualquer código. Escopo grande → decompor
+   em sub-planos (ex.: 2A, 2B-A, 2B-B), cada um com spec própria.
+2. **`superpowers:writing-plans`** — plano em tarefas bite-sized, com código e testes.
+   Salvar em `docs/planos/AAAA-MM-DD-*.md`.
+3. **`superpowers:subagent-driven-development`** — 1 subagente implementador por
+   tarefa + revisor entre elas (spec + qualidade). Ledger em `.superpowers/sdd/`.
+4. **TRÍADE** — no fim, revisão em 3 óticas independentes, cada uma instruída a NÃO
+   repetir a outra: **Codex** (bugs/segurança/edge cases, com verificação adversarial
+   — tenta refutar cada correção), **Ruflo reviewer** (arquitetura/fronteiras),
+   **Ponytail** (o que deletar). Achados críticos → onda de fix + re-verificação.
+5. **DOCUMENTAR + SINCRONIZAR** — ADR em `docs/decisoes/`, espelho no Obsidian
+   (`Leo/Decisões/`), memória local, e **push (git) para a PC da clínica saber**.
+
+Regra de ouro que atravessa: correção de segurança entra nos arquivos de regra E no
+código no mesmo commit, com teste usando payload REAL (`tests/rules/fixtures.mjs`).
+Ações sensíveis (push na master/deploy, publicar regras, scripts `--commit`) pedem
+confirmação do Sergio — ver `.claude/settings.json`. NÃO usar `git stash` (daemon
+`.claude-flow` engole edições).
+
 ### Papéis fixos
 
 Claude Code orquestra e implementa · Ponytail segura a simplicidade (sempre on) ·
