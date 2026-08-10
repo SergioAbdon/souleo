@@ -128,8 +128,10 @@ service cloud.firestore {
 
       // Honorarios, extratos e demais ajustes do local: financeiro, so quem
       // atende (medico) ou o dono — recepcao nao ve valor por convenio.
-      match /config/{docId}   { allow read, write: if ehMedicoNoLocal(wsId); }
-      match /extratos/{docId} { allow read, write: if ehMedicoNoLocal(wsId); }
+      // superadmin(): Lacuna 1 do levantamento — sem ele o suporte perdia
+      // acesso a honorarios e contador de extrato (a publicada sempre teve).
+      match /config/{docId}   { allow read, write: if superadmin() || ehMedicoNoLocal(wsId); }
+      match /extratos/{docId} { allow read, write: if superadmin() || ehMedicoNoLocal(wsId); }
     }
 
     // ── VINCULOS ── leitura do proprio e do dono da conta; escrita so servidor
@@ -144,10 +146,14 @@ service cloud.firestore {
     }
 
     // ── ASSINATURAS ── id = contaId. Recepcao nao ve financeiro.
+    // update superadmin: o Direx troca plano e ajusta creditos PELO NAVEGADOR
+    // (licencas/page.tsx + ajustarCreditos). `if false` quebraria o painel.
+    // Cliente comum continua sem escrever: franquia e so do servidor.
     match /subscriptions/{contaId} {
       allow get, list: if superadmin()
                        || (temVinculo(contaId) && vinc(contaId).papel in ['dono', 'medico']);
-      allow create, update, delete: if false;
+      allow update: if superadmin();
+      allow create, delete: if false;
     }
 
     // ── PROFISSIONAIS ── proprio perfil, sem autopromocao, sem listar todos

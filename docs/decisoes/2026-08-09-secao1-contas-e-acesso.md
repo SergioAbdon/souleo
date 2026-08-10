@@ -329,6 +329,54 @@ atraso aumenta a base a remigrar.
 create na definitiva; o Ruflo disse que estava quebrado. Conferi na mão — o
 Ruflo estava certo. Revisor é ótica, não oráculo.
 
+### 8.2.2 Diff auditado antes da Fase 5 (Plano 2A)
+
+Task 4 fechou dois furos deixados na definitiva: **Lacuna 1** (`config`/`extratos`
+do local sem `superadmin()` — suporte perdia acesso a honorários e ao contador de
+extrato que a publicada sempre teve) e **P6** (`subscriptions update` era `if
+false`, mas o painel Direx — `licencas/page.tsx` + `ajustarCreditos` — troca plano
+e ajusta créditos pelo navegador; teria quebrado ao publicar). As duas entraram
+nos dois arquivos no mesmo commit, com o mesmo caso de teste nas duas suítes
+(regra de ouro do §8.2.1): `firestore.rules` ganhou só os testes (prova de que
+já tinha o comportamento, sem regressão); `firestore.rules.definitiva` ganhou
+teste + correção.
+
+Depois da correção, `git diff --no-index firestore.rules firestore.rules.definitiva`
+foi percorrido linha a linha contra a lista de divergências intencionais do brief:
+
+| # | Divergência | Por que é intencional | Confirmada no diff? |
+|---|---|---|---|
+| 1 | `workspaces create`: publicada permite dono; definitiva `false` | Local nasce no `/api/signup` (Task 1) | Sim |
+| 2 | `vinculos create`: publicada permite dono-do-local; definitiva `false` | Vínculo nasce no `/api/signup`; convite será rota (2B) | Sim |
+| 3 | `subscriptions create`: publicada permite dono; definitiva `false` | Assinatura nasce no `/api/signup` | Sim |
+| 4 | `subscriptions update`: publicada tem braço legado do dono; definitiva só superadmin | Doc legado morre; franquia é do servidor (agora com o braço `allow update: if superadmin()` desta task) | Sim |
+| 5 | `exames delete`: publicada permite; definitiva `false` | `/api/exame` (Task 3) é o único caminho | Sim |
+| 6 | `exames update`: definitiva exige autor (`medicoUid == uid()`) e `intacto('medicoUid')` | Caneta do autor (D2) — é o ganho da definitiva | Sim |
+| 7 | `exames create`: definitiva exige `medicoUid` próprio/ausente | Anti-forja de autoria | Sim |
+| 8 | Leituras por `ownerUid` (publicada) vs por vínculo (definitiva) | Modelo de contas substitui o provisório | Sim (`workspaces`, `contas` get/list) |
+| 9 | `pacientes delete`: publicada `alcancaLocal`; definitiva só dono | Matriz §4 | Sim |
+| 10 | `privado/**` explícito na definitiva | Gaveta de segredos (Fase 6) | Sim |
+| 11 | `contas get/list`: braço `ownerUid` na publicada | Redundante quando todo dono tem vínculo `dono` | Sim |
+| 12 | `vinculos get`: definitiva permite ao dono da conta ler vínculo de membro da própria conta; publicada só o próprio | Intencional desde o Plano 1 (spec: "leitura do proprio e do dono da conta"); suporta a matriz §4 "Convidar/remover membros = dono" | Sim |
+
+A 12ª linha não estava na lista original de 11 do brief — foi um achado deste
+próprio task durante a auditoria linha a linha, reportado como BLOCKED antes de
+ser confirmado. Confirmação: o spec da definitiva no Plano 1
+(`docs/planos/2026-08-09-secao1-plano1-fundacao.md`, Task 3 Step 4) já trazia
+esse braço, com o comentário `── VINCULOS ── leitura do proprio e do dono da
+conta; escrita so servidor` — e a matriz §4 deste ADR dá ao dono "Convidar /
+remover membros", que depende de ler os vínculos da própria conta (tela de
+membros do Plano 2B). É um ganho da definitiva, análogo à divergência #6 (a
+publicada nunca teve o conceito de papel `dono` formal para expor essa leitura;
+a definitiva tem e o expõe). Coberto por 2 testes novos em
+`tests/rules/definitiva.test.mjs` (dono lê vínculo de membro da própria conta /
+dono de outra conta não lê); a suíte da publicada não ganhou o caso equivalente
+de propósito — lá o comportamento continua sendo "nega", e isso agora está
+documentado nesta tabela em vez de correr o risco de divergir em silêncio de novo.
+
+**Veredito:** as 12 divergências da tabela — confirmadas, sem surpresa. Nenhuma
+divergência fora da lista sobrou depois da correção acima.
+
 ## 9. Fora de escopo (Seção 1 não resolve)
 
 - Gateway de pagamento real (Stripe/Asaas).
