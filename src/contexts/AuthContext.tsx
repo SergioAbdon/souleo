@@ -11,6 +11,7 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 import { getProfile, getMemberships, getWorkspace } from '@/lib/firestore';
 import { getSubscription } from '@/lib/billing';
 import { getVinculosDoUsuario, getConta, getLocaisDaConta, type Conta, type Papel } from '@/lib/contas';
+import { modoEntrada } from '@/lib/permissoes';
 
 // Tipos
 export type Profile = Record<string, unknown> & { id: string; nome?: string; crm?: string; ufCrm?: string; especialidade?: string; tipoPerfil?: string; cpf?: string; sigB64?: string; };
@@ -34,15 +35,22 @@ type AuthState = {
   subscription: Subscription | null;
   contextos: Contexto[];
   loading: boolean;
+  localAtivo: Contexto | null;
+  precisaEscolher: boolean;
+  semLocal: boolean;
+  papel?: Papel;
   // Ações
   selecionarContexto: (ctx: Contexto) => void;
+  selecionarLocal: (wsId: string) => void;
   reloadProfile: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState>({
   user: null, profile: null, workspace: null, membership: null,
   subscription: null, contextos: [], loading: true,
+  localAtivo: null, precisaEscolher: false, semLocal: false,
   selecionarContexto: () => {},
+  selecionarLocal: () => {},
   reloadProfile: async () => {},
 });
 
@@ -54,6 +62,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [contextos, setContextos] = useState<Contexto[]>([]);
   const [loading, setLoading] = useState(true);
+  const [localAtivo, setLocalAtivo] = useState<Contexto | null>(null);
+  const [precisaEscolher, setPrecisaEscolher] = useState(false);
+  const [semLocal, setSemLocal] = useState(false);
 
   // Ouvir mudanças de auth
   useEffect(() => {
@@ -101,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             });
             if (ctxNovos.length > 0 && legadoDescoberto.length === 0) {
               setContextos(ctxNovos);
-              if (ctxNovos.length === 1) selecionarContexto(ctxNovos[0]);
+              aplicarEntrada(ctxNovos);
               setLoading(false);
               return;
             }
@@ -127,11 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           );
           const ctxs = ctxResults.filter((c): c is Contexto => c !== null);
           setContextos(ctxs);
-
-          // Auto-selecionar se só tem 1 contexto
-          if (ctxs.length === 1) {
-            selecionarContexto(ctxs[0]);
-          }
+          aplicarEntrada(ctxs);
         }
       } else {
         setProfile(null);
@@ -139,6 +146,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setMembership(null);
         setSubscription(null);
         setContextos([]);
+        setLocalAtivo(null);
+        setPrecisaEscolher(false);
+        setSemLocal(false);
       }
       } catch (e) {
         console.error('AuthContext: falha ao montar a sessao', e);
@@ -154,6 +164,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setWorkspace(ctx.workspace);
     setMembership(ctx.membership);
     setSubscription(ctx.subscription);
+    setLocalAtivo(ctx);
+    setPrecisaEscolher(false);
+    setSemLocal(false);
+  }
+
+  // Troca o local ativo pelo id do workspace (seletor do topo / gate de escolha).
+  function selecionarLocal(wsId: string) {
+    const ctx = contextos.find(c => c.workspace.id === wsId);
+    if (ctx) selecionarContexto(ctx);
   }
 
   async function reloadProfile() {
@@ -163,10 +182,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // Decide a entrada a partir dos locais acessiveis (A2 do spec):
+  // 0 → aviso "conta sem local"; 1 → entra direto; 2+ → escolher.
+  function aplicarEntrada(ctxs: Contexto[]) {
+    setSemLocal(false);
+    setPrecisaEscolher(false);
+    const modo = modoEntrada(ctxs.length);
+    if (modo === 'sem-local') setSemLocal(true);
+    else if (modo === 'entrar') selecionarContexto(ctxs[0]);
+    else setPrecisaEscolher(true);   // 2+: NAO auto-seleciona
+  }
+
   return (
     <AuthContext.Provider value={{
       user, profile, workspace, membership, subscription,
-      contextos, loading, selecionarContexto, reloadProfile
+      contextos, loading,
+      localAtivo, precisaEscolher, semLocal,
+      papel: membership?.role as Papel | undefined,
+      selecionarContexto, selecionarLocal,
+      reloadProfile
     }}>
       {children}
     </AuthContext.Provider>
