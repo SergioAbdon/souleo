@@ -720,17 +720,13 @@ export default function LaudoPage() {
     const nomeArq = prefixoArquivoPorTipo(exame?.tipoExame as string | undefined) + ' ' + nome.trim().toUpperCase();
     toast('Salvando correção e regerando PDF...');
     try {
+      const token = await user.getIdToken();
       const res = await fetch('/api/corrigir-laudo', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          wsId: workspace.id,
-          exameId,
-          convenio,
-          solicitante,
-          pdfHtml: gerarPdfHtml(true),
-          nomeArq,
-          medicoUid: user.uid,
+          wsId: workspace.id, exameId, convenio, solicitante,
+          pdfHtml: gerarPdfHtml(true), nomeArq,
         }),
       });
       const r = await res.json();
