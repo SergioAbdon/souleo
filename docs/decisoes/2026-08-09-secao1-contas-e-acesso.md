@@ -284,8 +284,40 @@ e o autor podia transferir o laudo trocando `medicoUid` na própria edição.
 
 > ⚠️ **Antes da Fase 5, reler a definitiva linha a linha contra a publicada.**
 > Dois arquivos irmãos sincronizados na mão divergiram na **primeira semana**.
-> Os 59 testes dela provam consistência interna — não que ela incorporou o que o
+> Os testes dela provam consistência interna — não que ela incorporou o que o
 > irmão aprendeu sob fogo. Melhor ainda: rodar o mesmo payload contra as duas.
+
+### 8.2.1 O quinto furo — e a prova de que esta auditoria não foi exaustiva
+
+Poucas horas depois da auditoria acima, uma **varredura Ponytail** (7 óticas em
+paralelo, cada achado com verificador adversarial) encontrou **mais um furo da
+mesma leva**, na definitiva:
+
+```
+allow create: if alcancaLocal(wsId)
+              && (!('medicoUid' in request.resource.data) || ... )
+```
+
+O `create` **nunca olhava `status`**. Uma pessoa com papel `recepcao` podia gravar
+um exame novo já com `status: 'emitido'` e conclusões — laudo com cara de assinado,
+por fora do `/api/emitir`: **sem PDF, sem log, sem franquia debitada.** É o mesmo
+vetor que derrubou a produção na manhã de 09/08.
+
+Corrigido em `d344f2d`: o `create` da definitiva passou a exigir médico/dono para
+qualquer documento que nasça `emitido`, espelhando a regra publicada. Três testes
+novos (`recepcao NAO cria exame ja carimbado como emitido`, `recepcao cria exame na
+fila normalmente`, `medico cria exame ja emitido (caminho legitimo)`). Suíte: 62/62.
+
+**O que isso ensina, e por que o aviso acima continua valendo com mais força:**
+a auditoria de `b6a6577` fechou quatro furos desta leva e passou batido no quinto —
+não por descuido, mas porque **ela olhou o arquivo que estava no ar**, e este mora
+no irmão. Duas fechaduras sincronizadas à mão não divergem por preguiça; divergem
+porque a atenção vai para a que está protegendo dados agora.
+
+**Regra de trabalho, a partir daqui:** toda correção de segurança entra **nos dois
+arquivos no mesmo commit**, com o mesmo caso de teste rodando nas duas suítes. A
+`tests/rules/fixtures.mjs` (criada em `d344f2d`) existe para isso — o payload real
+mora num lugar só justamente para as duas suítes não poderem divergir em silêncio.
 
 **A dívida está crescendo, não encolhendo** (achado do Ruflo). O cadastro
 continua criando vínculo no formato antigo (`role`, id aleatório, sem `conta`).
