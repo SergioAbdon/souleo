@@ -12,3 +12,4 @@ Ordem cronológica. Ler o(s) recente(s) antes de mexer na área relacionada.
 | 2026-05-18 | [Wader ingest resiliente](2026-05-18-wader-ingest-resiliente.md) | Wader / DICOM ingest |
 | 2026-06-26 | [Wader: console de reconciliação](2026-06-26-wader-console-reconciliacao.md) | Wader / UI |
 | 2026-08-09 | [Seção 1: contas, acesso e regras do Firestore](2026-08-09-secao1-contas-e-acesso.md) ⚠️ **Fase 6 é do Claude da clínica** | Contas / auth / segurança |
+| 2026-08-10 | [Seção "Integrações"](2026-08-10-secao-integracoes.md) 💡 ideia registrada, não implementada | Integrações / Feegow / Orthanc / Wader |
