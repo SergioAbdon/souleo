@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>LEO v7 — Motor ECO TT v2.0 (i18n + DICOM)</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'IBM Plex Sans',sans-serif;background:#F1F5F9;color:#1E293B;min-height:100vh;}
+.topbar{background:linear-gradient(135deg,#1E3A5F,#2563EB);color:#fff;padding:12px 24px;display:flex;align-items:center;gap:16px;}
+.topbar h1{font-size:16px;font-weight:700;}
+.topbar-badge{background:rgba(255,255,255,.2);padding:3px 10px;border-radius:12px;font-size:10px;font-weight:600;}
+.topbar select{padding:6px 12px;border-radius:6px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.15);color:#fff;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;}
+.topbar select option{color:#1E293B;background:#fff;}
+.topbar-btn{padding:6px 14px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;border:none;color:#fff;font-family:inherit;background:#059669;}
+.layout{display:flex;gap:0;height:calc(100vh - 48px);}
+.sidebar{width:340px;background:#fff;border-right:1px solid #E2E8F0;overflow-y:auto;padding:14px;}
+.main{flex:1;overflow-y:auto;padding:20px;}
+.grupo{margin-bottom:12px;}
+.grupo-titulo{font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid #E2E8F0;}
+.campo{display:flex;align-items:center;gap:6px;margin-bottom:3px;}
+.campo label{font-size:11px;color:#475569;width:130px;flex-shrink:0;}
+.campo input,.campo select{width:80px;padding:5px 8px;border:1px solid #D1D5DB;border-radius:4px;font-size:12px;font-family:inherit;text-align:right;}
+.campo input:focus,.campo select:focus{border-color:#2563EB;outline:none;}
+.campo .unidade{font-size:9px;color:#94A3B8;width:30px;}
+.campo .ref{font-size:8px;color:#94A3B8;}
+.campo input.fora{border-color:#EF4444;background:#FEF2F2;}
+.campo .dicom-icon{font-size:8px;color:#2563EB;cursor:help;}
+.resultado{background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:16px;margin-bottom:14px;}
+.resultado h3{font-size:13px;color:#1E293B;margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+.resultado h3 .count{font-size:10px;background:#E2E8F0;padding:1px 8px;border-radius:10px;color:#64748B;}
+.achado{font-size:12px;padding:4px 0;border-bottom:1px solid #F8FAFC;}
+.achado.alerta{color:#DC2626;font-weight:500;}
+.conc{font-size:12px;font-weight:600;padding:3px 0;}
+.conc .num{color:#2563EB;font-weight:700;margin-right:6px;}
+.calc-item{font-size:12px;padding:3px 0;display:flex;justify-content:space-between;}
+.calc-item .val{font-weight:600;}
+.dicom-box{background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:12px;margin-bottom:14px;}
+.dicom-box h3{font-size:12px;color:#1E40AF;margin-bottom:8px;}
+.dicom-box pre{font-size:10px;background:#fff;border:1px solid #DBEAFE;border-radius:4px;padding:8px;overflow-x:auto;font-family:'IBM Plex Mono',monospace;color:#475569;}
+.entrada-tabs{display:flex;gap:0;margin-bottom:14px;}
+.entrada-tab{flex:1;padding:8px;text-align:center;font-size:11px;font-weight:600;cursor:pointer;border-bottom:3px solid transparent;color:#94A3B8;}
+.entrada-tab.ativa{color:#2563EB;border-color:#2563EB;}
+.entrada-sec{display:none;}
+.entrada-sec.ativa{display:block;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>🫀 LEO — Motor ECO TT v2.0</h1>
+  <span class="topbar-badge">i18n + DICOM-ready</span>
+  <select id="sel-idioma" onchange="trocarIdioma(this.value)">
+    <option value="pt-BR">🇧🇷 Português</option>
+    <option value="en-US">🇺🇸 English</option>
+    <option value="es">🇪🇸 Español</option>
+  </select>
+  <select id="sel-sexo" onchange="gerarLaudo()">
+    <option value="M">♂ Masculino</option>
+    <option value="F">♀ Feminino</option>
+  </select>
+  <button class="topbar-btn" onclick="preencherDemo()">Demo normal</button>
+  <button class="topbar-btn" style="background:#EF4444;" onclick="preencherDemoAlterado()">Demo alterado</button>
+  <button class="topbar-btn" style="background:#475569;" onclick="limparCampos()">Limpar</button>
+</div>
+
+<div class="layout">
+  <div class="sidebar">
+    <!-- Tabs de entrada -->
+    <div class="entrada-tabs">
+      <div class="entrada-tab ativa" onclick="trocarEntrada('manual',this)">✏️ Manual</div>
+      <div class="entrada-tab" onclick="trocarEntrada('dicom',this)">📡 DICOM SR</div>
+      <div class="entrada-tab" onclick="trocarEntrada('usb',this)">💾 USB</div>
+    </div>
+
+    <!-- Entrada manual -->
+    <div class="entrada-sec ativa" id="entrada-manual">
+      <div id="campos-container"></div>
+    </div>
+
+    <!-- Entrada DICOM SR -->
+    <div class="entrada-sec" id="entrada-dicom">
+      <div class="dicom-box">
+        <h3>📡 Simular DICOM SR do Vivid T8</h3>
+        <p style="font-size:10px;color:#64748B;margin-bottom:8px;">Cole ou edite o JSON do DICOM SR:</p>
+        <textarea id="dicom-json" style="width:100%;height:200px;font-family:'IBM Plex Mono',monospace;font-size:10px;border:1px solid #DBEAFE;border-radius:4px;padding:8px;resize:vertical;">{
+  "patientName": "IVAN DOS SANTOS CORREA",
+  "patientID": "18818",
+  "studyDate": "20260406",
+  "measurements": {
+    "18083-6": 52,
+    "18085-1": 38,
+    "18157-8": 12,
+    "18159-4": 12,
+    "18043-0": 42,
+    "18010-9": 44,
+    "18008-3": 35,
+    "18148-7": 28,
+    "18036-4": 18,
+    "18029-9": 55
+  }
+}</textarea>
+        <button class="topbar-btn" style="margin-top:8px;width:100%;" onclick="importarDICOM()">Importar DICOM SR → Motor</button>
+      </div>
+    </div>
+
+    <!-- Entrada USB -->
+    <div class="entrada-sec" id="entrada-usb">
+      <div class="dicom-box" style="background:#FFFBEB;border-color:#FDE68A;">
+        <h3>💾 Importar de USB / Pasta</h3>
+        <p style="font-size:10px;color:#92400E;margin-bottom:8px;">Selecione o arquivo .dcm exportado do Vivid T8:</p>
+        <input type="file" id="usb-file" accept=".dcm,.DCM" style="font-size:11px;margin-bottom:8px;"/>
+        <p style="font-size:9px;color:#94A3B8;">Funciona com qualquer arquivo DICOM SR (GE, Philips, Samsung...)</p>
+        <p style="font-size:9px;color:#94A3B8;margin-top:4px;">⚠️ Parser DICOM real será implementado na fase de integração. Por enquanto, use a aba "DICOM SR" para simular.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+    <!-- Cálculos derivados -->
+    <div class="resultado">
+      <h3>📐 Cálculos derivados <span class="count" id="calc-count">0</span></h3>
+      <div id="calc-out" style="color:#94A3B8;">Preencha medidas e veja os cálculos aqui</div>
+    </div>
+
+    <!-- Achados -->
+    <div class="resultado">
+      <h3>📋 Achados <span class="count" id="achados-count">0</span></h3>
+      <div id="achados-out" style="color:#94A3B8;">—</div>
+    </div>
+
+    <!-- Conclusão -->
+    <div class="resultado">
+      <h3>✅ Conclusão <span class="count" id="conc-count">0</span></h3>
+      <div id="conc-out" style="color:#94A3B8;">—</div>
+    </div>
+
+    <!-- Info DICOM -->
+    <div class="resultado" style="background:#F8FAFC;">
+      <h3>📡 Mapeamento DICOM SR</h3>
+      <div id="dicom-info" style="font-size:10px;color:#64748B;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Motor -->
+<script>function registrarMotor(){}</script>
+<script src="eco-tt.js"></script>
+
+<script>
+// ── Render campos ──
+function renderCampos(){
+  const container = document.getElementById('campos-container');
+  container.innerHTML = '';
+  const sexo = document.getElementById('sel-sexo').value;
+
+  MotorEcoTT.grupos.forEach(grupo=>{
+    const campos = MotorEcoTT.campos.filter(c=>c.grupo===grupo.id && !c.calc);
+    if(!campos.length) return;
+    let html = `<div class="grupo"><div class="grupo-titulo">${grupo.nome}</div>`;
+    campos.forEach(c=>{
+      const ref = MotorEcoTT.refVal(c.id, sexo);
+      const refTxt = ref ? `(${ref.min}-${ref.max})` : '';
+      const dicomIcon = c.dicom ? `<span class="dicom-icon" title="DICOM: ${c.dicom}">📡</span>` : '';
+      if(c.unidade === 'grau'){
+        html += `<div class="campo"><label>${c.nome} ${dicomIcon}</label><select id="f-${c.id}" onchange="gerarLaudo()"><option value="">—</option><option value="discreta">Discreta</option><option value="leve">Leve</option><option value="moderada">Moderada</option><option value="grave">Grave</option></select></div>`;
+      } else {
+        html += `<div class="campo"><label>${c.nome} ${dicomIcon}</label><input type="text" id="f-${c.id}" oninput="gerarLaudo()"/><span class="unidade">${c.unidade||''}</span><span class="ref">${refTxt}</span></div>`;
+      }
+    });
+    html += '</div>';
+    container.innerHTML += html;
+  });
+
+  // Mostrar mapeamento DICOM
+  const dicomInfo = document.getElementById('dicom-info');
+  const dicomCampos = MotorEcoTT.campos.filter(c=>c.dicom);
+  dicomInfo.innerHTML = '<table style="width:100%;font-size:10px;"><tr><th style="text-align:left;">Campo LEO</th><th>Código DICOM</th><th>Unidade</th></tr>' +
+    dicomCampos.map(c=>`<tr><td>${c.nome}</td><td style="font-family:monospace;color:#2563EB;">${c.dicom}</td><td>${c.unidade}</td></tr>`).join('') +
+    '</table><p style="margin-top:6px;">' + dicomCampos.length + ' campos mapeados ao DICOM SR (TID 5200)</p>';
+}
+
+// ── Coletar dados ──
+function coletarDados(){
+  const d = {sexo: document.getElementById('sel-sexo').value};
+  MotorEcoTT.campos.forEach(c=>{
+    const el = document.getElementById('f-'+c.id);
+    if(el && el.value) d[c.id] = c.unidade==='grau' ? el.value : Number(el.value);
+  });
+  return d;
+}
+
+// ── Gerar laudo ──
+function gerarLaudo(){
+  let d = coletarDados();
+  d = MotorEcoTT.calcular(d);
+
+  // Cálculos
+  const calcCampos = MotorEcoTT.campos.filter(c=>c.calc);
+  let calcHtml = '';
+  let calcCount = 0;
+  calcCampos.forEach(c=>{
+    if(d[c.id]){ calcHtml += `<div class="calc-item"><span>${c.nome}</span><span class="val">${d[c.id]} ${c.unidade||''}</span></div>`; calcCount++; }
+  });
+  document.getElementById('calc-out').innerHTML = calcHtml || '<span style="color:#94A3B8;">Sem cálculos</span>';
+  document.getElementById('calc-count').textContent = calcCount;
+
+  // Achados
+  const achados = MotorEcoTT.gerarAchados(d);
+  document.getElementById('achados-out').innerHTML = achados.map(a=>`<div class="achado${a.alerta?' alerta':''}">${a.txt}</div>`).join('') || '—';
+  document.getElementById('achados-count').textContent = achados.length;
+
+  // Conclusão
+  const concs = MotorEcoTT.gerarConclusao(d);
+  document.getElementById('conc-out').innerHTML = concs.map(c=>`<div class="conc"><span class="num">${c.num}.</span>${c.txt}</div>`).join('') || '—';
+  document.getElementById('conc-count').textContent = concs.length;
+
+  // Refs
+  const sexo = document.getElementById('sel-sexo').value;
+  MotorEcoTT.campos.forEach(c=>{
+    if(c.calc) return;
+    const el = document.getElementById('f-'+c.id);
+    if(!el || !el.value || c.unidade==='grau') return;
+    const ref = MotorEcoTT.refVal(c.id, sexo);
+    if(!ref){el.classList.remove('fora');return;}
+    el.classList.toggle('fora', Number(el.value)<ref.min || Number(el.value)>ref.max);
+  });
+}
+
+// ── Idioma ──
+function trocarIdioma(lang){
+  ecoSetIdioma(lang);
+  gerarLaudo();
+}
+
+// ── Tabs entrada ──
+function trocarEntrada(tab, btn){
+  document.querySelectorAll('.entrada-tab').forEach(t=>t.classList.remove('ativa'));
+  document.querySelectorAll('.entrada-sec').forEach(s=>s.classList.remove('ativa'));
+  btn.classList.add('ativa');
+  document.getElementById('entrada-'+tab).classList.add('ativa');
+}
+
+// ── Importar DICOM ──
+function importarDICOM(){
+  try{
+    const json = JSON.parse(document.getElementById('dicom-json').value);
+    const medidas = MotorEcoTT.importarDICOM(json);
+    // Preencher campos
+    Object.entries(medidas).forEach(([k,v])=>{
+      if(k.startsWith('_')) return;
+      const el = document.getElementById('f-'+k);
+      if(el) el.value = v;
+    });
+    // Trocar para tab manual
+    document.querySelectorAll('.entrada-tab').forEach(t=>t.classList.remove('ativa'));
+    document.querySelectorAll('.entrada-sec').forEach(s=>s.classList.remove('ativa'));
+    document.querySelector('.entrada-tab').classList.add('ativa');
+    document.getElementById('entrada-manual').classList.add('ativa');
+    gerarLaudo();
+    alert('✅ DICOM SR importado! '+Object.keys(medidas).filter(k=>!k.startsWith('_')).length+' medidas extraídas.');
+  }catch(e){
+    alert('❌ Erro no JSON: '+e.message);
+  }
+}
+
+// ── Demos ──
+function preencherDemo(){
+  limparCampos();
+  const demo = {ao:33,ae:36,dved:48,dves:30,sivd:9,ppved:9,fe:65,onda_e:80,onda_a:60,td:200,e_linha:8,tapse:22,vd:28,psap:28,peso:75,altura:170};
+  Object.entries(demo).forEach(([k,v])=>{const el=document.getElementById('f-'+k);if(el)el.value=v;});
+  gerarLaudo();
+}
+
+function preencherDemoAlterado(){
+  limparCampos();
+  const demo = {ao:35,ae:44,dved:62,dves:48,sivd:12,ppved:12,fe:38,onda_e:120,onda_a:60,td:140,e_linha:5,tapse:14,vd:38,psap:58,peso:90,altura:170,insuf_mi:'moderada',insuf_tri:'leve'};
+  Object.entries(demo).forEach(([k,v])=>{const el=document.getElementById('f-'+k);if(el)el.value=v;});
+  gerarLaudo();
+}
+
+function limparCampos(){
+  MotorEcoTT.campos.forEach(c=>{const el=document.getElementById('f-'+c.id);if(el){el.value='';el.classList.remove('fora');}});
+  document.getElementById('calc-out').innerHTML='<span style="color:#94A3B8;">Sem cálculos</span>';
+  document.getElementById('achados-out').innerHTML='—';
+  document.getElementById('conc-out').innerHTML='—';
+  ['calc-count','achados-count','conc-count'].forEach(id=>document.getElementById(id).textContent='0');
+}
+
+// Init
+renderCampos();
+</script>
+
+</body>
+</html>

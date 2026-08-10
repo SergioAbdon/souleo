@@ -12,7 +12,7 @@ import { abrirPdfUrl } from '@/lib/pdfUtils';
 import { dataLocalHoje } from '@/lib/utils';
 import { gerarAccessionNumber } from '@/lib/gerarAccessionNumber';
 import { db, auth } from '@/lib/firebase';
-import { doc, getDoc, deleteDoc, collection, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, collection, writeBatch, serverTimestamp, type DocumentReference } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { checkEmissao } from '@/lib/billing';
 import DicomGallery from '@/components/laudo/DicomGallery';
@@ -301,8 +301,21 @@ export default function Worklist() {
     if (!confirm(`Remover ${item.pacienteNome} da fila?`)) return;
     if (!workspace?.id) return;
     try {
-      await deleteDoc(doc(db, 'workspaces', workspace.id, 'exames', item.id));
-    } catch (e) { console.error('Erro ao remover:', e); }
+      const res = await feegowAuthFetch('/api/exame', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ acao: 'apagar', wsId: workspace.id, exameId: item.id }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        alert(data.motivo === 'sem_permissao'
+          ? 'Seu perfil não pode remover exames da fila. Peça ao médico ou ao responsável.'
+          : 'Não foi possível remover. Tente novamente.');
+      }
+    } catch (e) {
+      console.error('Erro ao remover:', e);
+      alert('Não foi possível remover. Verifique a conexão e tente novamente.');
+    }
   }
 
   async function importarFeegow() {
@@ -349,7 +362,7 @@ export default function Worklist() {
       const refsAppt = comAppt.map((p: Record<string, string>) =>
         doc(db, 'workspaces', workspace.id, 'exames', `fg-${p.feegowAppointId}`),
       );
-      const existentes = await Promise.all(refsAppt.map((r) => getDoc(r)));
+      const existentes = await Promise.all(refsAppt.map((r: DocumentReference) => getDoc(r)));
 
       const aCriar = [
         ...comAppt

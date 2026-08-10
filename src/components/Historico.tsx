@@ -2,15 +2,14 @@
 // ══════════════════════════════════════════════════════════════════
 // SOULEO · Histórico de Laudos Emitidos
 // Filtros: workspace, período, convênio, busca nome
-// Ações: Ver, Imprimir, Editar (reabrir), Excluir
+// Ações: Ver, Imprimir, Excluir (reabrir é na própria tela do laudo)
 // ══════════════════════════════════════════════════════════════════
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getHistorico, saveExame, logAction, getExame, type HistoricoResult } from '@/lib/firestore';
+import { getHistorico, getExame, type HistoricoResult } from '@/lib/firestore';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
-import { db } from '@/lib/firebase';
-import { doc, deleteDoc, DocumentSnapshot } from 'firebase/firestore';
+import { DocumentSnapshot } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 
 type ExameItem = Record<string, unknown> & {
@@ -112,14 +111,6 @@ export default function Historico() {
     }
   }
 
-  async function handleEditar(ex: ExameItem) {
-    if (!confirm('Reabrir laudo para edição?\nApenas o corpo do laudo poderá ser alterado.')) return;
-    if (!wsIdSel || !user?.uid) return;
-    await saveExame(wsIdSel, { id: ex.id, status: 'andamento' }, user.uid);
-    await logAction('reabertura_laudo', { exameId: ex.id, wsId: wsIdSel, pacienteNome: ex.pacienteNome }, user.uid);
-    router.push('/laudo/' + ex.id);
-  }
-
   function abrirConfirmDelete(ex: ExameItem) {
     setDeleteId(ex.id);
     setDeleteNome(ex.pacienteNome || 'sem nome');
@@ -127,10 +118,29 @@ export default function Historico() {
 
   async function confirmarDelete() {
     if (!deleteId || !wsIdSel || !user?.uid) return;
-    await logAction('exclusao_laudo', { exameId: deleteId, wsId: wsIdSel, pacienteNome: deleteNome }, user.uid);
-    await deleteDoc(doc(db, 'workspaces', wsIdSel, 'exames', deleteId));
-    setExames(prev => prev.filter(e => e.id !== deleteId));
-    setDeleteId(null);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/exame', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ acao: 'apagar', wsId: wsIdSel, exameId: deleteId }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        // Antes a falha era silenciosa: a regra negava e o modal so travava.
+        alert(data.motivo === 'sem_permissao'
+          ? 'Apagar laudo emitido é ação do responsável pela conta.'
+          : 'Não foi possível excluir. Tente novamente.');
+        setDeleteId(null);
+        return;
+      }
+      setExames(prev => prev.filter(e => e.id !== deleteId));
+      setDeleteId(null);
+    } catch (e) {
+      console.error('Erro ao excluir:', e);
+      alert('Não foi possível excluir. Verifique a conexão e tente novamente.');
+      setDeleteId(null);
+    }
   }
 
   // ── Formatação ──

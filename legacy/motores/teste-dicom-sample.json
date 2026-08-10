@@ -1,0 +1,33 @@
+{
+  "_comentario": "Simulação de DICOM SR TID 5200 — Eco TT do GE Vivid T8",
+  "_fonte": "Dados fictícios baseados na especificação DICOM e valores clínicos reais",
+
+  "patientName": "IVAN DOS SANTOS CORREA",
+  "patientID": "18818",
+  "patientBirthDate": "19791028",
+  "patientSex": "M",
+  "studyDate": "20260407",
+  "studyTime": "171500",
+  "institutionName": "GRUPO MEDCARDIO",
+  "performingPhysicianName": "DR SERGIO ROBERTO ABDON RODRIGUES",
+  "referringPhysicianName": "DRA SONIA CONDE CRISTINO",
+
+  "measurements": {
+    "18008-3": 33,
+    "18010-9": 38,
+    "18083-6": 52,
+    "18085-1": 38,
+    "18157-8": 11,
+    "18159-4": 11,
+    "18148-7": 26,
+    "18043-0": 45,
+    "18036-4": 18,
+    "18044-8": 1.2,
+    "18045-5": 12,
+    "18046-3": 6,
+    "18047-1": 1.8,
+    "18060-4": 90,
+    "18061-2": 70,
+    "18029-9": 42
+  }
+}

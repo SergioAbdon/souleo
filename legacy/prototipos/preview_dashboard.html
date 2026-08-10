@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LEO - Preview Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'IBM Plex Sans',sans-serif;background:#F1F5F9;color:#1E293B;min-height:100vh;}
+
+/* ── BARRA SUPERIOR ── */
+.topbar{
+  background:linear-gradient(135deg,#1E3A5F 0%,#2563EB 100%);
+  padding:0 24px;height:54px;display:flex;align-items:center;gap:16px;
+  box-shadow:0 2px 12px rgba(0,0,0,.2);position:sticky;top:0;z-index:100;
+}
+.topbar-brand{display:flex;align-items:center;gap:8px;color:#fff;font-weight:700;font-size:15px;}
+.topbar-brand span{font-size:20px;}
+.topbar-sep{width:1px;height:28px;background:rgba(255,255,255,.2);margin:0 4px;}
+.topbar-info{flex:1;color:rgba(255,255,255,.85);font-size:12px;line-height:1.3;}
+.topbar-info strong{color:#fff;font-size:13px;display:block;}
+.topbar-actions{display:flex;gap:6px;}
+.topbar-btn{
+  padding:6px 14px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;
+  border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.1);color:#fff;
+  font-family:inherit;transition:all .15s;white-space:nowrap;
+}
+.topbar-btn:hover{background:rgba(255,255,255,.2);}
+.topbar-btn.admin{background:linear-gradient(135deg,#F59E0B,#D97706);border-color:transparent;}
+.topbar-btn.sair{background:#EF4444;border-color:transparent;}
+
+/* ── RESUMO ── */
+.resumo{
+  display:flex;gap:12px;padding:20px 24px 0;flex-wrap:wrap;
+}
+.resumo-item{
+  background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:14px 18px;
+  min-width:160px;flex:1;
+}
+.resumo-label{font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.5px;}
+.resumo-valor{font-size:22px;font-weight:700;color:#1E293B;margin-top:2px;}
+.resumo-sub{font-size:11px;color:#94A3B8;margin-top:2px;}
+.resumo-barra{height:4px;background:#E2E8F0;border-radius:2px;margin-top:6px;overflow:hidden;}
+.resumo-barra-fill{height:100%;background:#2563EB;border-radius:2px;transition:width .3s;}
+.resumo-barra-fill.alerta{background:#F59E0B;}
+.resumo-barra-fill.critico{background:#EF4444;}
+
+/* ── TABS ── */
+.tabs{
+  display:flex;gap:0;padding:20px 24px 0;
+}
+.tab{
+  padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;
+  color:#64748B;border-bottom:3px solid transparent;transition:all .15s;
+}
+.tab:hover{color:#1E293B;}
+.tab.ativa{color:#2563EB;border-color:#2563EB;}
+.tab-badge{
+  background:#EF4444;color:#fff;font-size:9px;font-weight:700;
+  padding:1px 6px;border-radius:10px;margin-left:6px;
+}
+
+/* ── CONTEUDO ── */
+.conteudo{padding:0 24px 24px;}
+.section{display:none;padding-top:16px;}
+.section.ativa{display:block;}
+
+/* ── LISTA/TABELA ── */
+.lista{background:#fff;border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;}
+.lista-header{
+  display:flex;padding:10px 16px;background:#F8FAFC;border-bottom:1px solid #E2E8F0;
+  font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.3px;
+}
+.lista-row{
+  display:flex;padding:12px 16px;border-bottom:1px solid #F1F5F9;
+  align-items:center;font-size:13px;transition:background .1s;
+}
+.lista-row:last-child{border-bottom:none;}
+.lista-row:hover{background:#F8FAFC;}
+.col-hora{width:55px;font-weight:600;color:#64748B;flex-shrink:0;}
+.col-paciente{flex:1;min-width:0;}
+.col-paciente-nome{font-weight:600;color:#1E293B;}
+.col-paciente-info{font-size:11px;color:#94A3B8;}
+.col-convenio{width:100px;font-size:12px;color:#64748B;flex-shrink:0;}
+.col-status{width:110px;flex-shrink:0;}
+.col-acoes{width:220px;display:flex;gap:4px;flex-shrink:0;flex-wrap:nowrap;justify-content:flex-end;}
+
+/* ── STATUS PILL ── */
+.status{
+  display:inline-block;padding:3px 10px;border-radius:99px;font-size:10px;font-weight:700;
+}
+.status-aguardando{background:#FEF3C7;color:#92400E;}
+.status-andamento{background:#DBEAFE;color:#1E40AF;}
+.status-emitido{background:#D1FAE5;color:#065F46;}
+.status-rascunho{background:#F3F4F6;color:#6B7280;}
+
+/* ── BOTOES ACAO ── */
+.btn-acao{
+  padding:4px 8px;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;
+  border:1px solid #E2E8F0;background:#fff;color:#475569;font-family:inherit;
+  transition:all .12s;white-space:nowrap;
+}
+.btn-acao:hover{background:#F1F5F9;border-color:#CBD5E1;}
+.btn-acao.primary{background:#2563EB;color:#fff;border-color:#2563EB;}
+.btn-acao.primary:hover{background:#1D4ED8;}
+.btn-acao.success{background:#059669;color:#fff;border-color:#059669;}
+.btn-acao.warn{background:#F59E0B;color:#fff;border-color:#F59E0B;}
+
+/* ── TOOLBAR ── */
+.toolbar{
+  display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;
+}
+.toolbar-input{
+  padding:8px 12px;border:1px solid #E2E8F0;border-radius:6px;font-size:12px;
+  font-family:inherit;background:#fff;color:#1E293B;outline:none;
+}
+.toolbar-input:focus{border-color:#2563EB;}
+.toolbar-select{
+  padding:8px 12px;border:1px solid #E2E8F0;border-radius:6px;font-size:12px;
+  font-family:inherit;background:#fff;color:#1E293B;outline:none;cursor:pointer;
+}
+.toolbar-btn{
+  padding:8px 16px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;
+  border:none;font-family:inherit;transition:all .15s;
+}
+.toolbar-btn-primary{background:#2563EB;color:#fff;}
+.toolbar-btn-primary:hover{background:#1D4ED8;}
+.toolbar-btn-ghost{background:#fff;color:#475569;border:1px solid #E2E8F0;}
+
+/* ── EXTRATO ── */
+.extrato-resumo{
+  display:flex;gap:12px;margin-top:16px;margin-bottom:16px;flex-wrap:wrap;
+}
+.extrato-card{
+  background:#fff;border:1px solid #E2E8F0;border-radius:8px;padding:12px 16px;flex:1;min-width:140px;
+}
+.extrato-card-label{font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;}
+.extrato-card-valor{font-size:20px;font-weight:700;margin-top:2px;}
+
+.honorarios-box{
+  background:#FFFBEB;border:2px solid #FDE68A;border-radius:10px;padding:16px 20px;margin-top:16px;
+}
+.honorarios-box h3{font-size:14px;color:#92400E;margin-bottom:10px;}
+.honorarios-row{display:flex;align-items:center;gap:12px;margin-bottom:8px;font-size:13px;}
+.honorarios-input{
+  width:100px;padding:8px 10px;border:1.5px solid #FDE68A;border-radius:6px;
+  font-size:14px;font-weight:700;text-align:right;background:#fff;font-family:inherit;
+}
+.honorarios-total{font-size:22px;font-weight:700;color:#059669;margin-top:8px;}
+
+/* ── HISTORICO PACIENTE ── */
+.hist-pac-header{
+  background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:16px 20px;
+  margin-bottom:14px;display:flex;align-items:center;gap:16px;
+}
+.hist-pac-avatar{
+  width:48px;height:48px;border-radius:50%;background:#2563EB;color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;
+}
+.hist-pac-info{flex:1;}
+.hist-pac-nome{font-size:16px;font-weight:700;}
+.hist-pac-dados{font-size:12px;color:#64748B;margin-top:2px;}
+
+.vazio{text-align:center;padding:40px;color:#94A3B8;font-size:13px;}
+.vazio span{font-size:32px;display:block;margin-bottom:8px;}
+</style>
+</head>
+<body>
+
+<!-- ══ SELETOR DE LAYOUT ══ -->
+<div style="background:#0F172A;padding:6px 24px;display:flex;gap:10px;align-items:center;font-size:11px;color:#94A3B8;">
+  <span>Visualizar como:</span>
+  <button onclick="trocarLayout('pf')" style="padding:4px 12px;border-radius:4px;border:1px solid #475569;background:#1E293B;color:#93C5FD;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">🩺 PF (Consultorio)</button>
+  <button onclick="trocarLayout('pj')" style="padding:4px 12px;border-radius:4px;border:1px solid #475569;background:#1E293B;color:#C4B5FD;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">🏥 PJ (Clinica)</button>
+</div>
+
+<!-- ══ BARRA SUPERIOR — PF (Consultorio proprio) ══ -->
+<div class="topbar" id="topbar-pf">
+  <div class="topbar-brand"><span>🫀</span> LEO</div>
+  <div class="topbar-sep"></div>
+  <div class="topbar-info">
+    <strong style="font-size:15px;">Dr. Sergio Abdon</strong>
+    <span style="font-size:11px;">CRM/PA 7952 · Cardiologia e Ecocardiografia</span>
+  </div>
+  <div style="flex:1;"></div>
+  <div style="text-align:right;margin-right:12px;">
+    <div style="font-size:11px;color:rgba(255,255,255,.6);">Local ativo</div>
+    <div style="font-size:12px;color:#fff;font-weight:600;">Grupo MedCardio</div>
+  </div>
+  <div class="topbar-actions">
+    <button class="topbar-btn" onclick="alert('Trocar workspace')">Trocar</button>
+    <button class="topbar-btn admin" onclick="alert('Abrir Admin')">👑 Admin</button>
+    <button class="topbar-btn sair" onclick="alert('Logout')">Sair</button>
+  </div>
+</div>
+
+<!-- ══ BARRA SUPERIOR — PJ (Clinica/Instituicao) ══ -->
+<div class="topbar" id="topbar-pj" style="display:none;">
+  <div class="topbar-brand"><span>🫀</span> LEO</div>
+  <div class="topbar-sep"></div>
+  <div style="display:flex;align-items:center;gap:10px;flex:1;">
+    <div style="width:36px;height:36px;border-radius:8px;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">🏥</div>
+    <div class="topbar-info" style="flex:1;">
+      <strong style="font-size:15px;">Hospital Sao Lucas</strong>
+      <span style="font-size:11px;">CNPJ 12.345.678/0001-90 · Cardiologia</span>
+    </div>
+  </div>
+  <div class="topbar-sep"></div>
+  <div style="display:flex;align-items:center;gap:8px;margin-right:8px;">
+    <div style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;">SA</div>
+    <div>
+      <div style="font-size:12px;font-weight:600;color:#fff;">Dr. Sergio Abdon</div>
+      <div style="font-size:10px;color:rgba(255,255,255,.55);">Medico · CRM/PA 7952</div>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <button class="topbar-btn" onclick="alert('Trocar workspace')">Trocar</button>
+    <button class="topbar-btn" style="background:rgba(99,102,241,.3);border-color:rgba(99,102,241,.5);" onclick="alert('Equipe')">👥 Equipe</button>
+    <button class="topbar-btn admin" onclick="alert('Abrir Admin')">👑 Admin</button>
+    <button class="topbar-btn sair" onclick="alert('Logout')">Sair</button>
+  </div>
+</div>
+
+<!-- ══ LAYOUT PRINCIPAL: 2 COLUNAS ══ -->
+<div style="display:flex;gap:0;min-height:calc(100vh - 54px);flex-direction:row-reverse;">
+
+<!-- ══ COLUNA DIREITA: WORKLIST + ABAS ══ -->
+<div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+
+<!-- RESUMO -->
+<div class="resumo">
+  <div class="resumo-item">
+    <div class="resumo-label">Plano</div>
+    <div class="resumo-valor">Pro</div>
+    <div class="resumo-sub">Renova em 15/04/2026</div>
+  </div>
+  <div class="resumo-item">
+    <div class="resumo-label">Franquia do mes</div>
+    <div class="resumo-valor">55 <span style="font-size:13px;color:#94A3B8;font-weight:500;">/ 100</span></div>
+    <div class="resumo-sub">Restam 45 laudos</div>
+    <div class="resumo-barra"><div class="resumo-barra-fill" style="width:55%;"></div></div>
+  </div>
+  <div class="resumo-item">
+    <div class="resumo-label">Creditos extras</div>
+    <div class="resumo-valor">15</div>
+    <div class="resumo-sub">Nao expiram</div>
+  </div>
+  <div class="resumo-item">
+    <div class="resumo-label">Emitidos hoje</div>
+    <div class="resumo-valor">7</div>
+    <div class="resumo-sub">45 no mes</div>
+  </div>
+</div>
+
+<!-- TABS -->
+<div class="tabs">
+  <div class="tab ativa" onclick="trocarTab('worklist')">📋 Worklist <span class="tab-badge">3</span></div>
+  <div class="tab" onclick="trocarTab('historico')">📂 Historico</div>
+  <div class="tab" onclick="trocarTab('extrato')">📊 Extrato</div>
+</div>
+<hr style="border:none;border-top:1px solid #E2E8F0;margin:0 24px;">
+
+<div class="conteudo">
+
+  <!-- ══ TAB: WORKLIST ══ -->
+  <div class="section ativa" id="sec-worklist">
+    <div class="toolbar">
+      <input class="toolbar-input" placeholder="Buscar paciente..." style="flex:1;max-width:300px;"/>
+      <button class="toolbar-btn toolbar-btn-primary" onclick="alert('Novo paciente')">+ Paciente</button>
+      <button class="toolbar-btn toolbar-btn-ghost" onclick="alert('Laudo rapido')">📋 Laudo rapido</button>
+    </div>
+
+    <div class="lista">
+      <div class="lista-header">
+        <span class="col-hora">Hora</span>
+        <span class="col-paciente">Paciente</span>
+        <span class="col-convenio">Convenio</span>
+        <span class="col-status">Status</span>
+        <span class="col-acoes">Acoes</span>
+      </div>
+
+      <div class="lista-row">
+        <span class="col-hora">08:30</span>
+        <div class="col-paciente">
+          <div class="col-paciente-nome">Joao da Silva</div>
+          <div class="col-paciente-info">58 anos · CPF ***456**</div>
+        </div>
+        <span class="col-convenio">Unimed</span>
+        <span class="col-status"><span class="status status-aguardando">Aguardando</span></span>
+        <div class="col-acoes">
+          <button class="btn-acao primary">📋 Laudar</button>
+          <button class="btn-acao">👤 Editar</button>
+        </div>
+      </div>
+
+      <div class="lista-row">
+        <span class="col-hora">09:00</span>
+        <div class="col-paciente">
+          <div class="col-paciente-nome">Maria Santos</div>
+          <div class="col-paciente-info">42 anos · CPF ***789**</div>
+        </div>
+        <span class="col-convenio">SUS</span>
+        <span class="col-status"><span class="status status-andamento">Em andamento</span></span>
+        <div class="col-acoes">
+          <button class="btn-acao primary">▶ Continuar</button>
+          <button class="btn-acao">👤 Editar</button>
+        </div>
+      </div>
+
+      <div class="lista-row">
+        <span class="col-hora">09:45</span>
+        <div class="col-paciente">
+          <div class="col-paciente-nome">Pedro Oliveira</div>
+          <div class="col-paciente-info">71 anos · CPF ***123**</div>
+        </div>
+        <span class="col-convenio">Particular</span>
+        <span class="col-status"><span class="status status-emitido">Emitido</span></span>
+        <div class="col-acoes">
+          <button class="btn-acao">👁 Ver</button>
+          <button class="btn-acao success">🖨 Imprimir</button>
+          <button class="btn-acao warn">✏ Editar</button>
+          <button class="btn-acao">📧 Enviar</button>
+        </div>
+      </div>
+
+      <div class="lista-row">
+        <span class="col-hora">10:15</span>
+        <div class="col-paciente">
+          <div class="col-paciente-nome">Ana Costa</div>
+          <div class="col-paciente-info">35 anos · CPF ***321**</div>
+        </div>
+        <span class="col-convenio">Hapvida</span>
+        <span class="col-status"><span class="status status-aguardando">Aguardando</span></span>
+        <div class="col-acoes">
+          <button class="btn-acao primary">📋 Laudar</button>
+          <button class="btn-acao">👤 Editar</button>
+          <button class="btn-acao" style="color:#EF4444;">🗑</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ TAB: HISTORICO ══ -->
+  <div class="section" id="sec-historico">
+    <div class="toolbar">
+      <input class="toolbar-input" placeholder="Buscar por nome ou CPF..." style="flex:1;max-width:300px;"/>
+      <input class="toolbar-input" type="date" value="2026-03-01" style="width:140px;"/>
+      <span style="font-size:12px;color:#64748B;">ate</span>
+      <input class="toolbar-input" type="date" value="2026-04-05" style="width:140px;"/>
+      <select class="toolbar-select">
+        <option>Todos os medicos</option>
+        <option>Dr. Sergio Abdon</option>
+        <option>Dra. Ana Lima</option>
+      </select>
+    </div>
+
+    <!-- Resultado: clicou num paciente -->
+    <div class="hist-pac-header">
+      <div class="hist-pac-avatar">JS</div>
+      <div class="hist-pac-info">
+        <div class="hist-pac-nome">Joao da Silva</div>
+        <div class="hist-pac-dados">58 anos · CPF 123.456.789-00 · Unimed · 4 exames anteriores</div>
+      </div>
+      <button class="btn-acao">👤 Editar cadastro</button>
+    </div>
+
+    <div class="lista">
+      <div class="lista-header">
+        <span style="width:90px;">Data</span>
+        <span style="flex:1;">Exame</span>
+        <span style="width:120px;">Medico</span>
+        <span style="width:70px;">Versao</span>
+        <span style="width:80px;">Status</span>
+        <span style="width:200px;text-align:right;">Acoes</span>
+      </div>
+
+      <div class="lista-row">
+        <span style="width:90px;font-weight:600;">05/04/2026</span>
+        <span style="flex:1;">Ecocardiograma TT</span>
+        <span style="width:120px;font-size:12px;color:#64748B;">Dr. Sergio</span>
+        <span style="width:70px;font-size:11px;">v1</span>
+        <span style="width:80px;"><span class="status status-emitido">Emitido</span></span>
+        <div style="width:200px;display:flex;gap:4px;justify-content:flex-end;">
+          <button class="btn-acao">👁 Ver</button>
+          <button class="btn-acao success">🖨 Imprimir</button>
+          <button class="btn-acao warn">✏ Editar</button>
+          <button class="btn-acao">📧 Enviar</button>
+        </div>
+      </div>
+
+      <div class="lista-row">
+        <span style="width:90px;font-weight:600;">15/01/2026</span>
+        <span style="flex:1;">Ecocardiograma TT</span>
+        <span style="width:120px;font-size:12px;color:#64748B;">Dr. Sergio</span>
+        <span style="width:70px;font-size:11px;">v2 <span style="color:#F59E0B;font-size:9px;">(editado)</span></span>
+        <span style="width:80px;"><span class="status status-emitido">Emitido</span></span>
+        <div style="width:200px;display:flex;gap:4px;justify-content:flex-end;">
+          <button class="btn-acao">👁 Ver</button>
+          <button class="btn-acao success">🖨 Imprimir</button>
+          <button class="btn-acao">📧 Enviar</button>
+        </div>
+      </div>
+
+      <div class="lista-row">
+        <span style="width:90px;font-weight:600;">10/08/2025</span>
+        <span style="flex:1;">Ecocardiograma TT</span>
+        <span style="width:120px;font-size:12px;color:#64748B;">Dr. Sergio</span>
+        <span style="width:70px;font-size:11px;">v1</span>
+        <span style="width:80px;"><span class="status status-emitido">Emitido</span></span>
+        <div style="width:200px;display:flex;gap:4px;justify-content:flex-end;">
+          <button class="btn-acao">👁 Ver</button>
+          <button class="btn-acao success">🖨 Imprimir</button>
+          <button class="btn-acao">📧 Enviar</button>
+        </div>
+      </div>
+
+      <div class="lista-row">
+        <span style="width:90px;font-weight:600;">22/02/2025</span>
+        <span style="flex:1;">Ecocardiograma TT</span>
+        <span style="width:120px;font-size:12px;color:#64748B;">Dra. Ana</span>
+        <span style="width:70px;font-size:11px;">v1</span>
+        <span style="width:80px;"><span class="status status-emitido">Emitido</span></span>
+        <div style="width:200px;display:flex;gap:4px;justify-content:flex-end;">
+          <button class="btn-acao">👁 Ver</button>
+          <button class="btn-acao success">🖨 Imprimir</button>
+          <button class="btn-acao">📧 Enviar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ TAB: EXTRATO ══ -->
+  <div class="section" id="sec-extrato">
+    <div class="toolbar">
+      <span style="font-size:12px;font-weight:600;color:#475569;">Periodo:</span>
+      <input class="toolbar-input" type="date" value="2026-03-01" style="width:140px;"/>
+      <span style="font-size:12px;color:#64748B;">ate</span>
+      <input class="toolbar-input" type="date" value="2026-03-31" style="width:140px;"/>
+      <span style="font-size:12px;font-weight:600;color:#475569;margin-left:8px;">Clinica:</span>
+      <select class="toolbar-select" id="ext-clinica" onchange="extTrocarClinica()">
+        <option value="all">Todas as clinicas</option>
+        <option value="medcardio" selected>Grupo MedCardio</option>
+        <option value="saolucas">Hospital Sao Lucas</option>
+      </select>
+      <button class="toolbar-btn toolbar-btn-primary">Gerar extrato</button>
+      <button class="toolbar-btn toolbar-btn-ghost" onclick="window.print()">🖨 Imprimir</button>
+      <button class="toolbar-btn toolbar-btn-ghost" onclick="alert('Gerar PDF — sera implementado com jsPDF')">📄 Salvar PDF</button>
+    </div>
+
+    <!-- CABECALHO DO EXTRATO -->
+    <div style="background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:16px 20px;margin-bottom:14px;">
+      <div style="font-size:15px;font-weight:700;color:#1E293B;">Extrato — Grupo MedCardio</div>
+      <div style="font-size:12px;color:#64748B;margin-top:2px;">Periodo: 01/03/2026 a 31/03/2026</div>
+    </div>
+
+    <!-- LISTA DE EXAMES -->
+    <div class="lista">
+      <div class="lista-header">
+        <span style="width:80px;">Data</span>
+        <span style="flex:1;">Paciente</span>
+        <span style="width:100px;">Convenio</span>
+        <span style="width:80px;">Tipo</span>
+      </div>
+      <div class="lista-row">
+        <span style="width:80px;font-weight:600;">28/03</span>
+        <span style="flex:1;">Joao Cardoso</span>
+        <span style="width:100px;font-size:12px;">Unimed</span>
+        <span style="width:80px;"><span class="status status-emitido">Emissao</span></span>
+      </div>
+      <div class="lista-row">
+        <span style="width:80px;font-weight:600;">25/03</span>
+        <span style="flex:1;">Maria Silva</span>
+        <span style="width:100px;font-size:12px;">Unimed</span>
+        <span style="width:80px;"><span class="status status-emitido">Emissao</span></span>
+      </div>
+      <div class="lista-row">
+        <span style="width:80px;font-weight:600;">22/03</span>
+        <span style="flex:1;">Sergio Mota</span>
+        <span style="width:100px;font-size:12px;">Particular</span>
+        <span style="width:80px;"><span class="status status-emitido">Emissao</span></span>
+      </div>
+      <div class="lista-row">
+        <span style="width:80px;font-weight:600;">18/03</span>
+        <span style="flex:1;">Ayrton Senna</span>
+        <span style="width:100px;font-size:12px;">Bradesco</span>
+        <span style="width:80px;"><span class="status status-emitido">Emissao</span></span>
+      </div>
+      <div class="lista-row">
+        <span style="width:80px;font-weight:600;">10/03</span>
+        <span style="flex:1;">Alan Prost</span>
+        <span style="width:100px;font-size:12px;">Bradesco</span>
+        <span style="width:80px;"><span class="status status-emitido">Emissao</span></span>
+      </div>
+      <!-- TOTAL DA LISTA -->
+      <div class="lista-row" style="background:#F8FAFC;font-weight:700;">
+        <span style="width:80px;"></span>
+        <span style="flex:1;color:#475569;">Total</span>
+        <span style="width:100px;"></span>
+        <span style="width:80px;color:#1E293B;">5 exames</span>
+      </div>
+    </div>
+
+    <!-- RESUMO POR CONVENIO + VALORES -->
+    <div style="background:#fff;border:1px solid #E2E8F0;border-radius:10px;margin-top:14px;overflow:hidden;">
+      <div style="padding:14px 18px;border-bottom:1px solid #E2E8F0;">
+        <div style="font-size:13px;font-weight:700;color:#1E293B;">Resumo por convenio</div>
+      </div>
+      <!-- Header -->
+      <div style="display:flex;padding:8px 18px;background:#F8FAFC;border-bottom:1px solid #E2E8F0;font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.3px;">
+        <span style="flex:1;">Convenio</span>
+        <span style="width:60px;text-align:center;">Qtd</span>
+        <span style="width:110px;text-align:center;">Valor unit.</span>
+        <span style="width:100px;text-align:right;">Subtotal</span>
+      </div>
+      <!-- Unimed -->
+      <div style="display:flex;padding:10px 18px;border-bottom:1px solid #F1F5F9;align-items:center;font-size:13px;">
+        <span style="flex:1;font-weight:600;">Unimed</span>
+        <span style="width:60px;text-align:center;font-weight:600;">2</span>
+        <span style="width:110px;text-align:center;">
+          <span style="color:#64748B;font-size:11px;">R$</span>
+          <input type="number" value="47" oninput="calcExtrato()" class="ext-valor" data-qtd="2" style="width:65px;padding:5px 8px;border:1.5px solid #FDE68A;border-radius:5px;font-size:13px;font-weight:700;text-align:right;background:#FFFBEB;font-family:inherit;outline:none;"/>
+        </span>
+        <span style="width:100px;text-align:right;font-weight:600;" class="ext-sub">R$ 94,00</span>
+      </div>
+      <!-- Particular -->
+      <div style="display:flex;padding:10px 18px;border-bottom:1px solid #F1F5F9;align-items:center;font-size:13px;">
+        <span style="flex:1;font-weight:600;">Particular</span>
+        <span style="width:60px;text-align:center;font-weight:600;">1</span>
+        <span style="width:110px;text-align:center;">
+          <span style="color:#64748B;font-size:11px;">R$</span>
+          <input type="number" value="70" oninput="calcExtrato()" class="ext-valor" data-qtd="1" style="width:65px;padding:5px 8px;border:1.5px solid #FDE68A;border-radius:5px;font-size:13px;font-weight:700;text-align:right;background:#FFFBEB;font-family:inherit;outline:none;"/>
+        </span>
+        <span style="width:100px;text-align:right;font-weight:600;" class="ext-sub">R$ 70,00</span>
+      </div>
+      <!-- Bradesco -->
+      <div style="display:flex;padding:10px 18px;border-bottom:1px solid #F1F5F9;align-items:center;font-size:13px;">
+        <span style="flex:1;font-weight:600;">Bradesco</span>
+        <span style="width:60px;text-align:center;font-weight:600;">2</span>
+        <span style="width:110px;text-align:center;">
+          <span style="color:#64748B;font-size:11px;">R$</span>
+          <input type="number" value="65" oninput="calcExtrato()" class="ext-valor" data-qtd="2" style="width:65px;padding:5px 8px;border:1.5px solid #FDE68A;border-radius:5px;font-size:13px;font-weight:700;text-align:right;background:#FFFBEB;font-family:inherit;outline:none;"/>
+        </span>
+        <span style="width:100px;text-align:right;font-weight:600;" class="ext-sub">R$ 130,00</span>
+      </div>
+      <!-- TOTAL A RECEBER -->
+      <div style="display:flex;padding:14px 18px;background:#F0FDF4;border-top:2px solid #BBF7D0;align-items:center;">
+        <span style="flex:1;font-size:14px;font-weight:700;color:#065F46;">A receber</span>
+        <span style="font-size:22px;font-weight:700;color:#059669;" id="ext-total">R$ 294,00</span>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+</div> <!-- fim coluna esquerda -->
+
+<!-- ══ COLUNA DIREITA: PERFIL DO PROFISSIONAL ══ -->
+<div style="width:280px;flex-shrink:0;background:#fff;border-right:1px solid #E2E8F0;overflow-y:auto;padding:20px 16px;">
+
+  <!-- FOTO/AVATAR + NOME -->
+  <div style="text-align:center;margin-bottom:14px;">
+    <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#2563EB,#1E3A5F);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;margin:0 auto 8px;">SA</div>
+    <div style="font-size:14px;font-weight:700;color:#1E293B;">Dr. Sergio Abdon</div>
+    <div style="font-size:11px;color:#64748B;">CRM/PA 7952 · RQE 4521</div>
+    <div style="font-size:10px;color:#94A3B8;margin-top:2px;">Cardiologia e Ecocardiografia</div>
+    <button style="margin-top:8px;padding:5px 14px;border:1px solid #E2E8F0;border-radius:6px;font-size:10px;font-weight:600;cursor:pointer;background:#fff;color:#475569;font-family:inherit;">Editar perfil</button>
+  </div>
+
+  <hr style="border:none;border-top:1px solid #F1F5F9;margin:0 0 12px;">
+
+  <!-- LOCAIS DE TRABALHO -->
+  <div style="margin-bottom:12px;">
+    <div style="font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Locais de trabalho</div>
+
+    <div style="border:1px solid #E2E8F0;border-radius:8px;padding:10px 12px;margin-bottom:6px;cursor:pointer;transition:all .15s;" onmouseover="this.style.borderColor='#2563EB'" onmouseout="this.style.borderColor='#E2E8F0'">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:12px;font-weight:700;color:#1E293B;">Grupo MedCardio</div>
+          <div style="font-size:10px;color:#94A3B8;">Av. Furtado, 1234</div>
+        </div>
+        <span style="font-size:8px;background:#DBEAFE;color:#1E40AF;padding:2px 6px;border-radius:4px;font-weight:700;">PF</span>
+      </div>
+    </div>
+
+    <div style="border:1px solid #E2E8F0;border-radius:8px;padding:10px 12px;margin-bottom:6px;cursor:pointer;transition:all .15s;" onmouseover="this.style.borderColor='#2563EB'" onmouseout="this.style.borderColor='#E2E8F0'">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:12px;font-weight:700;color:#1E293B;">Hospital Sao Lucas</div>
+          <div style="font-size:10px;color:#94A3B8;">Tv. Dr. Moraes, 500</div>
+        </div>
+        <span style="font-size:8px;background:#EDE9FE;color:#5B21B6;padding:2px 6px;border-radius:4px;font-weight:700;">PJ</span>
+      </div>
+    </div>
+
+    <button style="width:100%;padding:7px;border:1.5px dashed #D1D5DB;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;background:#FAFAFA;color:#64748B;font-family:inherit;transition:all .15s;" onmouseover="this.style.borderColor='#2563EB';this.style.color='#2563EB'" onmouseout="this.style.borderColor='#D1D5DB';this.style.color='#64748B'">+ Adicionar local</button>
+  </div>
+
+  <hr style="border:none;border-top:1px solid #F1F5F9;margin:0 0 12px;">
+
+  <!-- ASSISTENTES -->
+  <div style="margin-bottom:12px;">
+    <div style="font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Assistentes</div>
+
+    <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #F8FAFC;">
+      <div style="width:26px;height:26px;border-radius:50%;background:#D1FAE5;color:#065F46;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;">MS</div>
+      <div style="flex:1;">
+        <div style="font-size:11px;font-weight:600;color:#1E293B;">Maria Silva</div>
+      </div>
+      <span style="font-size:8px;background:#D1FAE5;color:#065F46;padding:2px 6px;border-radius:4px;font-weight:700;">Ativa</span>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:8px;padding:5px 0;">
+      <div style="width:26px;height:26px;border-radius:50%;background:#FEF3C7;color:#92400E;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;">JS</div>
+      <div style="flex:1;">
+        <div style="font-size:11px;font-weight:600;color:#1E293B;">Joao Souza</div>
+      </div>
+      <span style="font-size:8px;background:#FEF3C7;color:#92400E;padding:2px 6px;border-radius:4px;font-weight:700;">Pendente</span>
+    </div>
+
+    <button style="width:100%;padding:6px;margin-top:6px;border:1.5px dashed #D1D5DB;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;background:#FAFAFA;color:#64748B;font-family:inherit;transition:all .15s;" onmouseover="this.style.borderColor='#2563EB';this.style.color='#2563EB'" onmouseout="this.style.borderColor='#D1D5DB';this.style.color='#64748B'">+ Convidar assistente</button>
+  </div>
+
+  <hr style="border:none;border-top:1px solid #F1F5F9;margin:0 0 12px;">
+
+  <!-- ASSINATURA -->
+  <div style="margin-bottom:12px;">
+    <div style="font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Assinatura do laudo</div>
+    <div style="background:#F8FAFC;border:1px dashed #D1D5DB;border-radius:6px;padding:10px;text-align:center;min-height:45px;">
+      <div style="font-style:italic;font-size:11px;color:#94A3B8;">Dr. Sergio Abdon</div>
+      <div style="font-size:9px;color:#CBD5E1;">CRM/PA 7952</div>
+    </div>
+    <div style="display:flex;gap:4px;margin-top:6px;">
+      <button style="flex:1;padding:5px;border:1px solid #E2E8F0;border-radius:5px;font-size:9px;font-weight:600;cursor:pointer;background:#fff;color:#475569;font-family:inherit;">Enviar imagem</button>
+      <button style="flex:1;padding:5px;border:1px solid #E2E8F0;border-radius:5px;font-size:9px;font-weight:600;cursor:pointer;background:#fff;color:#475569;font-family:inherit;">Desenhar</button>
+    </div>
+    <button style="width:100%;margin-top:4px;padding:6px;border:1.5px solid #7C3AED;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;background:#F5F3FF;color:#7C3AED;font-family:inherit;transition:all .15s;" onmouseover="this.style.background='#7C3AED';this.style.color='#fff'" onmouseout="this.style.background='#F5F3FF';this.style.color='#7C3AED'">🔐 Assinar via VIDaaS (CRM Digital)</button>
+  </div>
+
+  <hr style="border:none;border-top:1px solid #F1F5F9;margin:0 0 12px;">
+
+  <!-- CPF + EMAIL -->
+  <div style="margin-bottom:6px;">
+    <div style="font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">CPF</div>
+    <div style="font-size:11px;color:#94A3B8;font-family:'IBM Plex Mono',monospace;">123.456.789-00</div>
+  </div>
+  <div>
+    <div style="font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Email</div>
+    <div style="font-size:11px;color:#94A3B8;">sergio_abdon@yahoo.com.br</div>
+  </div>
+
+</div>
+
+</div> <!-- fim layout 2 colunas -->
+
+<script>
+function trocarLayout(tipo){
+  document.getElementById('topbar-pf').style.display = tipo==='pf' ? 'flex' : 'none';
+  document.getElementById('topbar-pj').style.display = tipo==='pj' ? 'flex' : 'none';
+}
+
+function trocarTab(tab){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('ativa'));
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('ativa'));
+  event.currentTarget.classList.add('ativa');
+  document.getElementById('sec-'+tab).classList.add('ativa');
+}
+
+// Calculo automatico do extrato
+function calcExtrato(){
+  const inputs = document.querySelectorAll('.ext-valor');
+  const subs = document.querySelectorAll('.ext-sub');
+  let total = 0;
+  inputs.forEach((inp, i) => {
+    const qtd = parseInt(inp.dataset.qtd) || 0;
+    const val = parseFloat(inp.value) || 0;
+    const sub = qtd * val;
+    total += sub;
+    if(subs[i]) subs[i].textContent = 'R$ ' + sub.toFixed(2).replace('.',',');
+  });
+  document.getElementById('ext-total').textContent = 'R$ ' + total.toFixed(2).replace('.',',');
+}
+</script>
+
+</body>
+</html>

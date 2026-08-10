@@ -155,6 +155,18 @@ export async function createSubscription(wsId: string, planoId = 'trial') {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getSubscription(wsId: string): Promise<Record<string, any> | null> {
+  // Caminho novo: workspace → contaId → subscriptions/{contaId}.
+  // (Sob a fechadura definitiva a consulta antiga por workspaceId e NEGADA
+  //  inteira — regra de list nao filtra; este caminho e o que sobrevive.)
+  try {
+    const ws = await getDoc(doc(db, 'workspaces', wsId));
+    const contaId = ws.exists() ? (ws.data().contaId as string | undefined) : undefined;
+    if (contaId) {
+      const porConta = await getDoc(doc(db, 'subscriptions', contaId));
+      if (porConta.exists()) return { id: porConta.id, ...porConta.data() };
+    }
+  } catch (e) { console.error('getSubscription (conta):', e); }
+  // Fallback legado: workspace ainda nao migrado.
   try {
     const snap = await getDocs(
       query(collection(db, 'subscriptions'), where('workspaceId', '==', wsId), limit(1))

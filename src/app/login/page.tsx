@@ -9,10 +9,9 @@ import { auth } from '@/lib/firebase';
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  sendEmailVerification
+  sendEmailVerification,
+  sendPasswordResetEmail
 } from 'firebase/auth';
-import { createProfile, createWorkspace, createMembership } from '@/lib/firestore';
-import { createSubscription } from '@/lib/billing';
 
 type Tab = 'login' | 'cadastroPF' | 'cadastroPJ';
 
@@ -22,6 +21,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
+  // Aparece quando o login é barrado por e-mail não verificado
+  const [precisaVerificar, setPrecisaVerificar] = useState(false);
 
   // Campos login
   const [email, setEmail] = useState('');
@@ -39,11 +40,16 @@ export default function LoginPage() {
   // ── Login ──
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    setErro(''); setLoading(true);
+    setErro('');
+    setSucesso(''); setPrecisaVerificar(false);
+    setLoading(true);
     try {
       const cred = await signInWithEmailAndPassword(auth, email, senha);
       if (!cred.user.emailVerified) {
-        setErro('Verifique seu email antes de entrar. Cheque sua caixa de entrada.');
+        // Sem setErro aqui: a caixa âmbar do `precisaVerificar` já diz isso, e
+        // com o botão de reenviar junto. Dois avisos iguais na mesma tela é
+        // barulho — o segundo não acrescenta e ainda esconde a ação.
+        setPrecisaVerificar(true);
         await auth.signOut();
         setLoading(false);
         return;
@@ -62,7 +68,55 @@ export default function LoginPage() {
     setLoading(false);
   }
 
+  // ── Esqueci minha senha ──
+  async function handleResetSenha() {
+    setErro(''); setSucesso('');
+    if (!email) { setErro('Digite seu email no campo acima e clique de novo.'); return; }
+    setLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setSucesso(`Enviamos um link de nova senha para ${email}. Cheque também o spam.`);
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code || '';
+      // Nao revelamos se o email existe ou nao — dizer "esse email nao existe"
+      // entrega a lista de quem usa o sistema para quem estiver testando.
+      if (code === 'auth/invalid-email') setErro('Email inválido.');
+      else if (code === 'auth/too-many-requests') setErro('Muitas tentativas. Aguarde alguns minutos.');
+      else setSucesso(`Se houver conta para ${email}, o link foi enviado. Cheque também o spam.`);
+    }
+    setLoading(false);
+  }
+
+  // ── Reenviar o email de verificação ──
+  // Precisa estar autenticado para reenviar: entramos, mandamos, saímos.
+  async function handleReenviarVerificacao() {
+    setErro(''); setSucesso('');
+    if (!email || !senha) { setErro('Preencha email e senha para reenviar a verificação.'); return; }
+    setLoading(true);
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email, senha);
+      try {
+        await sendEmailVerification(cred.user);
+        setSucesso(`Reenviamos a verificação para ${email}. Cheque também o spam.`);
+        setPrecisaVerificar(false);
+      } finally {
+        // Sair SEMPRE. Se o envio falhasse aqui, a sessão ficava de pé e um
+        // usuário sem e-mail verificado alcançaria /dashboard digitando a URL
+        // — a tela só checa se existe usuário, não se ele verificou.
+        await auth.signOut().catch(() => {});
+      }
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code || '';
+      if (code === 'auth/too-many-requests') setErro('Muitas tentativas. Aguarde alguns minutos.');
+      else setErro('Não consegui reenviar. Confira email e senha.');
+    }
+    setLoading(false);
+  }
+
   // ── Cadastro PF ──
+  // O cliente so cria o Auth user (a senha nunca vai ao nosso servidor).
+  // Os documentos nascem TODOS em /api/signup (Admin SDK, batch atomico,
+  // modelo de contas). Se a rota falhar, ela mesma apaga o Auth user.
   async function handleCadastroPF(e: React.FormEvent) {
     e.preventDefault();
     setErro(''); setSucesso(''); setLoading(true);
@@ -71,34 +125,32 @@ export default function LoginPage() {
       if (pfTipo === 'medico' && (!pfCrm || !pfUf)) { setErro('CRM e UF são obrigatórios para médicos.'); setLoading(false); return; }
       if (pfSenha.length < 6) { setErro('Senha deve ter ao menos 6 caracteres.'); setLoading(false); return; }
 
-      // Criar usuário Firebase
       const cred = await createUserWithEmailAndPassword(auth, pfEmail, pfSenha);
-      await sendEmailVerification(cred.user);
+      const idToken = await cred.user.getIdToken();
 
-      // Criar perfil no Firestore
-      await createProfile(cred.user.uid, {
-        nome: pfNome, email: pfEmail,
-        crm: pfCrm, ufCrm: pfUf.toUpperCase(),
-        especialidade: pfEsp, tipoPerfil: pfTipo,
+      const res = await fetch('/api/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          nome: pfNome, email: pfEmail, crm: pfCrm, ufCrm: pfUf.toUpperCase(),
+          especialidade: pfEsp, tipoPerfil: pfTipo,
+        }),
       });
-
-      // Criar workspace PF
-      const wsId = await createWorkspace({
-        ownerUid: cred.user.uid,
-        tipo: 'PF',
-        nomeClinica: 'Consultório',
-        slogan: pfEsp,
-        corPrimaria: '#1E3A5F',
-        corSecundaria: '#2563EB',
-      });
-
-      // Criar vínculo
-      if (wsId) {
-        await createMembership(cred.user.uid, wsId, pfTipo === 'medico' ? 'medico' : 'assistente');
-        await createSubscription(wsId, 'trial'); // Trial = Expert completo por 30 dias
+      const data = await res.json();
+      if (!data.ok) {
+        // O servidor ja desfez tudo (inclusive o Auth user). Uma resposta, um motivo.
+        await auth.signOut().catch(() => {});
+        setErro(data.motivo === 'ja_cadastrado'
+          ? 'Este email já está cadastrado.'
+          : data.motivo === 'dados_invalidos'
+            ? 'Dados incompletos. Confira nome, email e CRM/UF.'
+            : 'Erro ao criar a conta. Tente novamente.');
+        setLoading(false);
+        return;
       }
 
-      // Sair (precisa verificar email)
+      // Verificacao SO depois do sucesso: rota falhou → nenhum email morto.
+      await sendEmailVerification(cred.user);
       await auth.signOut();
       setSucesso('Conta criada! Verifique seu email para ativar.');
       setTab('login');
@@ -165,6 +217,21 @@ export default function LoginPage() {
                   className="w-full bg-[#1E3A5F] text-white py-3 rounded-lg font-semibold text-sm hover:bg-[#2563EB] transition disabled:opacity-50">
                   {loading ? 'Entrando...' : 'Entrar'}
                 </button>
+
+                <button type="button" onClick={handleResetSenha} disabled={loading}
+                  className="w-full text-center text-xs text-[#1E3A5F] hover:underline disabled:opacity-50">
+                  Esqueci minha senha
+                </button>
+
+                {precisaVerificar && (
+                  <div className="bg-amber-50 text-amber-800 text-xs p-3 rounded-lg space-y-2">
+                    <p>Seu email ainda não foi verificado. Sem isso não é possível entrar.</p>
+                    <button type="button" onClick={handleReenviarVerificacao} disabled={loading}
+                      className="font-semibold underline disabled:opacity-50">
+                      Reenviar email de verificação
+                    </button>
+                  </div>
+                )}
               </form>
             )}
 

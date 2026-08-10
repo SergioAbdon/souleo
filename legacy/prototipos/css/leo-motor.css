@@ -1,0 +1,464 @@
+
+
+/* ══ VARIÁVEIS ══════════════════════════════════════════════════ */
+
+/* ══ v2.0 — SIDEBAR HEADER ══════════════════════════════════════ */
+#tela-laudo .sidebar-header{background:#1E3A5F!important;padding:11px 16px;position:sticky;top:0;z-index:10;flex-shrink:0;}
+#tela-laudo .sidebar-header-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;}
+#tela-laudo .sidebar-header h1{color:var(--white);font-size:12.5px;font-weight:600;letter-spacing:.3px;}
+#tela-laudo .sidebar-header p{color:#93C5FD;font-size:10px;}
+#tela-laudo .hdr-btns{display:flex;gap:5px;}
+#tela-laudo .btn-hdr{
+  background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.22);
+  color:var(--white);font-size:10.5px;padding:4px 9px;border-radius:5px;
+  cursor:pointer;font-family:var(--font);font-weight:500;white-space:nowrap;
+  transition:background .15s;
+}
+#tela-laudo .btn-hdr:hover{background:rgba(255,255,255,.25);}
+
+/* ══ v2.0 — BOTÃO EXPORTAR DROPDOWN ════════════════════════════ */
+#tela-laudo .export-wrap{position:relative;margin:0 20px 6px;}
+#tela-laudo .btn-export{
+  width:100%;background:var(--P2);color:var(--white);border:none;
+  padding:9px 14px;border-radius:6px;font-size:12px;font-weight:600;
+  cursor:pointer;font-family:var(--font);display:flex;align-items:center;
+  justify-content:space-between;transition:filter .15s;
+}
+#tela-laudo .btn-export:hover{filter:brightness(1.12);}
+#tela-laudo .export-menu{
+  position:absolute;bottom:calc(100% + 5px);left:0;right:0;
+  background:var(--white);border:1.5px solid var(--border);border-radius:8px;
+  box-shadow:0 -10px 28px rgba(0,0,0,.13);z-index:100;overflow:hidden;display:none;
+}
+#tela-laudo .export-menu.open{display:block;}
+#tela-laudo .exp-item{
+  display:flex;align-items:flex-start;gap:10px;padding:10px 14px;
+  cursor:pointer;border-bottom:1px solid var(--border);transition:background .12s;
+}
+#tela-laudo .exp-item:last-child{border-bottom:none;}
+#tela-laudo .exp-item:hover{background:var(--gray-light);}
+#tela-laudo .exp-ico{font-size:17px;flex-shrink:0;padding-top:1px;}
+#tela-laudo .exp-info .exp-title{font-size:12px;font-weight:600;color:var(--gray-dark);}
+#tela-laudo .exp-info .exp-sub{font-size:10px;color:var(--gray-mid);margin-top:1px;}
+
+/* feedback toast */
+#tela-laudo .exp-toast{
+  position:fixed;bottom:22px;right:22px;background:#166534;color:#fff;
+  padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;
+  z-index:9999;display:none;box-shadow:0 4px 20px rgba(0,0,0,.2);
+  animation:toastIn .2s ease;
+}
+@keyframes toastIn{from{transform:translateY(8px);opacity:0;}to{transform:none;opacity:1;}}
+
+
+
+
+
+
+
+
+
+
+/* ══ LAYOUT DUAS COLUNAS ════════════════════════════════════════ */
+.tela-laudo{display:grid;grid-template-columns:390px 1fr;height:100vh;overflow:hidden;}
+#tela-laudo .sidebar{background:var(--white);border-right:1px solid var(--border);overflow-y:auto;padding-bottom:40px;display:flex;flex-direction:column;}
+#tela-laudo .preview{background:#D8DEE8;overflow-y:auto;padding:20px;}
+
+/* ══ SIDEBAR ════════════════════════════════════════════════════ */
+#tela-laudo .sidebar-header{background:#1E3A5F!important;padding:14px 20px;position:sticky;top:0;z-index:10;flex-shrink:0;}
+#tela-laudo .sidebar-header h1{color:var(--white);font-size:13px;font-weight:600;letter-spacing:.3px;}
+#tela-laudo .sidebar-header p{color:#93C5FD;font-size:10px;margin-top:2px;}
+
+#tela-laudo .section{border-bottom:1px solid var(--border);}
+#tela-laudo .section-title{
+  display:flex;align-items:center;gap:8px;padding:9px 20px;
+  background:var(--gray-light);font-size:11px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.7px;color:#1E3A5F;
+  cursor:pointer;user-select:none;
+}
+#tela-laudo .section-title .toggle{margin-left:auto;color:var(--gray-mid);font-size:15px;}
+#tela-laudo .section-body{padding:10px 20px;display:grid;grid-template-columns:1fr 1fr;gap:7px 12px;}
+#tela-laudo .section-body.single{grid-template-columns:1fr;}
+#tela-laudo .collapsed .section-body{display:none;}
+
+#tela-laudo .field{display:flex;flex-direction:column;gap:3px;}
+#tela-laudo .field label{font-size:10.5px;color:var(--gray-mid);font-weight:500;}
+#tela-laudo .field label span.ref{font-size:9.5px;color:#9CA3AF;font-weight:400;margin-left:3px;}
+#tela-laudo .field input,.field select{
+  border:1.5px solid var(--border);border-radius:5px;
+  padding:5px 7px;font-size:12px;font-family:var(--font);
+  color:var(--gray-dark);background:var(--white);transition:border-color .15s;
+}
+#tela-laudo .field input:focus,.field select:focus{outline:none;border-color:#1E3A5F;}
+/* Alerta pulsante para campo obrigatório quando IT preenchida */
+#tela-laudo .field input.alerta-it{
+  border-color:var(--red)!important;background:#FFF0F0;
+  animation:pulseRed 1.5s infinite;
+}
+@keyframes pulseRed{0%,100%{box-shadow:0 0 0 0 rgba(139,26,26,.3);}50%{box-shadow:0 0 0 4px rgba(139,26,26,.1);}}
+#tela-laudo .field .calc{
+  font-size:11px;color:var(--navy);background:var(--navy-light);
+  padding:3px 6px;border-radius:4px;font-family:var(--mono);font-weight:500;
+}
+#tela-laudo .field-alert-msg{font-size:10px;color:var(--red);font-weight:600;margin-top:1px;display:none;}
+#tela-laudo .field-alert-msg.show{display:block;}
+
+#tela-laudo .btn-salvar-emitir{
+  margin:12px 20px 6px;background:linear-gradient(135deg,var(--navy),var(--P2));color:var(--white);border:none;
+  padding:12px;border-radius:8px;font-size:13px;font-weight:700;
+  cursor:pointer;font-family:var(--font);transition:filter .15s;width:calc(100% - 40px);
+  letter-spacing:0.3px;
+}
+#tela-laudo .btn-salvar-emitir:hover{filter:brightness(1.15);}
+
+/* Popup Salvar/Emitir */
+#tela-laudo .popup-overlay{
+  display:none;position:fixed;top:0;left:0;width:100%;height:100%;
+  background:rgba(0,0,0,.45);z-index:99999;
+  align-items:center;justify-content:center;
+}
+#tela-laudo .popup-overlay.open{display:flex;}
+#tela-laudo .popup-card{
+  background:var(--white);border-radius:14px;padding:28px 24px 20px;
+  width:340px;box-shadow:0 12px 40px rgba(0,0,0,.25);font-family:var(--font);
+}
+#tela-laudo .popup-header{
+  font-size:16px;font-weight:700;color:var(--navy);text-align:center;margin-bottom:18px;
+}
+#tela-laudo .popup-body{display:flex;flex-direction:column;gap:10px;}
+#tela-laudo .popup-btn{
+  display:flex;align-items:center;gap:14px;padding:14px 16px;
+  border-radius:10px;border:1.5px solid var(--border);background:var(--white);
+  cursor:pointer;font-family:var(--font);transition:all .15s;text-align:left;
+}
+#tela-laudo .popup-btn:hover{border-color:#1E3A5F;background:rgba(30,58,95,.04);}
+#tela-laudo .popup-btn-ico{font-size:22px;}
+#tela-laudo .popup-btn-title{font-size:13px;font-weight:700;color:#1E3A5F;}
+#tela-laudo .popup-btn-desc{font-size:11px;color:var(--gray-mid);margin-top:2px;}
+#tela-laudo .popup-btn-emitir{border-color:#059669;}
+#tela-laudo .popup-btn-emitir:hover{border-color:#059669;background:rgba(5,150,105,.06);}
+#tela-laudo .popup-btn-emitir .popup-btn-title{color:#059669;}
+#tela-laudo .popup-btn-cancelar{
+  display:block;width:100%;margin-top:14px;padding:8px;
+  background:transparent;border:none;color:var(--gray-mid);
+  font-size:12px;font-weight:500;cursor:pointer;font-family:var(--font);
+}
+#tela-laudo .popup-btn-cancelar:hover{color:#1E3A5F;}
+
+/* ══ MODO EMITIDO ═══════════════════════════════════════════════ */
+#tela-laudo .emitido-badge{
+  background:linear-gradient(135deg,#059669,#047857);color:#fff;
+  text-align:center;padding:10px;border-radius:8px;font-size:14px;
+  font-weight:700;font-family:var(--font);margin-bottom:12px;
+  letter-spacing:0.5px;
+}
+#tela-laudo .emitido-btns{display:flex;flex-direction:column;gap:8px;margin-bottom:12px;}
+#tela-laudo .emitido-btn{
+  padding:10px 14px;border-radius:8px;border:1.5px solid var(--border);
+  background:var(--white);cursor:pointer;font-family:var(--font);
+  font-size:12px;font-weight:600;color:var(--navy);transition:all .15s;
+  text-align:left;
+}
+#tela-laudo .emitido-btn:hover{border-color:#1E3A5F;background:rgba(30,58,95,.04);}
+#tela-laudo .emitido-btn-voltar{border-color:#1E3A5F;color:#1E3A5F;}
+#tela-laudo .emitido-btn-finalizar{border-color:#059669;color:#059669;}
+#tela-laudo .emitido-btn-finalizar:hover{border-color:#059669;background:rgba(5,150,105,.06);}
+#tela-laudo .emitido-btn-editar{border-color:#D97706;color:#D97706;}
+#tela-laudo .emitido-btn-editar:hover{border-color:#D97706;background:rgba(217,119,6,.06);}
+#tela-laudo .export-wrap-emitido{position:relative;}
+#tela-laudo .export-wrap-emitido .btn-export{
+  width:100%;background:var(--P2);color:var(--white);border:none;
+  padding:9px 14px;border-radius:6px;font-size:12px;font-weight:600;
+  cursor:pointer;font-family:var(--font);display:flex;align-items:center;
+  justify-content:space-between;transition:filter .15s;
+}
+#tela-laudo .export-wrap-emitido .btn-export:hover{filter:brightness(1.12);}
+#tela-laudo .export-wrap-emitido .export-menu{
+  display:none;position:absolute;bottom:100%;left:0;right:0;
+  background:var(--white);border-radius:8px;box-shadow:0 -4px 20px rgba(0,0,0,.12);
+  border:1px solid var(--border);overflow:hidden;z-index:100;margin-bottom:4px;
+}
+/* Sidebar travada visualmente */
+.sidebar.locked input,
+.sidebar.locked select,
+#tela-laudo .sidebar.locked textarea{
+  pointer-events:none;opacity:.6;background:#f1f5f9;
+}
+#tela-laudo .sidebar.locked .section-title{pointer-events:none;opacity:.7;}
+.sidebar.locked .btn-salvar-emitir,
+#tela-laudo .sidebar.locked .btn-limpar{display:none;}
+#tela-laudo .btn-limpar{
+  margin:0 20px 16px;background:var(--white);color:var(--gray-mid);
+  border:1.5px solid var(--border);padding:7px;border-radius:6px;
+  font-size:12px;font-weight:500;cursor:pointer;font-family:var(--font);width:calc(100% - 40px);
+}
+
+/* ══ LAUDO — FOLHA A4 ═══════════════════════════════════════════ */
+#tela-laudo .preview-label{font-size:10px;color:var(--gray-mid);font-weight:600;
+  text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px;}
+
+#tela-laudo .sheet{
+  width:210mm;background:var(--white);margin:0 auto;
+  box-shadow:0 4px 24px rgba(0,0,0,.15);
+  font-family:'IBM Plex Sans',sans-serif;font-size:8.5pt;color:#1F2937;
+}
+
+/* Tabela de layout — repete thead/tfoot em cada página impressa */
+#tela-laudo .print-layout{width:100%;border-collapse:collapse;table-layout:fixed;}
+#tela-laudo .print-layout > thead > tr > td{padding:12mm 14mm 4mm;}
+#tela-laudo .print-layout > tfoot > tr > td{padding:3mm 14mm 10mm;}
+#tela-laudo .print-layout > tbody > tr > td{padding:0 14mm 8mm;}
+
+#tela-laudo .laudo-header{
+  padding-bottom:7px;border-bottom:2.5px solid var(--red);margin-bottom:8px;
+}
+/* Linha 1: Logo + Nome + Slogan */
+#tela-laudo .hdr-linha1{display:flex;align-items:center;gap:10px;margin-bottom:-2px;}
+#tela-laudo .hdr-clinica-logo{width:42px;height:42px;border-radius:5px;object-fit:contain;background:#f5f5f5;border:1px solid #eee;}
+#tela-laudo .hdr-clinica-info{display:flex;flex-direction:column;}
+#tela-laudo .hdr-clinica-text{font-size:14pt;font-weight:700;color:var(--red);letter-spacing:-.3px;white-space:nowrap;line-height:1.1;}
+#tela-laudo .hdr-clinica-slogan{font-size:7.5pt;font-weight:400;color:var(--gray-mid);margin-top:1px;}
+/* Linha 2: Título do exame */
+#tela-laudo .laudo-title{font-size:10.5pt;font-weight:700;color:var(--red);text-align:center;white-space:nowrap;letter-spacing:.3px;}
+
+#tela-laudo .id-grid{
+  background:#FBF5F5;border:1px solid var(--red-border);border-radius:4px;
+  padding:6px 10px;margin-bottom:7px;
+}
+#tela-laudo .id-row{display:flex;gap:20px;padding:2px 0;}
+#tela-laudo .id-item{display:flex;flex-direction:column;}
+#tela-laudo .id-item .lbl{font-size:6.5pt;color:var(--red-mid);font-weight:600;text-transform:uppercase;letter-spacing:.4px;}
+#tela-laudo .id-item .val{font-size:8.5pt;font-weight:600;color:var(--gray-dark);}
+
+#tela-laudo .laudo-section{margin-bottom:6px;}
+#tela-laudo .laudo-section-title{
+  background:var(--red);color:var(--white);
+  font-size:7.5pt;font-weight:700;padding:3px 10px;
+  letter-spacing:.7px;text-transform:uppercase;
+}
+#tela-laudo .laudo-section-body{border:1px solid var(--red-border);border-top:none;padding:4px 7px;}
+
+/* Tabela parâmetros */
+#tela-laudo .params-table{width:100%;border-collapse:collapse;font-size:7.5pt;}
+#tela-laudo .params-table thead tr{background:var(--red);}
+#tela-laudo .params-table thead th{color:var(--white);padding:3px 5px;text-align:left;font-weight:600;font-size:7pt;}
+#tela-laudo .params-table tbody tr:nth-child(even){background:rgba(139,26,26,.05);}
+#tela-laudo .params-table tbody tr:nth-child(odd){background:var(--white);}
+#tela-laudo .params-table td{padding:2.5px 5px;vertical-align:middle;}
+#tela-laudo .params-table td.val{font-weight:700;}
+#tela-laudo .params-table td.val.alert{color:var(--red);}
+#tela-laudo .params-table td.ref{color:var(--gray-mid);font-size:6.8pt;}
+#tela-laudo .params-divider{border-left:1px solid var(--red-border);}
+
+/* Linhas de achados */
+#tela-laudo .linha-wrapper{display:flex;align-items:flex-start;gap:2px;}
+#tela-laudo .achado-editable{
+  flex:1;border:none;background:transparent;
+  font-family:inherit;font-size:8pt;color:var(--gray-dark);
+  line-height:1.5;padding:1px 3px;resize:none;overflow:hidden;
+  border-left:2px solid transparent;
+}
+#tela-laudo .achado-editable:focus{outline:none;background:#FFFBEB;border-left:2px solid #D97706;border-radius:0 2px 2px 0;}
+#tela-laudo .achado-editable.alert-line{color:#7F1D1D;}
+
+/* Botões de linha */
+#tela-laudo .btn-rm{
+  flex-shrink:0;background:none;border:1px solid #E8C5C5;
+  color:#C0A0A0;font-size:11px;font-weight:700;line-height:1;
+  padding:1px 4px;border-radius:3px;cursor:pointer;margin-top:2px;
+  transition:all .12s;
+}
+#tela-laudo .btn-rm:hover{background:var(--red);border-color:var(--red);color:var(--white);}
+#tela-laudo .btn-plus-inline{
+  flex-shrink:0;background:none;border:1px solid #C8D8E8;
+  color:#8899AA;font-size:11px;font-weight:700;line-height:1;
+  padding:1px 4px;border-radius:3px;cursor:pointer;margin-top:2px;
+  transition:all .12s;
+}
+#tela-laudo .btn-plus-inline:hover{background:var(--navy);border-color:var(--navy);color:var(--white);}
+#tela-laudo .btn-add-top{
+  display:block;width:100%;background:none;
+  border:1px dashed var(--red-border);color:var(--red-mid);
+  font-size:10px;padding:3px 8px;border-radius:3px;
+  cursor:pointer;font-family:var(--font);text-align:left;
+  margin-bottom:3px;transition:all .12s;
+}
+#tela-laudo .btn-add-top:hover{background:var(--red-light);border-color:var(--red);}
+
+/* Conclusão */
+#tela-laudo .conclusao-list{list-style:none;padding:0;}
+#tela-laudo .conc-wrapper{display:flex;align-items:baseline;gap:7px;padding:3px 0;border-bottom:1px solid var(--red-border);}
+#tela-laudo .conc-wrapper.dragging{opacity:.4;}
+#tela-laudo .conc-wrapper.drag-over{border-top:2px solid #1E3A5F;}
+#tela-laudo .conc-wrapper:last-of-type{border-bottom:none;}
+#tela-laudo .wilkins-bloco{padding-left:24px;margin:2px 0 3px;}
+#tela-laudo .wilkins-titulo{font-size:8pt;font-weight:500;padding:1.5px 4px;}
+#tela-laudo .wilkins-cat{font-size:7.8pt;font-style:italic;color:var(--gray-mid);padding:2px 4px 0;}
+#tela-laudo .wilkins-linha{display:flex;align-items:baseline;gap:10px;padding:1px 4px;}
+#tela-laudo .wilkins-pts{font-size:8pt;font-weight:600;min-width:34px;color:var(--gray-dark);flex-shrink:0;}
+#tela-laudo .wilkins-desc{font-size:8pt;color:var(--gray-dark);}
+#tela-laudo .wilkins-total{display:flex;align-items:baseline;gap:10px;padding:3px 4px;margin-top:3px;border-top:0.5px solid var(--red-border);}
+#tela-laudo .wilkins-total-label{font-size:8.5pt;font-weight:600;min-width:34px;}
+#tela-laudo .wilkins-total-val{font-size:8.5pt;font-weight:600;}
+#tela-laudo .wilkins-conclusao{font-size:8pt;padding:2px 4px;margin-top:1px;}
+#tela-laudo .conclusao-num{
+  min-width:16px;height:16px;background:var(--red);color:var(--white);
+  border-radius:50%;font-size:6.5pt;font-weight:700;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+#tela-laudo .conclusao-text{flex:1;font-weight:500;font-size:8pt;line-height:1.5;outline:none;}
+#tela-laudo .conclusao-text:focus{background:#FFFBEB;border-radius:2px;}
+
+/* Rodapé laudo */
+#tela-laudo .laudo-footer{
+  padding-top:6px;border-top:1.5px solid var(--red);
+  display:flex;justify-content:space-between;align-items:flex-end;gap:10px;
+}
+#tela-laudo .ftr-local{font-size:6.8pt;color:var(--gray-mid);line-height:1.6;}
+#tela-laudo .ftr-local strong{color:var(--red);font-size:8pt;}
+#tela-laudo .footer-assinatura{text-align:center;font-size:7pt;color:var(--gray-mid);flex-shrink:0;}
+#tela-laudo .footer-assinatura .linha{border-top:1px solid var(--gray-mid);width:150px;margin:24px auto 3px;}
+#tela-laudo .footer-leo{text-align:center;width:100%;margin-top:6px;padding-top:4px;border-top:0.5px solid #e0e0e0;font-size:6pt;color:#aaa;letter-spacing:0.3px;}
+#tela-laudo .footer-leo img{height:14px;vertical-align:middle;margin-right:4px;opacity:.6;}
+
+/* ══ BANCO DE FRASES — MODAL ════════════════════════════════════ */
+#tela-laudo .modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;
+  display:none;align-items:center;justify-content:center;
+}
+#tela-laudo .modal-overlay.open{display:flex;}
+#tela-laudo .modal-box{
+  background:var(--white);border-radius:8px;width:680px;max-width:95vw;
+  max-height:85vh;display:flex;flex-direction:column;
+  box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;
+}
+#tela-laudo .modal-header{
+  background:var(--red);color:var(--white);padding:12px 16px;
+  display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
+}
+#tela-laudo .modal-header h2{font-size:14px;font-weight:600;}
+#tela-laudo .modal-close{background:none;border:none;color:var(--white);font-size:20px;cursor:pointer;line-height:1;padding:0 4px;}
+#tela-laudo .modal-search{padding:10px 16px;border-bottom:1px solid var(--border);flex-shrink:0;}
+#tela-laudo .modal-search input{
+  width:100%;border:1.5px solid var(--border);border-radius:5px;
+  padding:7px 10px;font-size:13px;font-family:var(--font);
+}
+#tela-laudo .modal-search input:focus{outline:none;border-color:#1E3A5F;}
+#tela-laudo .modal-cats{
+  display:flex;gap:6px;padding:8px 16px;flex-wrap:wrap;
+  border-bottom:1px solid var(--border);flex-shrink:0;
+}
+#tela-laudo .cat-btn{
+  background:var(--gray-light);border:1.5px solid var(--border);
+  color:var(--gray-mid);font-size:10.5px;padding:3px 10px;
+  border-radius:20px;cursor:pointer;font-family:var(--font);transition:all .12s;
+}
+#tela-laudo .cat-btn.active,.cat-btn:hover{background:var(--navy);border-color:var(--navy);color:var(--white);}
+#tela-laudo .modal-list{flex:1;overflow-y:auto;padding:8px 16px;}
+#tela-laudo .frase-item{
+  display:flex;align-items:center;gap:8px;padding:7px 8px;
+  border-radius:5px;cursor:pointer;border:1px solid transparent;
+  transition:all .12s;margin-bottom:3px;
+}
+#tela-laudo .frase-item:hover{background:var(--navy-light);border-color:var(--border);}
+#tela-laudo .frase-item.selected{background:#EEF2F8;border-color:var(--navy);}
+#tela-laudo .frase-text{flex:1;font-size:12px;color:var(--gray-dark);line-height:1.4;}
+#tela-laudo .frase-cat{font-size:10px;color:var(--gray-mid);background:var(--gray-light);
+  padding:1px 6px;border-radius:10px;flex-shrink:0;}
+#tela-laudo .frase-btns{display:flex;gap:4px;flex-shrink:0;}
+#tela-laudo .frase-btn-edit,.frase-btn-del{
+  background:none;border:1px solid var(--border);
+  font-size:11px;padding:2px 6px;border-radius:3px;cursor:pointer;
+  transition:all .12s;
+}
+#tela-laudo .frase-btn-edit:hover{background:var(--navy-light);border-color:var(--navy);}
+#tela-laudo .frase-btn-del:hover{background:var(--red-light);border-color:var(--red);color:var(--red);}
+#tela-laudo .modal-footer{
+  padding:10px 16px;border-top:1px solid var(--border);
+  display:flex;gap:8px;justify-content:space-between;align-items:center;flex-shrink:0;
+}
+#tela-laudo .modal-nova-frase{display:flex;gap:6px;flex:1;}
+#tela-laudo .modal-nova-frase input{
+  flex:1;border:1.5px solid var(--border);border-radius:5px;
+  padding:6px 8px;font-size:12px;font-family:var(--font);
+}
+#tela-laudo .modal-nova-frase input:focus{outline:none;border-color:#1E3A5F;}
+#tela-laudo .modal-nova-frase select{
+  border:1.5px solid var(--border);border-radius:5px;
+  padding:6px 8px;font-size:12px;font-family:var(--font);background:var(--white);
+}
+#tela-laudo .btn-nova-add{
+  background:var(--navy);color:var(--white);border:none;
+  padding:6px 14px;border-radius:5px;font-size:12px;font-weight:600;
+  cursor:pointer;font-family:var(--font);white-space:nowrap;
+}
+#tela-laudo .btn-inserir{
+  background:var(--red);color:var(--white);border:none;
+  padding:8px 20px;border-radius:5px;font-size:13px;font-weight:600;
+  cursor:pointer;font-family:var(--font);
+}
+#tela-laudo .btn-inserir:disabled{background:#ccc;cursor:default;}
+
+/* ══ PRINT ══════════════════════════════════════════════════════ */
+@media print{
+  @page{size:A4;margin:12mm 14mm 12mm 14mm;}
+
+  /* Esconder tudo que não é laudo */
+#tela-laudo body{margin:0;padding:0;background:white!important;}
+  .tela-laudo{display:block!important;height:auto!important;overflow:visible!important;}
+  .sidebar,.preview-label,.modal-overlay,
+  .popup-overlay,#modo-emitido,#modo-edicao,
+#tela-laudo .btn-rm,.btn-plus-inline,.btn-add-top,.drag-handle{display:none!important;}
+#tela-laudo .preview{padding:0!important;background:white!important;overflow:visible!important;height:auto!important;}
+  /* Esconder toasts no print */
+#tela-laudo div[style*="position:fixed"][style*="bottom:20px"]{display:none!important;}
+
+  /* Sheet ocupa 100% */
+#tela-laudo .sheet{box-shadow:none!important;width:100%!important;margin:0!important;padding:0!important;}
+
+  /* Layout — fluxo normal de divs */
+#tela-laudo .print-layout{display:block!important;width:100%!important;}
+#tela-laudo .print-header-fixed{padding:0 0 4mm 0!important;}
+#tela-laudo .print-footer-fixed{padding:4mm 0 0 0!important;border-top:1.5px solid #8B1A1A;}
+
+  /* Tabela de parâmetros com bordas */
+#tela-laudo .params-table{border-collapse:collapse!important;width:100%!important;}
+#tela-laudo .params-table th,.params-table td{
+    border:0.5px solid #bbb!important;
+    padding:2px 5px!important;
+    font-size:8pt!important;
+  }
+#tela-laudo .params-table thead th{
+    background:#8B1A1A!important;
+    color:#fff!important;
+    font-weight:600!important;
+  }
+#tela-laudo .params-divider{border-left:2px solid #8B1A1A!important;}
+
+  /* Seções do laudo — permitir quebra de página dentro de seções grandes */
+#tela-laudo .laudo-section{margin-bottom:3mm!important;}
+#tela-laudo .laudo-section-title{break-after:avoid;}
+#tela-laudo .laudo-section-title{
+    background:#8B1A1A!important;
+    color:#fff!important;
+  }
+
+  /* ID grid */
+#tela-laudo .id-grid{border:1px solid #8B1A1A!important;}
+#tela-laudo .id-row{border-bottom:0.5px solid #ddd!important;}
+#tela-laudo .id-item .lbl{font-size:6pt!important;color:#8B1A1A!important;}
+#tela-laudo .id-item .val{font-size:9pt!important;}
+
+  /* Conclusão */
+#tela-laudo .conclusao-list{list-style:none;padding:0;margin:0;}
+#tela-laudo .conclusao-list li{break-inside:avoid;}
+
+  /* Cabeçalho do laudo */
+#tela-laudo .laudo-header{display:flex!important;justify-content:space-between!important;align-items:flex-start!important;margin-bottom:3mm!important;}
+#tela-laudo .laudo-title{text-align:center!important;}
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   v2.1 — WORKLIST & MULTI-CLÍNICA
+══════════════════════════════════════════════════════════════════ */
+

@@ -56,3 +56,24 @@ TOKENS/
 next-env.d.ts
 
 .vercel
+
+# worktrees e estado local de agentes (nao versionar)
+.claude/worktrees/
+.claude-flow/logs/
+.claude-flow/daemon-state.json
+
+# settings locais do Claude (contem tokens) — NUNCA commitar
+.claude/settings.local.json
+
+firestore.rules.PUBLICADA.txt
+firestore-debug.log
+firebase-debug.log
+[INFO] Recording command outcome: printf
+
+[OK] Command outcome recorded
+
+# telemetria do plugin (PID, contadores) — ruido entre as duas maquinas
+.claude-flow/
+
+# telemetria do plugin (PID, contadores) — ruido entre as duas maquinas
+.claude-flow/

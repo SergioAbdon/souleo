@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>LEO v7 — Preview do Laudo</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'IBM Plex Sans',sans-serif;background:#64748B;padding:30px;display:flex;justify-content:center;}
+.sheet{
+  width:210mm;min-height:297mm;background:#fff;padding:12mm 16mm;
+  box-shadow:0 4px 30px rgba(0,0,0,.3);font-size:9pt;color:#1E293B;
+  position:relative;
+}
+
+/* Cabeçalho */
+.laudo-hdr{
+  display:flex;justify-content:space-between;align-items:flex-start;
+  padding-bottom:8px;border-bottom:2.5px solid #8b1a1a;margin-bottom:10px;
+}
+.laudo-hdr-left{display:flex;align-items:center;gap:10px;}
+.laudo-hdr-logo{max-height:44px;max-width:110px;object-fit:contain;}
+.laudo-hdr-clinica{font-size:14pt;font-weight:700;color:#8b1a1a;}
+.laudo-hdr-slogan{font-size:7.5pt;color:#94A3B8;margin-top:1px;}
+.laudo-hdr-center{text-align:center;flex:1;}
+.laudo-hdr-titulo{font-size:9pt;font-weight:700;color:#8b1a1a;text-transform:uppercase;letter-spacing:1px;}
+
+/* Identificação */
+.laudo-id{
+  background:#FDF5F5;border:1px solid #E8C5C5;border-radius:4px;
+  padding:6px 10px;margin-bottom:10px;font-size:8pt;
+  display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 16px;
+}
+.laudo-id-label{color:#8b1a1a;font-weight:600;font-size:7pt;text-transform:uppercase;}
+.laudo-id-valor{color:#1E293B;font-weight:500;}
+
+/* Seções */
+.laudo-sec-titulo{
+  background:#8b1a1a;color:#fff;padding:3px 10px;
+  font-size:7pt;font-weight:700;text-transform:uppercase;letter-spacing:.8px;
+  margin:8px 0 4px;
+}
+
+/* Tabela parâmetros */
+.params-tbl{width:100%;border-collapse:collapse;font-size:7.5pt;margin-bottom:6px;}
+.params-tbl th{background:#8b1a1a;color:#fff;padding:2px 6px;text-align:left;font-size:6.5pt;font-weight:600;text-transform:uppercase;}
+.params-tbl td{padding:2px 6px;border-bottom:1px solid #F1F5F9;}
+.params-tbl td.alerta{color:#DC2626;font-weight:600;}
+
+/* Achados */
+.achado-linha{font-size:8.5pt;padding:2px 0;border-bottom:1px solid #F8FAFC;}
+.achado-linha.alerta{color:#DC2626;font-weight:500;}
+
+/* Conclusão */
+.conc-item{font-size:8.5pt;font-weight:600;padding:2px 0;display:flex;gap:6px;}
+.conc-num{color:#8b1a1a;font-weight:700;min-width:16px;}
+
+/* Rodapé */
+.laudo-footer{
+  position:absolute;bottom:12mm;left:16mm;right:16mm;
+  border-top:1.5px solid #8b1a1a;padding-top:6px;
+  display:flex;justify-content:space-between;align-items:flex-end;
+  font-size:7pt;color:#64748B;
+}
+.footer-info strong{color:#8b1a1a;}
+.footer-assinatura{text-align:center;}
+.footer-assinatura .linha{width:160px;border-top:1px solid #94A3B8;margin:0 auto 3px;}
+.footer-assinatura .sig-texto{font-size:6.5pt;white-space:pre-line;color:#64748B;}
+
+/* Barra temas */
+.theme-bar{
+  position:fixed;top:0;left:0;right:0;background:#1E293B;padding:10px 20px;
+  display:flex;align-items:center;gap:12px;z-index:100;
+}
+.theme-bar span{color:#fff;font-size:13px;font-weight:700;}
+.theme-btn{padding:6px 14px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;border:none;color:#fff;font-family:inherit;}
+
+@media print{
+  .theme-bar{display:none;}
+  body{background:#fff;padding:0;}
+  .sheet{box-shadow:none;margin:0;padding:10mm 15mm;}
+}
+</style>
+</head>
+<body>
+
+<div class="theme-bar">
+  <span>🫀 Preview do Laudo</span>
+  <button class="theme-btn" style="background:#8B1A1A;" onclick="mudarTema('#8B1A1A')">Clássico (atual)</button>
+  <button class="theme-btn" style="background:#1E3A5F;" onclick="mudarTema('#1E3A5F')">Azul LEO</button>
+  <button class="theme-btn" style="background:#065F46;" onclick="mudarTema('#065F46')">Verde Med</button>
+  <button class="theme-btn" style="background:#5B21B6;" onclick="mudarTema('#5B21B6')">Roxo</button>
+  <button class="theme-btn" style="background:#374151;" onclick="mudarTema('#374151')">Cinza Pro</button>
+  <button class="theme-btn" style="background:#fff;color:#333;border:1px solid #ccc;" onclick="window.print()">🖨 Imprimir</button>
+</div>
+
+<!-- FOLHA A4 -->
+<div class="sheet" style="margin-top:50px;">
+
+  <!-- CABEÇALHO (Logo da CLÍNICA + Nome + Título — centralizado) -->
+  <div style="text-align:center;padding-bottom:8px;border-bottom:2.5px solid #8b1a1a;margin-bottom:0;" id="hdr">
+    <!-- Logo da clínica (upload feito no Local de Trabalho) -->
+    <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Crect width='60' height='60' rx='10' fill='%238b1a1a'/%3E%3Ctext x='30' y='40' text-anchor='middle' fill='white' font-size='30'%3E%E2%9D%A4%3C/text%3E%3C/svg%3E" id="hdr-logo" style="height:50px;margin-bottom:4px;"/>
+    <div class="laudo-hdr-clinica" style="text-align:center;">Grupo MedCardio</div>
+    <div class="laudo-hdr-slogan" style="text-align:center;">Consultas e Exames</div>
+    <div class="laudo-hdr-titulo" style="margin-top:6px;">Ecocardiograma Transtorácico</div>
+  </div>
+
+  <!-- FAIXA IDENTIFICAÇÃO -->
+  <div class="laudo-sec-titulo" style="margin-top:10px;margin-bottom:4px;">Identificação</div>
+
+  <!-- IDENTIFICAÇÃO -->
+  <div class="laudo-id">
+    <div><span class="laudo-id-label">Nome</span><br><span class="laudo-id-valor">IVAN DOS SANTOS CORREA</span></div>
+    <div><span class="laudo-id-label">Idade</span><br><span class="laudo-id-valor">46 anos</span></div>
+    <div><span class="laudo-id-label">Data de nascimento</span><br><span class="laudo-id-valor">28/10/1979</span></div>
+    <div><span class="laudo-id-label">Convênio</span><br><span class="laudo-id-valor">UNIMED BELÉM</span></div>
+    <div><span class="laudo-id-label">Médico solicitante</span><br><span class="laudo-id-valor">Dra. Sonia Conde Cristino</span></div>
+    <div><span class="laudo-id-label">Data do exame</span><br><span class="laudo-id-valor">06/04/2026</span></div>
+  </div>
+
+  <!-- MEDIDAS E PARÂMETROS -->
+  <div class="laudo-sec-titulo">Medidas e Parâmetros</div>
+  <table class="params-tbl">
+    <thead><tr><th>Parâmetro</th><th>Valor</th><th>Unid.</th><th>Referência</th><th>Parâmetro</th><th>Valor</th><th>Unid.</th><th>Referência</th></tr></thead>
+    <tbody>
+      <tr><td>Aorta</td><td>33</td><td>mm</td><td>20-37</td><td>Átrio esquerdo</td><td>36</td><td>mm</td><td>27-38</td></tr>
+      <tr><td>VE diástole</td><td>48</td><td>mm</td><td>42-58</td><td>VE sístole</td><td>30</td><td>mm</td><td>25-40</td></tr>
+      <tr><td>Septo IV</td><td>9</td><td>mm</td><td>6-10</td><td>Parede posterior</td><td>9</td><td>mm</td><td>6-10</td></tr>
+      <tr><td>FE (Teichholz)</td><td>65</td><td>%</td><td>52-72</td><td>Fração encurt.</td><td>37</td><td>%</td><td>25-43</td></tr>
+      <tr><td>Onda E mitral</td><td>80</td><td>cm/s</td><td></td><td>Onda A mitral</td><td>60</td><td>cm/s</td><td></td></tr>
+      <tr><td>Relação E/A</td><td>1.3</td><td></td><td></td><td>Tempo desacel.</td><td>200</td><td>ms</td><td></td></tr>
+      <tr><td>VD basal</td><td>28</td><td>mm</td><td>20-35</td><td>TAPSE</td><td>22</td><td>mm</td><td>>17</td></tr>
+      <tr><td>PSAP</td><td>28</td><td>mmHg</td><td>&lt;35</td><td>Massa VE/ASC</td><td>85</td><td>g/m²</td><td>&lt;115</td></tr>
+    </tbody>
+  </table>
+
+  <!-- COMENTÁRIOS -->
+  <div class="laudo-sec-titulo">Comentários</div>
+  <div style="padding:4px 0;">
+    <div class="achado-linha">Ritmo cardíaco sinusal.</div>
+    <div class="achado-linha">Cavidades cardíacas com dimensões normais.</div>
+    <div class="achado-linha">Função sistólica global do VE preservada (FE=65%).</div>
+    <div class="achado-linha">Valvas cardíacas com morfologia e mobilidade normais.</div>
+    <div class="achado-linha">Fluxos transvalvares com velocidades e gradientes normais.</div>
+    <div class="achado-linha">Função diastólica do VE normal.</div>
+    <div class="achado-linha">Pressão sistólica da artéria pulmonar normal (PSAP=28 mmHg).</div>
+    <div class="achado-linha">Pericárdio normal.</div>
+  </div>
+
+  <!-- CONCLUSÃO -->
+  <div class="laudo-sec-titulo">Conclusão</div>
+  <div style="padding:4px 0;">
+    <div class="conc-item"><span class="conc-num">1.</span> Função sistólica global do VE preservada (FE=65%)</div>
+    <div class="conc-item"><span class="conc-num">2.</span> Ecocardiograma dentro dos limites da normalidade</div>
+  </div>
+
+  <!-- RODAPÉ -->
+  <div class="laudo-footer">
+    <!-- Dados do LOCAL DE TRABALHO -->
+    <div class="footer-info">
+      <strong>Grupo MedCardio</strong>
+      Consultas e Exames<br>
+      Rua Arcipreste Manoel Teodoro, 145 · Sala 01 · Batista Campos · Belém/PA · 66023-700<br>
+      ☎ (91) 3085-4000 / (91) 3222-3875
+    </div>
+    <!-- Assinatura do MÉDICO -->
+    <div class="footer-assinatura">
+      <div class="sig-texto">Sérgio Roberto Abdon Rodrigues
+Cardiologia\Ecocardiografia
+CRM/PA 7952</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function mudarTema(p1){
+  document.getElementById('hdr').style.borderBottomColor=p1;
+  document.querySelectorAll('.laudo-hdr-clinica').forEach(el=>el.style.color=p1);
+  document.querySelectorAll('.laudo-hdr-titulo').forEach(el=>el.style.color=p1);
+  document.querySelectorAll('.laudo-sec-titulo').forEach(el=>el.style.background=p1);
+  document.querySelectorAll('.params-tbl th').forEach(el=>el.style.background=p1);
+  document.querySelectorAll('.conc-num').forEach(el=>el.style.color=p1);
+  document.querySelectorAll('.laudo-footer')[0].style.borderTopColor=p1;
+  document.querySelectorAll('.footer-info strong').forEach(el=>el.style.color=p1);
+  document.querySelectorAll('.laudo-id').forEach(el=>{el.style.borderColor=p1+'33';el.style.background=p1+'08';});
+  document.querySelectorAll('.laudo-id-label').forEach(el=>el.style.color=p1);
+  // Logo icon
+  const logoDiv = document.querySelector('#hdr > div:first-child');
+  if(logoDiv) logoDiv.style.background=p1;
+}
+</script>
+
+</body>
+</html>

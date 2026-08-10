@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LEO · Sistema de Laudos v7.0</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🫀</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/leo.css">
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+
+<!-- LEO v7 Módulos -->
+<script src="js/01-firebase-config.js"></script>
+<script src="js/02-utils.js"></script>
+<script src="js/03-firestore.js"></script>
+<script src="js/04-billing.js"></script>
+<script src="js/05-auth.js"></script>
+<script src="js/06-dashboard.js"></script>
+</head>
+<body>
+
+<!-- ══ LOGIN OVERLAY ══════════════════════════════════════════════ -->
+<div id="login-overlay">
+  <div id="tela-seletor" class="sel-wrapper">
+    <div class="sel-logo-area">
+      <span class="sel-logo-icon">🫀</span>
+      <span class="sel-logo-title">LEO</span>
+      <span class="sel-logo-sub">Sistema de Laudos · Ecocardiografia</span>
+    </div>
+    <div class="sel-cards">
+      <div class="sel-card" onclick="selecionarPerfil('usuario')">
+        <span class="sel-card-icon">👨‍⚕️</span>
+        <div class="sel-card-title">Profissional</div>
+        <div class="sel-card-desc">Médico, assistente ou operador</div>
+      </div>
+      <div class="sel-card pj-card" onclick="selecionarPerfil('empresa')">
+        <span class="sel-card-icon">🏥</span>
+        <div class="sel-card-title">Cadastrar Empresa</div>
+        <div class="sel-card-desc">Clínica ou instituição (PJ)</div>
+      </div>
+    </div>
+    <div class="sel-footer">LEO · Laudos Ecocardiográficos Online</div>
+  </div>
+
+  <!-- Login/Cadastro PF -->
+  <div class="auth-card" id="card-usuario" style="display:none;">
+    <div class="auth-header"><span class="auth-icon">🫀</span><h2>LEO · Sistema de Laudos</h2><span class="auth-type-badge">Acesso Profissional</span></div>
+    <button class="auth-back" onclick="voltarSeletor()">← Voltar</button>
+    <div class="auth-tabs"><button class="auth-tab ativa" id="tab-login" onclick="mostrarTab('login')">Entrar</button><button class="auth-tab" id="tab-cadastro" onclick="mostrarTab('cadastro')">Criar conta</button></div>
+    <div class="auth-panel ativo" id="painel-login">
+      <div class="auth-msg erro" id="login-error"><span>⚠️</span><span id="login-error-msg"></span></div>
+      <div class="auth-field"><label>Email</label><input type="email" id="login-email" placeholder="seu@email.com" autocomplete="email"/></div>
+      <div class="auth-field"><label>Senha</label><div class="auth-field-wrap"><input type="password" id="login-pass" placeholder="Sua senha" autocomplete="current-password"/><button class="btn-eye" onclick="togglePass('login-pass',this)">👁</button></div></div>
+      <button class="btn-auth" id="btn-login" onclick="tentarLogin()">Entrar no sistema</button>
+    </div>
+    <div class="auth-panel" id="painel-cadastro" style="padding:16px 24px;">
+      <div class="auth-msg erro" id="cad-error"><span>⚠️</span><span id="cad-error-msg"></span></div>
+      <div style="margin-bottom:12px;"><label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:6px;">Eu sou:</label><div style="display:flex;gap:8px;"><label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 14px;border:2px solid #2563EB;border-radius:8px;cursor:pointer;background:#EFF6FF;font-size:13px;font-weight:600;color:#1E40AF;" id="cad-tipo-medico-label"><input type="radio" name="cad-tipo" value="medico" checked onchange="cadTipoChanged()" style="accent-color:#2563EB;"/> 🩺 Médico</label><label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 14px;border:2px solid #E5E7EB;border-radius:8px;cursor:pointer;background:#F9FAFB;font-size:13px;font-weight:600;color:#6B7280;" id="cad-tipo-assist-label"><input type="radio" name="cad-tipo" value="assistente" onchange="cadTipoChanged()" style="accent-color:#2563EB;"/> 📋 Assistente</label></div></div>
+      <div class="auth-field"><label>Nome completo <span class="req">*</span></label><input type="text" id="cad-nome" placeholder="Nome Sobrenome"/></div>
+      <div class="auth-field"><label>Email <span class="req">*</span></label><input type="email" id="cad-email" placeholder="seu@email.com"/></div>
+      <div id="cad-campos-medico"><div style="display:flex;gap:8px;"><div class="auth-field" style="flex:1;"><label>CRM <span class="req">*</span></label><input type="text" id="cad-crm" placeholder="0000"/></div><div class="auth-field" style="flex:0 0 80px;"><label>UF <span class="req">*</span></label><input type="text" id="cad-uf" placeholder="PA" maxlength="2" style="text-transform:uppercase;"/></div></div><div class="auth-field"><label>Especialidade</label><input type="text" id="cad-especialidade" placeholder="Ex: Cardiologia"/></div></div>
+      <div class="auth-field"><label>Senha <span class="req">*</span></label><div class="auth-field-wrap"><input type="password" id="cad-pass" placeholder="Mínimo 8 caracteres"/><button class="btn-eye" onclick="togglePass('cad-pass',this)">👁</button></div></div>
+      <div class="auth-field"><label>Confirmar senha <span class="req">*</span></label><div class="auth-field-wrap"><input type="password" id="cad-pass2" placeholder="Repita a senha"/><button class="btn-eye" onclick="togglePass('cad-pass2',this)">👁</button></div></div>
+      <button class="btn-auth" id="btn-cadastro" onclick="realizarCadastro()">Criar minha conta</button>
+      <div class="auth-footer-txt">Ao criar sua conta você terá <b>30 dias grátis</b></div>
+    </div>
+    <div class="auth-panel" id="confirm-panel"><div style="text-align:center;padding:20px;"><span style="font-size:48px;">📬</span><h3 style="margin:10px 0 4px;font-size:16px;">Verifique seu email!</h3><div style="font-size:13px;color:#2563EB;font-weight:600;margin:6px 0;" id="confirm-email-dest"></div><p style="font-size:12px;color:#6B7280;">Clique no link de confirmação enviado ao seu email.</p><button class="btn-auth" onclick="mostrarTab('login')" style="margin-top:12px;">Já confirmei — Entrar</button></div></div>
+  </div>
+
+  <!-- Cadastro PJ -->
+  <div class="auth-card" id="card-empresa" style="display:none;">
+    <div class="auth-header" style="background:linear-gradient(135deg,#1E3A5F,#2563EB);"><span class="auth-icon">🏥</span><h2>LEO · Cadastro Institucional</h2><span class="auth-type-badge">Pessoa Jurídica</span></div>
+    <button class="auth-back" onclick="voltarSeletor()">← Voltar</button>
+    <div style="padding:16px 24px;max-height:60vh;overflow-y:auto;">
+      <div class="auth-msg erro" id="pj-error"><span>⚠️</span><span id="pj-error-msg"></span></div>
+      <div class="auth-section-title">Dados da empresa</div>
+      <div class="auth-field"><label>CNPJ</label><input type="text" id="pj-cnpj" placeholder="00.000.000/0000-00" maxlength="18" oninput="mascaraCNPJ(this)"/></div>
+      <div class="auth-field"><label>Razão Social</label><input type="text" id="pj-razao" placeholder="Nome oficial"/></div>
+      <div class="auth-field"><label>Nome Fantasia</label><input type="text" id="pj-fantasia" placeholder="Como é conhecida"/></div>
+      <div class="auth-field"><label>Telefone</label><input type="text" id="pj-tel" placeholder="(00) 0000-0000"/></div>
+      <div class="auth-field"><label>Endereço</label><input type="text" id="pj-end" placeholder="Endereço completo"/></div>
+      <div class="auth-section-title" style="margin-top:14px;border-top:1px solid #E5E7EB;padding-top:14px;">Responsável (Master)</div>
+      <div class="auth-field"><label>CPF</label><input type="text" id="pj-cpf" placeholder="000.000.000-00" maxlength="14" oninput="mascaraCPFInput(this);buscarCpfPJ()"/><div id="pj-cpf-status" style="font-size:11px;margin-top:3px;color:#6B7280;"></div></div>
+      <div class="auth-field"><label>Nome</label><input type="text" id="pj-nome" placeholder="Dr. Nome Sobrenome"/></div>
+      <div style="display:flex;gap:8px;"><div class="auth-field" style="flex:1;"><label>CRM</label><input type="text" id="pj-crm" placeholder="0000"/></div><div class="auth-field" style="flex:0 0 80px;"><label>UF</label><input type="text" id="pj-uf" placeholder="PA" maxlength="2" style="text-transform:uppercase;"/></div></div>
+      <div class="auth-field"><label>Email</label><input type="email" id="pj-email" placeholder="responsavel@clinica.com"/></div>
+      <div class="auth-field"><label>Senha</label><div class="auth-field-wrap"><input type="password" id="pj-pass" placeholder="Mínimo 8 caracteres"/><button class="btn-eye" onclick="togglePass('pj-pass',this)">👁</button></div></div>
+      <div class="auth-field"><label>Confirmar</label><div class="auth-field-wrap"><input type="password" id="pj-pass2" placeholder="Repita"/><button class="btn-eye" onclick="togglePass('pj-pass2',this)">👁</button></div></div>
+      <button class="btn-auth" id="btn-cadastro-pj" onclick="realizarCadastroPJ()" style="background:linear-gradient(135deg,#1E3A5F,#2563EB);">Cadastrar empresa</button>
+      <div class="auth-footer-txt">Trial institucional <b>30 dias grátis</b></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CONTEXTO OVERLAY ═══════════════════════════════════════════ -->
+<div id="ctx-overlay">
+  <div class="ctx-loading" id="ctx-loading"><div class="ctx-spinner"></div><span>Carregando...</span></div>
+  <div id="ctx-conteudo" style="display:none;"><div class="ctx-header"><span style="font-size:28px;">🫀</span><h2>Olá, <span id="ctx-nome-medico">Médico</span></h2><p>Selecione o ambiente</p></div><div class="ctx-cards" id="ctx-cards"></div></div>
+  <div id="sem-ctx" style="display:none;" class="ctx-sem"><span>⚠️</span><p>Nenhum ambiente ativo.</p></div>
+</div>
+
+<!-- ══ MODAL CONVITE ══════════════════════════════════════════════ -->
+<div class="modal-ov" id="convite-ov" style="display:none;">
+  <div class="modal-box" style="max-width:440px;">
+    <div class="modal-hdr"><div style="font-size:18px;font-weight:700;">Convidar profissional</div><div style="font-size:11px;opacity:.8;" id="convite-ws-nome"></div></div>
+    <div style="padding:18px 22px;">
+      <div class="auth-msg erro" id="convite-error" style="display:none;"><span>⚠️</span><span id="convite-error-msg"></span></div>
+      <div class="auth-msg" id="convite-ok" style="display:none;background:#ECFDF5;border-color:#6EE7B7;"><span>✅</span><span id="convite-ok-msg"></span></div>
+      <div class="auth-field"><label>CPF</label><input type="text" id="conv-cpf" placeholder="000.000.000-00" maxlength="14" oninput="mascaraCPFInput(this);buscarCpfConvite()"/><div id="conv-cpf-status" style="font-size:11px;margin-top:3px;"></div></div>
+      <div class="auth-field"><label>Nome</label><input type="text" id="conv-nome" placeholder="Dr. Nome"/></div>
+      <div style="display:flex;gap:8px;"><div class="auth-field" style="flex:1;"><label>CRM</label><input type="text" id="conv-crm"/></div><div class="auth-field" style="flex:0 0 80px;"><label>UF</label><input type="text" id="conv-uf" maxlength="2" style="text-transform:uppercase;"/></div></div>
+      <div class="auth-field"><label>Email</label><input type="email" id="conv-email"/></div>
+      <div style="margin-bottom:16px;"><label style="font-size:12px;font-weight:600;">Papel</label><div style="display:flex;gap:10px;margin-top:6px;"><label style="font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;"><input type="radio" name="conv-papel" value="medico" checked/> Médico</label><label style="font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;"><input type="radio" name="conv-papel" value="assistente"/> Assistente</label></div></div>
+      <div style="display:flex;gap:10px;"><button class="btn-auth-ghost" onclick="fecharConviteModal()">Cancelar</button><button class="btn-auth" id="btn-enviar-convite" onclick="enviarConviteUI()">Enviar convite</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     DASHBOARD PRINCIPAL
+══════════════════════════════════════════════════════════════ -->
+<div id="tela-clinica" class="oculta">
+
+  <!-- TOPBAR -->
+  <div class="dash-topbar">
+    <div class="dash-topbar-brand"><span>🫀</span> LEO</div>
+    <div class="dash-topbar-sep"></div>
+    <div class="dash-topbar-info">
+      <strong id="dash-topbar-nome">Profissional</strong>
+      <span id="dash-topbar-sub">CRM</span>
+    </div>
+    <div style="flex:1;"></div>
+    <div style="text-align:right;margin-right:12px;">
+      <div style="font-size:11px;color:rgba(255,255,255,.6);" id="dash-topbar-local-label">Local ativo</div>
+      <div style="font-size:12px;color:#fff;font-weight:600;" id="dash-topbar-local-nome">—</div>
+    </div>
+    <div class="dash-topbar-actions">
+      <button class="dash-topbar-btn" onclick="mostrarTrocarContexto()">Trocar</button>
+      <button class="dash-topbar-btn equipe" id="dash-btn-equipe" style="display:none;" onclick="abrirConviteModal()">👥 Equipe</button>
+      <button class="dash-topbar-btn admin" id="dash-btn-admin" style="display:none;" onclick="window.open('../admin/index.html','_blank')">👑 Admin</button>
+      <button class="dash-topbar-btn sair" onclick="fazerLogout()">Sair</button>
+    </div>
+  </div>
+
+  <!-- LAYOUT 2 COLUNAS -->
+  <div class="dash-layout">
+
+    <!-- SIDEBAR ESQUERDA: PERFIL -->
+    <div class="dash-sidebar">
+      <div style="text-align:center;margin-bottom:14px;">
+        <div id="dash-avatar" class="dash-avatar">U</div>
+        <div class="dash-sb-nome" id="dash-sb-nome">Profissional</div>
+        <div class="dash-sb-sub" id="dash-sb-crm">CRM</div>
+        <div class="dash-sb-sub2" id="dash-sb-esp"></div>
+        <button class="dash-sb-btn" onclick="mostrarTrocarContexto()">Editar perfil</button>
+      </div>
+      <hr class="dash-sb-hr">
+      <div class="dash-sb-section"><div class="dash-sb-title">Locais de trabalho</div><div id="dash-sb-locais"></div><button class="dash-sb-add">+ Adicionar local</button></div>
+      <hr class="dash-sb-hr">
+      <div class="dash-sb-section"><div class="dash-sb-title">Assistentes</div><div id="dash-sb-assistentes"></div><button class="dash-sb-add" onclick="abrirConviteModal()">+ Convidar assistente</button></div>
+      <hr class="dash-sb-hr">
+      <div class="dash-sb-section">
+        <div class="dash-sb-title">Assinatura do laudo</div>
+        <div style="background:#F8FAFC;border:1px dashed #D1D5DB;border-radius:6px;padding:10px;text-align:center;min-height:45px;">
+          <div style="font-style:italic;font-size:11px;color:#94A3B8;" id="dash-sig-nome"></div>
+          <div style="font-size:9px;color:#CBD5E1;" id="dash-sig-crm"></div>
+        </div>
+        <div style="display:flex;gap:4px;margin-top:6px;">
+          <button class="dash-sb-btn" style="flex:1;font-size:9px;">Enviar imagem</button>
+          <button class="dash-sb-btn" style="flex:1;font-size:9px;">Desenhar</button>
+        </div>
+        <button style="width:100%;margin-top:4px;padding:6px;border:1.5px solid #7C3AED;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;background:#F5F3FF;color:#7C3AED;font-family:inherit;">🔐 VIDaaS (CRM Digital)</button>
+      </div>
+      <hr class="dash-sb-hr">
+      <div><div class="dash-sb-title" style="margin-bottom:3px;">CPF</div><div style="font-size:11px;color:#94A3B8;font-family:'IBM Plex Mono',monospace;" id="dash-sb-cpf">—</div></div>
+      <div style="margin-top:6px;"><div class="dash-sb-title" style="margin-bottom:3px;">Email</div><div style="font-size:11px;color:#94A3B8;" id="dash-sb-email">—</div></div>
+    </div>
+
+    <!-- COLUNA PRINCIPAL -->
+    <div class="dash-main">
+      <div class="dash-resumo">
+        <div class="dash-resumo-item"><div class="dash-resumo-label">Plano</div><div class="dash-resumo-valor" id="dash-plano-tipo">—</div><div class="dash-resumo-sub" id="dash-plano-renova">—</div></div>
+        <div class="dash-resumo-item"><div class="dash-resumo-label">Franquia do mês</div><div class="dash-resumo-valor" id="dash-franquia-valor">—</div><div class="dash-resumo-sub" id="dash-franquia-sub">—</div><div class="dash-resumo-barra"><div class="dash-resumo-barra-fill" id="dash-franquia-barra"></div></div></div>
+        <div class="dash-resumo-item"><div class="dash-resumo-label">Créditos extras</div><div class="dash-resumo-valor" id="dash-creditos">0</div><div class="dash-resumo-sub">Não expiram</div></div>
+        <div class="dash-resumo-item"><div class="dash-resumo-label">Emitidos hoje</div><div class="dash-resumo-valor" id="dash-emitidos-hoje">0</div><div class="dash-resumo-sub" id="dash-emitidos-mes">0 no mês</div></div>
+      </div>
+
+      <div class="dash-tabs">
+        <div class="dash-tab ativa" onclick="dashTab('worklist',this)">📋 Worklist <span class="dash-tab-badge" id="dash-wl-badge">0</span></div>
+        <div class="dash-tab" onclick="dashTab('historico',this)">📂 Histórico</div>
+        <div class="dash-tab" onclick="dashTab('extrato',this)">📊 Extrato</div>
+      </div>
+      <hr style="border:none;border-top:1px solid #E2E8F0;margin:0 20px;">
+
+      <div class="dash-conteudo">
+        <!-- WORKLIST -->
+        <div class="dash-section ativa" id="dash-sec-worklist">
+          <div class="dash-toolbar">
+            <input class="dash-toolbar-input" id="dash-wl-busca" placeholder="Buscar paciente..." oninput="dashFiltrarWorklist()" style="flex:1;max-width:300px;"/>
+            <button class="dash-toolbar-btn dash-toolbar-btn-primary">+ Paciente</button>
+            <button class="dash-toolbar-btn dash-toolbar-btn-ghost">📋 Laudo rápido</button>
+          </div>
+          <div class="dash-lista" id="dash-wl-lista"><div style="text-align:center;padding:40px;color:#94A3B8;font-size:13px;"><span style="font-size:32px;display:block;margin-bottom:8px;">📋</span>Carregando worklist...</div></div>
+        </div>
+        <!-- HISTORICO -->
+        <div class="dash-section" id="dash-sec-historico">
+          <div class="dash-toolbar">
+            <input class="dash-toolbar-input" placeholder="Buscar por nome ou CPF..." style="flex:1;max-width:300px;"/>
+            <input class="dash-toolbar-input" type="date" id="dash-hist-de" style="width:140px;"/>
+            <span style="font-size:12px;color:#64748B;">até</span>
+            <input class="dash-toolbar-input" type="date" id="dash-hist-ate" style="width:140px;"/>
+          </div>
+          <div style="text-align:center;padding:40px;color:#94A3B8;font-size:13px;"><span style="font-size:32px;display:block;margin-bottom:8px;">📂</span>Busque um paciente para ver o histórico</div>
+        </div>
+        <!-- EXTRATO -->
+        <div class="dash-section" id="dash-sec-extrato">
+          <div class="dash-toolbar">
+            <span style="font-size:12px;font-weight:600;color:#475569;">Período:</span>
+            <input class="dash-toolbar-input" type="date" id="dash-ext-de" style="width:140px;"/>
+            <span style="font-size:12px;color:#64748B;">até</span>
+            <input class="dash-toolbar-input" type="date" id="dash-ext-ate" style="width:140px;"/>
+            <button class="dash-toolbar-btn dash-toolbar-btn-primary" onclick="dashGerarExtrato()">Gerar extrato</button>
+            <button class="dash-toolbar-btn dash-toolbar-btn-ghost" onclick="window.print()">🖨 Imprimir</button>
+          </div>
+          <div id="dash-ext-resultado"><div style="text-align:center;padding:40px;color:#94A3B8;font-size:13px;"><span style="font-size:32px;display:block;margin-bottom:8px;">📊</span>Selecione o período e clique em "Gerar extrato"</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Session badge (oculto — topbar já mostra as infos) -->
+<div id="session-badge" style="display:none;"><span id="sb-nome"></span></div>
+
+<script>
+function mostrarTab(tab){
+  document.querySelectorAll('.auth-panel').forEach(p=>p.classList.remove('ativo'));
+  document.querySelectorAll('.auth-tab').forEach(t=>t.classList.remove('ativa'));
+  if(tab==='login'){ document.getElementById('painel-login').classList.add('ativo'); document.getElementById('tab-login').classList.add('ativa'); }
+  else if(tab==='cadastro'){ document.getElementById('painel-cadastro').classList.add('ativo'); document.getElementById('tab-cadastro').classList.add('ativa'); }
+}
+function togglePass(id,btn){ const el=document.getElementById(id); if(!el)return; el.type=el.type==='password'?'text':'password'; btn.textContent=el.type==='password'?'👁':'🙈'; }
+
+// appIniciado: ativa o dashboard
+function appIniciado(){
+  document.getElementById('tela-clinica').classList.remove('oculta');
+}
+function wlRenderLista(){}
+function mostrarTrocarContexto(){
+  document.getElementById('tela-clinica').classList.add('oculta');
+  document.getElementById('ctx-overlay').classList.add('open');
+  document.getElementById('ctx-loading').style.display='none';
+  document.getElementById('ctx-conteudo').style.display='block';
+  if(_fbProfile && _fbContextos) mostrarSeletorContextos(_fbProfile, _fbContextos);
+}
+function applyConfig(){}
+function loadConfig(){}
+</script>
+
+</body>
+</html>

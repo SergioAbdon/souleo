@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>LEO — Preview Função Diastólica (Auto/Manual)</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'IBM Plex Sans',sans-serif;background:#F1F5F9;padding:20px;color:#1E293B;}
+h2{font-size:14px;margin-bottom:16px;color:#1E3A5F;}
+
+.container{max-width:900px;margin:0 auto;display:flex;gap:20px;}
+.col-left{flex:1;}
+.col-right{flex:1;}
+
+/* Seção diastólica */
+.diast-box{background:#fff;border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;margin-bottom:16px;}
+.diast-hdr{background:#1E3A5F;color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;}
+.diast-hdr span{font-size:13px;font-weight:700;}
+
+/* Toggle Auto/Manual */
+.toggle-wrap{display:flex;background:rgba(255,255,255,.15);border-radius:6px;overflow:hidden;}
+.toggle-btn{padding:5px 14px;font-size:10px;font-weight:600;cursor:pointer;border:none;font-family:inherit;transition:all .15s;}
+.toggle-btn.ativo{background:#fff;color:#1E3A5F;}
+.toggle-btn:not(.ativo){background:transparent;color:rgba(255,255,255,.7);}
+
+.diast-body{padding:14px 16px;}
+
+/* Campos diastólicos */
+.diast-campos{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin-bottom:12px;}
+.diast-field{display:flex;flex-direction:column;gap:2px;}
+.diast-field label{font-size:10px;color:#64748B;font-weight:500;}
+.diast-field input{padding:5px 8px;border:1.5px solid #D1D5DB;border-radius:5px;font-size:12px;font-family:inherit;}
+.diast-field input:focus{outline:none;border-color:#2563EB;}
+
+/* Resultado automático */
+.diast-resultado{background:#F0FDF4;border:1px solid #BBF7D0;border-radius:6px;padding:10px 14px;margin-top:8px;}
+.diast-resultado.alerta{background:#FEF2F2;border-color:#FECACA;}
+.diast-resultado .label{font-size:9px;color:#64748B;text-transform:uppercase;font-weight:700;margin-bottom:4px;}
+.diast-resultado .texto{font-size:12px;font-weight:600;color:#065F46;}
+.diast-resultado.alerta .texto{color:#991B1B;}
+.diast-resultado .btn-alterar{float:right;padding:3px 10px;border:1px solid #D1D5DB;border-radius:4px;font-size:9px;font-weight:600;cursor:pointer;background:#fff;color:#475569;font-family:inherit;}
+
+/* Seleção manual */
+.diast-manual{display:none;}
+.diast-manual.ativo{display:block;}
+.diast-opcoes{display:flex;flex-direction:column;gap:4px;}
+.diast-opcao{display:flex;align-items:center;gap:8px;padding:8px 12px;border:1.5px solid #E2E8F0;border-radius:6px;cursor:pointer;font-size:12px;transition:all .15s;}
+.diast-opcao:hover{border-color:#2563EB;background:#EFF6FF;}
+.diast-opcao.selecionada{border-color:#2563EB;background:#DBEAFE;font-weight:600;}
+.diast-opcao input[type=radio]{accent-color:#2563EB;}
+.diast-opcao .grau{font-size:10px;color:#64748B;margin-left:auto;}
+.diast-livre{margin-top:6px;}
+.diast-livre input{width:100%;padding:8px 12px;border:1.5px solid #D1D5DB;border-radius:6px;font-size:12px;font-family:inherit;}
+.diast-livre input:focus{outline:none;border-color:#2563EB;}
+
+/* Resultado laudo */
+.laudo-box{background:#fff;border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;}
+.laudo-sec{background:#8B1A1A;color:#fff;padding:4px 12px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;}
+.laudo-conteudo{padding:10px 14px;}
+.laudo-achado{font-size:11px;padding:3px 0;border-bottom:1px solid #F8FAFC;}
+.laudo-achado.alerta{color:#DC2626;font-weight:500;}
+.laudo-conc{font-size:11px;font-weight:600;padding:3px 0;}
+.laudo-conc .num{color:#8B1A1A;font-weight:700;margin-right:4px;}
+</style>
+</head>
+<body>
+
+<h2>🫀 LEO — Preview: Função Diastólica (Automático / Manual)</h2>
+
+<div class="container">
+<div class="col-left">
+
+<!-- SEÇÃO DIASTÓLICA -->
+<div class="diast-box">
+  <div class="diast-hdr">
+    <span>📊 Função Diastólica</span>
+    <div class="toggle-wrap">
+      <button class="toggle-btn ativo" id="btn-auto" onclick="trocarModo('auto')">Automático</button>
+      <button class="toggle-btn" id="btn-manual" onclick="trocarModo('manual')">Manual</button>
+    </div>
+  </div>
+  <div class="diast-body">
+
+    <!-- Campos de medida (aparecem em ambos os modos) -->
+    <div class="diast-campos">
+      <div class="diast-field"><label>Onda E mitral (cm/s)</label><input type="number" id="d-onda-e" oninput="calcDiast()"/></div>
+      <div class="diast-field"><label>Onda A mitral (cm/s)</label><input type="number" id="d-onda-a" oninput="calcDiast()"/></div>
+      <div class="diast-field"><label>E' septal (cm/s)</label><input type="number" id="d-e-linha" oninput="calcDiast()"/></div>
+      <div class="diast-field"><label>Relação E/e' (calc)</label><input type="text" id="d-eei" readonly style="background:#EFF6FF;color:#1E40AF;font-weight:600;"/></div>
+      <div class="diast-field"><label>Vel. Insuf. Tricúspide (m/s)</label><input type="number" id="d-it" step="0.1" oninput="calcDiast()"/></div>
+      <div class="diast-field"><label>Volume AE indexado (ml/m²)</label><input type="number" id="d-lavi" oninput="calcDiast()"/></div>
+    </div>
+
+    <!-- MODO AUTOMÁTICO: resultado calculado -->
+    <div id="modo-auto">
+      <div class="diast-resultado" id="auto-resultado">
+        <div class="label">Resultado automático</div>
+        <div class="texto" id="auto-texto">Preencha os parâmetros</div>
+      </div>
+    </div>
+
+    <!-- MODO MANUAL: seleção de sentenças -->
+    <div class="diast-manual" id="modo-manual">
+      <div style="font-size:10px;color:#64748B;font-weight:600;margin-bottom:6px;">Selecione a avaliação:</div>
+      <div class="diast-opcoes">
+        <label class="diast-opcao" onclick="selManual(this,0)">
+          <input type="radio" name="diast-manual" value="0"/>
+          Índices diastólicos do ventrículo esquerdo preservados
+          <span class="grau" style="color:#059669;">Normal</span>
+        </label>
+        <label class="diast-opcao" onclick="selManual(this,1)">
+          <input type="radio" name="diast-manual" value="1"/>
+          Disfunção diastólica do VE grau I (alteração de relaxamento)
+          <span class="grau">Grau I</span>
+        </label>
+        <label class="diast-opcao" onclick="selManual(this,2)">
+          <input type="radio" name="diast-manual" value="2"/>
+          Disfunção diastólica do VE grau II (padrão pseudonormal)
+          <span class="grau" style="color:#F59E0B;">Grau II</span>
+        </label>
+        <label class="diast-opcao" onclick="selManual(this,3)">
+          <input type="radio" name="diast-manual" value="3"/>
+          Disfunção diastólica do VE grau III (padrão restritivo)
+          <span class="grau" style="color:#DC2626;">Grau III</span>
+        </label>
+        <label class="diast-opcao" onclick="selManual(this,4)">
+          <input type="radio" name="diast-manual" value="4"/>
+          Função diastólica do VE indeterminada
+          <span class="grau">Indet.</span>
+        </label>
+        <label class="diast-opcao" onclick="selManual(this,5)">
+          <input type="radio" name="diast-manual" value="5"/>
+          Avaliação limitada devido arritmia cardíaca
+          <span class="grau">FA</span>
+        </label>
+        <label class="diast-opcao" onclick="selManual(this,6)">
+          <input type="radio" name="diast-manual" value="6"/>
+          Não avaliar (não incluir no laudo)
+          <span class="grau" style="color:#94A3B8;">—</span>
+        </label>
+      </div>
+      <div class="diast-livre">
+        <label style="font-size:10px;color:#64748B;">Ou texto livre:</label>
+        <input type="text" id="d-livre" placeholder="Digite sua avaliação personalizada..." oninput="selLivre()"/>
+      </div>
+      <!-- Aviso de divergência -->
+      <div id="aviso-divergencia" style="display:none;margin-top:8px;padding:8px 12px;background:#FFFBEB;border:1.5px solid #FDE68A;border-radius:6px;font-size:11px;color:#92400E;">
+        <span style="font-weight:700;">⚠️ Atenção:</span> <span id="aviso-texto"></span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</div>
+<div class="col-right">
+
+<!-- COMO APARECE NO LAUDO -->
+<div class="laudo-box">
+  <div class="laudo-sec">Comentários (trecho diastólico)</div>
+  <div class="laudo-conteudo" id="laudo-achados">
+    <div class="laudo-achado" style="color:#94A3B8;">Preencha os parâmetros...</div>
+  </div>
+  <div class="laudo-sec">Conclusão (trecho diastólico)</div>
+  <div class="laudo-conteudo" id="laudo-conclusao">
+    <div class="laudo-conc" style="color:#94A3B8;">—</div>
+  </div>
+</div>
+
+<div style="margin-top:14px;background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:14px;">
+  <div style="font-size:11px;font-weight:700;color:#1E3A5F;margin-bottom:8px;">Teste rápido:</div>
+  <button onclick="demoNormal()" style="padding:5px 12px;border:1px solid #D1D5DB;border-radius:4px;font-size:11px;cursor:pointer;background:#fff;margin-right:4px;">Normal</button>
+  <button onclick="demoGrau1()" style="padding:5px 12px;border:1px solid #D1D5DB;border-radius:4px;font-size:11px;cursor:pointer;background:#fff;margin-right:4px;">Grau I</button>
+  <button onclick="demoGrau2()" style="padding:5px 12px;border:1px solid #D1D5DB;border-radius:4px;font-size:11px;cursor:pointer;background:#fff;margin-right:4px;">Grau II</button>
+  <button onclick="demoFA()" style="padding:5px 12px;border:1px solid #D1D5DB;border-radius:4px;font-size:11px;cursor:pointer;background:#fff;margin-right:4px;">FA elevada</button>
+  <button onclick="limpar()" style="padding:5px 12px;border:1px solid #D1D5DB;border-radius:4px;font-size:11px;cursor:pointer;background:#fff;">Limpar</button>
+</div>
+
+</div>
+</div>
+
+<script>
+let modo = 'auto';
+let selecaoManual = -1;
+let resultadoAuto = ''; // guarda o que o automático calcularia
+
+const SENTENCAS = [
+  {achado:'Índices diastólicos do ventrículo esquerdo preservados.',                          conclusao:'', alerta:false},
+  {achado:'Disfunção diastólica do ventrículo esquerdo de grau I (alteração de relaxamento).',conclusao:'Disfunção diastólica de grau I do ventrículo esquerdo (alteração de relaxamento).', alerta:true},
+  {achado:'Disfunção diastólica do ventrículo esquerdo de grau II (padrão pseudonormal).',    conclusao:'Disfunção diastólica de grau II do ventrículo esquerdo (padrão pseudo-normal).', alerta:true},
+  {achado:'Disfunção diastólica do ventrículo esquerdo de grau III (padrão restritivo).',     conclusao:'Disfunção diastólica de grau III do ventrículo esquerdo (padrão restritivo).', alerta:true},
+  {achado:'Função diastólica do ventrículo esquerdo indeterminada.',                          conclusao:'Função diastólica do ventrículo esquerdo indeterminada.', alerta:false},
+  {achado:'Avaliação da função diastólica limitada devido arritmia cardíaca.',                conclusao:'Parâmetros sugestivos de pressão de enchimento [avaliar].', alerta:false},
+  {achado:'',conclusao:'', alerta:false}, // não avaliar
+];
+
+function trocarModo(m){
+  modo = m;
+  document.getElementById('btn-auto').classList.toggle('ativo', m==='auto');
+  document.getElementById('btn-manual').classList.toggle('ativo', m==='manual');
+  document.getElementById('modo-auto').style.display = m==='auto' ? 'block' : 'none';
+  document.getElementById('modo-manual').classList.toggle('ativo', m==='manual');
+  if(m==='auto') document.getElementById('aviso-divergencia').style.display='none';
+  else verificarDivergencia();
+  atualizarLaudo();
+}
+
+function calcDiast(){
+  const e = parseFloat(document.getElementById('d-onda-e').value) || 0;
+  const a = parseFloat(document.getElementById('d-onda-a').value) || 0;
+  const eLinha = parseFloat(document.getElementById('d-e-linha').value) || 0;
+  const it = parseFloat(document.getElementById('d-it').value) || 0;
+  const lavi = parseFloat(document.getElementById('d-lavi').value) || 0;
+
+  // Calcular E/e'
+  const eei = (e > 0 && eLinha > 0) ? (e / eLinha).toFixed(1) : '';
+  document.getElementById('d-eei').value = eei;
+
+  // Sempre calcula o automático (para comparar divergência no modo manual)
+  calcAuto(e, a, eei, it, lavi);
+  verificarDivergencia();
+  atualizarLaudo();
+}
+
+function calcAuto(e, a, eei, it, lavi){
+  const el = document.getElementById('auto-resultado');
+  const txt = document.getElementById('auto-texto');
+
+  if(!e && !a && !eei && !it && !lavi){
+    el.className = 'diast-resultado';
+    txt.textContent = 'Preencha os parâmetros';
+    return;
+  }
+
+  // Lógica simplificada (no motor real, j21 faz isso)
+  const ea = (e > 0 && a > 0) ? (e/a) : null;
+  const eeiN = eei ? parseFloat(eei) : null;
+
+  // Contar critérios alterados
+  let alt = 0;
+  let total = 0;
+  if(eeiN !== null){ total++; if(eeiN > 14) alt++; }
+  if(it > 0){ total++; if(it > 2.8) alt++; }
+  if(lavi > 0){ total++; if(lavi > 34) alt++; }
+
+  let resultado = '';
+  let alerta = false;
+
+  if(ea !== null && ea >= 2){ resultado = 'Disfunção diastólica grau III (padrão restritivo)'; alerta = true; }
+  else if(ea !== null && ea <= 0.8 && e <= 50){ resultado = 'Disfunção diastólica grau I (alteração de relaxamento)'; alerta = true; }
+  else if(alt >= 2){ resultado = 'Disfunção diastólica grau II (padrão pseudonormal)'; alerta = true; }
+  else if(total > 0 && alt <= 1){ resultado = 'Índices diastólicos preservados'; }
+  else { resultado = 'Função diastólica indeterminada'; }
+
+  resultadoAuto = resultado; // guardar para comparar com manual
+  el.className = 'diast-resultado' + (alerta ? ' alerta' : '');
+  txt.textContent = resultado;
+}
+
+function selManual(el, idx){
+  selecaoManual = idx;
+  document.querySelectorAll('.diast-opcao').forEach(o => o.classList.remove('selecionada'));
+  el.classList.add('selecionada');
+  document.getElementById('d-livre').value = '';
+  verificarDivergencia();
+  atualizarLaudo();
+}
+
+// Mapa de índice manual → palavra-chave do automático
+const MAPA_MANUAL_AUTO = {
+  0: 'preservados',
+  1: 'grau I',
+  2: 'grau II',
+  3: 'grau III',
+  4: 'indeterminada',
+  5: 'arritmia',
+  6: null, // não avaliar
+};
+
+function verificarDivergencia(){
+  const aviso = document.getElementById('aviso-divergencia');
+  const avisoTxt = document.getElementById('aviso-texto');
+
+  // Só verifica no modo manual e com seleção feita e com resultado automático disponível
+  if(modo !== 'manual' || selecaoManual < 0 || !resultadoAuto || selecaoManual === 6){
+    aviso.style.display = 'none';
+    return;
+  }
+
+  const autoLower = resultadoAuto.toLowerCase();
+  const manualKey = MAPA_MANUAL_AUTO[selecaoManual];
+
+  if(!manualKey){
+    aviso.style.display = 'none';
+    return;
+  }
+
+  // Verificar se a seleção manual corresponde ao resultado automático
+  const corresponde = autoLower.includes(manualKey);
+
+  if(!corresponde){
+    aviso.style.display = 'block';
+    avisoTxt.textContent = 'A seleção manual ("'+SENTENCAS[selecaoManual].achado.split('.')[0]+'") diverge do cálculo automático ("'+resultadoAuto+'"). O laudo seguirá sua escolha manual.';
+  } else {
+    aviso.style.display = 'none';
+  }
+}
+
+function selLivre(){
+  selecaoManual = -1;
+  document.querySelectorAll('.diast-opcao').forEach(o => o.classList.remove('selecionada'));
+  document.querySelectorAll('input[name="diast-manual"]').forEach(r => r.checked = false);
+  atualizarLaudo();
+}
+
+function atualizarLaudo(){
+  const achadosEl = document.getElementById('laudo-achados');
+  const concEl = document.getElementById('laudo-conclusao');
+
+  let achado = '';
+  let conclusao = '';
+  let alerta = false;
+
+  if(modo === 'auto'){
+    const txt = document.getElementById('auto-texto').textContent;
+    if(txt.includes('preservados')){ achado = 'Índices diastólicos do ventrículo esquerdo preservados.'; }
+    else if(txt.includes('grau III')){ achado = 'Disfunção diastólica do VE de grau III (padrão restritivo).'; conclusao = 'Disfunção diastólica de grau III do VE (padrão restritivo).'; alerta = true; }
+    else if(txt.includes('grau II')){ achado = 'Disfunção diastólica do VE de grau II (padrão pseudonormal).'; conclusao = 'Disfunção diastólica de grau II do VE (padrão pseudo-normal).'; alerta = true; }
+    else if(txt.includes('grau I')){ achado = 'Disfunção diastólica do VE de grau I (alteração de relaxamento).'; conclusao = 'Disfunção diastólica de grau I do VE (alteração de relaxamento).'; alerta = true; }
+    else if(txt.includes('indeterminada')){ achado = 'Função diastólica do VE indeterminada.'; conclusao = 'Função diastólica do VE indeterminada.'; }
+    else { achado = ''; }
+  } else {
+    // Manual
+    const livre = document.getElementById('d-livre').value.trim();
+    if(livre){
+      achado = livre;
+      conclusao = livre;
+    } else if(selecaoManual >= 0 && selecaoManual < SENTENCAS.length){
+      achado = SENTENCAS[selecaoManual].achado;
+      conclusao = SENTENCAS[selecaoManual].conclusao;
+      alerta = SENTENCAS[selecaoManual].alerta;
+    }
+  }
+
+  // Detalhamento dos parâmetros
+  const partes = [];
+  const e = document.getElementById('d-onda-e').value;
+  const a = document.getElementById('d-onda-a').value;
+  const eLinha = document.getElementById('d-e-linha').value;
+  const eei = document.getElementById('d-eei').value;
+  const it = document.getElementById('d-it').value;
+  const lavi = document.getElementById('d-lavi').value;
+  if(e) partes.push('Onda E= '+e+' cm/s');
+  if(a) partes.push('Relação E/A= '+(e&&a?(e/a).toFixed(1):'-'));
+  if(eLinha) partes.push("e' septal= "+eLinha+' cm/s');
+  if(eei) partes.push("E/e'= "+eei);
+  if(it) partes.push('Vel. IT= '+it+' m/s');
+  if(lavi) partes.push('LAVI= '+lavi+' ml/m²');
+  const detalhe = partes.length ? partes.join('; ')+'.' : '';
+
+  // Renderizar achados
+  if(achado){
+    achadosEl.innerHTML = `<div class="laudo-achado${alerta?' alerta':''}">${achado}</div>${detalhe?'<div class="laudo-achado" style="font-size:10px;color:#64748B;">'+detalhe+'</div>':''}`;
+  } else {
+    achadosEl.innerHTML = '<div class="laudo-achado" style="color:#94A3B8;">Sem avaliação diastólica</div>';
+  }
+
+  // Renderizar conclusão
+  if(conclusao){
+    concEl.innerHTML = `<div class="laudo-conc${alerta?' style="color:#DC2626;"':''}"><span class="num">•</span>${conclusao}</div>`;
+  } else {
+    concEl.innerHTML = '<div class="laudo-conc" style="color:#94A3B8;">—</div>';
+  }
+}
+
+// Demos
+function demoNormal(){ document.getElementById('d-onda-e').value=80;document.getElementById('d-onda-a').value=60;document.getElementById('d-e-linha').value=8;document.getElementById('d-it').value=2.2;document.getElementById('d-lavi').value=28;calcDiast(); }
+function demoGrau1(){ document.getElementById('d-onda-e').value=60;document.getElementById('d-onda-a').value=80;document.getElementById('d-e-linha').value=5;document.getElementById('d-it').value=2.2;document.getElementById('d-lavi').value=28;calcDiast(); }
+function demoGrau2(){ document.getElementById('d-onda-e').value=80;document.getElementById('d-onda-a').value=70;document.getElementById('d-e-linha').value=5;document.getElementById('d-it').value=3.0;document.getElementById('d-lavi').value=38;calcDiast(); }
+function demoFA(){ document.getElementById('d-onda-e').value=90;document.getElementById('d-onda-a').value='';document.getElementById('d-e-linha').value=5;document.getElementById('d-it').value=3.1;document.getElementById('d-lavi').value=40;trocarModo('manual');document.querySelectorAll('.diast-opcao')[5].click(); }
+function limpar(){ ['d-onda-e','d-onda-a','d-e-linha','d-eei','d-it','d-lavi','d-livre'].forEach(id=>document.getElementById(id).value='');selecaoManual=-1;document.querySelectorAll('.diast-opcao').forEach(o=>o.classList.remove('selecionada'));document.querySelectorAll('input[name="diast-manual"]').forEach(r=>r.checked=false);trocarModo('auto');calcDiast(); }
+</script>
+
+</body>
+</html>

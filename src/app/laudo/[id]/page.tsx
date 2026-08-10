@@ -638,9 +638,10 @@ export default function LaudoPage() {
 
     let resultado: { ok: boolean; tipo?: string; motivo?: string; pdfUrl?: string; pdfErro?: string };
     try {
+      const token = await auth.currentUser?.getIdToken();
       const res = await fetch('/api/emitir', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
         body: JSON.stringify({
           wsId: workspace.id,
           exameId,
@@ -661,6 +662,11 @@ export default function LaudoPage() {
         sem_plano: 'Sem plano ativo. Assine um plano para emitir laudos.',
         expirado: 'Seu plano expirou. Renove para continuar emitindo.',
         sem_saldo: 'Franquia esgotada e sem creditos extras.',
+        nao_autenticado: 'Sessao expirada. Entre de novo para emitir.',
+        sem_permissao: 'Voce nao tem permissao de emitir neste local.',
+        nao_medico: 'Somente perfil medico assina laudo.',
+        exame_de_outro_medico: 'Este laudo e de outro medico. Peca a transferencia ao responsavel.',
+        nao_encontrado: 'Exame nao encontrado. Recarregue a lista.',
         erro: 'Erro ao emitir. Tente novamente.',
       };
       toast(msgs[resultado.motivo || 'erro'] || 'Erro ao emitir.');

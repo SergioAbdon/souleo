@@ -1,0 +1,1474 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LEO v7 — Motor V8 MP4 (Preview)</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --P1:#8B1A1A;--P2:#1E3A5F;--white:#fff;--gray-light:#F9FAFB;--gray-mid:#6B7280;
+  --gray-dark:#111827;--border:#E5E7EB;--font:'IBM Plex Sans',sans-serif;--mono:'IBM Plex Mono',monospace;
+  --red:#8B1A1A;--red-mid:#A52020;--red-light:rgba(139,26,26,.06);--red-border:rgba(139,26,26,.25);
+  --navy:#1E3A5F;--navy-light:rgba(30,58,95,.06);--P-white:#fff;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:var(--font);}
+<style>
+/* ══ VARIÁVEIS ══════════════════════════════════════════════════ */
+:root{
+  --red:#8B1A1A; --red-mid:#A52020; --red-light:#FDF0F0; --red-border:#E8C5C5;
+  --navy:#1E3A5F; --navy-light:#EEF2F8;
+  --gray-dark:#1F2937; --gray-mid:#6B7280; --gray-light:#F3F4F6;
+  --border:#E5E7EB; --green:#166534; --white:#FFFFFF;
+  --font:'IBM Plex Sans',sans-serif; --mono:'IBM Plex Mono',monospace;
+  /* ── v2.0: cores dinâmicas (sobrescritas pela config) ── */
+  --P1:#8B1A1A; --P1m:#A52020; --P1l:#FDF0F0; --P1b:#E8C5C5;
+  --P2:#1E3A5F; --P2l:#EEF2F8;
+}
+
+/* ══ v2.0 — SIDEBAR HEADER ══════════════════════════════════════ */
+.sidebar-header{background:var(--P2);padding:11px 16px;position:sticky;top:0;z-index:10;flex-shrink:0;}
+.sidebar-header-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;}
+.sidebar-header h1{color:var(--white);font-size:12.5px;font-weight:600;letter-spacing:.3px;}
+.sidebar-header p{color:#93C5FD;font-size:10px;}
+.hdr-btns{display:flex;gap:5px;}
+.btn-hdr{
+  background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.22);
+  color:var(--white);font-size:10.5px;padding:4px 9px;border-radius:5px;
+  cursor:pointer;font-family:var(--font);font-weight:500;white-space:nowrap;
+  transition:background .15s;
+}
+.btn-hdr:hover{background:rgba(255,255,255,.25);}
+
+/* ══ v2.0 — BOTÃO EXPORTAR DROPDOWN ════════════════════════════ */
+.export-wrap{position:relative;margin:0 20px 6px;}
+.btn-export{
+  width:100%;background:var(--P2);color:var(--white);border:none;
+  padding:9px 14px;border-radius:6px;font-size:12px;font-weight:600;
+  cursor:pointer;font-family:var(--font);display:flex;align-items:center;
+  justify-content:space-between;transition:filter .15s;
+}
+.btn-export:hover{filter:brightness(1.12);}
+.export-menu{
+  position:absolute;bottom:calc(100% + 5px);left:0;right:0;
+  background:var(--white);border:1.5px solid var(--border);border-radius:8px;
+  box-shadow:0 -10px 28px rgba(0,0,0,.13);z-index:100;overflow:hidden;display:none;
+}
+.export-menu.open{display:block;}
+.exp-item{
+  display:flex;align-items:flex-start;gap:10px;padding:10px 14px;
+  cursor:pointer;border-bottom:1px solid var(--border);transition:background .12s;
+}
+.exp-item:last-child{border-bottom:none;}
+.exp-item:hover{background:var(--gray-light);}
+.exp-ico{font-size:17px;flex-shrink:0;padding-top:1px;}
+.exp-info .exp-title{font-size:12px;font-weight:600;color:var(--gray-dark);}
+.exp-info .exp-sub{font-size:10px;color:var(--gray-mid);margin-top:1px;}
+
+/* feedback toast */
+.exp-toast{
+  position:fixed;bottom:22px;right:22px;background:#166534;color:#fff;
+  padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;
+  z-index:9999;display:none;box-shadow:0 4px 20px rgba(0,0,0,.2);
+  animation:toastIn .2s ease;
+}
+@keyframes toastIn{from{transform:translateY(8px);opacity:0;}to{transform:none;opacity:1;}}
+
+/* ══ v2.0 — CONFIG MODAL ════════════════════════════════════════ */
+.cfg-ov{position:fixed;inset:0;background:rgba(0,0,0,.48);z-index:2000;display:none;align-items:center;justify-content:center;}
+.cfg-ov.open{display:flex;}
+.cfg-box{
+  background:var(--white);border-radius:10px;width:720px;max-width:96vw;
+  max-height:91vh;display:flex;flex-direction:column;
+  box-shadow:0 24px 64px rgba(0,0,0,.28);overflow:hidden;
+}
+.cfg-hdr{
+  background:var(--P2);color:var(--white);padding:13px 18px;
+  display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
+}
+.cfg-hdr h2{font-size:14px;font-weight:600;}
+.cfg-close{background:none;border:none;color:var(--white);font-size:22px;cursor:pointer;line-height:1;padding:0 4px;}
+.cfg-tabs{display:flex;border-bottom:2px solid var(--border);flex-shrink:0;background:#f9fafb;}
+.cfg-tab{
+  padding:10px 16px;font-size:11.5px;font-weight:600;cursor:pointer;color:var(--gray-mid);
+  border-bottom:2.5px solid transparent;margin-bottom:-2px;transition:all .15s;white-space:nowrap;
+}
+.cfg-tab.act{color:var(--P2);border-color:var(--P2);background:var(--white);}
+.cfg-tab:hover:not(.act){color:var(--gray-dark);}
+.cfg-body{flex:1;overflow-y:auto;padding:18px 20px;}
+.cfg-pane{display:none;}
+.cfg-pane.act{display:block;}
+
+/* campos config */
+.cfg-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
+.cfg-row.s1{grid-template-columns:1fr;}
+.cfg-row.s3{grid-template-columns:1fr 1fr 1fr;}
+.cfg-f{display:flex;flex-direction:column;gap:4px;}
+.cfg-f label{font-size:10.5px;font-weight:600;color:var(--gray-mid);text-transform:uppercase;letter-spacing:.4px;}
+.cfg-f input,.cfg-f textarea,.cfg-f select{
+  border:1.5px solid var(--border);border-radius:5px;padding:7px 9px;
+  font-size:12px;font-family:var(--font);color:var(--gray-dark);
+  transition:border-color .15s;resize:vertical;background:var(--white);
+}
+.cfg-f input:focus,.cfg-f textarea:focus,.cfg-f select:focus{outline:none;border-color:var(--P2);}
+
+/* upload zone */
+.upload-zone{
+  border:2px dashed var(--border);border-radius:6px;padding:14px 10px;
+  text-align:center;cursor:pointer;transition:all .15s;position:relative;overflow:hidden;
+}
+.upload-zone:hover{border-color:var(--P2);background:var(--P2l);}
+.upload-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
+.upload-zone .uz-icon{font-size:22px;display:block;margin-bottom:4px;}
+.upload-zone p{font-size:10.5px;color:var(--gray-mid);}
+.upload-zone img{max-height:52px;max-width:180px;border-radius:3px;margin:0 auto 4px;display:block;object-fit:contain;}
+
+/* paletas */
+.palettes{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:14px;}
+.pal-item{
+  border:2px solid var(--border);border-radius:7px;padding:8px 10px;cursor:pointer;
+  display:flex;align-items:center;gap:7px;transition:all .15s;
+}
+.pal-item.sel,.pal-item:hover{border-color:var(--P2);background:var(--P2l);}
+.pal-swatches{display:flex;gap:3px;flex-shrink:0;}
+.pal-swatches span{width:14px;height:14px;border-radius:3px;display:block;}
+.pal-name{font-size:10px;font-weight:600;color:var(--gray-dark);line-height:1.3;}
+
+.custom-clr{display:grid;grid-template-columns:1fr 1fr;gap:10px;border-top:1px dashed var(--border);padding-top:12px;}
+.clr-f label{font-size:10.5px;font-weight:600;color:var(--gray-mid);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px;}
+.clr-row{display:flex;gap:6px;align-items:center;}
+.clr-row input[type=color]{width:36px;height:30px;border:1.5px solid var(--border);border-radius:4px;cursor:pointer;padding:1px;}
+.clr-row input[type=text]{flex:1;border:1.5px solid var(--border);border-radius:4px;padding:5px 7px;font-size:12px;font-family:var(--mono);}
+.clr-row input[type=text]:focus{outline:none;border-color:var(--P2);}
+
+/* preview cabeçalho no modal */
+.cfg-prev-hdr{
+  border:1px solid var(--border);border-radius:6px;padding:10px 14px;
+  margin-bottom:12px;background:#f8f9fa;
+}
+.cfg-prev-inner{
+  display:flex;align-items:center;justify-content:space-between;
+  padding-bottom:6px;border-bottom:2.5px solid var(--P1);
+}
+.cfg-prev-clinica{font-size:11pt;font-weight:700;color:var(--P1);}
+.cfg-prev-clinica span{font-size:7pt;color:var(--gray-mid);display:block;}
+.cfg-prev-title{font-size:9pt;font-weight:700;color:var(--P1);text-align:center;}
+.cfg-prev-dr{text-align:right;font-size:7pt;color:var(--gray-mid);line-height:1.5;}
+.cfg-prev-dr strong{color:var(--P1);display:block;font-size:7.5pt;}
+
+/* preview assinatura */
+.sig-prev{border:1px solid var(--border);border-radius:6px;padding:14px;background:#f8f9fa;text-align:center;margin-top:10px;}
+.sig-prev img{max-height:64px;max-width:200px;display:block;margin:0 auto 5px;object-fit:contain;}
+.sig-prev .sig-linha{border-top:1px solid var(--gray-mid);width:140px;margin:20px auto 4px;}
+
+/* preview rodapé */
+.rod-prev{border:1px solid var(--border);border-radius:6px;padding:10px 14px;background:#f8f9fa;margin-top:10px;font-size:7pt;color:var(--gray-mid);line-height:1.7;}
+.rod-prev strong{color:var(--P1);}
+
+/* cfg footer */
+.cfg-ft{padding:11px 18px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;flex-shrink:0;background:#f9fafb;}
+.btn-cfg-save{background:var(--P2);color:var(--white);border:none;padding:9px 22px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--font);}
+.btn-cfg-cancel{background:var(--white);color:var(--gray-mid);border:1.5px solid var(--border);padding:9px 16px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;font-family:var(--font);}
+.btn-cfg-reset{background:var(--white);color:#DC2626;border:1.5px solid #FCA5A5;padding:9px 14px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;font-family:var(--font);margin-right:auto;}
+.cfg-saved-msg{font-size:11px;color:#166534;font-weight:600;display:none;align-items:center;gap:4px;margin-right:auto;}
+.cfg-saved-msg.show{display:flex;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:var(--font);background:#F1F5F9;color:var(--gray-dark);font-size:13px;}
+
+/* ══ LAYOUT DUAS COLUNAS ════════════════════════════════════════ */
+.app{display:grid;grid-template-columns:390px 1fr;height:100vh;overflow:hidden;}
+.sidebar{background:var(--white);border-right:1px solid var(--border);overflow-y:auto;padding-bottom:40px;display:flex;flex-direction:column;}
+.preview{background:#D8DEE8;overflow-y:auto;padding:20px;}
+
+/* ══ SIDEBAR ════════════════════════════════════════════════════ */
+.sidebar-header{background:var(--navy);padding:14px 20px;position:sticky;top:0;z-index:10;flex-shrink:0;}
+.sidebar-header h1{color:var(--white);font-size:13px;font-weight:600;letter-spacing:.3px;}
+.sidebar-header p{color:#93C5FD;font-size:10px;margin-top:2px;}
+
+.section{border-bottom:1px solid var(--border);}
+.section-title{
+  display:flex;align-items:center;gap:8px;padding:9px 20px;
+  background:var(--gray-light);font-size:11px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.7px;color:var(--navy);
+  cursor:pointer;user-select:none;
+}
+.section-title .toggle{margin-left:auto;color:var(--gray-mid);font-size:15px;}
+.section-body{padding:10px 20px;display:grid;grid-template-columns:1fr 1fr;gap:7px 12px;}
+.section-body.single{grid-template-columns:1fr;}
+.collapsed .section-body{display:none;}
+
+.field{display:flex;flex-direction:column;gap:3px;}
+.field label{font-size:10.5px;color:var(--gray-mid);font-weight:500;}
+.field label span.ref{font-size:9.5px;color:#9CA3AF;font-weight:400;margin-left:3px;}
+.field input,.field select{
+  border:1.5px solid var(--border);border-radius:5px;
+  padding:5px 7px;font-size:12px;font-family:var(--font);
+  color:var(--gray-dark);background:var(--white);transition:border-color .15s;
+}
+.field input:focus,.field select:focus{outline:none;border-color:var(--navy);}
+/* Alerta pulsante para campo obrigatório quando IT preenchida */
+.field input.alerta-it{
+  border-color:var(--red)!important;background:#FFF0F0;
+  animation:pulseRed 1.5s infinite;
+}
+@keyframes pulseRed{0%,100%{box-shadow:0 0 0 0 rgba(139,26,26,.3);}50%{box-shadow:0 0 0 4px rgba(139,26,26,.1);}}
+.field .calc{
+  font-size:11px;color:var(--navy);background:var(--navy-light);
+  padding:3px 6px;border-radius:4px;font-family:var(--mono);font-weight:500;
+}
+.field-alert-msg{font-size:10px;color:var(--red);font-weight:600;margin-top:1px;display:none;}
+.field-alert-msg.show{display:block;}
+
+.btn-salvar-emitir{
+  margin:12px 20px 6px;background:linear-gradient(135deg,var(--navy),var(--P2));color:var(--white);border:none;
+  padding:12px;border-radius:8px;font-size:13px;font-weight:700;
+  cursor:pointer;font-family:var(--font);transition:filter .15s;width:calc(100% - 40px);
+  letter-spacing:0.3px;
+}
+.btn-salvar-emitir:hover{filter:brightness(1.15);}
+
+/* Popup Salvar/Emitir */
+.popup-overlay{
+  display:none;position:fixed;top:0;left:0;width:100%;height:100%;
+  background:rgba(0,0,0,.45);z-index:99999;
+  align-items:center;justify-content:center;
+}
+.popup-overlay.open{display:flex;}
+.popup-card{
+  background:var(--white);border-radius:14px;padding:28px 24px 20px;
+  width:340px;box-shadow:0 12px 40px rgba(0,0,0,.25);font-family:var(--font);
+}
+.popup-header{
+  font-size:16px;font-weight:700;color:var(--navy);text-align:center;margin-bottom:18px;
+}
+.popup-body{display:flex;flex-direction:column;gap:10px;}
+.popup-btn{
+  display:flex;align-items:center;gap:14px;padding:14px 16px;
+  border-radius:10px;border:1.5px solid var(--border);background:var(--white);
+  cursor:pointer;font-family:var(--font);transition:all .15s;text-align:left;
+}
+.popup-btn:hover{border-color:var(--navy);background:rgba(30,58,95,.04);}
+.popup-btn-ico{font-size:22px;}
+.popup-btn-title{font-size:13px;font-weight:700;color:var(--navy);}
+.popup-btn-desc{font-size:11px;color:var(--gray-mid);margin-top:2px;}
+.popup-btn-emitir{border-color:#059669;}
+.popup-btn-emitir:hover{border-color:#059669;background:rgba(5,150,105,.06);}
+.popup-btn-emitir .popup-btn-title{color:#059669;}
+.popup-btn-cancelar{
+  display:block;width:100%;margin-top:14px;padding:8px;
+  background:transparent;border:none;color:var(--gray-mid);
+  font-size:12px;font-weight:500;cursor:pointer;font-family:var(--font);
+}
+.popup-btn-cancelar:hover{color:var(--navy);}
+
+/* ══ MODO EMITIDO ═══════════════════════════════════════════════ */
+.emitido-badge{
+  background:linear-gradient(135deg,#059669,#047857);color:#fff;
+  text-align:center;padding:10px;border-radius:8px;font-size:14px;
+  font-weight:700;font-family:var(--font);margin-bottom:12px;
+  letter-spacing:0.5px;
+}
+.emitido-btns{display:flex;flex-direction:column;gap:8px;margin-bottom:12px;}
+.emitido-btn{
+  padding:10px 14px;border-radius:8px;border:1.5px solid var(--border);
+  background:var(--white);cursor:pointer;font-family:var(--font);
+  font-size:12px;font-weight:600;color:var(--navy);transition:all .15s;
+  text-align:left;
+}
+.emitido-btn:hover{border-color:var(--navy);background:rgba(30,58,95,.04);}
+.emitido-btn-voltar{border-color:var(--navy);color:var(--navy);}
+.emitido-btn-finalizar{border-color:#059669;color:#059669;}
+.emitido-btn-finalizar:hover{border-color:#059669;background:rgba(5,150,105,.06);}
+.emitido-btn-editar{border-color:#D97706;color:#D97706;}
+.emitido-btn-editar:hover{border-color:#D97706;background:rgba(217,119,6,.06);}
+.export-wrap-emitido{position:relative;}
+.export-wrap-emitido .btn-export{
+  width:100%;background:var(--P2);color:var(--white);border:none;
+  padding:9px 14px;border-radius:6px;font-size:12px;font-weight:600;
+  cursor:pointer;font-family:var(--font);display:flex;align-items:center;
+  justify-content:space-between;transition:filter .15s;
+}
+.export-wrap-emitido .btn-export:hover{filter:brightness(1.12);}
+.export-wrap-emitido .export-menu{
+  display:none;position:absolute;bottom:100%;left:0;right:0;
+  background:var(--white);border-radius:8px;box-shadow:0 -4px 20px rgba(0,0,0,.12);
+  border:1px solid var(--border);overflow:hidden;z-index:100;margin-bottom:4px;
+}
+/* Sidebar travada visualmente */
+.sidebar.locked input,
+.sidebar.locked select,
+.sidebar.locked textarea{
+  pointer-events:none;opacity:.6;background:#f1f5f9;
+}
+.sidebar.locked .section-title{pointer-events:none;opacity:.7;}
+.sidebar.locked .btn-salvar-emitir,
+.sidebar.locked .btn-limpar{display:none;}
+.btn-limpar{
+  margin:0 20px 16px;background:var(--white);color:var(--gray-mid);
+  border:1.5px solid var(--border);padding:7px;border-radius:6px;
+  font-size:12px;font-weight:500;cursor:pointer;font-family:var(--font);width:calc(100% - 40px);
+}
+
+/* ══ LAUDO — FOLHA A4 ═══════════════════════════════════════════ */
+.preview-label{font-size:10px;color:var(--gray-mid);font-weight:600;
+  text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px;}
+
+.sheet{
+  width:210mm;background:var(--white);margin:0 auto;
+  box-shadow:0 4px 24px rgba(0,0,0,.15);
+  font-family:'IBM Plex Sans',sans-serif;font-size:8.5pt;color:#1F2937;
+}
+
+/* Tabela de layout — repete thead/tfoot em cada página impressa */
+.print-layout{width:100%;border-collapse:collapse;table-layout:fixed;}
+.print-layout > thead > tr > td{padding:12mm 14mm 4mm;}
+.print-layout > tfoot > tr > td{padding:3mm 14mm 10mm;}
+.print-layout > tbody > tr > td{padding:0 14mm 8mm;}
+
+.laudo-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding-bottom:7px;border-bottom:2.5px solid var(--red);margin-bottom:8px;
+}
+.laudo-clinica{font-size:14pt;font-weight:700;color:var(--red);letter-spacing:-.3px;}
+.laudo-clinica span{font-size:7.5pt;font-weight:400;color:var(--gray-mid);display:block;margin-top:1px;}
+.laudo-title{font-size:10.5pt;font-weight:700;color:var(--red);text-align:center;}
+.laudo-dr{text-align:right;font-size:7.5pt;color:var(--gray-mid);line-height:1.5;}
+.laudo-dr strong{color:var(--red);display:block;font-size:8.5pt;}
+
+.id-grid{
+  background:#FBF5F5;border:1px solid var(--red-border);border-radius:4px;
+  padding:6px 10px;margin-bottom:7px;
+}
+.id-row{display:flex;gap:20px;padding:2px 0;}
+.id-item{display:flex;flex-direction:column;}
+.id-item .lbl{font-size:6.5pt;color:var(--red-mid);font-weight:600;text-transform:uppercase;letter-spacing:.4px;}
+.id-item .val{font-size:8.5pt;font-weight:600;color:var(--gray-dark);}
+
+.laudo-section{margin-bottom:6px;}
+.laudo-section-title{
+  background:var(--red);color:var(--white);
+  font-size:7.5pt;font-weight:700;padding:3px 10px;
+  letter-spacing:.7px;text-transform:uppercase;
+}
+.laudo-section-body{border:1px solid var(--red-border);border-top:none;padding:4px 7px;}
+
+/* Tabela parâmetros */
+.params-table{width:100%;border-collapse:collapse;font-size:7.5pt;}
+.params-table thead tr{background:var(--red);}
+.params-table thead th{color:var(--white);padding:3px 5px;text-align:left;font-weight:600;font-size:7pt;}
+.params-table tbody tr:nth-child(even){background:rgba(139,26,26,.05);}
+.params-table tbody tr:nth-child(odd){background:var(--white);}
+.params-table td{padding:2.5px 5px;vertical-align:middle;}
+.params-table td.val{font-weight:700;}
+.params-table td.val.alert{color:var(--red);}
+.params-table td.ref{color:var(--gray-mid);font-size:6.8pt;}
+.params-divider{border-left:1px solid var(--red-border);}
+
+/* Linhas de achados */
+.linha-wrapper{display:flex;align-items:flex-start;gap:2px;}
+.achado-editable{
+  flex:1;border:none;background:transparent;
+  font-family:inherit;font-size:8pt;color:var(--gray-dark);
+  line-height:1.5;padding:1px 3px;resize:none;overflow:hidden;
+  border-left:2px solid transparent;
+}
+.achado-editable:focus{outline:none;background:#FFFBEB;border-left:2px solid #D97706;border-radius:0 2px 2px 0;}
+.achado-editable.alert-line{color:#7F1D1D;}
+
+/* Botões de linha */
+.btn-rm{
+  flex-shrink:0;background:none;border:1px solid #E8C5C5;
+  color:#C0A0A0;font-size:11px;font-weight:700;line-height:1;
+  padding:1px 4px;border-radius:3px;cursor:pointer;margin-top:2px;
+  transition:all .12s;
+}
+.btn-rm:hover{background:var(--red);border-color:var(--red);color:var(--white);}
+.btn-plus-inline{
+  flex-shrink:0;background:none;border:1px solid #C8D8E8;
+  color:#8899AA;font-size:11px;font-weight:700;line-height:1;
+  padding:1px 4px;border-radius:3px;cursor:pointer;margin-top:2px;
+  transition:all .12s;
+}
+.btn-plus-inline:hover{background:var(--navy);border-color:var(--navy);color:var(--white);}
+.btn-add-top{
+  display:block;width:100%;background:none;
+  border:1px dashed var(--red-border);color:var(--red-mid);
+  font-size:10px;padding:3px 8px;border-radius:3px;
+  cursor:pointer;font-family:var(--font);text-align:left;
+  margin-bottom:3px;transition:all .12s;
+}
+.btn-add-top:hover{background:var(--red-light);border-color:var(--red);}
+
+/* Conclusão */
+.conclusao-list{list-style:none;padding:0;}
+.conc-wrapper{display:flex;align-items:baseline;gap:7px;padding:3px 0;border-bottom:1px solid var(--red-border);}
+.conc-wrapper.dragging{opacity:.4;}
+.conc-wrapper.drag-over{border-top:2px solid var(--navy);}
+.conc-wrapper:last-of-type{border-bottom:none;}
+.wilkins-bloco{padding-left:24px;margin:2px 0 3px;}
+.wilkins-titulo{font-size:8pt;font-weight:500;padding:1.5px 4px;}
+.wilkins-cat{font-size:7.8pt;font-style:italic;color:var(--gray-mid);padding:2px 4px 0;}
+.wilkins-linha{display:flex;align-items:baseline;gap:10px;padding:1px 4px;}
+.wilkins-pts{font-size:8pt;font-weight:600;min-width:34px;color:var(--gray-dark);flex-shrink:0;}
+.wilkins-desc{font-size:8pt;color:var(--gray-dark);}
+.wilkins-total{display:flex;align-items:baseline;gap:10px;padding:3px 4px;margin-top:3px;border-top:0.5px solid var(--red-border);}
+.wilkins-total-label{font-size:8.5pt;font-weight:600;min-width:34px;}
+.wilkins-total-val{font-size:8.5pt;font-weight:600;}
+.wilkins-conclusao{font-size:8pt;padding:2px 4px;margin-top:1px;}
+.conclusao-num{
+  min-width:16px;height:16px;background:var(--red);color:var(--white);
+  border-radius:50%;font-size:6.5pt;font-weight:700;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.conclusao-text{flex:1;font-weight:500;font-size:8pt;line-height:1.5;outline:none;}
+.conclusao-text:focus{background:#FFFBEB;border-radius:2px;}
+
+/* Rodapé laudo */
+.laudo-footer{
+  padding-top:6px;border-top:1.5px solid var(--red);
+  display:flex;justify-content:space-between;align-items:flex-end;
+}
+.footer-info{font-size:6.8pt;color:var(--gray-mid);line-height:1.6;}
+.footer-assinatura{text-align:center;font-size:7pt;color:var(--gray-mid);}
+.footer-assinatura .linha{border-top:1px solid var(--gray-mid);width:130px;margin:24px auto 3px;}
+
+/* ══ BANCO DE FRASES — MODAL ════════════════════════════════════ */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;
+  display:none;align-items:center;justify-content:center;
+}
+.modal-overlay.open{display:flex;}
+.modal-box{
+  background:var(--white);border-radius:8px;width:680px;max-width:95vw;
+  max-height:85vh;display:flex;flex-direction:column;
+  box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;
+}
+.modal-header{
+  background:var(--red);color:var(--white);padding:12px 16px;
+  display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
+}
+.modal-header h2{font-size:14px;font-weight:600;}
+.modal-close{background:none;border:none;color:var(--white);font-size:20px;cursor:pointer;line-height:1;padding:0 4px;}
+.modal-search{padding:10px 16px;border-bottom:1px solid var(--border);flex-shrink:0;}
+.modal-search input{
+  width:100%;border:1.5px solid var(--border);border-radius:5px;
+  padding:7px 10px;font-size:13px;font-family:var(--font);
+}
+.modal-search input:focus{outline:none;border-color:var(--navy);}
+.modal-cats{
+  display:flex;gap:6px;padding:8px 16px;flex-wrap:wrap;
+  border-bottom:1px solid var(--border);flex-shrink:0;
+}
+.cat-btn{
+  background:var(--gray-light);border:1.5px solid var(--border);
+  color:var(--gray-mid);font-size:10.5px;padding:3px 10px;
+  border-radius:20px;cursor:pointer;font-family:var(--font);transition:all .12s;
+}
+.cat-btn.active,.cat-btn:hover{background:var(--navy);border-color:var(--navy);color:var(--white);}
+.modal-list{flex:1;overflow-y:auto;padding:8px 16px;}
+.frase-item{
+  display:flex;align-items:center;gap:8px;padding:7px 8px;
+  border-radius:5px;cursor:pointer;border:1px solid transparent;
+  transition:all .12s;margin-bottom:3px;
+}
+.frase-item:hover{background:var(--navy-light);border-color:var(--border);}
+.frase-item.selected{background:#EEF2F8;border-color:var(--navy);}
+.frase-text{flex:1;font-size:12px;color:var(--gray-dark);line-height:1.4;}
+.frase-cat{font-size:10px;color:var(--gray-mid);background:var(--gray-light);
+  padding:1px 6px;border-radius:10px;flex-shrink:0;}
+.frase-btns{display:flex;gap:4px;flex-shrink:0;}
+.frase-btn-edit,.frase-btn-del{
+  background:none;border:1px solid var(--border);
+  font-size:11px;padding:2px 6px;border-radius:3px;cursor:pointer;
+  transition:all .12s;
+}
+.frase-btn-edit:hover{background:var(--navy-light);border-color:var(--navy);}
+.frase-btn-del:hover{background:var(--red-light);border-color:var(--red);color:var(--red);}
+.modal-footer{
+  padding:10px 16px;border-top:1px solid var(--border);
+  display:flex;gap:8px;justify-content:space-between;align-items:center;flex-shrink:0;
+}
+.modal-nova-frase{display:flex;gap:6px;flex:1;}
+.modal-nova-frase input{
+  flex:1;border:1.5px solid var(--border);border-radius:5px;
+  padding:6px 8px;font-size:12px;font-family:var(--font);
+}
+.modal-nova-frase input:focus{outline:none;border-color:var(--navy);}
+.modal-nova-frase select{
+  border:1.5px solid var(--border);border-radius:5px;
+  padding:6px 8px;font-size:12px;font-family:var(--font);background:var(--white);
+}
+.btn-nova-add{
+  background:var(--navy);color:var(--white);border:none;
+  padding:6px 14px;border-radius:5px;font-size:12px;font-weight:600;
+  cursor:pointer;font-family:var(--font);white-space:nowrap;
+}
+.btn-inserir{
+  background:var(--red);color:var(--white);border:none;
+  padding:8px 20px;border-radius:5px;font-size:13px;font-weight:600;
+  cursor:pointer;font-family:var(--font);
+}
+.btn-inserir:disabled{background:#ccc;cursor:default;}
+
+/* ══ PRINT ══════════════════════════════════════════════════════ */
+@media print{
+  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;}
+  @page{size:A4;margin:12mm 14mm 12mm 14mm;}
+
+  /* Esconder tudo que não é laudo */
+  body{margin:0;padding:0;background:white!important;}
+  .app{display:block!important;height:auto!important;overflow:visible!important;}
+  .sidebar,.preview-label,.modal-overlay,
+  .popup-overlay,#modo-emitido,#modo-edicao,
+  .btn-rm,.btn-plus-inline,.btn-add-top,.drag-handle{display:none!important;}
+  .preview{padding:0!important;background:white!important;overflow:visible!important;height:auto!important;}
+  /* Esconder toasts no print */
+  div[style*="position:fixed"][style*="bottom:20px"]{display:none!important;}
+
+  /* Sheet ocupa 100% */
+  .sheet{box-shadow:none!important;width:100%!important;margin:0!important;padding:0!important;}
+
+  /* Layout — fluxo normal de divs */
+  .print-layout{display:block!important;width:100%!important;}
+  .print-header-fixed{padding:0 0 4mm 0!important;}
+  .print-footer-fixed{padding:4mm 0 0 0!important;border-top:1.5px solid #8B1A1A;}
+
+  /* Tabela de parâmetros com bordas */
+  .params-table{border-collapse:collapse!important;width:100%!important;}
+  .params-table th,.params-table td{
+    border:0.5px solid #bbb!important;
+    padding:2px 5px!important;
+    font-size:8pt!important;
+  }
+  .params-table thead th{
+    background:#8B1A1A!important;
+    color:#fff!important;
+    font-weight:600!important;
+  }
+  .params-divider{border-left:2px solid #8B1A1A!important;}
+
+  /* Seções do laudo — permitir quebra de página dentro de seções grandes */
+  .laudo-section{margin-bottom:3mm!important;}
+  .laudo-section-title{break-after:avoid;}
+  .laudo-section-title{
+    background:#8B1A1A!important;
+    color:#fff!important;
+  }
+
+  /* ID grid */
+  .id-grid{border:1px solid #8B1A1A!important;}
+  .id-row{border-bottom:0.5px solid #ddd!important;}
+  .id-item .lbl{font-size:6pt!important;color:#8B1A1A!important;}
+  .id-item .val{font-size:9pt!important;}
+
+  /* Conclusão */
+  .conclusao-list{list-style:none;padding:0;margin:0;}
+  .conclusao-list li{break-inside:avoid;}
+
+  /* Cabeçalho do laudo */
+  .laudo-header{display:flex!important;justify-content:space-between!important;align-items:flex-start!important;margin-bottom:3mm!important;}
+  .laudo-title{text-align:center!important;}
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   v2.1 — WORKLIST & MULTI-CLÍNICA
+══════════════════════════════════════════════════════════════════ */
+
+</style>
+</head>
+<body>
+
+<div class="app">
+
+<!-- ══════════════ SIDEBAR ══════════════════════════════════════ -->
+<div class="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-header-row">
+      <h1 id="hdr-titulo">🫀 Laudo ECO · <span id="hdr-clinica">MedCardio</span></h1>
+      <div class="hdr-btns">
+        <button class="btn-hdr" onclick="voltarWorklist()">← Voltar</button>
+        <button class="btn-hdr" onclick="abrirConfig()">⚙️ Config</button>
+      </div>
+    </div>
+    <p id="hdr-subtitulo">Dr. Sérgio Abdon · CRM/PA 7952 · Leo v2.4</p>
+  </div>
+
+  <!-- IDENTIFICAÇÃO -->
+  <div class="section" id="sec-id">
+    <div class="section-title" onclick="tog('sec-id')">👤 Identificação <span class="toggle">▾</span></div>
+    <div class="section-body single">
+      <div class="field"><label>Nome completo</label>
+        <input type="text" id="nome" oninput="calc()"/></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px 12px;">
+        <div class="field"><label>Data de nascimento</label>
+          <input type="date" id="dtnasc" oninput="calc()"/></div>
+        <div class="field"><label>Data do exame</label>
+          <input type="date" id="dtexame" oninput="calc()"/></div>
+        <div class="field"><label>Convênio</label>
+          <input type="text" id="convenio" oninput="calc()"/></div>
+        <div class="field"><label>Médico solicitante</label>
+          <input type="text" id="solicitante" oninput="calc()"/></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MEDIDAS GERAIS -->
+  <div class="section" id="sec-med">
+    <div class="section-title" onclick="tog('sec-med')">📏 Medidas Gerais <span class="toggle">▾</span></div>
+    <div class="section-body">
+      <div class="field"><label>Sexo</label>
+        <select id="sexo" onchange="calc()">
+          <option value="">—</option>
+          <option value="M">Masculino</option>
+          <option value="F">Feminino</option>
+        </select></div>
+      <div class="field"><label>Ritmo</label>
+        <select id="ritmo" onchange="calc()">
+          <option value="S">Regular</option>
+          <option value="N">Irregular</option>
+        </select></div>
+      <div class="field"><label>Peso <span class="ref">kg</span></label>
+        <input type="number" id="peso" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Altura <span class="ref">cm</span></label>
+        <input type="number" id="altura" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>IMC <span class="ref">kg/m²</span></label>
+        <div class="calc" id="calc-imc">—</div></div>
+      <div class="field"><label>ASC <span class="ref">m²</span></label>
+        <div class="calc" id="calc-asc">—</div></div>
+    </div>
+  </div>
+
+  <!-- CÂMARAS -->
+  <div class="section" id="sec-cam">
+    <div class="section-title" onclick="tog('sec-cam')">📐 Câmaras <span class="toggle">▾</span></div>
+    <div class="section-body">
+      <div class="field"><label>Raiz Aórtica <span class="ref">mm</span></label>
+        <input type="number" id="b7" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Átrio Esquerdo <span class="ref">mm</span></label>
+        <input type="number" id="b8" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>DDVE <span class="ref">mm</span></label>
+        <input type="number" id="b9" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Septo IV <span class="ref">mm</span></label>
+        <input type="number" id="b10" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Parede Posterior <span class="ref">mm</span></label>
+        <input type="number" id="b11" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>DSVE <span class="ref">mm</span></label>
+        <input type="number" id="b12" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Ventrículo Direito <span class="ref">mm</span></label>
+        <input type="number" id="b13" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Aorta Ascendente <span class="ref">mm</span></label>
+        <input type="number" id="b28" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Arco Aórtico <span class="ref">mm</span></label>
+        <input type="number" id="b29" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>AE Vol. index <span class="ref">ml/m²</span></label>
+        <input type="number" id="b24" step="0.1" oninput="sincronizarLAVI(this,'b24_diast')"/></div>
+      <div class="field"><label>AD Vol. index <span class="ref">ml/m²</span></label>
+        <input type="number" id="b25" step="0.1" oninput="calc()"/></div>
+    </div>
+    <div class="section-body" style="border-top:1px dashed var(--border);padding-top:6px;">
+      <div class="field"><label>VDF VE <span class="ref">ml</span></label><div class="calc" id="calc-vdf">—</div></div>
+      <div class="field"><label>VSF VE <span class="ref">ml</span></label><div class="calc" id="calc-vsf">—</div></div>
+      <div class="field"><label>FE Teichholz</label><div class="calc" id="calc-fe">—</div></div>
+      <div class="field"><label>Fração Encurt.</label><div class="calc" id="calc-fs">—</div></div>
+      <div class="field"><label>Massa VE <span class="ref">g</span></label><div class="calc" id="calc-massa">—</div></div>
+      <div class="field"><label>Índice Massa <span class="ref">g/m²</span></label><div class="calc" id="calc-im">—</div></div>
+      <div class="field"><label>Esp. Relativa</label><div class="calc" id="calc-er">—</div></div>
+      <div class="field"><label>Relação Ao/AE</label><div class="calc" id="calc-aoae">—</div></div>
+    </div>
+  </div>
+
+  <!-- DIASTÓLICA (movida para depois de Câmaras, com toggle Auto/Manual) -->
+  <div class="section" id="sec-diast">
+    <div class="section-title" onclick="tog('sec-diast')">📊 Função Diastólica
+      <div onclick="event.stopPropagation();" style="display:inline-flex;background:rgba(30,58,95,.15);border-radius:4px;overflow:hidden;margin-left:8px;">
+        <button id="btn-diast-auto" onclick="trocarDiastModo('auto')" style="padding:2px 8px;font-size:9px;font-weight:600;border:none;cursor:pointer;font-family:inherit;background:var(--navy);color:#fff;">Auto</button>
+        <button id="btn-diast-manual" onclick="trocarDiastModo('manual')" style="padding:2px 8px;font-size:9px;font-weight:600;border:none;cursor:pointer;font-family:inherit;background:transparent;color:var(--navy);">Manual</button>
+      </div>
+      <span class="toggle">▾</span>
+    </div>
+    <!-- Campos de medida (aparecem sempre) -->
+    <div class="section-body">
+      <div class="field"><label>Onda E <span class="ref">cm/s</span></label>
+        <input type="number" id="b19" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Relação E/A</label>
+        <input type="number" id="b20" step="0.01" oninput="calc()"/></div>
+      <div class="field"><label>e' septal <span class="ref">cm/s</span></label>
+        <input type="number" id="b21" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Relação E/e'</label>
+        <input type="number" id="b22" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Vol. AE index <span class="ref">ml/m²</span></label>
+        <input type="number" id="b24_diast" step="0.1" oninput="sincronizarLAVI(this,'b24')"/></div>
+      <div class="field"><label>LA strain <span class="ref">% · VR≥18</span></label>
+        <input type="number" id="lars" step="0.1" placeholder="reservoir" oninput="calc()"/></div>
+      <div class="field"><label>Vel. IT <span class="ref">m/s</span></label>
+        <input type="number" id="b23" step="0.01" oninput="alertaIT();calc()"/></div>
+      <div class="field">
+        <label>PSAP <span class="ref">mmHg</span></label>
+        <input type="number" id="b37" step="1" oninput="alertaIT();calc()"/>
+        <span class="field-alert-msg" id="alerta-psap">⚠ Preencha a PSAP — Vel. IT registrada</span>
+      </div>
+      <div class="field"><label>Sinais indir. HP</label>
+        <select id="b38" onchange="calc()">
+          <option value="">— Ausente —</option>
+          <option value="S">S — Presente</option>
+        </select></div>
+    </div>
+    <!-- Seleção manual (escondida por padrão) -->
+    <div id="diast-manual-panel" style="display:none;padding:8px 20px 12px;border-top:1px dashed var(--border);">
+      <div style="font-size:9px;color:var(--gray-mid);font-weight:600;margin-bottom:6px;">Selecione a avaliação:</div>
+      <div id="diast-opcoes" style="display:flex;flex-direction:column;gap:3px;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:10px;cursor:pointer;padding:4px 8px;border:1px solid var(--border);border-radius:4px;" onclick="selDiastManual(0)"><input type="radio" name="diast-sel" style="accent-color:var(--navy);"/>Índices diastólicos preservados</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:10px;cursor:pointer;padding:4px 8px;border:1px solid var(--border);border-radius:4px;" onclick="selDiastManual(1)"><input type="radio" name="diast-sel"/>Disfunção diastólica grau I (alteração de relaxamento)</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:10px;cursor:pointer;padding:4px 8px;border:1px solid var(--border);border-radius:4px;" onclick="selDiastManual(2)"><input type="radio" name="diast-sel"/>Disfunção diastólica grau II (padrão pseudonormal)</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:10px;cursor:pointer;padding:4px 8px;border:1px solid var(--border);border-radius:4px;" onclick="selDiastManual(3)"><input type="radio" name="diast-sel"/>Disfunção diastólica grau III (padrão restritivo)</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:10px;cursor:pointer;padding:4px 8px;border:1px solid var(--border);border-radius:4px;" onclick="selDiastManual(4)"><input type="radio" name="diast-sel"/>Função diastólica indeterminada</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:10px;cursor:pointer;padding:4px 8px;border:1px solid var(--border);border-radius:4px;" onclick="selDiastManual(5)"><input type="radio" name="diast-sel"/>Avaliação limitada (arritmia cardíaca)</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:10px;cursor:pointer;padding:4px 8px;border:1px solid var(--border);border-radius:4px;" onclick="selDiastManual(6)"><input type="radio" name="diast-sel"/>Não avaliar</label>
+      </div>
+      <input type="text" id="diast-livre" placeholder="Ou texto livre..." oninput="setDiastTextoLivre(this.value);calc();" style="width:100%;margin-top:6px;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:10px;font-family:var(--font);"/>
+      <div id="diast-aviso" style="display:none;margin-top:6px;padding:6px 10px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:4px;font-size:9px;color:#92400E;"></div>
+    </div>
+  </div>
+
+  <!-- SISTÓLICA -->
+  <div class="section" id="sec-sist">
+    <div class="section-title" onclick="tog('sec-sist')">💓 Função Sistólica <span class="toggle">▾</span></div>
+    <div class="section-body">
+      <div class="field"><label>Simpson VE <span class="ref">%</span></label>
+        <input type="number" id="b54" step="0.1" placeholder="se disponível" oninput="calc()"/></div>
+      <div class="field"><label>Disfunção VD</label>
+        <select id="b32" onchange="calc()">
+          <option value="">— Preservada —</option>
+          <option value="L">L — Leve</option>
+          <option value="LM">LM — Leve-Moderada</option>
+          <option value="M">M — Moderada</option>
+          <option value="MI">MI — Mod-Importante</option>
+          <option value="I">I — Importante</option>
+        </select></div>
+      <div class="field"><label>TAPSE <span class="ref">mm · VR≥20</span></label>
+        <input type="number" id="b33" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>GLS do VE <span class="ref">% · VR≥-18</span></label>
+        <input type="number" id="gls_ve" step="0.1" placeholder="ex: -21" oninput="calc()"/></div>
+      <div class="field"><label>GLS do VD <span class="ref">% · VR≥-20</span></label>
+        <input type="number" id="gls_vd" step="0.1" placeholder="ex: -24" oninput="calc()"/></div>
+    </div>
+  </div>
+
+  <!-- CONTRATILIDADE SEGMENTAR -->
+  <div class="section collapsed" id="sec-seg">
+    <div class="section-title" onclick="tog('sec-seg')">🗺️ Contratilidade Segmentar <span class="toggle">▾</span></div>
+    <div class="section-body single" style="font-size:10px;color:var(--gray-mid);padding-bottom:4px;">
+      <em>H=Hipocin · A=Acin · D=Discin · B=basal · MB=médiobasal · M=média · MA=médioapical · A=apical</em>
+    </div>
+    <div class="section-body">
+      <div class="field"><label>Região Apical</label>
+        <select id="b55" onchange="calc()">
+          <option value="">— Normal —</option>
+          <option value="H">H — Hipocinesia</option>
+          <option value="A">A — Acinesia</option>
+          <option value="D">D — Discinesia</option>
+        </select></div>
+      <div class="field"><label>P. Anterior</label><select id="b56" onchange="calc()"></select></div>
+      <div class="field"><label>P. Septalanterior</label><select id="b57" onchange="calc()"></select></div>
+      <div class="field"><label>P. Septalinferior</label><select id="b58" onchange="calc()"></select></div>
+      <div class="field"><label>P. Lateral</label><select id="b59" onchange="calc()"></select></div>
+      <div class="field"><label>P. Inferior</label><select id="b60" onchange="calc()"></select></div>
+      <div class="field"><label>P. Inferolateral</label><select id="b61" onchange="calc()"></select></div>
+      <div class="field"><label>Demais paredes</label>
+        <select id="b62" onchange="calc()">
+          <option value="NL">NL — Preservadas</option>
+          <option value="HD">HD — Hipocin. difusa</option>
+          <option value="HR">HR — Hipocin. demais</option>
+          <option value="AD">AD — Acinesia difusa</option>
+          <option value="DD">DD — Discinesia difusa</option>
+        </select></div>
+    </div>
+  </div>
+
+  <!-- DIASTÓLICA removida daqui — movida para depois de Câmaras -->
+
+  <!-- VÁLVULAS -->
+  <div class="section" id="sec-valv">
+    <div class="section-title" onclick="tog('sec-valv')">🔵 Válvulas <span class="toggle">▾</span></div>
+    <div class="section-body">
+      <div class="field"><label>Válvula Mitral</label>
+        <select id="b34" onchange="calc()">
+          <option value="">— Normal —</option>
+          <option value="EL">EL — Espessada leve</option>
+          <option value="ELM">ELM — Espessada leve-mod</option>
+          <option value="EM">EM — Espessada moderada</option>
+          <option value="EMI">EMI — Espessada mod-imp</option>
+          <option value="EI">EI — Espessada importante</option>
+          <option value="FL">FL — Fibrocalcif. leve</option>
+          <option value="FLM">FLM — Fibrocalcif. leve-mod</option>
+          <option value="FM">FM — Fibrocalcif. moderada</option>
+          <option value="FMI">FMI — Fibrocalcif. mod-imp</option>
+          <option value="FI">FI — Fibrocalcif. importante</option>
+          <option value="EFL">EFL — Esp/Fibrocalcif. leve</option>
+          <option value="EFLM">EFLM — Esp/Fibrocalcif. leve-mod</option>
+          <option value="EFM">EFM — Esp/Fibrocalcif. moderada</option>
+          <option value="EFMI">EFMI — Esp/Fibrocalcif. mod-imp</option>
+          <option value="EFI">EFI — Esp/Fibrocalcif. importante</option>
+        </select></div>
+      <div class="field"><label>Refluxo Mitral</label>
+        <select id="b35" onchange="calc()">
+          <option value="">— Ausente —</option>
+          <option value="L">L — Leve</option><option value="LM">LM — Leve-Mod</option>
+          <option value="M">M — Moderado</option><option value="MI">MI — Mod-Imp</option>
+          <option value="I">I — Importante</option>
+        </select></div>
+      <div class="field"><label>Válvula Tricúspide</label>
+        <select id="b34t" onchange="calc()">
+          <option value="">— Normal —</option>
+          <option value="EL">EL — Espessada leve</option>
+          <option value="ELM">ELM — Espessada leve-mod</option>
+          <option value="EM">EM — Espessada moderada</option>
+          <option value="EMI">EMI — Espessada mod-imp</option>
+          <option value="EI">EI — Espessada importante</option>
+          <option value="FL">FL — Fibrocalcif. leve</option>
+          <option value="FLM">FLM — Fibrocalcif. leve-mod</option>
+          <option value="FM">FM — Fibrocalcif. moderada</option>
+          <option value="FMI">FMI — Fibrocalcif. mod-imp</option>
+          <option value="FI">FI — Fibrocalcif. importante</option>
+          <option value="EFL">EFL — Esp/Fibrocalcif. leve</option>
+          <option value="EFLM">EFLM — Esp/Fibrocalcif. leve-mod</option>
+          <option value="EFM">EFM — Esp/Fibrocalcif. moderada</option>
+          <option value="EFMI">EFMI — Esp/Fibrocalcif. mod-imp</option>
+          <option value="EFI">EFI — Esp/Fibrocalcif. importante</option>
+        </select></div>
+      <div class="field"><label>Refluxo Tricúspide</label>
+        <select id="b36" onchange="calc()">
+          <option value="">— Ausente —</option>
+          <option value="L">L — Leve</option><option value="LM">LM — Leve-Mod</option>
+          <option value="M">M — Moderado</option><option value="MI">MI — Mod-Imp</option>
+          <option value="I">I — Importante</option>
+        </select></div>
+      <div class="field"><label>Válvula Aórtica</label>
+        <select id="b39" onchange="calc()">
+          <option value="">— Normal —</option>
+          <option value="EL">EL — Espessada leve</option>
+          <option value="ELM">ELM — Espessada leve-mod</option>
+          <option value="EM">EM — Espessada moderada</option>
+          <option value="EMI">EMI — Espessada mod-imp</option>
+          <option value="EI">EI — Espessada importante</option>
+          <option value="FL">FL — Fibrocalcif. leve</option>
+          <option value="FLM">FLM — Fibrocalcif. leve-mod</option>
+          <option value="FM">FM — Fibrocalcif. moderada</option>
+          <option value="FMI">FMI — Fibrocalcif. mod-imp</option>
+          <option value="FI">FI — Fibrocalcif. importante</option>
+          <option value="EFL">EFL — Esp/Fibrocalcif. leve</option>
+          <option value="EFLM">EFLM — Esp/Fibrocalcif. leve-mod</option>
+          <option value="EFM">EFM — Esp/Fibrocalcif. moderada</option>
+          <option value="EFMI">EFMI — Esp/Fibrocalcif. mod-imp</option>
+          <option value="EFI">EFI — Esp/Fibrocalcif. importante</option>
+        </select></div>
+      <div class="field"><label>Refluxo Aórtico</label>
+        <select id="b40" onchange="calc()">
+          <option value="">— Ausente —</option>
+          <option value="L">L — Leve</option><option value="LM">LM — Leve-Mod</option>
+          <option value="M">M — Moderado</option><option value="MI">MI — Mod-Imp</option>
+          <option value="I">I — Importante</option>
+        </select></div>
+      <div class="field"><label>Válvula Pulmonar</label>
+        <select id="b39p" onchange="calc()">
+          <option value="">— Normal —</option>
+          <option value="EL">EL — Espessada leve</option>
+          <option value="ELM">ELM — Espessada leve-mod</option>
+          <option value="EM">EM — Espessada moderada</option>
+          <option value="EMI">EMI — Espessada mod-imp</option>
+          <option value="EI">EI — Espessada importante</option>
+          <option value="FL">FL — Fibrocalcif. leve</option>
+          <option value="FLM">FLM — Fibrocalcif. leve-mod</option>
+          <option value="FM">FM — Fibrocalcif. moderada</option>
+          <option value="FMI">FMI — Fibrocalcif. mod-imp</option>
+          <option value="FI">FI — Fibrocalcif. importante</option>
+          <option value="EFL">EFL — Esp/Fibrocalcif. leve</option>
+          <option value="EFLM">EFLM — Esp/Fibrocalcif. leve-mod</option>
+          <option value="EFM">EFM — Esp/Fibrocalcif. moderada</option>
+          <option value="EFMI">EFMI — Esp/Fibrocalcif. mod-imp</option>
+          <option value="EFI">EFI — Esp/Fibrocalcif. importante</option>
+        </select></div>
+      <div class="field"><label>Refluxo Pulmonar</label>
+        <select id="b40p" onchange="refluxoPulmonar();calc()">
+          <option value="">— Ausente —</option>
+          <option value="L">L — Leve</option><option value="LM">LM — Leve-Mod</option>
+          <option value="M">M — Moderado</option><option value="MI">MI — Mod-Imp</option>
+          <option value="I">I — Importante</option>
+        </select></div>
+      <div class="field" id="field-psmap" style="display:none;">
+        <label>Pressão Sist. Média AP <span class="ref">mmHg</span></label>
+        <input type="number" id="psmap" step="1" oninput="calc()"/>
+      </div>
+      <div class="field"><label>Derrame Pericárdico</label>
+        <select id="b41" onchange="calc()">
+          <option value="">— Ausente —</option>
+          <option value="L">L — Leve</option><option value="LM">LM — Leve-Mod</option>
+          <option value="M">M — Moderado</option><option value="MI">MI — Mod-Imp</option>
+          <option value="I">I — Importante</option>
+        </select></div>
+      <div class="field"><label>Placas Arco Aórtico</label>
+        <select id="b42" onchange="calc()">
+          <option value="">— Não —</option>
+          <option value="s">Sim — Calcificadas</option>
+          <option value="nv">Não visualizado</option>
+        </select></div>
+    </div>
+    <!-- Estenoses -->
+    <div class="section-body" style="border-top:1px dashed var(--border);padding-top:6px;">
+      <div style="grid-column:1/-1;font-size:10.5px;font-weight:600;color:var(--navy);">Estenose Mitral</div>
+      <div class="field"><label>Grad. máx. mitral <span class="ref">mmHg</span></label>
+        <input type="number" id="b45" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Grad. médio mitral <span class="ref">mmHg</span></label>
+        <input type="number" id="b46" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Área mitral <span class="ref">cm²</span></label>
+        <input type="number" id="b47" step="0.01" oninput="calc()"/></div>
+      <!-- Wilkins & Block toggle -->
+      <div style="grid-column:1/-1;">
+        <label style="display:flex;align-items:center;gap:8px;font-size:10.5px;font-weight:600;color:var(--navy);cursor:pointer;">
+          <input type="checkbox" id="wilkins-toggle" onchange="toggleWilkins()" style="width:14px;height:14px;accent-color:var(--red);"/>
+          Escore de Wilkins &amp; Block
+        </label>
+      </div>
+      <div id="wilkins-fields" style="display:none;grid-column:1/-1;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px 12px;">
+          <div style="grid-column:1/-1;font-size:10px;color:var(--gray-mid);">Mobilidade · Espessamento · Calcificação · Subvalvar (0–4 pts cada)</div>
+          <div class="field" style="grid-column:1/-1;"><label>Mobilidade do folheto <span class="ref">0–4</span></label>
+            <select id="wk-mob" onchange="calc()">
+              <option value="0">0 — Normal</option>
+              <option value="1">1 — Boa mobilidade, restrição apenas na ponta</option>
+              <option value="2">2 — Redução na porção média e na base</option>
+              <option value="3">3 — Mobilidade somente na base dos folhetos</option>
+              <option value="4">4 — Nenhum ou mínimo movimento</option>
+            </select></div>
+          <div class="field" style="grid-column:1/-1;"><label>Espessamento valvar <span class="ref">0–4</span></label>
+            <select id="wk-esp" onchange="calc()">
+              <option value="0">0 — Normal</option>
+              <option value="1">1 — Espessura próxima do normal (4–5 mm)</option>
+              <option value="2">2 — Grande espessamento nas margens do folheto</option>
+              <option value="3">3 — Espessamento de todo o folheto (5–8 mm)</option>
+              <option value="4">4 — Grande espessamento de todo o folheto (&gt;8–10 mm)</option>
+            </select></div>
+          <div class="field" style="grid-column:1/-1;"><label>Calcificação valvar <span class="ref">0–4</span></label>
+            <select id="wk-cal" onchange="calc()">
+              <option value="0">0 — Sem calcificação</option>
+              <option value="1">1 — Uma única área de calcificação</option>
+              <option value="2">2 — Calcificações nas margens dos folhetos</option>
+              <option value="3">3 — Calcificações extensivas à porção média</option>
+              <option value="4">4 — Extensa calcificação em todo o folheto</option>
+            </select></div>
+          <div class="field" style="grid-column:1/-1;"><label>Espessamento subvalvar <span class="ref">0–4</span></label>
+            <select id="wk-sub" onchange="calc()">
+              <option value="0">0 — Normal</option>
+              <option value="1">1 — Espessamento mínimo da corda logo abaixo da valva</option>
+              <option value="2">2 — Espessamento da corda até terço proximal</option>
+              <option value="3">3 — Espessamento da corda até terço distal</option>
+              <option value="4">4 — Extenso espessamento e encurtamento até músculo papilar</option>
+            </select></div>
+          <div class="field"><label>Escore Total</label>
+            <div class="calc" id="calc-wilkins">—</div></div>
+        </div>
+      </div>
+      <div style="grid-column:1/-1;font-size:10.5px;font-weight:600;color:var(--navy);margin-top:4px;">Estenose Tricúspide</div>
+      <div class="field"><label>Grad. médio tricúspide <span class="ref">mmHg</span></label>
+        <input type="number" id="b46t" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Área tricúspide <span class="ref">cm²</span></label>
+        <input type="number" id="b47t" step="0.01" oninput="calc()"/></div>
+      <div style="grid-column:1/-1;font-size:10.5px;font-weight:600;color:var(--navy);margin-top:4px;">Estenose Aórtica</div>
+      <div class="field"><label>Grad. máx. aórtico <span class="ref">mmHg</span></label>
+        <input type="number" id="b50" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Grad. médio aórtico <span class="ref">mmHg</span></label>
+        <input type="number" id="b51" step="0.1" oninput="calc()"/></div>
+      <div class="field"><label>Área aórtica <span class="ref">cm²</span></label>
+        <input type="number" id="b52" step="0.01" oninput="calc()"/></div>
+      <div style="grid-column:1/-1;font-size:10.5px;font-weight:600;color:var(--navy);margin-top:4px;">Estenose Pulmonar</div>
+      <div class="field"><label>Grad. máx. pulmonar <span class="ref">mmHg</span></label>
+        <input type="number" id="b50p" step="0.1" oninput="calc()"/></div>
+    </div>
+  </div>
+
+  <!-- ══ MODO EDIÇÃO (visível enquanto editando) ══ -->
+  <div id="modo-edicao">
+    <button class="btn-salvar-emitir" onclick="abrirSalvarEmitir()">💾 Salvar / Emitir Laudo</button>
+    <button class="btn-limpar" onclick="limpar()">🗑️ Limpar formulário</button>
+  </div>
+
+  <!-- ══ MODO EMITIDO (visível após emitir — campos travados) ══ -->
+  <div id="modo-emitido" style="display:none;padding:0 20px 16px;">
+    <div class="emitido-badge">🔒 Laudo Emitido</div>
+    <div class="emitido-btns">
+      <button class="emitido-btn emitido-btn-voltar" onclick="voltarWorklist()">📋 Voltar ao Worklist</button>
+      <button class="emitido-btn emitido-btn-finalizar" onclick="finalizarAtendimento()">✅ Finalizar Atendimento</button>
+      <button class="emitido-btn emitido-btn-editar" onclick="desbloquearEdicao()">✏️ Editar Laudo</button>
+    </div>
+    <!-- EXPORTAR DROPDOWN (só aparece após emitir) -->
+    <div class="export-wrap-emitido">
+      <button class="btn-export" onclick="toggleExport(event)">
+        <span>📤 Exportar / Compartilhar</span><span>▾</span>
+      </button>
+      <div class="export-menu" id="export-menu">
+        <div class="exp-item" onclick="imprimirLaudo();fecharExport()">
+          <span class="exp-ico">🖨️</span>
+          <div class="exp-info">
+            <div class="exp-title">Imprimir / Salvar PDF</div>
+            <div class="exp-sub">Abre janela de impressão A4</div>
+          </div>
+        </div>
+        <div class="exp-item" onclick="copiarFormatado()">
+          <span class="exp-ico">📄</span>
+          <div class="exp-info">
+            <div class="exp-title">Copiar formatado</div>
+            <div class="exp-sub">Tasy · MV · Soul · Word · Google Docs</div>
+          </div>
+        </div>
+        <div class="exp-item" onclick="copiarTextoSimples()">
+          <span class="exp-ico">📋</span>
+          <div class="exp-info">
+            <div class="exp-title">Copiar texto simples</div>
+            <div class="exp-sub">Hapvida · prontuários básicos</div>
+          </div>
+        </div>
+        <div class="exp-item" onclick="baixarDocx()">
+          <span class="exp-ico">📥</span>
+          <div class="exp-info">
+            <div class="exp-title">Baixar .docx</div>
+            <div class="exp-sub">Word nativo editável</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- POPUP SALVAR / EMITIR -->
+  <div class="popup-overlay" id="popup-salvar-emitir" onclick="fecharSalvarEmitir(event)">
+    <div class="popup-card" onclick="event.stopPropagation()">
+      <div class="popup-header">Finalizar Laudo</div>
+      <div class="popup-body">
+        <button class="popup-btn popup-btn-rascunho" onclick="salvarRascunho()">
+          <span class="popup-btn-ico">📝</span>
+          <div>
+            <div class="popup-btn-title">Salvar Rascunho</div>
+            <div class="popup-btn-desc">Salva e continua editando</div>
+          </div>
+        </button>
+        <button class="popup-btn popup-btn-emitir" onclick="emitirLaudo()">
+          <span class="popup-btn-ico">✅</span>
+          <div>
+            <div class="popup-btn-title">Emitir Laudo</div>
+            <div class="popup-btn-desc">Finaliza e assina o laudo</div>
+          </div>
+        </button>
+      </div>
+      <button class="popup-btn-cancelar" onclick="fecharSalvarEmitir()">Cancelar</button>
+    </div>
+  </div>
+</div><!-- /sidebar -->
+
+<!-- ══════════════ PREVIEW ══════════════════════════════════════ -->
+<div class="preview">
+  <div class="preview-label">Pré-visualização — edite os textos diretamente no laudo</div>
+
+  <div class="sheet" id="laudo-sheet">
+  <table class="print-layout">
+    <thead><tr><td>
+      <div class="print-header-fixed">
+      <div class="laudo-header">
+        <div id="laudo-preview-clinica" class="laudo-clinica">Grupo MedCardio<span>Cardiologia e Ecocardiografia</span></div>
+        <div class="laudo-title">ECOCARDIOGRAMA TRANSTORÁCICO</div>
+        <div id="laudo-preview-dr" class="laudo-dr"><strong>Dr. Sérgio Abdon</strong>Cardiologia e Ecocardiografia<br/>CRM/PA 7952</div>
+      </div>
+      <div class="id-grid">
+        <div class="id-row" style="margin-bottom:3px;">
+          <div class="id-item" style="flex:2"><span class="lbl">Nome</span><span class="val" id="out-nome">—</span></div>
+          <div class="id-item"><span class="lbl">Idade</span><span class="val" id="out-idade">—</span></div>
+          <div class="id-item"><span class="lbl">Data de Nascimento</span><span class="val" id="out-dtnasc">—</span></div>
+        </div>
+        <div class="id-row">
+          <div class="id-item"><span class="lbl">Convênio</span><span class="val" id="out-convenio">—</span></div>
+          <div class="id-item"><span class="lbl">Médico Solicitante</span><span class="val" id="out-solicitante">—</span></div>
+          <div class="id-item"><span class="lbl">Data do Exame</span><span class="val" id="out-dtexame">—</span></div>
+        </div>
+      </div><!-- /id-grid -->
+      </div><!-- /print-header-fixed -->
+    </td></tr></thead>
+
+    <tfoot><tr><td>
+      <div class="print-footer-fixed">
+      <div class="laudo-footer">
+        <div class="footer-info">
+          <strong id="ftr-nome" style="color:var(--red)">Dr. Sérgio Abdon</strong><br/>
+          <span id="ftr-esp">Cardiologia e Ecocardiografia · CRM/PA 7952</span><br/>
+          <span id="ftr-end">Rua Arcipreste Manoel Teodoro, 145 · 66023-700 · Batista Campos · Belém/PA</span><br/>
+          ☎ <span id="ftr-tel">91 3222.3875 / 3085.4000</span>
+        </div>
+        <div class="footer-assinatura" id="ftr-assinatura"><div class="linha"></div><div style="font-size:7pt;white-space:pre-line;">Dr. Sérgio Abdon
+Cardiologia e Ecocardiografia
+CRM/PA 7952</div></div>
+      </div><!-- /laudo-footer -->
+      </div><!-- /print-footer-fixed -->
+    </td></tr></tfoot>
+
+    <tbody><tr><td>
+      <!-- Parâmetros -->
+      <div class="laudo-section">
+        <div class="laudo-section-title">MEDIDAS E PARÂMETROS</div>
+        <div class="laudo-section-body" style="padding:0;">
+          <table class="params-table">
+            <thead><tr>
+              <th style="width:22%">Parâmetro</th><th style="width:8%">Valor</th>
+              <th style="width:6%">Unid.</th><th style="width:16%">Referência</th>
+              <th class="params-divider" style="width:22%">Parâmetro</th><th style="width:8%">Valor</th>
+              <th style="width:6%">Unid.</th><th style="width:12%">Referência</th>
+            </tr></thead>
+            <tbody id="params-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <!-- Comentários -->
+      <div class="laudo-section">
+        <div class="laudo-section-title">COMENTÁRIOS</div>
+        <div class="laudo-section-body" id="achados-body"></div>
+      </div>
+      <!-- Conclusão -->
+      <div class="laudo-section">
+        <div class="laudo-section-title">CONCLUSÃO</div>
+        <div class="laudo-section-body">
+          <ul class="conclusao-list" id="conclusao-list"></ul>
+        </div>
+      </div>
+    </td></tr></tbody>
+  </table>
+  </div>
+</div><!-- /preview -->
+</div><!-- /app -->
+
+
+<script>
+// Helpers que o motor precisa
+function escH(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
+function showToast(msg){const el=document.createElement('div');el.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:99999;background:#1E293B;color:#fff;padding:10px 20px;border-radius:9px;font-size:13px;font-weight:600;font-family:IBM Plex Sans,sans-serif;box-shadow:0 4px 20px rgba(0,0,0,.3);';el.textContent=msg;document.body.appendChild(el);setTimeout(()=>el.remove(),3000);}
+function hexToRgb(h){if(!h)return[30,58,95];h=h.replace('#','');const n=parseInt(h,16);return[n>>16,(n>>8)&255,n&255];}
+function hexToLight(h){const[r,g,b]=hexToRgb(h);return'rgba('+r+','+g+','+b+',0.06)';}
+function hexToMid(h){const[r,g,b]=hexToRgb(h);return'rgba('+r+','+g+','+b+',0.25)';}
+function ajustarCor(hex,f){if(!hex)hex='#1E3A5F';const[r,g,b]=hexToRgb(hex);f=f||0.85;return'rgb('+Math.round(r*f)+','+Math.round(g*f)+','+Math.round(b*f)+')';}
+
+var CFG={clinica:'Grupo MedCardio',slogan:'Consultas e Exames',medNome:'Dr. Sergio Roberto Abdon Rodrigues',medEsp:'Cardiologia e Ecocardiografia',medCrm:'7952',medUf:'PA',medTitulo:'Cardiologia e Ecocardiografia',medEnd:'Rua Arcipreste Manoel Teodoro, 145 . Batista Campos . Belem/PA',medTel:'(91) 3085-4000',medEmail:'',p1:'#8B1A1A',p2:'#1E3A5F',sigB64:'',sigTexto:'Dr. Sergio Roberto Abdon Rodrigues
+Cardiologia e Ecocardiografia
+CRM/PA 7952',logoB64:''};
+
+function gerarImpressao(){window.print();}
+
+// Sincronizar LAVI — precisa ser global para onclick inline
+
+
+// Toggle diastologia movido para script inline após motorv8mp4.js
+function calcIdade(dn,de){if(!dn)return'';const a=new Date(de||new Date()),b=new Date(dn);let i=a.getFullYear()-b.getFullYear();if(a.getMonth()<b.getMonth()||(a.getMonth()===b.getMonth()&&a.getDate()<b.getDate()))i--;return i;}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).substr(2,8);}
+</script>
+<script src="motorv8mp4.js"></script>
+<script>
+// Sincronizar LAVI entre Câmaras (b24) e Diastólica (b24_diast)
+function sincronizarLAVI(origem, destinoId){
+  var destino = document.getElementById(destinoId);
+  if(destino) destino.value = origem.value;
+  calc();
+}
+
+// Toggle Diastologia — precisa estar após motorv8mp4.js
+function trocarDiastModo(modo){
+  setDiastModo(modo);
+  document.getElementById('btn-diast-auto').style.background = modo==='auto' ? 'var(--navy)' : 'transparent';
+  document.getElementById('btn-diast-auto').style.color = modo==='auto' ? '#fff' : 'var(--navy)';
+  document.getElementById('btn-diast-manual').style.background = modo==='manual' ? 'var(--navy)' : 'transparent';
+  document.getElementById('btn-diast-manual').style.color = modo==='manual' ? '#fff' : 'var(--navy)';
+  document.getElementById('diast-manual-panel').style.display = modo==='manual' ? 'block' : 'none';
+  calc();
+}
+function selDiastManual(idx){
+  setDiastManual(idx);
+  try{
+    var d = calcAll();
+    var div = diastDivergencia(d);
+    var avisoEl = document.getElementById('diast-aviso');
+    if(div){ avisoEl.innerHTML='<b>⚠️</b> '+div.msg+' (Auto: "'+div.auto+'")'; avisoEl.style.display='block'; }
+    else { avisoEl.style.display='none'; }
+  }catch(e){}
+  calc();
+}
+</script>
+<script>
+// Garantir showToast global
+if(typeof showToast==='undefined'){
+  window.showToast=function(msg){var el=document.createElement('div');el.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:99999;background:#1E293B;color:#fff;padding:10px 20px;border-radius:9px;font-size:13px;font-weight:600;font-family:IBM Plex Sans,sans-serif;box-shadow:0 4px 20px rgba(0,0,0,.3);';el.textContent=msg;document.body.appendChild(el);setTimeout(function(){el.remove();},3000);};
+}
+// ══ Popup Salvar / Emitir ══
+function abrirSalvarEmitir(){
+  document.getElementById('popup-salvar-emitir').classList.add('open');
+}
+function fecharSalvarEmitir(e){
+  if(e && e.target !== e.currentTarget) return;
+  document.getElementById('popup-salvar-emitir').classList.remove('open');
+}
+function salvarRascunho(){
+  fecharSalvarEmitir();
+  showToast('Rascunho salvo com sucesso');
+  // Futuro: gravar no Firestore com status='rascunho'
+}
+function emitirLaudo(){
+  fecharSalvarEmitir();
+  // Travar sidebar
+  document.querySelector('.sidebar').classList.add('locked');
+  // Alternar botões
+  document.getElementById('modo-edicao').style.display='none';
+  document.getElementById('modo-emitido').style.display='block';
+  showToast('Laudo emitido e assinado');
+  // Futuro: gravar no Firestore com status='emitido', timestamp assinatura, contabilizar
+  // Gerar PDF automaticamente
+  setTimeout(function(){ gerarPDFEmitido(); }, 500);
+}
+function desbloquearEdicao(){
+  // Destravar sidebar
+  document.querySelector('.sidebar').classList.remove('locked');
+  // Voltar para modo edição
+  document.getElementById('modo-emitido').style.display='none';
+  document.getElementById('modo-edicao').style.display='block';
+  showToast('Laudo desbloqueado para edição');
+  // Futuro: alterar status para 'rascunho' novamente
+}
+function voltarWorklist(){
+  showToast('Voltando ao worklist...');
+  // Futuro: navegar para worklist
+}
+function finalizarAtendimento(){
+  showToast('Atendimento finalizado');
+  // Futuro: marcar atendimento como concluído no Firestore + voltar worklist
+}
+// Toggle exportar (modo emitido)
+function toggleExport(e){
+  e&&e.stopPropagation();
+  var menu=document.getElementById('export-menu');
+  var isOpen=menu.style.display==='block';
+  menu.style.display=isOpen?'none':'block';
+  if(!isOpen){
+    setTimeout(function(){document.addEventListener('click',fecharExportClick,{once:true});},10);
+  }
+}
+function fecharExportClick(){document.getElementById('export-menu').style.display='none';}
+function fecharExport(){document.getElementById('export-menu').style.display='none';}
+
+// ══ Limpar formulário ══
+function limpar(){
+  if(!confirm('Limpar todos os campos do formulário?')) return;
+  document.querySelectorAll('.sidebar input[type=number], .sidebar input[type=text]').forEach(function(el){
+    el.value = '';
+  });
+  document.querySelectorAll('.sidebar select').forEach(function(el){
+    el.selectedIndex = 0;
+  });
+  // Manter data do exame como hoje
+  var dtEx = document.getElementById('dtexame');
+  if(dtEx) dtEx.value = new Date().toISOString().split('T')[0];
+  calc();
+  showToast('Formulário limpo');
+}
+
+// ══ Exportar / Compartilhar ══
+function _getNomePaciente(){
+  var nome = (document.getElementById('nome') || {}).value || 'PACIENTE';
+  return nome.trim().toUpperCase().replace(/\s+/g, ' ');
+}
+function _getNomeArquivo(){
+  return 'ECOTT ' + _getNomePaciente();
+}
+
+function _montarHTMLImpressao(){
+  // Coletar dados do DOM (preserva edições manuais)
+  var headerEl = document.querySelector('.print-header-fixed');
+  var headerHTML = headerEl ? headerEl.innerHTML : '';
+
+  var footerEl = document.querySelector('.print-footer-fixed');
+  var footerHTML = footerEl ? footerEl.innerHTML : '';
+
+  // Tabela de parâmetros
+  var paramsEl = document.querySelector('.params-table');
+  var paramsHTML = paramsEl ? paramsEl.outerHTML : '';
+
+  // Comentários — coletar textos editáveis
+  var achadosHTML = '';
+  document.querySelectorAll('#achados-body .linha-wrapper').forEach(function(w){
+    var ta = w.querySelector('.achado-editable');
+    if(ta && ta.value.trim()){
+      achadosHTML += '<li style="margin-bottom:2px;font-size:8.5pt;line-height:1.6;">' + ta.value.trim().replace(/</g,'&lt;') + '</li>';
+    }
+  });
+
+  // Conclusão — coletar textos editáveis
+  var concHTML = '';
+  var idx = 0;
+  document.querySelectorAll('#conclusao-list li').forEach(function(li){
+    var ta = li.querySelector('.conclusao-text');
+    if(ta){
+      idx++;
+      var txt = (ta.innerText||ta.textContent||'').trim();
+      if(txt) concHTML += '<li style="margin-bottom:2px;font-size:8.5pt;line-height:1.6;"><strong style="color:#8B1A1A;margin-right:4px;">' + idx + '</strong> ' + txt.replace(/</g,'&lt;') + '</li>';
+    }
+  });
+
+  var nomeArq = _getNomeArquivo();
+  var P1 = '#8B1A1A';
+  var P2 = '#1E3A5F';
+
+  return '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/>'
+    + '<title>' + nomeArq + '</title>'
+    + '<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>'
+    + '<style>'
+    + '*{box-sizing:border-box;margin:0;padding:0;}'
+    + 'body{font-family:"IBM Plex Sans",sans-serif;font-size:8.5pt;color:#1a1a1a;}'
+    + '@page{size:A4;margin:0;}'
+    + 'table.page-layout{width:100%;border-collapse:collapse;table-layout:fixed;}'
+    + 'thead{display:table-header-group;}'
+    + 'tfoot{display:table-footer-group;}'
+    + 'thead td{padding:8mm 14mm 3mm;}'
+    + 'tfoot td{padding:3mm 14mm 6mm;border-top:1.5px solid '+P1+';}'
+    + 'tbody td{padding:0 14mm 4mm;}'
+    // Header
+    + '.laudo-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:3mm;}'
+    + '.laudo-clinica{font-size:13pt;font-weight:700;color:'+P1+';}'
+    + '.laudo-clinica span{display:block;font-size:8pt;font-weight:400;color:#666;}'
+    + '.laudo-title{font-size:10.5pt;font-weight:700;color:'+P1+';text-align:center;flex:1;}'
+    + '.laudo-dr{text-align:right;font-size:7.5pt;color:'+P2+';}'
+    + '.laudo-dr strong{display:block;font-size:9pt;color:'+P1+';}'
+    // ID grid
+    + '.id-grid{border:1px solid '+P1+';border-radius:3px;padding:3px 6px;margin-bottom:2mm;}'
+    + '.id-row{display:flex;gap:8px;margin-bottom:2px;}'
+    + '.id-item{flex:1;}'
+    + '.id-item .lbl{display:block;font-size:5.5pt;font-weight:600;color:'+P1+';text-transform:uppercase;}'
+    + '.id-item .val{display:block;font-size:8.5pt;font-weight:500;}'
+    // Sections
+    + '.sec-title{background:'+P1+';color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;margin-bottom:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;}'
+    + '.sec-body{border:1px solid #ddd;border-top:none;padding:4px 8px;margin-bottom:3mm;}'
+    // Params table
+    + '.params-table{border-collapse:collapse;width:100%;font-size:7.5pt;}'
+    + '.params-table th{background:'+P1+';color:#fff;padding:2px 5px;font-weight:600;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;}'
+    + '.params-table td{border:0.5px solid #ccc;padding:2px 5px;}'
+    + '.params-divider{border-left:2px solid '+P1+'!important;}'
+    // Footer
+    + '.laudo-footer{display:flex;justify-content:space-between;align-items:flex-end;}'
+    + '.footer-info{font-size:7pt;color:#444;}'
+    + '.footer-info strong{color:'+P1+';font-size:8pt;}'
+    + '.footer-assinatura{text-align:center;font-size:7pt;}'
+    + '.footer-assinatura .linha{width:180px;border-top:1px solid #333;margin:0 auto 2px;}'
+    + 'ul{list-style:none;padding:0;margin:0;}'
+    + '</style></head><body>'
+    + '<table class="page-layout">'
+    + '<thead><tr><td>' + headerHTML + '</td></tr></thead>'
+    + '<tfoot><tr><td><div class="laudo-footer">' + footerHTML + '</div></td></tr></tfoot>'
+    + '<tbody><tr><td>'
+    + '<div class="sec-title">MEDIDAS E PAR\u00c2METROS</div>'
+    + '<div class="sec-body" style="padding:0;">' + paramsHTML + '</div>'
+    + '<div class="sec-title">COMENT\u00c1RIOS</div>'
+    + '<div class="sec-body"><ul>' + achadosHTML + '</ul></div>'
+    + '<div class="sec-title">CONCLUS\u00c3O</div>'
+    + '<div class="sec-body"><ul>' + concHTML + '</ul></div>'
+    + '</td></tr></tbody>'
+    + '</table></body></html>';
+}
+
+function imprimirLaudo(){
+  var html = _montarHTMLImpressao();
+  var win = window.open('', '_blank', 'width=900,height=700');
+  win.document.write(html);
+  win.document.close();
+  win.onload = function(){
+    setTimeout(function(){ win.focus(); win.print(); }, 600);
+  };
+}
+
+function copiarFormatado(){
+  var sheet = document.getElementById('laudo-sheet');
+  if(!sheet){ showToast('Laudo não encontrado'); return; }
+  var range = document.createRange();
+  range.selectNodeContents(sheet);
+  var sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  document.execCommand('copy');
+  sel.removeAllRanges();
+  showToast('Laudo copiado (formatado)');
+  fecharExport();
+}
+
+function copiarTextoSimples(){
+  var sheet = document.getElementById('laudo-sheet');
+  if(!sheet){ showToast('Laudo não encontrado'); return; }
+  var texto = sheet.innerText;
+  navigator.clipboard.writeText(texto).then(function(){
+    showToast('Laudo copiado (texto simples)');
+  }).catch(function(){
+    // Fallback
+    var ta = document.createElement('textarea');
+    ta.value = texto;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+    showToast('Laudo copiado (texto simples)');
+  });
+  fecharExport();
+}
+
+function baixarDocx(){
+  // Gera um HTML simples formatado como .doc (Word abre nativamente)
+  var sheet = document.getElementById('laudo-sheet');
+  if(!sheet){ showToast('Laudo não encontrado'); return; }
+  var html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;font-size:11pt;}table{border-collapse:collapse;width:100%;}td,th{border:1px solid #ccc;padding:4px 6px;font-size:10pt;}</style></head><body>' + sheet.innerHTML + '</body></html>';
+  var blob = new Blob(['\ufeff', html], {type:'application/msword'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = _getNomeArquivo() + '.doc';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast('Arquivo .doc baixado');
+  fecharExport();
+}
+
+// ══ PDF automático ao Emitir ══
+function gerarPDFEmitido(){
+  imprimirLaudo();
+}
+
+document.addEventListener('DOMContentLoaded',()=>{
+  try{
+    const dtEx=document.getElementById('dtexame');
+    if(dtEx && !dtEx.value) dtEx.value=new Date().toISOString().split('T')[0];
+
+    // Mover seção Válvulas para depois de Diastólica na sidebar
+    const secValv = document.getElementById('sec-valv');
+    const secDiast = document.getElementById('sec-diast');
+    if(secValv && secDiast){
+      secDiast.after(secValv);
+    }
+
+    // Enter funciona como Tab — pula para próximo campo
+    document.querySelectorAll('.sidebar input, .sidebar select').forEach(function(el){
+      el.addEventListener('keydown', function(e){
+        if(e.key === 'Enter'){
+          e.preventDefault();
+          var campos = Array.from(document.querySelectorAll('.sidebar input:not([type=hidden]):not([readonly]), .sidebar select'));
+          var idx = campos.indexOf(el);
+          if(idx >= 0 && idx < campos.length - 1){
+            campos[idx + 1].focus();
+          }
+        }
+      });
+    });
+
+    calc();
+  }catch(e){console.error('Init:',e);}
+});
+</script>
+</body>
+</html>

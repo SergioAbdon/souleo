@@ -5,34 +5,28 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { NextRequest, NextResponse } from 'next/server';
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { gerarESalvarPdf } from '@/lib/pdf-server';
+import { resolverAssinatura } from '@/lib/billing-admin';
+import { adminDb, requireUid } from '@/lib/auth-admin';
+import { resolverPapel } from '@/lib/exame-admin';
 
 // ── Config Next.js ──
 export const runtime = 'nodejs';
 export const maxDuration = 60;
-
-// ── Firebase Admin (server-side) ──
-if (!getApps().length) {
-  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'leo-sistema-laudos';
-  const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || 'leo-sistema-laudos.firebasestorage.app';
-  initializeApp({
-    credential: cert({
-      projectId,
-      clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL!,
-      privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-    storageBucket,
-  });
-}
-const dbAdmin = getFirestore();
 
 // PDF server-side extraído p/ src/lib/pdf-server.ts
 // (reuso entre /api/emitir e /api/corrigir-laudo — 1 pipeline só)
 
 // ── POST Handler ──
 export async function POST(req: NextRequest) {
+  // Rota aberta ate 10/08/2026: qualquer um POSTava e queimava a franquia de
+  // uma clinica alheia (ou emitia laudo assinado no nome de outro medico).
+  const uid = await requireUid(req);
+  if (!uid) {
+    return NextResponse.json({ ok: false, motivo: 'nao_autenticado' }, { status: 401 });
+  }
+  const dbAdmin = adminDb();
   try {
     const body = await req.json();
     const { wsId, exameId, dadosFinais, medicoUid, pdfHtml, nomeArq } = body as {
@@ -51,20 +45,55 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ══ 1. TRANSACAO ATOMICA: emitir + cobrar ══
-    const resultado = await dbAdmin.runTransaction(async (transaction) => {
-      const subsQuery = await dbAdmin.collection('subscriptions')
-        .where('workspaceId', '==', wsId).limit(1).get();
+    // Autorizacao: papel de medico/dono NESTE local (mesmo criterio da regra
+    // `ehMedicoNoLocal`), e o laudo sai assinado por quem esta logado.
+    const [papel, perfil] = await Promise.all([
+      resolverPapel(dbAdmin, wsId, uid),
+      dbAdmin.doc(`profissionais/${uid}`).get(),
+    ]);
+    if (papel !== 'dono' && papel !== 'medico') {
+      return NextResponse.json({ ok: false, motivo: 'sem_permissao' }, { status: 403 });
+    }
+    if (medicoUid !== uid) {
+      return NextResponse.json({ ok: false, motivo: 'sem_permissao' }, { status: 403 });
+    }
+    // Matriz §4 (D2): quem assina laudo e medico. Dono da conta que e assistente
+    // administra tudo menos a caneta. Campo ausente conta como medico — e o
+    // default do resto do app (createProfile, dashboard, painel Direx), e exigir
+    // presenca travaria perfil antigo em producao.
+    if ((perfil.data()?.tipoPerfil ?? 'medico') !== 'medico') {
+      return NextResponse.json({ ok: false, motivo: 'nao_medico' }, { status: 403 });
+    }
 
-      if (subsQuery.empty) {
+    // ══ 1. TRANSACAO ATOMICA: emitir + cobrar + ledger ══
+    // O doc de `consumo` entra NA transacao: era um add() depois, dentro de
+    // try/catch silencioso — se falhava, a franquia ficava debitada sem
+    // registro e a devolucao liquida (/api/exame) nao tinha o que devolver.
+    const consumoRef = dbAdmin.collection('consumo').doc();
+    const exameRef = dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`);
+    const resultado = await dbAdmin.runTransaction(async (transaction) => {
+      // Assinatura por contaId (fallback legado) — mesma chave do /api/exame.
+      const assinatura = await resolverAssinatura(dbAdmin, wsId);
+      if (!assinatura) {
         return { ok: false, motivo: 'sem_plano' as const };
       }
-
-      const subDoc = subsQuery.docs[0];
-      const subRef = subDoc.ref;
-      const subSnap = await transaction.get(subRef);
+      const subRef = assinatura.ref;
+      // Leituras ANTES de qualquer escrita (exigencia da transacao).
+      const [subSnap, exameSnap] = await Promise.all([
+        transaction.get(subRef),
+        transaction.get(exameRef),
+      ]);
       if (!subSnap.exists) {
         return { ok: false, motivo: 'sem_plano' as const };
+      }
+      if (!exameSnap.exists) {
+        return { ok: false, motivo: 'nao_encontrado' as const };
+      }
+      // Caneta do autor (D2): laudo com autor definido so o proprio emite —
+      // igual a regra publicada ("autor ou sem autor"). Sem autor pode assumir.
+      const autor = exameSnap.data()!.medicoUid as string | undefined;
+      if (autor && autor !== uid) {
+        return { ok: false, motivo: 'exame_de_outro_medico' as const };
       }
 
       const sub = subSnap.data()!;
@@ -85,7 +114,6 @@ export async function POST(req: NextRequest) {
         return { ok: false, motivo: 'sem_saldo' as const };
       }
 
-      const exameRef = dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`);
       transaction.update(exameRef, {
         ...dadosFinais,
         status: 'emitido',
@@ -100,28 +128,27 @@ export async function POST(req: NextRequest) {
         transaction.update(subRef, { creditosExtras: FieldValue.increment(-1) });
       }
 
-      return { ok: true, tipo };
-    });
-
-    if (!resultado.ok) {
-      return NextResponse.json(resultado);
-    }
-
-    // ══ 2. AUDIT LOG (nao critico) ══
-    try {
-      await dbAdmin.collection('consumo').add({
+      transaction.set(consumoRef, {
         workspaceId: wsId,
         exameId,
         medicoUid,
         pacienteNome: (dadosFinais.pacienteNome as string) || '',
         tipoExame: (dadosFinais.tipoExame as string) || '',
         convenio: (dadosFinais.convenio as string) || '',
-        tipo: resultado.tipo === 'franquia' ? 'franquia' : 'credito',
+        tipo: tipo === 'franquia' ? 'franquia' : 'credito',
         reemissao: !!(dadosFinais.reemissao),
         emitidoEm: FieldValue.serverTimestamp(),
       });
-    } catch { /* consumo nao pode quebrar emissao */ }
 
+      return { ok: true, tipo };
+    });
+
+    if (!resultado.ok) {
+      const status: Record<string, number> = { nao_encontrado: 404, exame_de_outro_medico: 403 };
+      return NextResponse.json(resultado, { status: status[resultado.motivo ?? ''] ?? 200 });
+    }
+
+    // ══ 2. AUDIT LOG (nao critico) ══
     try {
       await dbAdmin.collection('logs').add({
         tipo: 'emissao',

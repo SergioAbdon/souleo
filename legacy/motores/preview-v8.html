@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>LEO — Motor V8 Preview</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'IBM Plex Sans',sans-serif;background:#F1F5F9;color:#1E293B;min-height:100vh;}
+.topbar{background:linear-gradient(135deg,#1E3A5F,#2563EB);color:#fff;padding:10px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+.topbar h1{font-size:15px;font-weight:700;}
+.topbar-badge{background:rgba(255,255,255,.2);padding:3px 10px;border-radius:12px;font-size:10px;font-weight:600;}
+.topbar select,.topbar button{padding:5px 12px;border-radius:6px;font-size:11px;font-weight:600;font-family:inherit;cursor:pointer;}
+.topbar select{border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.15);color:#fff;}
+.topbar select option{color:#333;background:#fff;}
+.topbar button{border:none;color:#fff;}
+.btn-green{background:#059669;} .btn-red{background:#DC2626;} .btn-gray{background:#475569;} .btn-blue{background:#2563EB;}
+
+.layout{display:flex;height:calc(100vh - 44px);}
+
+/* Sidebar */
+.sidebar{width:360px;background:#fff;border-right:1px solid #E2E8F0;overflow-y:auto;padding:0;}
+.grupo{border-bottom:1px solid #E2E8F0;}
+.grupo-hdr{padding:8px 16px;background:#F8FAFC;font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.5px;cursor:pointer;display:flex;justify-content:space-between;}
+.grupo-hdr:hover{background:#F1F5F9;}
+.grupo-body{padding:8px 16px;display:grid;grid-template-columns:1fr 1fr;gap:5px 10px;}
+.grupo.collapsed .grupo-body{display:none;}
+.campo{display:flex;flex-direction:column;gap:2px;}
+.campo label{font-size:10px;color:#64748B;font-weight:500;}
+.campo label .ref{color:#94A3B8;font-size:9px;}
+.campo label .dicom{color:#2563EB;font-size:8px;}
+.campo input,.campo select{padding:5px 8px;border:1.5px solid #D1D5DB;border-radius:5px;font-size:12px;font-family:inherit;color:#1E293B;}
+.campo input:focus,.campo select:focus{outline:none;border-color:#2563EB;}
+.campo input.fora{border-color:#DC2626;background:#FEF2F2;}
+.campo .calc{font-size:11px;color:#1E40AF;background:#EFF6FF;padding:4px 8px;border-radius:4px;font-family:'IBM Plex Mono',monospace;font-weight:500;}
+
+/* Main */
+.main{flex:1;overflow-y:auto;padding:16px 20px;}
+.resultado{background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:14px 18px;margin-bottom:12px;}
+.resultado h3{font-size:12px;color:#1E293B;margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+.resultado h3 .cnt{font-size:9px;background:#E2E8F0;padding:2px 8px;border-radius:10px;color:#64748B;}
+.achado{font-size:12px;padding:4px 8px;border-radius:4px;margin-bottom:2px;}
+.achado.alerta{background:#FEF2F2;color:#DC2626;font-weight:500;}
+.achado.normal{background:#F0FDF4;color:#065F46;}
+.conc{font-size:12px;font-weight:600;padding:4px 8px;margin-bottom:2px;display:flex;gap:6px;border-radius:4px;}
+.conc.alerta{background:#FEF2F2;color:#DC2626;}
+.conc .num{color:#2563EB;font-weight:700;min-width:20px;}
+.calc-row{display:flex;justify-content:space-between;padding:3px 0;font-size:12px;border-bottom:1px solid #F8FAFC;}
+.calc-row .val{font-weight:600;font-family:'IBM Plex Mono',monospace;}
+.claude-box{background:#F5F3FF;border:1.5px solid #C4B5FD;border-radius:10px;padding:14px 18px;}
+.claude-box h3{color:#5B21B6;}
+.claude-prompt{font-size:10px;background:#fff;border:1px solid #DDD6FE;border-radius:6px;padding:10px;font-family:'IBM Plex Mono',monospace;max-height:200px;overflow-y:auto;white-space:pre-wrap;color:#475569;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>🫀 Motor V8</h1>
+  <span class="topbar-badge">27 regras · 13 refs · 16 DICOM · Claude API</span>
+  <select id="sel-sexo" onchange="gerar()"><option value="M">♂ Masculino</option><option value="F">♀ Feminino</option></select>
+  <button class="btn-green" onclick="demoNormal()">Demo Normal</button>
+  <button class="btn-red" onclick="demoAlterado()">Demo Alterado</button>
+  <button class="btn-gray" onclick="limpar()">Limpar</button>
+  <button class="btn-blue" onclick="mostrarClaude()">🤖 Claude API</button>
+</div>
+
+<div class="layout">
+<div class="sidebar" id="sidebar"></div>
+<div class="main">
+  <div class="resultado"><h3>📐 Cálculos <span class="cnt" id="cnt-calc">0</span></h3><div id="out-calc"></div></div>
+  <div class="resultado"><h3>📋 Achados <span class="cnt" id="cnt-achados">0</span></h3><div id="out-achados"></div></div>
+  <div class="resultado"><h3>✅ Conclusão <span class="cnt" id="cnt-conc">0</span></h3><div id="out-conc"></div></div>
+  <div class="claude-box" id="claude-box" style="display:none;">
+    <h3>🤖 Claude API — Prompt para enriquecimento</h3>
+    <p style="font-size:10px;color:#7C3AED;margin-bottom:8px;">Este prompt seria enviado à Claude API para enriquecer a conclusão com correlações clínicas:</p>
+    <div class="claude-prompt" id="out-claude"></div>
+  </div>
+</div>
+</div>
+
+<script>function registrarMotor(){}</script>
+<script src="motor-v8.js"></script>
+<script>
+const GRUPOS_UI = [
+  {id:'geral', nome:'📏 Medidas Gerais', campos:[
+    {id:'peso',nome:'Peso',unidade:'kg',tipo:'number'},
+    {id:'altura',nome:'Altura',unidade:'cm',tipo:'number'},
+  ]},
+  {id:'camaras', nome:'📐 Câmaras Cardíacas', campos:[
+    {id:'raiz_aortica',nome:'Raiz aórtica',unidade:'mm',tipo:'number'},
+    {id:'atrio_esquerdo',nome:'Átrio esquerdo',unidade:'mm',tipo:'number'},
+    {id:'diametro_diastolico_ve',nome:'Diâmetro diastólico do VE',unidade:'mm',tipo:'number'},
+    {id:'diametro_sistolico_ve',nome:'Diâmetro sistólico do VE',unidade:'mm',tipo:'number'},
+    {id:'septo_interventricular',nome:'Septo interventricular',unidade:'mm',tipo:'number'},
+    {id:'parede_posterior',nome:'Parede posterior',unidade:'mm',tipo:'number'},
+    {id:'ventriculo_direito',nome:'Ventrículo direito',unidade:'mm',tipo:'number'},
+    {id:'aorta_ascendente',nome:'Aorta ascendente',unidade:'mm',tipo:'number'},
+    {id:'volume_ae_indexado',nome:'Volume AE indexado',unidade:'ml/m²',tipo:'number'},
+  ]},
+  {id:'sistolica', nome:'💓 Função Sistólica', campos:[
+    {id:'fracao_ejecao',nome:'Fração de ejeção',unidade:'%',tipo:'number'},
+    {id:'tapse',nome:'TAPSE',unidade:'mm',tipo:'number'},
+  ]},
+  {id:'diastolica', nome:'📊 Função Diastólica', campos:[
+    {id:'onda_e_mitral',nome:'Onda E mitral',unidade:'cm/s',tipo:'number'},
+    {id:'onda_a_mitral',nome:'Onda A mitral',unidade:'cm/s',tipo:'number'},
+    {id:'e_linha_septal',nome:"E' septal",unidade:'cm/s',tipo:'number'},
+    {id:'tempo_desaceleracao',nome:'Tempo desaceleração',unidade:'ms',tipo:'number'},
+  ]},
+  {id:'valvas', nome:'🫀 Valvas', campos:[
+    {id:'insuficiencia_mitral',nome:'Insuficiência mitral',tipo:'grau'},
+    {id:'insuficiencia_aortica',nome:'Insuficiência aórtica',tipo:'grau'},
+    {id:'insuficiencia_tricuspide',nome:'Insuficiência tricúspide',tipo:'grau'},
+    {id:'insuficiencia_pulmonar',nome:'Insuficiência pulmonar',tipo:'grau'},
+    {id:'gradiente_maximo_aortico',nome:'Gradiente máximo aórtico',unidade:'mmHg',tipo:'number'},
+    {id:'gradiente_medio_aortico',nome:'Gradiente médio aórtico',unidade:'mmHg',tipo:'number'},
+    {id:'area_valvar_aortica',nome:'Área valvar aórtica',unidade:'cm²',tipo:'number'},
+    {id:'gradiente_medio_mitral',nome:'Gradiente médio mitral',unidade:'mmHg',tipo:'number'},
+    {id:'area_valvar_mitral',nome:'Área valvar mitral',unidade:'cm²',tipo:'number'},
+  ]},
+  {id:'pressao', nome:'🌡️ Pressão Pulmonar', campos:[
+    {id:'psap',nome:'Pressão sistólica artéria pulmonar',unidade:'mmHg',tipo:'number'},
+    {id:'velocidade_it',nome:'Velocidade insuficiência tricúspide',unidade:'m/s',tipo:'number'},
+  ]},
+  {id:'pericardio', nome:'🫁 Pericárdio', campos:[
+    {id:'derrame_pericardico',nome:'Derrame pericárdico',tipo:'grau_peri'},
+  ]},
+];
+
+function renderSidebar(){
+  const sb=document.getElementById('sidebar');
+  sb.innerHTML='';
+  const sexo=document.getElementById('sel-sexo').value;
+  GRUPOS_UI.forEach(g=>{
+    let html=`<div class="grupo" id="grp-${g.id}"><div class="grupo-hdr" onclick="this.parentElement.classList.toggle('collapsed')">${g.nome} <span>▾</span></div><div class="grupo-body">`;
+    g.campos.forEach(c=>{
+      const ref=MotorV8.REFS[c.id];
+      const faixa=ref?ref[sexo]||ref.M:null;
+      const refTxt=faixa?`(${faixa.min}-${faixa.max})`:'';
+      const dicom=MotorV8.DICOM_MAP[Object.keys(MotorV8.DICOM_MAP).find(k=>MotorV8.DICOM_MAP[k]===c.id)]||'';
+      if(c.tipo==='grau'){
+        html+=`<div class="campo"><label>${c.nome}</label><select id="f-${c.id}" onchange="gerar()"><option value="">—</option><option value="discreta">Discreta</option><option value="leve">Leve</option><option value="moderada">Moderada</option><option value="importante">Importante</option></select></div>`;
+      }else if(c.tipo==='grau_peri'){
+        html+=`<div class="campo"><label>${c.nome}</label><select id="f-${c.id}" onchange="gerar()"><option value="">Ausente</option><option value="leve">Leve</option><option value="moderado">Moderado</option><option value="importante">Importante</option></select></div>`;
+      }else{
+        html+=`<div class="campo"><label>${c.nome} <span class="ref">${c.unidade||''} ${refTxt}</span>${dicom?'<span class="dicom">📡</span>':''}</label><input type="number" id="f-${c.id}" step="0.1" oninput="gerar()"/></div>`;
+      }
+    });
+    html+='</div></div>';
+    sb.innerHTML+=html;
+  });
+}
+
+function coletarDados(){
+  const d={sexo:document.getElementById('sel-sexo').value};
+  GRUPOS_UI.forEach(g=>g.campos.forEach(c=>{
+    const el=document.getElementById('f-'+c.id);
+    if(el&&el.value) d[c.id]=c.tipo==='number'?Number(el.value):el.value;
+  }));
+  return d;
+}
+
+function gerar(){
+  const dados=coletarDados();
+  const d=MotorV8.calcular(dados);
+
+  // Cálculos
+  const calcs=[['ASC',d.asc,'m²'],['IMC',d.imc,'kg/m²'],['Fração de encurtamento',d.fracao_encurtamento,'%'],['Volume diastólico final',d.vdf,'ml'],['Volume sistólico final',d.vsf,'ml'],['Massa do ventrículo esquerdo',d.massa_ve,'g'],['Índice de massa do VE',d.indice_massa_ve,'g/m²'],['Espessura relativa',d.espessura_relativa,''],['Relação E/A',d.relacao_ea,''],["Relação E/E'",d.relacao_e_elinha,''],['Relação aorta/átrio esquerdo',d.relacao_ao_ae,'']].filter(c=>c[1]);
+  document.getElementById('out-calc').innerHTML=calcs.map(c=>`<div class="calc-row"><span>${c[0]}</span><span class="val">${c[1]} ${c[2]}</span></div>`).join('')||'<span style="color:#94A3B8;">Preencha medidas</span>';
+  document.getElementById('cnt-calc').textContent=calcs.length;
+
+  // Achados
+  const achados=MotorV8.gerarAchados(dados);
+  document.getElementById('out-achados').innerHTML=achados.map(a=>`<div class="achado ${a.alerta?'alerta':'normal'}">${a.txt}</div>`).join('')||'—';
+  document.getElementById('cnt-achados').textContent=achados.length;
+
+  // Conclusão
+  const concs=MotorV8.gerarConclusao(dados);
+  document.getElementById('out-conc').innerHTML=concs.map(c=>`<div class="conc ${c.alerta?'alerta':''}"><span class="num">${c.num}.</span>${c.txt}</div>`).join('')||'—';
+  document.getElementById('cnt-conc').textContent=concs.length;
+
+  // Refs
+  const sexo=document.getElementById('sel-sexo').value;
+  GRUPOS_UI.forEach(g=>g.campos.forEach(c=>{
+    if(c.tipo!=='number')return;
+    const el=document.getElementById('f-'+c.id);
+    if(!el||!el.value)return;
+    el.classList.toggle('fora',!MotorV8.dentroRef(c.id,el.value,sexo));
+  }));
+
+  // Claude
+  if(document.getElementById('claude-box').style.display!=='none'){
+    const prompt=MotorV8.montarPromptClaude(dados,achados,concs);
+    document.getElementById('out-claude').textContent=prompt.content;
+  }
+}
+
+function mostrarClaude(){
+  const box=document.getElementById('claude-box');
+  box.style.display=box.style.display==='none'?'block':'none';
+  gerar();
+}
+
+function demoNormal(){
+  limpar();
+  const d={peso:75,altura:170,raiz_aortica:33,atrio_esquerdo:36,diametro_diastolico_ve:48,diametro_sistolico_ve:30,septo_interventricular:9,parede_posterior:9,fracao_ejecao:65,onda_e_mitral:80,onda_a_mitral:60,e_linha_septal:8,tapse:22,ventriculo_direito:28,psap:28};
+  Object.entries(d).forEach(([k,v])=>{const el=document.getElementById('f-'+k);if(el)el.value=v;});
+  gerar();
+}
+
+function demoAlterado(){
+  limpar();
+  const d={peso:90,altura:170,raiz_aortica:35,atrio_esquerdo:44,diametro_diastolico_ve:62,diametro_sistolico_ve:48,septo_interventricular:12,parede_posterior:12,fracao_ejecao:35,onda_e_mitral:120,onda_a_mitral:60,e_linha_septal:5,tapse:14,ventriculo_direito:38,psap:58,insuficiencia_mitral:'moderada',insuficiencia_aortica:'leve',derrame_pericardico:'leve'};
+  Object.entries(d).forEach(([k,v])=>{const el=document.getElementById('f-'+k);if(el)el.value=v;});
+  gerar();
+}
+
+function limpar(){
+  GRUPOS_UI.forEach(g=>g.campos.forEach(c=>{const el=document.getElementById('f-'+c.id);if(el){el.value='';el.classList.remove('fora');}}));
+  ['out-calc','out-achados','out-conc','out-claude'].forEach(id=>document.getElementById(id).innerHTML='');
+  ['cnt-calc','cnt-achados','cnt-conc'].forEach(id=>document.getElementById(id).textContent='0');
+}
+
+renderSidebar();
+</script>
+</body>
+</html>

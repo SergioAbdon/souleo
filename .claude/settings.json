@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Edit",
+      "Write",
+      "Bash(git:*)",
+      "Bash(gh:*)",
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(node:*)",
+      "Bash(tsc:*)",
+      "Bash(firebase:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(find:*)",
+      "Bash(diff:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "mcp__codex",
+      "mcp__plugin_ruflo-core_ruflo",
+      "mcp__obsidian",
+      "mcp__perplexity"
+    ],
+    "ask": [
+      "Bash(git push origin master:*)",
+      "Bash(git push origin main:*)",
+      "Bash(git push -u origin master:*)",
+      "Bash(git push)",
+      "Bash(firebase deploy:*)",
+      "Bash(npx firebase deploy:*)",
+      "Bash(npx firebase-tools deploy:*)",
+      "Bash(npx vercel deploy:*)",
+      "Bash(npx vercel --prod:*)",
+      "Bash(vercel deploy:*)",
+      "Bash(vercel --prod:*)",
+      "Bash(npm run secao1:publicar-regras:*)",
+      "Bash(npm run secao1:migrar:*)",
+      "Bash(npm run secao1:sincronizar-assinatura:*)",
+      "Bash(npm run secao1:vincular:*)",
+      "Bash(node --env-file=.env.local scripts:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git push --force:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git stash:*)",
+      "Bash(firebase projects:delete:*)",
+      "Bash(firebase firestore:delete:*)"
+    ]
+  }
+}

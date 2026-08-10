@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LEO · Super Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'IBM Plex Sans',sans-serif;background:#0F172A;color:#E2E8F0;min-height:100vh;}
+
+/* ── Layout ── */
+.sa-topbar{background:#1E293B;border-bottom:1px solid #334155;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;}
+.sa-brand{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:700;color:#F8FAFC;}
+.sa-brand span{font-size:22px;}
+.sa-badge{background:#F59E0B;color:#000;font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase;}
+.sa-user{display:flex;align-items:center;gap:12px;font-size:13px;color:#94A3B8;}
+.sa-btn{padding:7px 14px;border-radius:6px;border:none;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;}
+.sa-btn-danger{background:#EF4444;color:#fff;}
+.sa-btn-primary{background:#3B82F6;color:#fff;}
+.sa-btn-ghost{background:transparent;border:1px solid #475569;color:#94A3B8;}
+.sa-btn-success{background:#22C55E;color:#fff;}
+.sa-btn:disabled{opacity:.5;cursor:not-allowed;}
+
+.sa-layout{display:flex;min-height:calc(100vh - 52px);}
+.sa-sidebar{width:220px;background:#1E293B;padding:16px 0;border-right:1px solid #334155;flex-shrink:0;}
+.sa-nav{padding:4px 12px;margin-bottom:2px;display:flex;align-items:center;gap:8px;font-size:13px;color:#94A3B8;cursor:pointer;border-radius:6px;transition:all .15s;}
+.sa-nav:hover{background:#334155;color:#F8FAFC;}
+.sa-nav.ativa{background:#3B82F6;color:#fff;}
+.sa-nav span{font-size:16px;}
+.sa-sep{border-top:1px solid #334155;margin:10px 12px;}
+.sa-main{flex:1;padding:24px;overflow-y:auto;}
+
+/* ── Cards ── */
+.sa-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-bottom:24px;}
+.sa-card{background:#1E293B;border:1px solid #334155;border-radius:10px;padding:16px;}
+.sa-card-label{font-size:11px;color:#64748B;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;}
+.sa-card-value{font-size:28px;font-weight:700;color:#F8FAFC;}
+.sa-card-sub{font-size:11px;color:#64748B;margin-top:2px;}
+
+/* ── Tabela ── */
+.sa-table{width:100%;border-collapse:collapse;font-size:13px;}
+.sa-table th{text-align:left;padding:10px 12px;background:#1E293B;color:#94A3B8;font-size:11px;text-transform:uppercase;letter-spacing:.3px;border-bottom:1px solid #334155;}
+.sa-table td{padding:10px 12px;border-bottom:1px solid #1E293B;color:#CBD5E1;}
+.sa-table tr:hover td{background:#1E293B;}
+.sa-pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;}
+.sa-pill-ativo{background:#064E3B;color:#6EE7B7;}
+.sa-pill-trial{background:#78350F;color:#FDE68A;}
+.sa-pill-expirado{background:#7F1D1D;color:#FCA5A5;}
+.sa-pill-pf{background:#1E3A5F;color:#93C5FD;}
+.sa-pill-pj{background:#4C1D95;color:#C4B5FD;}
+
+/* ── Section ── */
+.sa-section{display:none;}
+.sa-section.ativa{display:block;}
+.sa-title{font-size:18px;font-weight:700;margin-bottom:16px;color:#F8FAFC;}
+.sa-subtitle{font-size:13px;color:#64748B;margin-bottom:16px;}
+
+/* ── Search ── */
+.sa-search{width:100%;max-width:400px;padding:10px 14px;background:#0F172A;border:1px solid #334155;border-radius:8px;color:#E2E8F0;font-size:13px;font-family:inherit;outline:none;margin-bottom:16px;}
+.sa-search:focus{border-color:#3B82F6;}
+
+/* ── Login ── */
+.sa-login{max-width:380px;margin:80px auto;background:#1E293B;border-radius:14px;padding:32px;text-align:center;}
+.sa-login h2{font-size:20px;margin:12px 0 6px;color:#F8FAFC;}
+.sa-login p{font-size:12px;color:#64748B;margin-bottom:20px;}
+.sa-login input{width:100%;padding:11px 14px;background:#0F172A;border:1px solid #334155;border-radius:8px;color:#E2E8F0;font-size:14px;font-family:inherit;outline:none;margin-bottom:10px;}
+.sa-login input:focus{border-color:#3B82F6;}
+.sa-login .sa-btn{width:100%;padding:12px;}
+.sa-login-err{color:#F87171;font-size:12px;margin-bottom:10px;display:none;}
+
+/* ── Modal ── */
+.sa-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:none;align-items:center;justify-content:center;}
+.sa-modal{background:#1E293B;border-radius:12px;padding:24px;max-width:440px;width:90%;}
+.sa-modal h3{font-size:16px;margin-bottom:16px;color:#F8FAFC;}
+.sa-modal label{font-size:12px;color:#94A3B8;display:block;margin-bottom:4px;}
+.sa-modal input,.sa-modal select{width:100%;padding:9px 12px;background:#0F172A;border:1px solid #334155;border-radius:6px;color:#E2E8F0;font-size:13px;font-family:inherit;outline:none;margin-bottom:10px;}
+</style>
+</head>
+<body>
+
+<!-- ── LOGIN ── -->
+<div id="sa-login-screen" class="sa-login">
+  <span style="font-size:40px;">🫀</span>
+  <h2>LEO · Super Admin</h2>
+  <p>Acesso exclusivo ao dono do sistema</p>
+  <div class="sa-login-err" id="sa-login-err"></div>
+  <input type="email" id="sa-email" placeholder="Seu email" autocomplete="email"/>
+  <input type="password" id="sa-pass" placeholder="Sua senha" autocomplete="current-password"/>
+  <button class="sa-btn sa-btn-primary" id="sa-btn-login" onclick="saLogin()">Entrar</button>
+</div>
+
+<!-- ── APP ── -->
+<div id="sa-app" style="display:none;">
+  <div class="sa-topbar">
+    <div class="sa-brand">
+      <span>🫀</span> LEO <span class="sa-badge">Super Admin</span>
+    </div>
+    <div class="sa-user">
+      <span id="sa-user-nome">Admin</span>
+      <button class="sa-btn sa-btn-ghost" onclick="saLogout()">Sair</button>
+    </div>
+  </div>
+
+  <div class="sa-layout">
+    <div class="sa-sidebar">
+      <div class="sa-nav ativa" onclick="saNav('dashboard')"><span>📊</span> Dashboard</div>
+      <div class="sa-nav" onclick="saNav('clientes')"><span>👥</span> Clientes</div>
+      <div class="sa-nav" onclick="saNav('licencas')"><span>📋</span> Licenças</div>
+      <div class="sa-sep"></div>
+      <div class="sa-nav" onclick="saNav('financeiro')"><span>💰</span> Financeiro</div>
+      <div class="sa-nav" onclick="saNav('auditoria')"><span>🔍</span> Auditoria</div>
+    </div>
+
+    <div class="sa-main">
+      <!-- DASHBOARD -->
+      <div class="sa-section ativa" id="sa-sec-dashboard">
+        <div class="sa-title">Dashboard</div>
+        <div class="sa-cards" id="sa-dash-cards"></div>
+        <div class="sa-title" style="font-size:14px;margin-top:8px;">Atividade recente</div>
+        <div id="sa-dash-atividade" style="color:#64748B;font-size:13px;">Carregando...</div>
+      </div>
+
+      <!-- CLIENTES -->
+      <div class="sa-section" id="sa-sec-clientes">
+        <div class="sa-title">Clientes</div>
+        <input class="sa-search" id="sa-search-clientes" placeholder="Buscar por nome, CPF, CNPJ ou email..." oninput="saFiltrarClientes()"/>
+        <div id="sa-clientes-table">Carregando...</div>
+      </div>
+
+      <!-- LICENÇAS -->
+      <div class="sa-section" id="sa-sec-licencas">
+        <div class="sa-title">Licenças</div>
+        <div class="sa-subtitle">Gerenciar planos, franquias e créditos</div>
+        <div id="sa-licencas-table">Carregando...</div>
+      </div>
+
+      <!-- FINANCEIRO -->
+      <div class="sa-section" id="sa-sec-financeiro">
+        <div class="sa-title">Financeiro</div>
+        <div class="sa-subtitle">Visão geral de pagamentos e consumo</div>
+        <div id="sa-financeiro-content">Carregando...</div>
+      </div>
+
+      <!-- AUDITORIA -->
+      <div class="sa-section" id="sa-sec-auditoria">
+        <div class="sa-title">Auditoria</div>
+        <input class="sa-search" id="sa-search-logs" placeholder="Filtrar logs..." oninput="saFiltrarLogs()"/>
+        <div id="sa-logs-table">Carregando...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Editar licença -->
+<div class="sa-modal-bg" id="sa-modal-licenca">
+  <div class="sa-modal">
+    <h3 id="sa-lic-title">Editar licença</h3>
+    <input type="hidden" id="sa-lic-wsid"/>
+    <input type="hidden" id="sa-lic-subid"/>
+    <label>Tipo</label>
+    <select id="sa-lic-tipo"><option value="trial">Trial</option><option value="paid">Pago</option></select>
+    <label>Franquia mensal</label>
+    <input type="number" id="sa-lic-franquia" min="0"/>
+    <label>Créditos extras</label>
+    <input type="number" id="sa-lic-creditos" min="0"/>
+    <label>Status</label>
+    <select id="sa-lic-status"><option value="ativo">Ativo</option><option value="suspenso">Suspenso</option></select>
+    <div style="display:flex;gap:10px;margin-top:14px;">
+      <button class="sa-btn sa-btn-ghost" onclick="document.getElementById('sa-modal-licenca').style.display='none'">Cancelar</button>
+      <button class="sa-btn sa-btn-primary" onclick="saSalvarLicenca()">Salvar</button>
+      <button class="sa-btn sa-btn-success" onclick="saDarCreditos()">+ Dar créditos cortesia</button>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<script>
+// ── Firebase Config (mesmo projeto do LEO) ──
+const FIREBASE_CONFIG = {
+  apiKey:            "AIzaSyB-TS54JTDs6J_4mtB3j3NgOTs7NiFnpUU",
+  authDomain:        "leo-sistema-laudos.firebaseapp.com",
+  projectId:         "leo-sistema-laudos",
+  storageBucket:     "leo-sistema-laudos.firebasestorage.app",
+  messagingSenderId: "11492013422",
+  appId:             "1:11492013422:web:bc3f707d8b410660e9bd7f"
+};
+firebase.initializeApp(FIREBASE_CONFIG);
+const fbAuth = firebase.auth();
+const fbDb   = firebase.firestore();
+const fsCol  = (p) => fbDb.collection(p);
+const fsDoc  = (p) => fbDb.doc(p);
+const fsNow  = ()  => firebase.firestore.FieldValue.serverTimestamp();
+
+// ── Estado ──
+let _saUser = null;
+let _saProfile = null;
+let _allWorkspaces = [];
+let _allSubs = [];
+let _allProfs = [];
+let _allEmpresas = [];
+let _allLogs = [];
+
+// ── Login ──
+async function saLogin(){
+  const email = document.getElementById('sa-email').value.trim();
+  const pass  = document.getElementById('sa-pass').value;
+  const errEl = document.getElementById('sa-login-err');
+  errEl.style.display='none';
+  if(!email||!pass){ errEl.textContent='Preencha email e senha.'; errEl.style.display='block'; return; }
+  document.getElementById('sa-btn-login').disabled=true;
+  try{
+    const cred = await fbAuth.signInWithEmailAndPassword(email, pass);
+    const snap = await fsDoc('profissionais/'+cred.user.uid).get();
+    if(!snap.exists || snap.data().superadmin !== true){
+      await fbAuth.signOut();
+      errEl.textContent='Acesso negado. Você não é superadmin.';
+      errEl.style.display='block';
+      document.getElementById('sa-btn-login').disabled=false;
+      return;
+    }
+    _saUser = cred.user;
+    _saProfile = snap.data();
+    document.getElementById('sa-login-screen').style.display='none';
+    document.getElementById('sa-app').style.display='block';
+    document.getElementById('sa-user-nome').textContent = _saProfile.nome || email;
+    await saCarregarDados();
+    saRenderDashboard();
+  }catch(e){
+    errEl.textContent = e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential'
+      ? 'Email ou senha incorretos.' : 'Erro: '+(e.message||e.code);
+    errEl.style.display='block';
+    document.getElementById('sa-btn-login').disabled=false;
+  }
+}
+
+function saLogout(){
+  fbAuth.signOut();
+  _saUser=_saProfile=null;
+  document.getElementById('sa-app').style.display='none';
+  document.getElementById('sa-login-screen').style.display='block';
+  document.getElementById('sa-btn-login').disabled=false;
+}
+
+// ── Navegação ──
+function saNav(sec){
+  document.querySelectorAll('.sa-section').forEach(s=>s.classList.remove('ativa'));
+  document.querySelectorAll('.sa-nav').forEach(n=>n.classList.remove('ativa'));
+  document.getElementById('sa-sec-'+sec)?.classList.add('ativa');
+  event.currentTarget.classList.add('ativa');
+  if(sec==='dashboard') saRenderDashboard();
+  if(sec==='clientes') saRenderClientes();
+  if(sec==='licencas') saRenderLicencas();
+  if(sec==='financeiro') saRenderFinanceiro();
+  if(sec==='auditoria') saRenderAuditoria();
+}
+
+// ── Carregar dados ──
+async function saCarregarDados(){
+  const [wsSnap, subSnap, profSnap, empSnap, logSnap] = await Promise.all([
+    fsCol('workspaces').get(),
+    fsCol('subscriptions').get(),
+    fsCol('profissionais').get(),
+    fsCol('empresas').get(),
+    fsCol('logs').orderBy('ts','desc').limit(200).get()
+  ]);
+  _allWorkspaces = wsSnap.docs.map(d=>({id:d.id,...d.data()}));
+  _allSubs = subSnap.docs.map(d=>({id:d.id,...d.data()}));
+  _allProfs = profSnap.docs.map(d=>({id:d.id,...d.data()}));
+  _allEmpresas = empSnap.docs.map(d=>({id:d.id,...d.data()}));
+  _allLogs = logSnap.docs.map(d=>({id:d.id,...d.data()}));
+}
+
+function escH(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
+function fmtDate(ts){
+  if(!ts) return '—';
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+}
+
+// ── Dashboard ──
+function saRenderDashboard(){
+  const agora = new Date();
+  const totalWs = _allWorkspaces.length;
+  const totalPF = _allWorkspaces.filter(w=>w.tipo==='PF').length;
+  const totalPJ = _allWorkspaces.filter(w=>w.tipo==='PJ').length;
+  const subsAtivas = _allSubs.filter(s=>{
+    const fim = s.cicloFim?.toDate ? s.cicloFim.toDate() : null;
+    return fim && agora <= fim;
+  }).length;
+  const subsExpiradas = _allSubs.length - subsAtivas;
+  const expirando7d = _allSubs.filter(s=>{
+    const fim = s.cicloFim?.toDate ? s.cicloFim.toDate() : null;
+    if(!fim) return false;
+    const diff = (fim - agora) / 864e5;
+    return diff > 0 && diff <= 7;
+  }).length;
+  const totalProfs = _allProfs.length;
+
+  const el = document.getElementById('sa-dash-cards');
+  el.innerHTML = `
+    <div class="sa-card"><div class="sa-card-label">Workspaces</div><div class="sa-card-value">${totalWs}</div><div class="sa-card-sub">${totalPF} PF · ${totalPJ} PJ</div></div>
+    <div class="sa-card"><div class="sa-card-label">Licenças ativas</div><div class="sa-card-value">${subsAtivas}</div><div class="sa-card-sub">${subsExpiradas} expiradas</div></div>
+    <div class="sa-card"><div class="sa-card-label">Expirando em 7 dias</div><div class="sa-card-value" style="color:#F59E0B;">${expirando7d}</div></div>
+    <div class="sa-card"><div class="sa-card-label">Profissionais</div><div class="sa-card-value">${totalProfs}</div></div>
+  `;
+
+  // Atividade recente
+  const atv = document.getElementById('sa-dash-atividade');
+  const recent = _allLogs.slice(0,15);
+  if(!recent.length){ atv.textContent='Nenhuma atividade registrada.'; return; }
+  atv.innerHTML = '<table class="sa-table"><thead><tr><th>Quando</th><th>Tipo</th><th>Detalhes</th></tr></thead><tbody>' +
+    recent.map(l=>`<tr><td>${fmtDate(l.ts)}</td><td>${escH(l.tipo)}</td><td>${escH(JSON.stringify(l).substring(0,80))}</td></tr>`).join('') +
+    '</tbody></table>';
+}
+
+// ── Clientes ──
+function saRenderClientes(filtro=''){
+  const f = filtro.toLowerCase();
+  const el = document.getElementById('sa-clientes-table');
+
+  // Join workspaces + subs + profs
+  const rows = _allWorkspaces.map(ws=>{
+    const sub = _allSubs.find(s=>s.workspaceId===ws.id);
+    const owner = _allProfs.find(p=>p.uid===ws.ownerUid);
+    const emp = ws.empresaId ? _allEmpresas.find(e=>e.id===ws.empresaId) : null;
+    return { ws, sub, owner, emp };
+  }).filter(r=>{
+    if(!f) return true;
+    const txt = [r.ws.nomeClinica, r.owner?.nome, r.owner?.cpf, r.owner?.email, r.emp?.cnpj, r.emp?.razaoSocial].join(' ').toLowerCase();
+    return txt.includes(f);
+  });
+
+  if(!rows.length){ el.innerHTML='<div style="color:#64748B;">Nenhum resultado.</div>'; return; }
+
+  const agora = new Date();
+  el.innerHTML = '<table class="sa-table"><thead><tr><th>Workspace</th><th>Tipo</th><th>Dono</th><th>Plano</th><th>Uso</th><th>Expira</th><th>Status</th></tr></thead><tbody>' +
+    rows.map(r=>{
+      const ws=r.ws, sub=r.sub, owner=r.owner;
+      const fim = sub?.cicloFim?.toDate ? sub.cicloFim.toDate() : null;
+      const ok = fim && agora <= fim;
+      const stPill = ok ? (sub.tipo==='trial'?'sa-pill-trial':'sa-pill-ativo') : 'sa-pill-expirado';
+      const stTxt = ok ? (sub.tipo==='trial'?'Trial':'Ativo') : 'Expirado';
+      const uso = sub ? `${sub.franquiaUsada||0}/${sub.franquiaMensal||0}` : '—';
+      const tipoPill = ws.tipo==='PF' ? 'sa-pill-pf' : 'sa-pill-pj';
+      return `<tr>
+        <td>${escH(ws.nomeClinica||ws.id)}</td>
+        <td><span class="sa-pill ${tipoPill}">${ws.tipo}</span></td>
+        <td>${escH(owner?.nome||'—')}<br><span style="font-size:10px;color:#64748B;">${escH(owner?.email||'')}</span></td>
+        <td>${sub?.tipo||'—'}</td>
+        <td>${uso} ${sub?.creditosExtras ? '(+'+sub.creditosExtras+' créditos)' : ''}</td>
+        <td>${fim ? fim.toLocaleDateString('pt-BR') : '—'}</td>
+        <td><span class="sa-pill ${stPill}">${stTxt}</span></td>
+      </tr>`;
+    }).join('') +
+    '</tbody></table>';
+}
+function saFiltrarClientes(){
+  saRenderClientes(document.getElementById('sa-search-clientes').value.trim());
+}
+
+// ── Licenças ──
+function saRenderLicencas(){
+  const el = document.getElementById('sa-licencas-table');
+  const agora = new Date();
+  const rows = _allWorkspaces.map(ws=>{
+    const sub = _allSubs.find(s=>s.workspaceId===ws.id);
+    const owner = _allProfs.find(p=>p.uid===ws.ownerUid);
+    return { ws, sub, owner };
+  });
+
+  el.innerHTML = '<table class="sa-table"><thead><tr><th>Cliente</th><th>Tipo</th><th>Franquia</th><th>Usada</th><th>Créditos</th><th>Expira</th><th>Ações</th></tr></thead><tbody>' +
+    rows.map(r=>{
+      const ws=r.ws, sub=r.sub;
+      return `<tr>
+        <td>${escH(ws.nomeClinica||ws.id)}<br><span style="font-size:10px;color:#64748B;">${escH(r.owner?.nome||'')}</span></td>
+        <td>${sub?.tipo||'—'}</td>
+        <td>${sub?.franquiaMensal||0}</td>
+        <td>${sub?.franquiaUsada||0}</td>
+        <td>${sub?.creditosExtras||0}</td>
+        <td>${sub?.cicloFim?.toDate ? sub.cicloFim.toDate().toLocaleDateString('pt-BR') : '—'}</td>
+        <td><button class="sa-btn sa-btn-primary" onclick="saEditarLicenca('${ws.id}','${sub?.id||''}')">Editar</button></td>
+      </tr>`;
+    }).join('') +
+    '</tbody></table>';
+}
+
+function saEditarLicenca(wsId, subId){
+  const sub = _allSubs.find(s=>s.id===subId);
+  const ws = _allWorkspaces.find(w=>w.id===wsId);
+  document.getElementById('sa-lic-title').textContent = 'Licença: '+(ws?.nomeClinica||wsId);
+  document.getElementById('sa-lic-wsid').value = wsId;
+  document.getElementById('sa-lic-subid').value = subId;
+  document.getElementById('sa-lic-tipo').value = sub?.tipo || 'trial';
+  document.getElementById('sa-lic-franquia').value = sub?.franquiaMensal || 100;
+  document.getElementById('sa-lic-creditos').value = sub?.creditosExtras || 0;
+  document.getElementById('sa-modal-licenca').style.display='flex';
+}
+
+async function saSalvarLicenca(){
+  const subId = document.getElementById('sa-lic-subid').value;
+  if(!subId){ alert('Subscription não encontrada.'); return; }
+  const dados = {
+    tipo: document.getElementById('sa-lic-tipo').value,
+    franquiaMensal: parseInt(document.getElementById('sa-lic-franquia').value)||100,
+    creditosExtras: parseInt(document.getElementById('sa-lic-creditos').value)||0,
+  };
+  await fsDoc('subscriptions/'+subId).update(dados);
+  document.getElementById('sa-modal-licenca').style.display='none';
+  await saCarregarDados();
+  saRenderLicencas();
+  alert('Licença atualizada!');
+}
+
+async function saDarCreditos(){
+  const subId = document.getElementById('sa-lic-subid').value;
+  const qtd = prompt('Quantos créditos de cortesia?');
+  if(!qtd || isNaN(qtd)) return;
+  await fsDoc('subscriptions/'+subId).update({
+    creditosExtras: firebase.firestore.FieldValue.increment(parseInt(qtd))
+  });
+  document.getElementById('sa-modal-licenca').style.display='none';
+  await saCarregarDados();
+  saRenderLicencas();
+  alert(qtd+' créditos adicionados!');
+}
+
+// ── Financeiro ──
+function saRenderFinanceiro(){
+  const el = document.getElementById('sa-financeiro-content');
+  const agora = new Date();
+
+  // Resumo
+  const totalFranquia = _allSubs.reduce((a,s)=>a+(s.franquiaMensal||0),0);
+  const totalUsada = _allSubs.reduce((a,s)=>a+(s.franquiaUsada||0),0);
+  const totalCreditos = _allSubs.reduce((a,s)=>a+(s.creditosExtras||0),0);
+  const inadimplentes = _allSubs.filter(s=>{
+    const fim = s.cicloFim?.toDate ? s.cicloFim.toDate() : null;
+    return fim && agora > fim;
+  });
+
+  el.innerHTML = `
+    <div class="sa-cards">
+      <div class="sa-card"><div class="sa-card-label">Franquia total</div><div class="sa-card-value">${totalFranquia}</div><div class="sa-card-sub">laudos/mês (todos os clientes)</div></div>
+      <div class="sa-card"><div class="sa-card-label">Consumida</div><div class="sa-card-value">${totalUsada}</div><div class="sa-card-sub">${totalFranquia>0?Math.round(totalUsada/totalFranquia*100):0}% utilizado</div></div>
+      <div class="sa-card"><div class="sa-card-label">Créditos extras</div><div class="sa-card-value">${totalCreditos}</div></div>
+      <div class="sa-card"><div class="sa-card-label">Inadimplentes</div><div class="sa-card-value" style="color:#F87171;">${inadimplentes.length}</div></div>
+    </div>
+    <div class="sa-title" style="font-size:14px;">Clientes com plano expirado</div>
+    ${inadimplentes.length ? '<table class="sa-table"><thead><tr><th>Workspace</th><th>Expirou em</th><th>Créditos restantes</th></tr></thead><tbody>' +
+      inadimplentes.map(s=>{
+        const ws = _allWorkspaces.find(w=>w.id===s.workspaceId);
+        return `<tr><td>${escH(ws?.nomeClinica||s.workspaceId)}</td><td>${s.cicloFim?.toDate ? s.cicloFim.toDate().toLocaleDateString('pt-BR') : '—'}</td><td>${s.creditosExtras||0}</td></tr>`;
+      }).join('') +
+      '</tbody></table>' : '<div style="color:#64748B;font-size:13px;">Nenhum inadimplente. Boa notícia!</div>'}
+  `;
+}
+
+// ── Auditoria ──
+function saRenderAuditoria(filtro=''){
+  const f = filtro.toLowerCase();
+  const el = document.getElementById('sa-logs-table');
+  const filtered = f ? _allLogs.filter(l=>JSON.stringify(l).toLowerCase().includes(f)) : _allLogs;
+
+  if(!filtered.length){ el.innerHTML='<div style="color:#64748B;">Nenhum log encontrado.</div>'; return; }
+
+  el.innerHTML = '<table class="sa-table"><thead><tr><th>Data/Hora</th><th>Tipo</th><th>UID</th><th>Workspace</th><th>Detalhes</th></tr></thead><tbody>' +
+    filtered.slice(0,100).map(l=>{
+      const ws = l.wsId ? _allWorkspaces.find(w=>w.id===l.wsId) : null;
+      const det = Object.entries(l).filter(([k])=>!['id','tipo','ts','medicoUid','wsId'].includes(k)).map(([k,v])=>k+':'+JSON.stringify(v)).join(', ');
+      return `<tr>
+        <td style="white-space:nowrap;">${fmtDate(l.ts)}</td>
+        <td>${escH(l.tipo)}</td>
+        <td style="font-size:10px;">${escH((l.medicoUid||'').substring(0,12))}</td>
+        <td>${escH(ws?.nomeClinica||l.wsId||'—')}</td>
+        <td style="font-size:11px;max-width:300px;overflow:hidden;text-overflow:ellipsis;">${escH(det.substring(0,120))}</td>
+      </tr>`;
+    }).join('') +
+    '</tbody></table>';
+}
+function saFiltrarLogs(){
+  saRenderAuditoria(document.getElementById('sa-search-logs').value.trim());
+}
+
+// ── Auto-login se já autenticado ──
+fbAuth.onAuthStateChanged(async user=>{
+  if(user){
+    const snap = await fsDoc('profissionais/'+user.uid).get();
+    if(snap.exists && snap.data().superadmin === true){
+      _saUser = user;
+      _saProfile = snap.data();
+      document.getElementById('sa-login-screen').style.display='none';
+      document.getElementById('sa-app').style.display='block';
+      document.getElementById('sa-user-nome').textContent = _saProfile.nome || user.email;
+      await saCarregarDados();
+      saRenderDashboard();
+    }
+  }
+});
+</script>
+</body>
+</html>

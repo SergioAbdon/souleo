@@ -1,0 +1,236 @@
+rules_version = '2';
+
+// ════════════════════════════════════════════════════════════════════
+// LEO · Firestore Security Rules — FECHADURA DEFINITIVA (modelo de contas)
+// ════════════════════════════════════════════════════════════════════
+// ✅ PUBLICADA em 10/08/2026 (Fase 5, Plano 2A) — substituiu a tranca
+//    provisoria de 09/08. Pre-requisitos que permitiram a troca:
+//    /api/signup (cadastro server-side), billing por contaId, /api/exame
+//    (apagar/cancelar/transferir). Rollback: tag pre-fase5 +
+//    scripts/secao1/04-publicar-regras.mjs --file=<backup> --commit
+//
+// Modelo: CONTA (paga) → LOCAL (workspaces) → exames/pacientes
+//         MEMBRO = vinculos/{contaId}_{uid} com papel + locais
+// Spec: docs/decisoes/2026-08-09-secao1-contas-e-acesso.md
+//
+// O Wader usa Service Account (Admin SDK) e nao e afetado por nada aqui.
+// ════════════════════════════════════════════════════════════════════
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Fundamentos ──
+    function auth() { return request.auth != null; }
+    function uid()  { return request.auth.uid; }
+
+    function superadmin() {
+      return auth()
+        && exists(/databases/$(database)/documents/profissionais/$(uid()))
+        && get(/databases/$(database)/documents/profissionais/$(uid())).data.superadmin == true;
+    }
+
+    function vincRef(contaId) {
+      return /databases/$(database)/documents/vinculos/$(contaId + '_' + uid());
+    }
+    // Exige papel valido: vinculo ativo mas sem `papel` (malformado ou
+    // meio-criado) nao pode conceder acesso clinico so por existir.
+    function temVinculo(contaId) {
+      return auth() && exists(vincRef(contaId))
+        && get(vincRef(contaId)).data.status == 'ativo'
+        && get(vincRef(contaId)).data.papel in ['dono', 'medico', 'recepcao'];
+    }
+    function vinc(contaId) { return get(vincRef(contaId)).data; }
+    function ehPapel(contaId, p) { return temVinculo(contaId) && vinc(contaId).papel == p; }
+
+    // Recebe o contaId pronto: serve para `get` E para `list` (numa consulta,
+    // `resource` e cada documento avaliado — nao da para get() do proprio doc).
+    function alcancaConta(contaId, wsId) {
+      return temVinculo(contaId)
+        && (vinc(contaId).locais.size() == 0 || wsId in vinc(contaId).locais);
+    }
+    // Em subcolecoes o doc do local nao esta em `resource`: aqui o get() e
+    // inevitavel. Sao 2 gets no total, longe do limite de 10.
+    function contaDoLocal(wsId) {
+      return get(/databases/$(database)/documents/workspaces/$(wsId)).data.contaId;
+    }
+    function alcancaLocal(wsId) { return alcancaConta(contaDoLocal(wsId), wsId); }
+    function ehDonoDoLocal(wsId) { return ehPapel(contaDoLocal(wsId), 'dono'); }
+    function ehMedicoNoLocal(wsId) {
+      return alcancaLocal(wsId) && vinc(contaDoLocal(wsId)).papel in ['dono', 'medico'];
+    }
+
+    // Precisa resistir a setDoc() sem merge: nesse caso a operacao ainda e
+    // classificada como 'update', mas request.resource.data so tem os
+    // campos enviados — o campo protegido pode desaparecer do resultado.
+    // Por isso nao basta checar ausencia; se existia antes, tem que
+    // continuar existindo com o mesmo valor.
+    function intacto(campo) {
+      return (campo in resource.data)
+        ? (campo in request.resource.data && request.resource.data[campo] == resource.data[campo])
+        : !(campo in request.resource.data);
+    }
+
+    // ── CONTAS ── so o servidor cria e altera
+    match /contas/{contaId} {
+      allow get, list: if superadmin() || temVinculo(contaId);
+      allow create, update, delete: if false;
+    }
+
+    // ── LOCAIS ──
+    match /workspaces/{wsId} {
+      allow get, list: if superadmin()
+                       || (resource != null && alcancaConta(resource.data.contaId, wsId));
+      allow update:    if superadmin()
+                       || (ehDonoDoLocal(wsId) && intacto('contaId'));
+      allow create, delete: if false;
+
+      // Gaveta de segredos: ninguem pelo navegador, nem o superadmin.
+      match /privado/{documento=**} {
+        allow read, write: if false;
+      }
+
+      match /pacientes/{pacId} {
+        allow read: if superadmin() || alcancaLocal(wsId);
+        allow create, update: if alcancaLocal(wsId);
+        allow delete: if ehDonoDoLocal(wsId);
+      }
+
+      match /exames/{exameId} {
+        // Todo membro do local ve a fila e le o laudo do colega (D7 do spec)
+        allow read:   if superadmin() || alcancaLocal(wsId);
+        // medicoUid so pode vir vazio (recepcao cadastra sem autor), ser o
+        // proprio uid de quem cria, ou ser definido pelo dono do local.
+        // E quem nao e medico NAO cria exame ja carimbado como emitido: sem
+        // esta linha, a recepcao gravaria um laudo com cara de assinado por
+        // fora do /api/emitir — sem PDF, sem log, sem franquia debitada.
+        // Mesmo vetor que derrubou a producao em 09/08; corrigido na regra
+        // publicada no commit b6a6577 e esquecido aqui ate a auditoria Ponytail.
+        allow create: if alcancaLocal(wsId)
+                      && (ehMedicoNoLocal(wsId)
+                          || request.resource.data.get('status', '') != 'emitido')
+                      && (!('medicoUid' in request.resource.data)
+                          || request.resource.data.medicoUid == uid()
+                          || ehDonoDoLocal(wsId));
+        // Conteudo do laudo: o autor edita; um exame sem autor ainda pode
+        // ser assumido por qualquer medico do local. O dono ajusta qualquer um.
+        // `intacto('medicoUid')` fecha a transferencia disfarcada de edicao: sem
+        // ela, o autor trocava o medicoUid para outro medico na mesma escrita,
+        // passando por cima da rota de servidor que faz log e acerta franquia.
+        // Assumir exame sem autor continua valendo (medicoUid nao existia).
+        // Cancelar e do servidor (/api/exame): devolve franquia e loga. Pelo
+        // navegador o status 'cancelado' viraria laudo sumido sem devolucao.
+        // Reabrir para 'andamento' continua livre para o autor.
+        allow update: if request.resource.data.get('status', '') != 'cancelado'
+                      && ((ehDonoDoLocal(wsId) && intacto('medicoUid'))
+                          || (ehMedicoNoLocal(wsId)
+                              && (!('medicoUid' in resource.data) || resource.data.medicoUid == uid())
+                              && ('medicoUid' in resource.data ? intacto('medicoUid') : true)));
+        // Apagar/cancelar/transferir passam pelo servidor (log + franquia)
+        allow delete: if false;
+      }
+
+      // Honorarios, extratos e demais ajustes do local: financeiro, so quem
+      // atende (medico) ou o dono — recepcao nao ve valor por convenio.
+      // superadmin(): Lacuna 1 do levantamento — sem ele o suporte perdia
+      // acesso a honorarios e contador de extrato (a publicada sempre teve).
+      match /config/{docId}   { allow read, write: if superadmin() || ehMedicoNoLocal(wsId); }
+      match /extratos/{docId} { allow read, write: if superadmin() || ehMedicoNoLocal(wsId); }
+    }
+
+    // ── VINCULOS ── leitura do proprio e do dono da conta; escrita so servidor
+    match /vinculos/{vincId} {
+      allow get:  if auth() && (resource.data.medicoUid == uid()
+                    || ehPapel(resource.data.contaId, 'dono') || superadmin());
+      // `list` por documento: a consulta so passa se for restrita ao proprio
+      // usuario (where medicoUid == uid). Sem isso, um logado listaria o mapa
+      // de quem pertence a que conta.
+      allow list: if superadmin() || (auth() && resource.data.medicoUid == uid());
+      allow create, update, delete: if false;
+    }
+
+    // ── ASSINATURAS ── id = contaId. Recepcao nao ve financeiro.
+    // update superadmin: o Direx troca plano e ajusta creditos PELO NAVEGADOR
+    // (licencas/page.tsx + ajustarCreditos). `if false` quebraria o painel.
+    // Cliente comum continua sem escrever: franquia e so do servidor.
+    match /subscriptions/{contaId} {
+      allow get, list: if superadmin()
+                       || (temVinculo(contaId) && vinc(contaId).papel in ['dono', 'medico']);
+      allow update: if superadmin();
+      allow create, delete: if false;
+    }
+
+    // ── PROFISSIONAIS ── proprio perfil, sem autopromocao, sem listar todos
+    match /profissionais/{profId} {
+      allow get:    if auth() && (profId == uid() || superadmin());
+      allow list:   if superadmin();
+      // `createProfile()` (src/lib/firestore.ts) SEMPRE envia superadmin:false.
+      // Exigir o campo ausente quebra TODO cadastro novo — foi o que derrubou o
+      // cadastro em producao das 18:34 as 22:53 de 09/08. O que nao pode e
+      // nascer com superadmin:true ou com adminRole.
+      allow create: if auth() && profId == uid()
+                    && (!('superadmin' in request.resource.data)
+                        || request.resource.data.superadmin == false)
+                    && !('adminRole' in request.resource.data);
+      // `tipoPerfil` tambem e imutavel pelo proprio: /api/emitir exige perfil
+      // medico para assinar laudo (matriz §4), e sem isso um assistente com
+      // papel dono se autopromovia a medico e passava no gate. Reenviar o MESMO
+      // valor continua valendo (intacto permite igual) — o PerfilModal manda o
+      // campo em todo save; so a MUDANCA e negada. O Direx (branch separado) muda.
+      allow update: if superadmin()
+                    || (auth() && profId == uid()
+                        && intacto('superadmin') && intacto('adminRole') && intacto('tipoPerfil'));
+      allow delete: if false;
+    }
+
+    // ── EMPRESAS ── so o Direx. Tem CNPJ e endereco de todas as clinicas, e o
+    // unico leitor no app e /direx/painel/clientes.
+    match /empresas/{empId} {
+      allow read:  if superadmin();
+      allow write: if superadmin();
+    }
+
+    // ── Trilhas append-only ──
+    match /logs/{logId} {
+      allow create: if auth();
+      allow read:   if superadmin();
+      allow update, delete: if false;
+    }
+    // Ledger de franquia/creditos: SO o servidor Admin escreve (/api/emitir
+    // debita, /api/exame devolve). O `registrarConsumo` do cliente
+    // (src/lib/billing.ts) e codigo morto — nenhum chamador. Com `auth()`
+    // aqui, qualquer logado forjava devolucao ('cancelamento') e zerava a
+    // conta de consumo da propria clinica.
+    match /consumo/{consumoId} {
+      allow create: if false;
+      allow read:   if superadmin();
+      allow update, delete: if false;
+    }
+    match /creditosLog/{logId} {
+      allow create, read: if superadmin();
+      allow update, delete: if false;
+    }
+
+    // ── Direx ──
+    match /configPlanos/{docId} {
+      allow read:  if auth();
+      allow write: if superadmin();
+    }
+    match /pagamentos/{pagId}          { allow read, write: if superadmin(); }
+    match /historicoFinanceiro/{mesId} { allow read, write: if superadmin(); }
+
+    // ── Legado (some no Plano 3) ──
+    match /profiles/{profId} {
+      allow get:   if auth() && (profId == uid() || superadmin());
+      allow write: if false;
+    }
+    match /memberships/{memId} {
+      allow get, list: if superadmin() || (auth() && resource.data.medicoUid == uid());
+      allow write:     if false;
+    }
+
+    // ── Tudo o mais: fechado ──
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
