@@ -36,7 +36,6 @@ export async function getLocaisDaConta(contaId: string, permitidos: string[]) {
   return permitidos.length === 0 ? todos : todos.filter(w => permitidos.includes(w.id));
 }
 
-// A leitura de `subscriptions/{contaId}` sai daqui de proposito: enquanto o
-// /api/emitir debitar a franquia no documento antigo (por local), ler o novo
-// mostraria um numero congelado. O AuthContext usa getSubscription(localId).
-// Volta no Plano 2, junto com a migracao do billing — sao 4 linhas.
+// A assinatura por conta (subscriptions/{contaId}) passou a ser a oficial no
+// Plano 2A: getSubscription (billing.ts) resolve workspace → contaId → doc,
+// e /api/emitir debita nela. O doc antigo por workspaceId e so fallback.
