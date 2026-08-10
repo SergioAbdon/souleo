@@ -10,6 +10,7 @@ import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { getProfile, getMemberships, getWorkspace } from '@/lib/firestore';
 import { getSubscription } from '@/lib/billing';
+import { getVinculosDoUsuario, getConta, getLocaisDaConta, type Conta, type Papel } from '@/lib/contas';
 
 // Tipos
 export type Profile = Record<string, unknown> & { id: string; nome?: string; crm?: string; ufCrm?: string; especialidade?: string; tipoPerfil?: string; cpf?: string; sigB64?: string; };
@@ -21,6 +22,8 @@ type Contexto = {
   membership: Membership;
   workspace: Workspace;
   subscription: Subscription | null;
+  conta?: Conta | null;
+  papel?: Papel;
 };
 
 type AuthState = {
@@ -55,6 +58,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Ouvir mudanças de auth
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
+      // try/finally: sem isso, uma leitura negada pelas regras (ou queda de
+      // rede) interrompe o callback antes do setLoading(false) e a tela fica
+      // presa no coracao pulsando, para sempre, sem dizer o que houve.
+      try {
       setUser(fbUser);
       if (fbUser) {
         // Carregar perfil
@@ -63,6 +70,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // v3: Carregar contextos (workspaces) em PARALELO
         if (prof) {
+          // Caminho novo: conta → locais. Se nao houver vinculo migrado, cai no antigo.
+          const vincs = await getVinculosDoUsuario(fbUser.uid);
+          if (vincs.length > 0) {
+            const ctxNovos: Contexto[] = [];
+            for (const v of vincs) {
+              const [conta, locais] = await Promise.all([
+                getConta(v.contaId),
+                getLocaisDaConta(v.contaId, v.locais ?? []),
+              ]);
+              // ponytail: a assinatura vem do doc ANTIGO (por local), nao de
+              // subscriptions/{contaId}. O /api/emitir e o billing ainda
+              // debitam a franquia la; ler a nova mostraria um numero congelado
+              // enquanto o real anda. Troca para a assinatura por conta quando
+              // o Plano 2 mover o billing junto.
+              const subs = await Promise.all(locais.map(l => getSubscription(l.id)));
+              locais.forEach((local, i) => {
+                ctxNovos.push({
+                  membership: { id: v.id, role: v.papel, workspaceId: local.id } as Membership,
+                  workspace: local as Workspace,
+                  subscription: subs[i] as Subscription | null,
+                  conta, papel: v.papel,
+                });
+              });
+            }
+            // Só assume o caminho novo se ele cobrir TODOS os locais que o
+            // usuario alcanca. Migracao parcial (um vinculo migrado, outro nao)
+            // esconderia uma clinica inteira sem erro nenhum na tela.
+            const cobertos = new Set(ctxNovos.map(c => c.workspace.id));
+            const legadoDescoberto = (await getMemberships(fbUser.uid)).filter(m => {
+              const ws = (m as Membership).workspaceId;
+              return ws && !cobertos.has(ws);
+            });
+            if (ctxNovos.length > 0 && legadoDescoberto.length === 0) {
+              setContextos(ctxNovos);
+              if (ctxNovos.length === 1) selecionarContexto(ctxNovos[0]);
+              setLoading(false);
+              return;
+            }
+          }
+          // ── caminho antigo (pre-migracao) daqui para baixo ──
           const memberships = await getMemberships(fbUser.uid);
           const ctxResults = await Promise.all(
             memberships
@@ -96,7 +143,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSubscription(null);
         setContextos([]);
       }
-      setLoading(false);
+      } catch (e) {
+        console.error('AuthContext: falha ao montar a sessao', e);
+      } finally {
+        setLoading(false);
+      }
     });
     return () => unsub();
   // eslint-disable-next-line react-hooks/exhaustive-deps

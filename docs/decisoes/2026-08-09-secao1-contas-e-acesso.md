@@ -24,6 +24,10 @@ escolhido pelo Dr. Sérgio, é **arrumar a fundação (modelo de dados)** — n�
   (`C:\Users\sergi\Desktop\LEO\firestore.rules`) e uma cópia divergente em
   `legacy/scripts-py/firestore.rules`, que o `legacy/README.md` chama de "antigo".
 - **Não se sabe se alguma está publicada.** Verificar no console é a Fase 0.
+- **09/08/2026:** o arquivo foi trazido para a **raiz do repo** (`firestore.rules`) e
+  declarado em `firebase.json`. ⚠️ **NÃO deployar** com esse conteúdo antes das Fases 0 e 5
+  — publicar a regra de abril pode substituir uma regra melhor que esteja no ar. O
+  cabeçalho do arquivo repete esse aviso.
 
 O que essa regra antiga faz, se estiver no ar:
 
@@ -174,16 +178,30 @@ Superadmin/Direx continua fora deste modelo.
 
 | Fase | O que | Quebra? | Quem |
 |---|---|---|---|
-| **0** | Verificar regras publicadas no console + script read-only de inventário | Nada | Dr. Sérgio (console) + Claude notebook |
-| **1** | Criar 1 `conta` por workspace; gravar `contaId` no workspace | Nada | notebook |
-| **2** | Copiar assinatura para `subscriptions/{contaId}`, mantendo a antiga marcada; leitura com fallback | Nada | notebook |
-| **3** | Recriar vínculos com id `{contaId}_{uid}` + papel derivado (`ownerUid`→dono, `tipoPerfil` medico→medico, assistente→recepcao) | Nada | notebook |
+| **0** | ✅ **FEITO 09/08** — script lê a regra publicada pela Rules API (não precisou do console) + inventário | Nada | notebook |
+| **0.5** | ✅ **FEITO 09/08 18:34 — TRANCA PROVISÓRIA PUBLICADA.** Fase inexistente no plano original, criada porque a Fase 0 achou o banco aberto. Isolamento por `workspaces.ownerUid`, 35 testes | Nada quebrou | notebook |
+| **1** | ✅ **FEITO 09/08** — 2 contas criadas (`wader-dev` pulado: sem dono, não é cliente) | Nada | notebook |
+| **2** | ✅ **FEITO 09/08** — `subscriptions/{contaId}`, **sem** copiar `workspaceId` (senão duas assinaturas casariam na busca antiga e a franquia oscilaria entre elas) | Nada | notebook |
+| **3** | ✅ **FEITO 09/08** — vínculos `{contaId}_{uid}` com papel. Os dois vínculos existentes viraram `dono` porque em ambos `medicoUid == ownerUid` | Nada | notebook |
 | **4** | Deploy web: signup no servidor, seletor único, papéis na UI, convites, PJ | Reverter = deploy anterior | notebook |
-| **5** | **Publicar a fechadura.** Testar com conta de teste ANTES | Ponto de virada; reverter = republicar a regra anterior | notebook |
+| **5** | **Publicar a fechadura definitiva** (`firestore.rules.definitiva`, 52 testes, já escrita e testada). Substitui a tranca provisória | Ponto de virada; reverter = republicar a anterior | notebook |
 | **6** | Segredos: gravar nos dois lugares → Wader passa a ler do novo (3 linhas em `workspace-repo.ts`) → deploy `update-wader.ps1` → só então apagar o campo antigo | Na ordem certa, o Wader nunca fica sem credencial | **Claude da clínica** |
 | **7** | Limpeza: vínculos antigos, fallbacks `profiles`/`memberships`, `profissionalId` | Nada | notebook |
 
-**Fase 0 trava tudo.** Se a regra publicada estiver frouxa, a Fase 5 sobe na fila.
+> **Plano 1 concluído em 09/08/2026** (branch `feat/secao1-contas`). Fases 0 a 3
+> feitas, mais a Fase 0.5 que não existia. Dois arquivos de regra convivem, e a
+> distinção é vital:
+>
+> | Arquivo | O que é |
+> |---|---|
+> | `firestore.rules` | **O que está NO AR.** Tranca provisória por `ownerUid`. 35 testes. |
+> | `firestore.rules.definitiva` | A fechadura do modelo de contas. 52 testes. **Não publicada** — publicar antes do cadastro server-side quebraria o cadastro em produção. É a Fase 5, última tarefa do Plano 2. |
+>
+> Regra de ouro: **`firestore.rules` sempre reflete exatamente o que está publicado.**
+
+**A Fase 0 travava tudo — e o que ela encontrou reordenou o plano.** A regra
+publicada estava aberta (§1.1), então a Fase 0.5 furou a fila e trancou o banco no
+mesmo dia, sem esperar o modelo de contas.
 
 ### ⚠️ Instruções para o Claude da clínica (Fase 6)
 
@@ -225,6 +243,26 @@ metade) e checklist de tela.
 6. Wader segue recebendo imagem e SR, sem mudança de comportamento.
 
 ---
+
+## 8.1 O que a tríade pegou (09/08, depois do Plano 1)
+
+Revisão em três óticas sobre o branch inteiro — Codex (bugs), Ruflo (arquitetura),
+Ponytail (o que deletar). Três defeitos que os 87 testes não pegavam:
+
+| # | Achado | Onde doeu |
+|---|---|---|
+| 1 | **A tranca publicada quebrou o cadastro.** A regra exigia o campo `superadmin` ausente; `createProfile()` sempre envia `superadmin: false`. O teste passava porque usava payload inventado, sem o campo. | Produção, das 18:34 às 22:53 |
+| 2 | **Consulta de locais por `contaId` era negada.** Regra de `list` no Firestore não filtra resultado — precisa ser satisfeita pelos campos que a **consulta** fixa. A consulta fixa `contaId`, a regra olhava `ownerUid`. | Travaria o login de todo migrado quando o Plano 2 subisse |
+| 3 | **`subscriptions/{contaId}` é retrato congelado.** Quem debita a franquia (`/api/emitir`, `billing.ts`) continua no documento antigo; a tela mostraria número parado. | Mesma coisa |
+
+Lição que vale para o resto do projeto: **teste com payload de mentira prova
+mentira.** O teste de cadastro usava `{nome, crm}`; o app manda doze campos, um
+deles fatal. Daqui em diante, teste de regra copia o payload real do código.
+
+Também corrigidos: `vinculos` podia ser fabricado apontando para clínica alheia e
+reescrito depois (papel incluído); `empresas` era legível por qualquer autenticado;
+`AuthContext` sem `try/finally` prendia a tela em "carregando"; e o caminho novo
+assumia a sessão mesmo cobrindo só parte dos locais do usuário.
 
 ## 9. Fora de escopo (Seção 1 não resolve)
 

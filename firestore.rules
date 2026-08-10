@@ -1,0 +1,239 @@
+rules_version = '2';
+
+// ════════════════════════════════════════════════════════════════════
+// LEO · Firestore Security Rules — TRANCA PROVISÓRIA (09/08/2026)
+// ════════════════════════════════════════════════════════════════════
+// Substitui a regra publicada em 06/04/2026, que era:
+//     match /{document=**} { allow read, write: if request.auth != null; }
+// ou seja, QUALQUER usuário autenticado lia e escrevia o banco inteiro —
+// 208 pacientes e 191 exames de outra clínica, segredos de integração, e
+// podia escrever superadmin:true em si mesmo. Cadastro é público.
+//
+// Esta versão é PROVISÓRIA e deliberadamente conservadora: o isolamento
+// usa `workspaces.ownerUid`, que já existe hoje, para não depender da
+// migração para o modelo de contas. Hoje cada um dos 3 usuários é dono do
+// próprio local, então ninguém perde acesso.
+//
+// É substituída pela fechadura definitiva (contas + papéis + locais) no
+// Plano 2 — ver docs/decisoes/2026-08-09-secao1-contas-e-acesso.md e
+// docs/planos/2026-08-09-secao1-plano1-fundacao.md.
+//
+// O Wader usa Service Account (Admin SDK) e NÃO é afetado por estas regras.
+// ════════════════════════════════════════════════════════════════════
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Fundamentos ──
+    function auth() { return request.auth != null; }
+    function uid()  { return request.auth.uid; }
+
+    function superadmin() {
+      return auth()
+        && exists(/databases/$(database)/documents/profissionais/$(uid()))
+        && get(/databases/$(database)/documents/profissionais/$(uid())).data.superadmin == true;
+    }
+
+    function donoDoLocal(wsId) {
+      return auth()
+        && exists(/databases/$(database)/documents/workspaces/$(wsId))
+        && get(/databases/$(database)/documents/workspaces/$(wsId)).data.ownerUid == uid();
+    }
+
+    // A migracao de 09/08 criou `contas`; a conta herda o ownerUid do local.
+    function donoDaConta(contaId) {
+      return auth()
+        && exists(/databases/$(database)/documents/contas/$(contaId))
+        && get(/databases/$(database)/documents/contas/$(contaId)).data.ownerUid == uid();
+    }
+
+    // ── Membro da conta (modelo migrado em 09/08) ──
+    function vincRef(contaId) {
+      return /databases/$(database)/documents/vinculos/$(contaId + '_' + uid());
+    }
+    // Exige papel valido: vinculo sem `papel` (malformado ou meio-criado) nao
+    // pode conceder acesso clinico so por existir e estar 'ativo'.
+    function membroDaConta(contaId) {
+      return auth() && exists(vincRef(contaId))
+        && get(vincRef(contaId)).data.status == 'ativo'
+        && get(vincRef(contaId)).data.papel in ['dono', 'medico', 'recepcao'];
+    }
+    function papelNaConta(contaId) { return get(vincRef(contaId)).data.papel; }
+
+    function contaDoLocal(wsId) {
+      return get(/databases/$(database)/documents/workspaces/$(wsId)).data.contaId;
+    }
+    // Alcanca o local: e dono dele, ou tem vinculo ativo na conta dele e o
+    // local esta na lista permitida (lista vazia = todos os locais da conta).
+    function alcancaLocal(wsId) {
+      return donoDoLocal(wsId)
+        || (membroDaConta(contaDoLocal(wsId))
+            && (get(vincRef(contaDoLocal(wsId))).data.locais.size() == 0
+                || wsId in get(vincRef(contaDoLocal(wsId))).data.locais));
+    }
+    // Papel de quem assina laudo e ve dinheiro.
+    function medicoNoLocal(wsId) {
+      return donoDoLocal(wsId)
+        || (alcancaLocal(wsId) && papelNaConta(contaDoLocal(wsId)) in ['dono', 'medico']);
+    }
+
+    // Campo nao foi alterado nesta escrita?
+    function intacto(campo) {
+      return !(campo in request.resource.data)
+        || (campo in resource.data && request.resource.data[campo] == resource.data[campo]);
+    }
+
+    // ── LOCAIS e tudo que vive dentro deles ──
+    // Subarvore = exames, pacientes, extratos, config. Onde moram os dados
+    // clinicos. So o dono do local (ou o superadmin) entra.
+    match /workspaces/{wsId} {
+      // O 3o termo existe porque o app consulta locais por `contaId`. Regra de
+      // `list` no Firestore nao filtra: ela precisa ser satisfeita pelos campos
+      // que a CONSULTA fixa. Como a consulta fixa `contaId` e nao `ownerUid`,
+      // sem este termo o Firestore nega a consulta inteira. (Provado por teste.)
+      allow get, list: if superadmin()
+                       || (auth() && resource.data.ownerUid == uid())
+                       || (auth() && donoDaConta(resource.data.contaId))
+                       || (auth() && membroDaConta(resource.data.contaId));
+      // Editar o local (timbre, endereco, integracoes) e so do dono.
+      allow update:    if superadmin()
+                       || (auth() && resource.data.ownerUid == uid() && intacto('ownerUid'));
+      allow create:    if auth() && request.resource.data.ownerUid == uid();
+      allow delete:    if false;
+
+      // Honorarios e extratos sao dinheiro: medico ou dono, nunca recepcao.
+      match /config/{docId}   { allow read, write: if superadmin() || medicoNoLocal(wsId); }
+      match /extratos/{docId} { allow read, write: if superadmin() || medicoNoLocal(wsId); }
+
+      // Fila, pacientes e laudos: todo membro que alcanca o local.
+      // ajuste (fora do brief): o brief pedia match /{documento=**} aqui, mas
+      // um coringa recursivo tambem casa com config/extratos E com o proprio
+      // doc do local (path vazio) — Firestore usa OR entre TODOS os match
+      // que casam o mesmo caminho, entao o coringa reabria honorarios e a
+      // edicao do local para a recepcao por cima da regra especifica acima
+      // (confirmado pelos 2 testes falhando). Listar as subcolecoes reais
+      // (exames, pacientes) em vez do coringa evita a sobreposicao — mesmo
+      // padrao ja usado em firestore.rules.definitiva.
+      // Laudo EMITIDO e documento assinado: a recepcao nao altera nem apaga.
+      // Ela cadastra, mexe na fila e no exame ainda nao emitido — o resto e
+      // de medico. A separacao fina "so o AUTOR edita" e da fechadura
+      // definitiva (Plano 2); aqui protege-se o que ja foi assinado.
+      match /exames/{docId} {
+        allow read:   if superadmin() || alcancaLocal(wsId);
+        allow create: if superadmin() || alcancaLocal(wsId);
+        allow update, delete: if superadmin() || medicoNoLocal(wsId)
+                              || (alcancaLocal(wsId) && resource.data.status != 'emitido');
+      }
+      match /pacientes/{docId} { allow read, write: if superadmin() || alcancaLocal(wsId); }
+    }
+
+    // ── PROFISSIONAIS ── proprio perfil, sem autopromocao, sem listar todos
+    match /profissionais/{profId} {
+      allow get:    if auth() && (profId == uid() || superadmin());
+      allow list:   if superadmin();
+      // `createProfile()` (src/lib/firestore.ts) SEMPRE envia superadmin:false.
+      // Exigir o campo ausente quebraria todo cadastro novo — o que hoje ele
+      // nao pode e nascer com superadmin:true ou com adminRole.
+      allow create: if auth() && profId == uid()
+                    && (!('superadmin' in request.resource.data)
+                        || request.resource.data.superadmin == false)
+                    && !('adminRole' in request.resource.data);
+      allow update: if superadmin()
+                    || (auth() && profId == uid() && intacto('superadmin') && intacto('adminRole'));
+      allow delete: if false;
+    }
+
+    // ── CONTAS ── criadas pela migracao (Admin SDK). Cliente so le a propria.
+    match /contas/{contaId} {
+      allow get, list: if superadmin()
+                       || (auth() && resource.data.ownerUid == uid())
+                       || membroDaConta(contaId);
+      allow write:     if false;
+    }
+
+    // ── VINCULOS ── o proprio vinculo, e so para local que ja e seu
+    match /vinculos/{vincId} {
+      allow get, list: if superadmin() || (auth() && resource.data.medicoUid == uid());
+      // Cadastro cria o vinculo logo depois de criar o proprio local. Sem a
+      // checagem do local, qualquer autenticado fabricaria vinculo apontando
+      // para a clinica alheia.
+      allow create:    if auth() && request.resource.data.medicoUid == uid()
+                       && donoDoLocal(request.resource.data.workspaceId);
+      // Nada no app altera vinculo hoje (aceitar convite nao tem tela). Deixar
+      // aberto permitiria reescrever medicoUid/papel/locais — a fundacao da
+      // autorizacao. Convite e mudanca de papel serao rota de servidor.
+      allow update, delete: if false;
+    }
+
+    // ── ASSINATURAS ── duas formas convivem durante a migracao:
+    //   antiga: doc com workspaceId  ·  nova: doc id = contaId, sem workspaceId
+    match /subscriptions/{subId} {
+      // O medico nao-dono TAMBEM precisa ler a assinatura ANTIGA (a que tem
+      // workspaceId): e nela que billing.ts:157 consulta a franquia antes de
+      // emitir. Sem isso, o 2o medico da clinica recebe "sem_plano" e nao
+      // consegue emitir laudo nenhum.
+      allow get, list: if superadmin()
+                       || ('workspaceId' in resource.data && donoDoLocal(resource.data.workspaceId))
+                       || ('workspaceId' in resource.data && medicoNoLocal(resource.data.workspaceId))
+                       || ('contaId' in resource.data && donoDaConta(resource.data.contaId))
+                       || ('contaId' in resource.data && membroDaConta(resource.data.contaId)
+                           && papelNaConta(resource.data.contaId) in ['dono', 'medico']);
+      allow create:    if auth() && donoDoLocal(request.resource.data.workspaceId);
+      allow update:    if superadmin()
+                       || ('workspaceId' in resource.data
+                           && donoDoLocal(resource.data.workspaceId) && intacto('workspaceId'));
+      allow delete:    if false;
+    }
+
+    // ── EMPRESAS ── so o Direx. Nenhuma tela de cliente le esta colecao hoje
+    // (o unico leitor e /direx/painel/clientes) e ela tem CNPJ e endereco de
+    // todas as clinicas.
+    match /empresas/{empId} {
+      allow read:  if superadmin();
+      allow write: if superadmin();
+    }
+
+    // ── Trilhas append-only: escreve e nao mexe mais ──
+    match /logs/{logId} {
+      allow create: if auth();
+      allow read:   if superadmin();
+      allow update, delete: if false;
+    }
+    match /consumo/{consumoId} {
+      allow create: if auth();
+      allow read:   if superadmin();
+      allow update, delete: if false;
+    }
+    match /creditosLog/{logId} {
+      allow create, read: if superadmin();
+      allow update, delete: if false;
+    }
+
+    // ── Direx (painel da diretoria) ──
+    match /configPlanos/{docId} {
+      allow read:  if auth();          // o app le os planos para exibir cotas
+      allow write: if superadmin();
+    }
+    match /pagamentos/{pagId} {
+      allow read, write: if superadmin();
+    }
+    match /historicoFinanceiro/{mesId} {
+      allow read, write: if superadmin();
+    }
+
+    // ── Colecoes legadas (leitura do proprio; ninguem escreve) ──
+    match /profiles/{profId} {
+      allow get:   if auth() && (profId == uid() || superadmin());
+      allow write: if false;
+    }
+    match /memberships/{memId} {
+      allow get, list: if superadmin() || (auth() && resource.data.medicoUid == uid());
+      allow write:     if false;
+    }
+
+    // ── Tudo o mais: fechado ──
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

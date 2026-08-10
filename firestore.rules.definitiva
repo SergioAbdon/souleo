@@ -1,0 +1,195 @@
+rules_version = '2';
+
+// ════════════════════════════════════════════════════════════════════
+// LEO · Firestore Security Rules — FECHADURA DEFINITIVA (modelo de contas)
+// ════════════════════════════════════════════════════════════════════
+// ⚠️ ESTE ARQUIVO NAO E O PUBLICADO. O publicado e `firestore.rules`
+//    (tranca provisoria por ownerUid, no ar desde 09/08/2026 18:34).
+//    Esta versao so pode substituir aquela na ULTIMA tarefa do Plano 2,
+//    depois que o cadastro passar a ser feito no servidor — ela proibe o
+//    navegador de criar conta, vinculo e assinatura, que e exatamente o
+//    que o cadastro atual faz.
+//
+// Modelo: CONTA (paga) → LOCAL (workspaces) → exames/pacientes
+//         MEMBRO = vinculos/{contaId}_{uid} com papel + locais
+// Spec: docs/decisoes/2026-08-09-secao1-contas-e-acesso.md
+//
+// O Wader usa Service Account (Admin SDK) e nao e afetado por nada aqui.
+// ════════════════════════════════════════════════════════════════════
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Fundamentos ──
+    function auth() { return request.auth != null; }
+    function uid()  { return request.auth.uid; }
+
+    function superadmin() {
+      return auth()
+        && exists(/databases/$(database)/documents/profissionais/$(uid()))
+        && get(/databases/$(database)/documents/profissionais/$(uid())).data.superadmin == true;
+    }
+
+    function vincRef(contaId) {
+      return /databases/$(database)/documents/vinculos/$(contaId + '_' + uid());
+    }
+    function temVinculo(contaId) {
+      return auth() && exists(vincRef(contaId))
+        && get(vincRef(contaId)).data.status == 'ativo';
+    }
+    function vinc(contaId) { return get(vincRef(contaId)).data; }
+    function ehPapel(contaId, p) { return temVinculo(contaId) && vinc(contaId).papel == p; }
+
+    // Recebe o contaId pronto: serve para `get` E para `list` (numa consulta,
+    // `resource` e cada documento avaliado — nao da para get() do proprio doc).
+    function alcancaConta(contaId, wsId) {
+      return temVinculo(contaId)
+        && (vinc(contaId).locais.size() == 0 || wsId in vinc(contaId).locais);
+    }
+    // Em subcolecoes o doc do local nao esta em `resource`: aqui o get() e
+    // inevitavel. Sao 2 gets no total, longe do limite de 10.
+    function contaDoLocal(wsId) {
+      return get(/databases/$(database)/documents/workspaces/$(wsId)).data.contaId;
+    }
+    function alcancaLocal(wsId) { return alcancaConta(contaDoLocal(wsId), wsId); }
+    function ehDonoDoLocal(wsId) { return ehPapel(contaDoLocal(wsId), 'dono'); }
+    function ehMedicoNoLocal(wsId) {
+      return alcancaLocal(wsId) && vinc(contaDoLocal(wsId)).papel in ['dono', 'medico'];
+    }
+
+    // Precisa resistir a setDoc() sem merge: nesse caso a operacao ainda e
+    // classificada como 'update', mas request.resource.data so tem os
+    // campos enviados — o campo protegido pode desaparecer do resultado.
+    // Por isso nao basta checar ausencia; se existia antes, tem que
+    // continuar existindo com o mesmo valor.
+    function intacto(campo) {
+      return (campo in resource.data)
+        ? (campo in request.resource.data && request.resource.data[campo] == resource.data[campo])
+        : !(campo in request.resource.data);
+    }
+
+    // ── CONTAS ── so o servidor cria e altera
+    match /contas/{contaId} {
+      allow get, list: if superadmin() || temVinculo(contaId);
+      allow create, update, delete: if false;
+    }
+
+    // ── LOCAIS ──
+    match /workspaces/{wsId} {
+      allow get, list: if superadmin()
+                       || (resource != null && alcancaConta(resource.data.contaId, wsId));
+      allow update:    if superadmin()
+                       || (ehDonoDoLocal(wsId) && intacto('contaId'));
+      allow create, delete: if false;
+
+      // Gaveta de segredos: ninguem pelo navegador, nem o superadmin.
+      match /privado/{documento=**} {
+        allow read, write: if false;
+      }
+
+      match /pacientes/{pacId} {
+        allow read: if superadmin() || alcancaLocal(wsId);
+        allow create, update: if alcancaLocal(wsId);
+        allow delete: if ehDonoDoLocal(wsId);
+      }
+
+      match /exames/{exameId} {
+        // Todo membro do local ve a fila e le o laudo do colega (D7 do spec)
+        allow read:   if superadmin() || alcancaLocal(wsId);
+        // medicoUid so pode vir vazio (recepcao cadastra sem autor), ser o
+        // proprio uid de quem cria, ou ser definido pelo dono do local.
+        allow create: if alcancaLocal(wsId)
+                      && (!('medicoUid' in request.resource.data)
+                          || request.resource.data.medicoUid == uid()
+                          || ehDonoDoLocal(wsId));
+        // Conteudo do laudo: o autor edita; um exame sem autor ainda pode
+        // ser assumido por qualquer medico do local. O dono ajusta qualquer um.
+        allow update: if ehDonoDoLocal(wsId)
+                      || (ehMedicoNoLocal(wsId)
+                          && (!('medicoUid' in resource.data) || resource.data.medicoUid == uid()));
+        // Apagar/cancelar/transferir passam pelo servidor (log + franquia)
+        allow delete: if false;
+      }
+
+      // Honorarios, extratos e demais ajustes do local: financeiro, so quem
+      // atende (medico) ou o dono — recepcao nao ve valor por convenio.
+      match /config/{docId}   { allow read, write: if ehMedicoNoLocal(wsId); }
+      match /extratos/{docId} { allow read, write: if ehMedicoNoLocal(wsId); }
+    }
+
+    // ── VINCULOS ── leitura do proprio e do dono da conta; escrita so servidor
+    match /vinculos/{vincId} {
+      allow get:  if auth() && (resource.data.medicoUid == uid()
+                    || ehPapel(resource.data.contaId, 'dono') || superadmin());
+      // `list` por documento: a consulta so passa se for restrita ao proprio
+      // usuario (where medicoUid == uid). Sem isso, um logado listaria o mapa
+      // de quem pertence a que conta.
+      allow list: if superadmin() || (auth() && resource.data.medicoUid == uid());
+      allow create, update, delete: if false;
+    }
+
+    // ── ASSINATURAS ── id = contaId. Recepcao nao ve financeiro.
+    match /subscriptions/{contaId} {
+      allow get, list: if superadmin()
+                       || (temVinculo(contaId) && vinc(contaId).papel in ['dono', 'medico']);
+      allow create, update, delete: if false;
+    }
+
+    // ── PROFISSIONAIS ── proprio perfil, sem autopromocao, sem listar todos
+    match /profissionais/{profId} {
+      allow get:    if auth() && (profId == uid() || superadmin());
+      allow list:   if superadmin();
+      allow create: if auth() && profId == uid()
+                    && !('superadmin' in request.resource.data)
+                    && !('adminRole' in request.resource.data);
+      allow update: if superadmin()
+                    || (auth() && profId == uid() && intacto('superadmin') && intacto('adminRole'));
+      allow delete: if false;
+    }
+
+    // ── EMPRESAS ── escrita so pelo servidor/Direx
+    match /empresas/{empId} {
+      allow read:  if auth();
+      allow write: if superadmin();
+    }
+
+    // ── Trilhas append-only ──
+    match /logs/{logId} {
+      allow create: if auth();
+      allow read:   if superadmin();
+      allow update, delete: if false;
+    }
+    match /consumo/{consumoId} {
+      allow create: if auth();
+      allow read:   if superadmin();
+      allow update, delete: if false;
+    }
+    match /creditosLog/{logId} {
+      allow create, read: if superadmin();
+      allow update, delete: if false;
+    }
+
+    // ── Direx ──
+    match /configPlanos/{docId} {
+      allow read:  if auth();
+      allow write: if superadmin();
+    }
+    match /pagamentos/{pagId}          { allow read, write: if superadmin(); }
+    match /historicoFinanceiro/{mesId} { allow read, write: if superadmin(); }
+
+    // ── Legado (some no Plano 3) ──
+    match /profiles/{profId} {
+      allow get:   if auth() && (profId == uid() || superadmin());
+      allow write: if false;
+    }
+    match /memberships/{memId} {
+      allow get, list: if superadmin() || (auth() && resource.data.medicoUid == uid());
+      allow write:     if false;
+    }
+
+    // ── Tudo o mais: fechado ──
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

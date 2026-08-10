@@ -61,3 +61,13 @@ next-env.d.ts
 .claude/worktrees/
 .claude-flow/logs/
 .claude-flow/daemon-state.json
+
+# settings locais do Claude (contem tokens) — NUNCA commitar
+.claude/settings.local.json
+
+firestore.rules.PUBLICADA.txt
+firestore-debug.log
+firebase-debug.log
+[INFO] Recording command outcome: printf
+
+[OK] Command outcome recorded
