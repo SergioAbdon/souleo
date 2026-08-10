@@ -79,11 +79,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 getConta(v.contaId),
                 getLocaisDaConta(v.contaId, v.locais ?? []),
               ]);
-              // ponytail: a assinatura vem do doc ANTIGO (por local), nao de
-              // subscriptions/{contaId}. O /api/emitir e o billing ainda
-              // debitam a franquia la; ler a nova mostraria um numero congelado
-              // enquanto o real anda. Troca para a assinatura por conta quando
-              // o Plano 2 mover o billing junto.
+              // getSubscription resolve por contaId desde o Plano 2A
+              // (fallback legado por workspaceId dentro dela).
               const subs = await Promise.all(locais.map(l => getSubscription(l.id)));
               locais.forEach((local, i) => {
                 ctxNovos.push({

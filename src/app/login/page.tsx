@@ -12,8 +12,6 @@ import {
   sendEmailVerification,
   sendPasswordResetEmail
 } from 'firebase/auth';
-import { createProfile, createWorkspace, createMembership } from '@/lib/firestore';
-import { createSubscription } from '@/lib/billing';
 
 type Tab = 'login' | 'cadastroPF' | 'cadastroPJ';
 
@@ -116,6 +114,9 @@ export default function LoginPage() {
   }
 
   // ── Cadastro PF ──
+  // O cliente so cria o Auth user (a senha nunca vai ao nosso servidor).
+  // Os documentos nascem TODOS em /api/signup (Admin SDK, batch atomico,
+  // modelo de contas). Se a rota falhar, ela mesma apaga o Auth user.
   async function handleCadastroPF(e: React.FormEvent) {
     e.preventDefault();
     setErro(''); setSucesso(''); setLoading(true);
@@ -124,34 +125,32 @@ export default function LoginPage() {
       if (pfTipo === 'medico' && (!pfCrm || !pfUf)) { setErro('CRM e UF são obrigatórios para médicos.'); setLoading(false); return; }
       if (pfSenha.length < 6) { setErro('Senha deve ter ao menos 6 caracteres.'); setLoading(false); return; }
 
-      // Criar usuário Firebase
       const cred = await createUserWithEmailAndPassword(auth, pfEmail, pfSenha);
-      await sendEmailVerification(cred.user);
+      const idToken = await cred.user.getIdToken();
 
-      // Criar perfil no Firestore
-      await createProfile(cred.user.uid, {
-        nome: pfNome, email: pfEmail,
-        crm: pfCrm, ufCrm: pfUf.toUpperCase(),
-        especialidade: pfEsp, tipoPerfil: pfTipo,
+      const res = await fetch('/api/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          nome: pfNome, email: pfEmail, crm: pfCrm, ufCrm: pfUf.toUpperCase(),
+          especialidade: pfEsp, tipoPerfil: pfTipo,
+        }),
       });
-
-      // Criar workspace PF
-      const wsId = await createWorkspace({
-        ownerUid: cred.user.uid,
-        tipo: 'PF',
-        nomeClinica: 'Consultório',
-        slogan: pfEsp,
-        corPrimaria: '#1E3A5F',
-        corSecundaria: '#2563EB',
-      });
-
-      // Criar vínculo
-      if (wsId) {
-        await createMembership(cred.user.uid, wsId, pfTipo === 'medico' ? 'medico' : 'assistente');
-        await createSubscription(wsId, 'trial'); // Trial = Expert completo por 30 dias
+      const data = await res.json();
+      if (!data.ok) {
+        // O servidor ja desfez tudo (inclusive o Auth user). Uma resposta, um motivo.
+        await auth.signOut().catch(() => {});
+        setErro(data.motivo === 'ja_cadastrado'
+          ? 'Este email já está cadastrado.'
+          : data.motivo === 'dados_invalidos'
+            ? 'Dados incompletos. Confira nome, email e CRM/UF.'
+            : 'Erro ao criar a conta. Tente novamente.');
+        setLoading(false);
+        return;
       }
 
-      // Sair (precisa verificar email)
+      // Verificacao SO depois do sucesso: rota falhou → nenhum email morto.
+      await sendEmailVerification(cred.user);
       await auth.signOut();
       setSucesso('Conta criada! Verifique seu email para ativar.');
       setTab('login');

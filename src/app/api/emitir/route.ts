@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { gerarESalvarPdf } from '@/lib/pdf-server';
+import { resolverAssinatura } from '@/lib/billing-admin';
 
 // ── Config Next.js ──
 export const runtime = 'nodejs';
@@ -53,15 +54,12 @@ export async function POST(req: NextRequest) {
 
     // ══ 1. TRANSACAO ATOMICA: emitir + cobrar ══
     const resultado = await dbAdmin.runTransaction(async (transaction) => {
-      const subsQuery = await dbAdmin.collection('subscriptions')
-        .where('workspaceId', '==', wsId).limit(1).get();
-
-      if (subsQuery.empty) {
+      // Assinatura por contaId (fallback legado) — mesma chave do /api/exame.
+      const assinatura = await resolverAssinatura(dbAdmin, wsId);
+      if (!assinatura) {
         return { ok: false, motivo: 'sem_plano' as const };
       }
-
-      const subDoc = subsQuery.docs[0];
-      const subRef = subDoc.ref;
+      const subRef = assinatura.ref;
       const subSnap = await transaction.get(subRef);
       if (!subSnap.exists) {
         return { ok: false, motivo: 'sem_plano' as const };
