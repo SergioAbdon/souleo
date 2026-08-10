@@ -388,3 +388,22 @@ describe('9. correcoes do Plano 2A (Lacuna 1 + Direx)', () => {
     await assertFails(getDoc(doc(como(DR_B), 'vinculos', `${CONTA_A}_${RITA}`)));
   });
 });
+
+describe('12. triade do Plano 2A: ledger e cancelamento sao do servidor', () => {
+  test('autenticado NAO cria doc em consumo (ledger e so do Admin SDK)', async () => {
+    await assertFails(addDoc(collection(como(DR_A), 'consumo'), {
+      workspaceId: LOCAL_A1, exameId: 'ex1', tipo: 'cancelamento',
+      devolvidoFranquia: 999, emitidoEm: new Date(),
+    }));
+  });
+  test('autor NAO seta status cancelado no proprio exame emitido', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'ex1'), {
+      status: 'cancelado', motivoCancelamento: 'sem devolver franquia',
+    }));
+  });
+  test('autor AINDA reabre o proprio emitido para andamento', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'ex1'), {
+      status: 'andamento',
+    }));
+  });
+});

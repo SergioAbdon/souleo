@@ -29,11 +29,24 @@ export async function getConta(contaId: string): Promise<Conta | null> {
   return snap.exists() ? ({ id: snap.id, ...snap.data() } as Conta) : null;
 }
 
-/** Locais da conta que este vinculo alcanca. locais vazio = todos. */
+/**
+ * Locais da conta que este vinculo alcanca. locais vazio = todos.
+ * Vinculo restrito busca doc por doc: a regra de `list` em workspaces avalia
+ * CADA doc com `alcancaConta(contaId, wsId)`, entao a query por contaId inteira
+ * e negada quando um dos locais esta fora da lista — filtrar depois quebrava o
+ * login desses usuarios (recepcao de uma sala em clinica de duas).
+ */
 export async function getLocaisDaConta(contaId: string, permitidos: string[]) {
+  if (permitidos.length > 0) {
+    const snaps = await Promise.all(
+      permitidos.map(id => getDoc(doc(db, 'workspaces', id)).catch(() => null))
+    );
+    return snaps
+      .filter(s => s?.exists() && s.data()!.contaId === contaId)
+      .map(s => ({ id: s!.id, ...s!.data() } as Record<string, unknown> & { id: string }));
+  }
   const snap = await getDocs(query(collection(db, 'workspaces'), where('contaId', '==', contaId)));
-  const todos = snap.docs.map(d => ({ id: d.id, ...d.data() } as Record<string, unknown> & { id: string }));
-  return permitidos.length === 0 ? todos : todos.filter(w => permitidos.includes(w.id));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as Record<string, unknown> & { id: string }));
 }
 
 // A assinatura por conta (subscriptions/{contaId}) passou a ser a oficial no

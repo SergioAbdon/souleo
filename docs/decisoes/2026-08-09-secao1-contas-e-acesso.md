@@ -389,6 +389,35 @@ documentado nesta tabela em vez de correr o risco de divergir em silêncio de no
 **Veredito:** as 12 divergências da tabela — confirmadas, sem surpresa. Nenhuma
 divergência fora da lista sobrou depois da correção acima.
 
+### 8.3 Tríade do Plano 2A (10/08/2026)
+
+Revisão em 3 óticas (Codex bugs / Ruflo arquitetura / Ponytail o-que-não-construir)
+depois da fechadura publicada. Os 4 **Críticos** foram corrigidos na mesma onda:
+
+| # | Furo | Correção |
+|---|------|----------|
+| 1 | `consumo create: if auth()` — qualquer logado forjava `tipo:'cancelamento'` e zerava o ledger da própria clínica | `if false` (só Admin SDK). `registrarConsumo` do cliente é código morto |
+| 2 | Cliente gravava `status:'cancelado'` direto no exame — laudo sumia sem devolver franquia nem logar | `exames update` exige `status != 'cancelado'`; reabrir para `andamento` continua livre |
+| 3 | `resolverPapel` (`/api/exame`) ignorava `locais` do vínculo e ainda dava `dono` por `ownerUid` — rota mais frouxa que a fechadura (achado Ruflo #3) | Respeita `locais` (vazio = todos) e o braço `ownerUid` morreu: paridade rota ↔ regra |
+| 4 | `/api/emitir` sem autenticação: qualquer um queimava a franquia de clínica alheia ou emitia em nome de outro médico | 401 sem token; 403 sem papel `dono`/`medico` no local; 403 se `medicoUid != uid`. Init do Admin unificado em `src/lib/auth-admin.ts` (achado Ruflo #1) |
+
+Importantes na mesma onda: `apagarPdf` confinado ao prefixo `laudos/{wsId}/`;
+doc de `consumo` dentro da transação de `/api/emitir` (débito sem ledger quebrava
+a devolução líquida); `getLocaisDaConta` busca doc a doc quando o vínculo é
+restrito (a query por `contaId` é negada inteira — quebrava o login desses
+usuários); ledger de cancelamento registra só o que foi aplicado (0 quando não há
+assinatura); `signup-server` virou `runTransaction` (duplo-clique podia apagar o
+Auth user recém-criado).
+
+**Pendências aceitas, com destino:**
+
+- `/api/corrigir-laudo` sem verificação de token → **Plano 2B**.
+- TOCTOU: papel e exame lidos fora da transação de emissão/ação → **Plano 2B**.
+- Testes pareados `getSubscription` (cliente) vs `resolverAssinatura` (servidor) → **Plano 2B**.
+- Extrair `resolverPapel` para módulo próprio antes da rota de convite → **Plano 2B**.
+- Fallbacks legados (assinatura por `workspaceId`, `ownerUid` em `workspaces`) morrem no **Plano 3**, com critério verificável: `npm run secao1:inventario` mostra **zero workspaces sem `contaId` e zero vínculos sem `papel`**.
+- Código morto listado pelo Ponytail, remoção no **Plano 3**: `createProfile`, `createWorkspace`, `createMembership`, `emitExame`, `createSubscription`, `consumirEmissao`, `convites`.
+
 ## 9. Fora de escopo (Seção 1 não resolve)
 
 - Gateway de pagamento real (Stripe/Asaas).

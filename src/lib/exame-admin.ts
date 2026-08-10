@@ -19,19 +19,21 @@ type Params = {
   motivo?: string; novoMedicoUid?: string;
 };
 
+// Paridade com a fechadura publicada: papel vem SO do vinculo deterministico
+// (`alcancaConta` na regra), inclusive a lista `locais` — vazia = todos os
+// locais da conta. Sem fallback por ownerUid: a regra nao tem esse braco, e
+// a producao esta migrada (inventario: zero workspaces sem contaId).
 export async function resolverPapel(db: Firestore, wsId: string, uid: string): Promise<Papel> {
   const ws = await db.doc(`workspaces/${wsId}`).get();
   if (!ws.exists) return null;
   const contaId = ws.data()!.contaId as string | undefined;
-  if (contaId) {
-    const v = await db.doc(`vinculos/${contaId}_${uid}`).get();
-    const d = v.data();
-    if (v.exists && d!.status === 'ativo' && ['dono', 'medico', 'recepcao'].includes(d!.papel)) {
-      return d!.papel as Papel;
-    }
-  }
-  // Legado: dono do local sem vinculo migrado.
-  return ws.data()!.ownerUid === uid ? 'dono' : null;
+  if (!contaId) return null;
+  const v = await db.doc(`vinculos/${contaId}_${uid}`).get();
+  const d = v.data();
+  if (!v.exists || d!.status !== 'ativo' || !['dono', 'medico', 'recepcao'].includes(d!.papel)) return null;
+  const locais = (d!.locais as string[] | undefined) ?? [];
+  if (locais.length > 0 && !locais.includes(wsId)) return null;
+  return d!.papel as Papel;
 }
 
 // Autor ou sem autor: o que um medico pode mexer alem do que e do dono.
@@ -59,6 +61,10 @@ async function devolverConsumo(db: Firestore, p: Params, acao: string) {
     const nCredito = Math.max(0, gastoCredito - jaCredito);
     if (!nFranquia && !nCredito) return;
 
+    // O ledger registra o que FOI APLICADO, nao o que era devido: sem
+    // assinatura (subRef null ou doc apagado) nada volta, e gravar n>0
+    // faria o liquido achar que ja devolveu — bloqueando a correcao depois.
+    let feitoFranquia = 0, feitoCredito = 0;
     if (p.subRef) {
       const sub = await t.get(p.subRef);
       if (sub.exists) {
@@ -67,11 +73,13 @@ async function devolverConsumo(db: Firestore, p: Params, acao: string) {
           franquiaUsada: Math.max(0, usada - nFranquia),
           creditosExtras: FieldValue.increment(nCredito),
         });
+        feitoFranquia = nFranquia;
+        feitoCredito = nCredito;
       }
     }
     t.set(db.collection('consumo').doc(), {
       workspaceId: p.wsId, exameId: p.exameId, tipo: 'cancelamento', acao,
-      devolvidoFranquia: nFranquia, devolvidoCreditos: nCredito,
+      devolvidoFranquia: feitoFranquia, devolvidoCreditos: feitoCredito,
       por: p.uid, emitidoEm: FieldValue.serverTimestamp(),
     });
   });

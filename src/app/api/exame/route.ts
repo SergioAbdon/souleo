@@ -5,34 +5,28 @@
 // token → assinatura (billing-admin) → acao → Storage real.
 // ══════════════════════════════════════════════════════════════════
 import { NextRequest, NextResponse } from 'next/server';
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
-import { getAuth } from 'firebase-admin/auth';
-import { getStorage } from 'firebase-admin/storage';
+import { adminDb, adminStorage, requireUid } from '@/lib/auth-admin';
 import { resolverAssinatura } from '@/lib/billing-admin';
 import { apagarExame, cancelarExame, transferirExame } from '@/lib/exame-admin';
 
 export const runtime = 'nodejs';
 
-if (!getApps().length) {
-  initializeApp({
-    credential: cert({
-      projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'leo-sistema-laudos',
-      clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL!,
-      privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || 'leo-sistema-laudos.firebasestorage.app',
-  });
-}
-const dbAdmin = getFirestore();
-const authAdmin = getAuth();
-
 // pdfUrl publico → caminho no bucket → delete. Formato de pdf-server.ts:85.
-async function apagarPdf(url: string) {
-  const bucket = getStorage().bucket();
-  const prefixo = `https://storage.googleapis.com/${bucket.name}/`;
-  if (!url.startsWith(prefixo)) return;
-  await bucket.file(decodeURIComponent(url.slice(prefixo.length))).delete({ ignoreNotFound: true });
+// Confinado ao local da acao: o pdfUrl vem do doc do exame, e um doc adulterado
+// (o autor edita o proprio exame pela regra) apontaria para o laudo de outra
+// clinica. Fora de `laudos/{wsId}/` nao apaga nada.
+function apagadorDePdf(wsId: string) {
+  return async (url: string) => {
+    const bucket = adminStorage().bucket();
+    const prefixo = `https://storage.googleapis.com/${bucket.name}/`;
+    if (!url.startsWith(prefixo)) return;
+    const caminho = decodeURIComponent(url.slice(prefixo.length));
+    if (!caminho.startsWith(`laudos/${wsId}/`)) {
+      console.error('apagarPdf: caminho fora do local da acao, ignorado:', caminho);
+      return;
+    }
+    await bucket.file(caminho).delete({ ignoreNotFound: true });
+  };
 }
 
 const ACOES = { apagar: apagarExame, cancelar: cancelarExame, transferir: transferirExame } as const;
@@ -41,14 +35,8 @@ const STATUS: Record<string, number> = {
 };
 
 export async function POST(req: NextRequest) {
-  const header = req.headers.get('authorization');
-  if (!header?.startsWith('Bearer ')) {
-    return NextResponse.json({ ok: false, motivo: 'nao_autenticado' }, { status: 401 });
-  }
-  let uid: string;
-  try {
-    uid = (await authAdmin.verifyIdToken(header.slice(7))).uid;
-  } catch {
+  const uid = await requireUid(req);
+  if (!uid) {
     return NextResponse.json({ ok: false, motivo: 'nao_autenticado' }, { status: 401 });
   }
   try {
@@ -57,10 +45,11 @@ export async function POST(req: NextRequest) {
     if (!executar || !wsId || !exameId) {
       return NextResponse.json({ ok: false, motivo: 'dados_invalidos' }, { status: 400 });
     }
+    const dbAdmin = adminDb();
     const assinatura = await resolverAssinatura(dbAdmin, wsId);
     const r = await executar(dbAdmin, {
       wsId, exameId, uid, motivo, novoMedicoUid,
-      subRef: assinatura?.ref ?? null, apagarPdf,
+      subRef: assinatura?.ref ?? null, apagarPdf: apagadorDePdf(wsId),
     });
     return NextResponse.json(r, { status: r.ok ? 200 : STATUS[(r as { motivo: string }).motivo] ?? 500 });
   } catch (e) {

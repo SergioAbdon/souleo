@@ -5,35 +5,28 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { NextRequest, NextResponse } from 'next/server';
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { gerarESalvarPdf } from '@/lib/pdf-server';
 import { resolverAssinatura } from '@/lib/billing-admin';
+import { adminDb, requireUid } from '@/lib/auth-admin';
+import { resolverPapel } from '@/lib/exame-admin';
 
 // ── Config Next.js ──
 export const runtime = 'nodejs';
 export const maxDuration = 60;
-
-// ── Firebase Admin (server-side) ──
-if (!getApps().length) {
-  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'leo-sistema-laudos';
-  const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || 'leo-sistema-laudos.firebasestorage.app';
-  initializeApp({
-    credential: cert({
-      projectId,
-      clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL!,
-      privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-    storageBucket,
-  });
-}
-const dbAdmin = getFirestore();
 
 // PDF server-side extraído p/ src/lib/pdf-server.ts
 // (reuso entre /api/emitir e /api/corrigir-laudo — 1 pipeline só)
 
 // ── POST Handler ──
 export async function POST(req: NextRequest) {
+  // Rota aberta ate 10/08/2026: qualquer um POSTava e queimava a franquia de
+  // uma clinica alheia (ou emitia laudo assinado no nome de outro medico).
+  const uid = await requireUid(req);
+  if (!uid) {
+    return NextResponse.json({ ok: false, motivo: 'nao_autenticado' }, { status: 401 });
+  }
+  const dbAdmin = adminDb();
   try {
     const body = await req.json();
     const { wsId, exameId, dadosFinais, medicoUid, pdfHtml, nomeArq } = body as {
@@ -52,7 +45,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ══ 1. TRANSACAO ATOMICA: emitir + cobrar ══
+    // Autorizacao: papel de medico/dono NESTE local (mesmo criterio da regra
+    // `ehMedicoNoLocal`), e o laudo sai assinado por quem esta logado.
+    const papel = await resolverPapel(dbAdmin, wsId, uid);
+    if (papel !== 'dono' && papel !== 'medico') {
+      return NextResponse.json({ ok: false, motivo: 'sem_permissao' }, { status: 403 });
+    }
+    if (medicoUid !== uid) {
+      return NextResponse.json({ ok: false, motivo: 'sem_permissao' }, { status: 403 });
+    }
+
+    // ══ 1. TRANSACAO ATOMICA: emitir + cobrar + ledger ══
+    // O doc de `consumo` entra NA transacao: era um add() depois, dentro de
+    // try/catch silencioso — se falhava, a franquia ficava debitada sem
+    // registro e a devolucao liquida (/api/exame) nao tinha o que devolver.
+    const consumoRef = dbAdmin.collection('consumo').doc();
     const resultado = await dbAdmin.runTransaction(async (transaction) => {
       // Assinatura por contaId (fallback legado) — mesma chave do /api/exame.
       const assinatura = await resolverAssinatura(dbAdmin, wsId);
@@ -98,6 +105,18 @@ export async function POST(req: NextRequest) {
         transaction.update(subRef, { creditosExtras: FieldValue.increment(-1) });
       }
 
+      transaction.set(consumoRef, {
+        workspaceId: wsId,
+        exameId,
+        medicoUid,
+        pacienteNome: (dadosFinais.pacienteNome as string) || '',
+        tipoExame: (dadosFinais.tipoExame as string) || '',
+        convenio: (dadosFinais.convenio as string) || '',
+        tipo: tipo === 'franquia' ? 'franquia' : 'credito',
+        reemissao: !!(dadosFinais.reemissao),
+        emitidoEm: FieldValue.serverTimestamp(),
+      });
+
       return { ok: true, tipo };
     });
 
@@ -106,20 +125,6 @@ export async function POST(req: NextRequest) {
     }
 
     // ══ 2. AUDIT LOG (nao critico) ══
-    try {
-      await dbAdmin.collection('consumo').add({
-        workspaceId: wsId,
-        exameId,
-        medicoUid,
-        pacienteNome: (dadosFinais.pacienteNome as string) || '',
-        tipoExame: (dadosFinais.tipoExame as string) || '',
-        convenio: (dadosFinais.convenio as string) || '',
-        tipo: resultado.tipo === 'franquia' ? 'franquia' : 'credito',
-        reemissao: !!(dadosFinais.reemissao),
-        emitidoEm: FieldValue.serverTimestamp(),
-      });
-    } catch { /* consumo nao pode quebrar emissao */ }
-
     try {
       await dbAdmin.collection('logs').add({
         tipo: 'emissao',
