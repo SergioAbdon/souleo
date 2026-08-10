@@ -184,7 +184,7 @@ Superadmin/Direx continua fora deste modelo.
 | **2** | ✅ **FEITO 09/08** — `subscriptions/{contaId}`, **sem** copiar `workspaceId` (senão duas assinaturas casariam na busca antiga e a franquia oscilaria entre elas) | Nada | notebook |
 | **3** | ✅ **FEITO 09/08** — vínculos `{contaId}_{uid}` com papel. Os dois vínculos existentes viraram `dono` porque em ambos `medicoUid == ownerUid` | Nada | notebook |
 | **4** | Deploy web: signup no servidor, seletor único, papéis na UI, convites, PJ | Reverter = deploy anterior | notebook |
-| **5** | **Publicar a fechadura definitiva** (`firestore.rules.definitiva`, 52 testes, já escrita e testada). Substitui a tranca provisória | Ponto de virada; reverter = republicar a anterior | notebook |
+| **5** | ✅ **FEITO 10/08/2026 15:11 UTC (Plano 2A)** — fechadura definitiva PUBLICADA (ruleset `bf7eed7f`), verificada byte a byte contra o repo. Rollback pronto: tag `pre-fase5` + `secao1:publicar-regras --file=<backup> --commit` | Reverter = republicar a tag | notebook |
 | **6** | Segredos: gravar nos dois lugares → Wader passa a ler do novo (3 linhas em `workspace-repo.ts`) → deploy `update-wader.ps1` → só então apagar o campo antigo | Na ordem certa, o Wader nunca fica sem credencial | **Claude da clínica** |
 | **7** | Limpeza: vínculos antigos, fallbacks `profiles`/`memberships`, `profissionalId` | Nada | notebook |
 
@@ -194,10 +194,22 @@ Superadmin/Direx continua fora deste modelo.
 >
 > | Arquivo | O que é |
 > |---|---|
-> | `firestore.rules` | **O que está NO AR.** Tranca provisória por `ownerUid`. 35 testes. |
-> | `firestore.rules.definitiva` | A fechadura do modelo de contas. 52 testes. **Não publicada** — publicar antes do cadastro server-side quebraria o cadastro em produção. É a Fase 5, última tarefa do Plano 2. |
+> | `firestore.rules` | **O que está NO AR desde 10/08/2026 15:11 UTC: a fechadura definitiva** (modelo de contas). Suíte única `tests/rules/regras.test.mjs`, 69 testes (`npm run test:rules`). |
+> | ~~`firestore.rules.definitiva`~~ | **Não existe mais** — virou o `firestore.rules` na Fase 5 (Plano 2A). A tranca provisória vive na tag `pre-fase5` para rollback. |
 >
 > Regra de ouro: **`firestore.rules` sempre reflete exatamente o que está publicado.**
+>
+> **Plano 2A concluído em 10/08/2026** (branch `feat/secao1-plano2a`): `/api/signup`
+> server-side no modelo de contas (rollback do Auth user); billing por
+> `subscriptions/{contaId}` com fallback legado (cliente + `/api/emitir`);
+> `/api/exame` (apagar/cancelar/transferir com papel, log, devolução LÍQUIDA de
+> franquia e limpeza do PDF no Storage) substituindo os 2 `deleteDoc` do cliente;
+> Lacuna 1 + P6 corrigidas com diff auditado (§8.2.2); Fase 5 publicada.
+> Decisões fechadas no plano: P1 devolução de TODOS os consumos · P2 PDF apagado
+> do Storage ao cancelar/apagar · P3 Feegow não é revertido (log registra
+> divergência) · P4 recepção não apaga exame nem da fila · P5 cadastro PF nasce
+> `papel:'dono'` · P6 Direx segue editando assinatura pelo navegador (update só
+> superadmin) · P7 consulta de consumo sem índice composto.
 
 **A Fase 0 travava tudo — e o que ela encontrou reordenou o plano.** A regra
 publicada estava aberta (§1.1), então a Fase 0.5 furou a fila e trancou o banco no
