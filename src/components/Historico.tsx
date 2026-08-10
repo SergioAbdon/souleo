@@ -2,12 +2,12 @@
 // ══════════════════════════════════════════════════════════════════
 // SOULEO · Histórico de Laudos Emitidos
 // Filtros: workspace, período, convênio, busca nome
-// Ações: Ver, Imprimir, Editar (reabrir), Excluir
+// Ações: Ver, Imprimir, Excluir (reabrir é na própria tela do laudo)
 // ══════════════════════════════════════════════════════════════════
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getHistorico, saveExame, logAction, getExame, type HistoricoResult } from '@/lib/firestore';
+import { getHistorico, getExame, type HistoricoResult } from '@/lib/firestore';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
 import { DocumentSnapshot } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
@@ -109,14 +109,6 @@ export default function Historico() {
       console.error('Erro ao abrir PDF:', e);
       router.push('/laudo/' + exameId);
     }
-  }
-
-  async function handleEditar(ex: ExameItem) {
-    if (!confirm('Reabrir laudo para edição?\nApenas o corpo do laudo poderá ser alterado.')) return;
-    if (!wsIdSel || !user?.uid) return;
-    await saveExame(wsIdSel, { id: ex.id, status: 'andamento' }, user.uid);
-    await logAction('reabertura_laudo', { exameId: ex.id, wsId: wsIdSel, pacienteNome: ex.pacienteNome }, user.uid);
-    router.push('/laudo/' + ex.id);
   }
 
   function abrirConfirmDelete(ex: ExameItem) {

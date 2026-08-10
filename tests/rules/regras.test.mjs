@@ -388,3 +388,49 @@ describe('9. correcoes do Plano 2A (Lacuna 1 + Direx)', () => {
     await assertFails(getDoc(doc(como(DR_B), 'vinculos', `${CONTA_A}_${RITA}`)));
   });
 });
+
+describe('12. triade do Plano 2A: ledger e cancelamento sao do servidor', () => {
+  test('autenticado NAO cria doc em consumo (ledger e so do Admin SDK)', async () => {
+    await assertFails(addDoc(collection(como(DR_A), 'consumo'), {
+      workspaceId: LOCAL_A1, exameId: 'ex1', tipo: 'cancelamento',
+      devolvidoFranquia: 999, emitidoEm: new Date(),
+    }));
+  });
+  test('autor NAO seta status cancelado no proprio exame emitido', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'ex1'), {
+      status: 'cancelado', motivoCancelamento: 'sem devolver franquia',
+    }));
+  });
+  test('autor AINDA reabre o proprio emitido para andamento', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'ex1'), {
+      status: 'andamento',
+    }));
+  });
+});
+
+// tipoPerfil e o gate de "quem assina laudo" no /api/emitir. Se o proprio
+// usuario pode troca-lo, um assistente com papel dono se autopromove a medico
+// e o gate nao vale nada.
+describe('13. tipoPerfil nao e autoeditavel', () => {
+  const ASSIST = 'uidAssistente';
+  before(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'profissionais', ASSIST), {
+        ...payloadCreateProfile(ASSIST), tipoPerfil: 'assistente',
+      });
+    });
+  });
+  test('assistente NAO se promove a medico', async () => {
+    await assertFails(updateDoc(doc(como(ASSIST), 'profissionais', ASSIST), { tipoPerfil: 'medico' }));
+  });
+  test('edita o proprio nome reenviando o mesmo tipoPerfil (PerfilModal)', async () => {
+    await assertSucceeds(updateDoc(doc(como(ASSIST), 'profissionais', ASSIST), {
+      nome: 'Assistente Editado', crm: '', ufCrm: '', rqe: '',
+      especialidade: 'Secretaria', telefone: '91999990000',
+      tipoPerfil: 'assistente', atualizadoEm: new Date(),
+    }));
+  });
+  test('superadmin muda o tipoPerfil de outro', async () => {
+    await assertSucceeds(updateDoc(doc(como(ADMIN), 'profissionais', ASSIST), { tipoPerfil: 'medico' }));
+  });
+});

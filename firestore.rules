@@ -117,10 +117,14 @@ service cloud.firestore {
         // ela, o autor trocava o medicoUid para outro medico na mesma escrita,
         // passando por cima da rota de servidor que faz log e acerta franquia.
         // Assumir exame sem autor continua valendo (medicoUid nao existia).
-        allow update: if (ehDonoDoLocal(wsId) && intacto('medicoUid'))
-                      || (ehMedicoNoLocal(wsId)
-                          && (!('medicoUid' in resource.data) || resource.data.medicoUid == uid())
-                          && ('medicoUid' in resource.data ? intacto('medicoUid') : true));
+        // Cancelar e do servidor (/api/exame): devolve franquia e loga. Pelo
+        // navegador o status 'cancelado' viraria laudo sumido sem devolucao.
+        // Reabrir para 'andamento' continua livre para o autor.
+        allow update: if request.resource.data.get('status', '') != 'cancelado'
+                      && ((ehDonoDoLocal(wsId) && intacto('medicoUid'))
+                          || (ehMedicoNoLocal(wsId)
+                              && (!('medicoUid' in resource.data) || resource.data.medicoUid == uid())
+                              && ('medicoUid' in resource.data ? intacto('medicoUid') : true)));
         // Apagar/cancelar/transferir passam pelo servidor (log + franquia)
         allow delete: if false;
       }
@@ -167,8 +171,14 @@ service cloud.firestore {
                     && (!('superadmin' in request.resource.data)
                         || request.resource.data.superadmin == false)
                     && !('adminRole' in request.resource.data);
+      // `tipoPerfil` tambem e imutavel pelo proprio: /api/emitir exige perfil
+      // medico para assinar laudo (matriz §4), e sem isso um assistente com
+      // papel dono se autopromovia a medico e passava no gate. Reenviar o MESMO
+      // valor continua valendo (intacto permite igual) — o PerfilModal manda o
+      // campo em todo save; so a MUDANCA e negada. O Direx (branch separado) muda.
       allow update: if superadmin()
-                    || (auth() && profId == uid() && intacto('superadmin') && intacto('adminRole'));
+                    || (auth() && profId == uid()
+                        && intacto('superadmin') && intacto('adminRole') && intacto('tipoPerfil'));
       allow delete: if false;
     }
 
@@ -185,8 +195,13 @@ service cloud.firestore {
       allow read:   if superadmin();
       allow update, delete: if false;
     }
+    // Ledger de franquia/creditos: SO o servidor Admin escreve (/api/emitir
+    // debita, /api/exame devolve). O `registrarConsumo` do cliente
+    // (src/lib/billing.ts) e codigo morto — nenhum chamador. Com `auth()`
+    // aqui, qualquer logado forjava devolucao ('cancelamento') e zerava a
+    // conta de consumo da propria clinica.
     match /consumo/{consumoId} {
-      allow create: if auth();
+      allow create: if false;
       allow read:   if superadmin();
       allow update, delete: if false;
     }

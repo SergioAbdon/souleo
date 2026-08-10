@@ -1,8 +1,9 @@
 // ══════════════════════════════════════════════════════════════════
 // LEO · Signup server-side (Admin SDK) — Secao 1, Plano 2A
-// Cria a conta INTEIRA no modelo novo, em batch atomico: ou nasce tudo
-// ou nao nasce nada. No rollback, apaga o Auth user para nao deixar
-// email orfao (retry daria email-already-in-use para sempre).
+// Cria a conta INTEIRA no modelo novo em UMA transacao (leitura do perfil
+// inclusa): ou nasce tudo ou nao nasce nada, e duplo-clique nao produz dois
+// cadastros. No rollback, apaga o Auth user para nao deixar email orfao
+// (retry daria email-already-in-use para sempre).
 //
 // SEM imports relativos de proposito: os testes (tests/api/signup.test.mjs)
 // importam este arquivo direto no node --test via type stripping do Node 24,
@@ -43,13 +44,9 @@ async function planoTrial(db: Firestore) {
 export async function executarSignup(
   db: Firestore, authAdmin: Auth, uid: string, dados: DadosSignup
 ): Promise<ResultadoSignup> {
-  // Se o perfil ja existe, e um usuario REAL rechamando a rota:
-  // recusar sem tocar em nada (jamais apagar o Auth user dele).
-  const perfilExistente = await db.doc(`profissionais/${uid}`).get();
-  if (perfilExistente.exists) return { ok: false, motivo: 'ja_cadastrado' };
-
-  // Qualquer falha daqui em diante deixa um Auth user sem documentos.
-  // Apagar e o rollback: libera o email para um novo cadastro.
+  // Rollback do Auth user orfao: sem ele o email fica preso (retry daria
+  // email-already-in-use para sempre). SO e chamado quando o perfil NAO
+  // existe — usuario real rechamando a rota jamais perde a conta.
   const falhar = async (motivo: 'dados_invalidos' | 'erro'): Promise<ResultadoSignup> => {
     try { await authAdmin.deleteUser(uid); } catch { /* ja nao existia */ }
     return { ok: false, motivo };
@@ -58,8 +55,8 @@ export async function executarSignup(
   const nome = (dados.nome ?? '').trim();
   const email = (dados.email ?? '').trim();
   const tipoPerfil = dados.tipoPerfil === 'assistente' ? 'assistente' : 'medico';
-  if (!nome || !email) return falhar('dados_invalidos');
-  if (tipoPerfil === 'medico' && (!dados.crm || !dados.ufCrm)) return falhar('dados_invalidos');
+  const invalido = !nome || !email
+    || (tipoPerfil === 'medico' && (!dados.crm || !dados.ufCrm));
 
   try {
     const plano = await planoTrial(db);
@@ -68,49 +65,63 @@ export async function executarSignup(
     const wsRef = db.collection('workspaces').doc();
     const contaId = contaRef.id;
 
-    const batch = db.batch();
-    // 1. Perfil — mesmos campos do createProfile() do cliente (fixtures.mjs)
-    batch.set(db.doc(`profissionais/${uid}`), {
-      uid, nome, email,
-      crm: dados.crm ?? '', ufCrm: (dados.ufCrm ?? '').toUpperCase(),
-      especialidade: dados.especialidade ?? '', tipoPerfil,
-      cpf: '', rqe: '', superadmin: false,
-      criadoEm: FieldValue.serverTimestamp(), atualizadoEm: FieldValue.serverTimestamp(),
-    });
-    // 2. Conta (a camada nova)
-    batch.set(contaRef, {
-      id: contaId, tipo: 'PF', nome, ownerUid: uid, empresaId: null,
-      status: 'ativa', criadoEm: FieldValue.serverTimestamp(),
-    });
-    // 3. Local — COM contaId (modelo novo) e COM ownerUid (tranca provisoria)
-    batch.set(wsRef, {
-      id: wsRef.id, contaId, ownerUid: uid, tipo: 'PF',
-      nomeClinica: 'Consultório', slogan: dados.especialidade ?? '',
-      corPrimaria: '#1E3A5F', corSecundaria: '#2563EB',
-      criadoEm: FieldValue.serverTimestamp(),
-    });
-    // 4. Vinculo com id deterministico — pre-requisito de toda regra de papel
-    batch.set(db.doc(`vinculos/${contaId}_${uid}`), {
-      id: `${contaId}_${uid}`, contaId, medicoUid: uid,
-      papel: 'dono', locais: [], status: 'ativo',
-      criadoEm: FieldValue.serverTimestamp(),
-    });
-    // 5. Assinatura por conta — SEM workspaceId (duas assinaturas casariam
-    //    na busca antiga e a franquia oscilaria entre elas)
-    batch.set(db.doc(`subscriptions/${contaId}`), {
-      id: contaId, contaId, planoId: 'trial', tipo: 'trial',
-      tipoPlano: plano.tipo ?? 'PF',
-      franquiaMensal: plano.franquia, franquiaUsada: 0, creditosExtras: 0,
-      excedente: plano.excedente, maxLocais: plano.maxLocais,
-      localAdicional: plano.localAdicional,
-      extratosFranquia: plano.extratosFranquia, extratoValor: plano.extratoValor,
-      maxUsuarios: plano.maxUsuarios, usuarioAdicional: plano.usuarioAdicional,
-      cicloInicio: Timestamp.fromDate(agora),
-      cicloFim: Timestamp.fromDate(new Date(agora.getTime() + 30 * 864e5)),
-      criadoEm: FieldValue.serverTimestamp(),
+    // Transacao (nao batch): o `get` do perfil vive DENTRO dela, antes de
+    // qualquer escrita. Duplo-clique no cadastro rodava dois signups em
+    // paralelo — os dois passavam pelo get, o segundo falhava no meio e o
+    // rollback apagava o Auth user recem-criado pelo primeiro.
+    const motivo = await db.runTransaction(async (t) => {
+      const perfilRef = db.doc(`profissionais/${uid}`);
+      // Leitura antes de qualquer escrita (exigencia da transacao) e antes da
+      // validacao: perfil existente NUNCA cai no rollback que apaga o Auth.
+      const perfilExistente = await t.get(perfilRef);
+      if (perfilExistente.exists) return 'ja_cadastrado' as const;
+      if (invalido) return 'dados_invalidos' as const;
+
+      // 1. Perfil — mesmos campos do createProfile() do cliente (fixtures.mjs)
+      t.set(perfilRef, {
+        uid, nome, email,
+        crm: dados.crm ?? '', ufCrm: (dados.ufCrm ?? '').toUpperCase(),
+        especialidade: dados.especialidade ?? '', tipoPerfil,
+        cpf: '', rqe: '', superadmin: false,
+        criadoEm: FieldValue.serverTimestamp(), atualizadoEm: FieldValue.serverTimestamp(),
+      });
+      // 2. Conta (a camada nova)
+      t.set(contaRef, {
+        id: contaId, tipo: 'PF', nome, ownerUid: uid, empresaId: null,
+        status: 'ativa', criadoEm: FieldValue.serverTimestamp(),
+      });
+      // 3. Local — COM contaId (modelo novo) e COM ownerUid (tranca provisoria)
+      t.set(wsRef, {
+        id: wsRef.id, contaId, ownerUid: uid, tipo: 'PF',
+        nomeClinica: 'Consultório', slogan: dados.especialidade ?? '',
+        corPrimaria: '#1E3A5F', corSecundaria: '#2563EB',
+        criadoEm: FieldValue.serverTimestamp(),
+      });
+      // 4. Vinculo com id deterministico — pre-requisito de toda regra de papel
+      t.set(db.doc(`vinculos/${contaId}_${uid}`), {
+        id: `${contaId}_${uid}`, contaId, medicoUid: uid,
+        papel: 'dono', locais: [], status: 'ativo',
+        criadoEm: FieldValue.serverTimestamp(),
+      });
+      // 5. Assinatura por conta — SEM workspaceId (duas assinaturas casariam
+      //    na busca antiga e a franquia oscilaria entre elas)
+      t.set(db.doc(`subscriptions/${contaId}`), {
+        id: contaId, contaId, planoId: 'trial', tipo: 'trial',
+        tipoPlano: plano.tipo ?? 'PF',
+        franquiaMensal: plano.franquia, franquiaUsada: 0, creditosExtras: 0,
+        excedente: plano.excedente, maxLocais: plano.maxLocais,
+        localAdicional: plano.localAdicional,
+        extratosFranquia: plano.extratosFranquia, extratoValor: plano.extratoValor,
+        maxUsuarios: plano.maxUsuarios, usuarioAdicional: plano.usuarioAdicional,
+        cicloInicio: Timestamp.fromDate(agora),
+        cicloFim: Timestamp.fromDate(new Date(agora.getTime() + 30 * 864e5)),
+        criadoEm: FieldValue.serverTimestamp(),
+      });
+      return 'ok' as const;
     });
 
-    await batch.commit();
+    if (motivo === 'ja_cadastrado') return { ok: false, motivo };
+    if (motivo === 'dados_invalidos') return falhar(motivo);
     return { ok: true, contaId, wsId: wsRef.id };
   } catch (e) {
     console.error('executarSignup:', e);

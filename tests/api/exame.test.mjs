@@ -47,9 +47,15 @@ describe('resolverPapel', () => {
     assert.equal(await resolverPapel(db, WS, RITA), 'recepcao');
     assert.equal(await resolverPapel(db, WS, 'uidForasteiro'), null);
   });
-  test('fallback legado: ownerUid do workspace sem vinculo = dono', async () => {
+  test('ownerUid do workspace SEM vinculo nao vale papel (paridade com a regra)', async () => {
     await db.doc('workspaces/wsLeg').set({ ownerUid: 'uidLegado' });
-    assert.equal(await resolverPapel(db, 'wsLeg', 'uidLegado'), 'dono');
+    assert.equal(await resolverPapel(db, 'wsLeg', 'uidLegado'), null);
+  });
+  test('vinculo com locais restritos nao alcanca local fora da lista', async () => {
+    await db.doc(`vinculos/${CONTA}_uidPreso`).set({
+      contaId: CONTA, medicoUid: 'uidPreso', papel: 'medico', locais: ['outroLocal'], status: 'ativo',
+    });
+    assert.equal(await resolverPapel(db, WS, 'uidPreso'), null);
   });
 });
 
@@ -156,6 +162,17 @@ describe('devolucao liquida (anti double-refund)', () => {
     await cancelarExame(db, { wsId: WS, exameId: 'dr1', uid: DONO, motivo: 'y', subRef: subRef(), apagarPdf });
     // beforeEach zera em 10; 1a devolucao: 10-1=9; 2a: devolve SO 1 → 8 (nao 7)
     assert.equal((await subRef().get()).data().franquiaUsada, 8);
+  });
+  test('sem assinatura: ledger registra 0 e a devolucao cheia ainda cabe depois', async () => {
+    await seedEmitido('dr3');
+    await cancelarExame(db, { wsId: WS, exameId: 'dr3', uid: DONO, motivo: 'x', subRef: null, apagarPdf });
+    const canc = await db.collection('consumo').where('exameId', '==', 'dr3').where('tipo', '==', 'cancelamento').get();
+    assert.equal(canc.size, 1);
+    assert.equal(canc.docs[0].data().devolvidoFranquia, 0, 'ledger honesto: nada foi devolvido');
+    // Assinatura reaparece e o exame volta a emitido: a 2a tentativa devolve o valor CHEIO.
+    await db.doc(`workspaces/${WS}/exames/dr3`).set({ pacienteNome: 'P', medicoUid: MED, status: 'emitido' });
+    await cancelarExame(db, { wsId: WS, exameId: 'dr3', uid: DONO, motivo: 'x', subRef: subRef(), apagarPdf });
+    assert.equal((await subRef().get()).data().franquiaUsada, 9, 'devolveu o consumo inteiro');
   });
   test('retry apos falha parcial: chamar a devolucao 2x nao devolve 2x', async () => {
     await seedEmitido('dr2', { consumos: 2 });
