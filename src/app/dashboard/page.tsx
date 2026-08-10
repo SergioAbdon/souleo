@@ -13,11 +13,13 @@ import LocalModal from '@/components/LocalModal';
 import Worklist from '@/components/Worklist';
 import Historico from '@/components/Historico';
 import Extrato from '@/components/Extrato';
+import SeletorLocal from '@/components/SeletorLocal';
+import EscolherLocalGate from '@/components/EscolherLocalGate';
 
 type Tab = 'worklist' | 'historico' | 'extrato';
 
 export default function DashboardPage() {
-  const { user, profile, workspace, subscription, loading, reloadProfile } = useAuth();
+  const { user, profile, workspace, subscription, contextos, loading, reloadProfile } = useAuth();
   const router = useRouter();
   const [perfilOpen, setPerfilOpen] = useState(false);
   const [localOpen, setLocalOpen] = useState(false);
@@ -47,9 +49,12 @@ export default function DashboardPage() {
             <div className="font-semibold">{profile?.nome || 'Usuário'}</div>
             {profile?.crm && <div className="text-xs opacity-70">CRM/{profile.ufCrm} {profile.crm}</div>}
           </div>
-          <div className="bg-white/20 px-3 py-1.5 rounded-lg text-xs font-semibold">
-            {workspace?.nomeClinica || 'Consultório'}
-          </div>
+          <SeletorLocal />
+          {contextos.length < 2 && (
+            <div className="bg-white/20 px-3 py-1.5 rounded-lg text-xs font-semibold">
+              {workspace?.nomeClinica || 'Consultório'}
+            </div>
+          )}
         </div>
         <button onClick={() => { auth.signOut(); router.replace('/login'); }}
           className="bg-red-500 text-white px-4 py-1.5 rounded-lg text-sm font-semibold hover:bg-red-600 transition">
@@ -92,6 +97,7 @@ export default function DashboardPage() {
 
         {/* CONTEÚDO */}
         <div className="flex-1">
+          <EscolherLocalGate>
           {/* Billing */}
           <div className="grid grid-cols-4 gap-4 mb-6">
             <div className="bg-white rounded-xl shadow p-4">
@@ -137,6 +143,7 @@ export default function DashboardPage() {
               {tab === 'extrato' && <Extrato />}
             </div>
           </div>
+          </EscolherLocalGate>
         </div>
       </div>
 
