@@ -581,6 +581,8 @@ git commit -m "feat(login): esqueci minha senha + reenviar verificacao"
 
 ## Depois deste plano (orquestrador, não implementador)
 
-1. Publicar a tranca nova: `npx firebase deploy --only firestore:rules` — **só com `npm run test:rules` verde**.
-2. Levar a tela de login nova para produção (merge na `master`, que deploya na Vercel) — decisão do Dr. Sérgio.
-3. Segunda: a recepção se cadastra; rodar `npm run secao1:vincular -- --email=... --conta=... --papel=recepcao --commit`.
+1. ✅ **FEITO 10/08 00:36** — tranca publicada (70 testes verdes antes).
+2. ✅ **FEITO 09/08** — tela de login em produção (merge `1d4297f`, confirmada no ar).
+3. ⏳ **Segunda-feira:** a recepção se cadastra sozinha; depois rodar
+   `npm run secao1:vincular -- --email=<dela> --conta=9PVCwndEgf9SWShFKkzf --papel=recepcao --commit`
+   (a conta `9PVC...` é o Grupo MedCardio; confira com `npm run secao1:inventario`).

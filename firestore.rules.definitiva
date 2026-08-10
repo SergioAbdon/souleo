@@ -101,7 +101,14 @@ service cloud.firestore {
         allow read:   if superadmin() || alcancaLocal(wsId);
         // medicoUid so pode vir vazio (recepcao cadastra sem autor), ser o
         // proprio uid de quem cria, ou ser definido pelo dono do local.
+        // E quem nao e medico NAO cria exame ja carimbado como emitido: sem
+        // esta linha, a recepcao gravaria um laudo com cara de assinado por
+        // fora do /api/emitir — sem PDF, sem log, sem franquia debitada.
+        // Mesmo vetor que derrubou a producao em 09/08; corrigido na regra
+        // publicada no commit b6a6577 e esquecido aqui ate a auditoria Ponytail.
         allow create: if alcancaLocal(wsId)
+                      && (ehMedicoNoLocal(wsId)
+                          || request.resource.data.get('status', '') != 'emitido')
                       && (!('medicoUid' in request.resource.data)
                           || request.resource.data.medicoUid == uid()
                           || ehDonoDoLocal(wsId));

@@ -6,6 +6,7 @@ import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebas
 import {
   doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection, getDocs, query, where,
 } from 'firebase/firestore';
+import { payloadCreateProfile } from './fixtures.mjs';
 
 let env;
 
@@ -223,24 +224,15 @@ describe('7. perfil e autopromocao', () => {
 });
 
 describe('7.1 sincronia com a regra publicada (achados da auditoria)', () => {
-  // Payload REAL de createProfile() — o app manda superadmin:false sempre.
-  // Sem este teste, a definitiva repetiria o apagao de cadastro de 09/08.
-  const payloadRealCreateProfile = (uid) => ({
-    uid, nome: 'Novo Usuario', email: 'novo@exemplo.com',
-    crm: '123', ufCrm: 'PA', especialidade: 'Cardiologia',
-    cpf: '', rqe: '', tipoPerfil: 'assistente',
-    superadmin: false,
-    criadoEm: new Date(), atualizadoEm: new Date(),
-  });
 
   test('cadastro real (superadmin:false) e aceito', async () => {
     await assertSucceeds(setDoc(doc(como('uidCadastroReal'), 'profissionais', 'uidCadastroReal'),
-      payloadRealCreateProfile('uidCadastroReal')));
+      payloadCreateProfile('uidCadastroReal')));
   });
 
   test('cadastro com superadmin:true e negado', async () => {
     await assertFails(setDoc(doc(como('uidEsperto2'), 'profissionais', 'uidEsperto2'), {
-      ...payloadRealCreateProfile('uidEsperto2'), superadmin: true,
+      ...payloadCreateProfile('uidEsperto2'), superadmin: true,
     }));
   });
 
@@ -260,6 +252,24 @@ describe('7.1 sincronia com a regra publicada (achados da auditoria)', () => {
     });
     await assertFails(getDoc(doc(como(DR_A), 'empresas', 'emp1')));
     await assertSucceeds(getDoc(doc(como(ADMIN), 'empresas', 'emp1')));
+  });
+
+  test('recepcao NAO cria exame ja carimbado como emitido', async () => {
+    await assertFails(setDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exFraude'), {
+      pacienteNome: 'Fraude', status: 'emitido', conclusoes: 'laudo inventado',
+    }));
+  });
+
+  test('recepcao cria exame na fila normalmente', async () => {
+    await assertSucceeds(setDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exFilaOk'), {
+      pacienteNome: 'Na fila', status: 'aguardando',
+    }));
+  });
+
+  test('medico cria exame ja emitido (caminho legitimo)', async () => {
+    await assertSucceeds(setDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/exames`, 'exMedico'), {
+      pacienteNome: 'Emitido', status: 'emitido', medicoUid: DR_A2,
+    }));
   });
 
   test('autor NAO transfere o laudo trocando medicoUid na edicao', async () => {

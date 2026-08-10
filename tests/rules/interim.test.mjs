@@ -9,6 +9,7 @@ import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebas
 import {
   doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection, getDocs, query, where,
 } from 'firebase/firestore';
+import { payloadCreateProfile } from './fixtures.mjs';
 
 // IDs reais (inventario 09/08/2026)
 const SERGIO = 'PK7UMR0fBDOdiaRLA9XzxtsUVQw2';   // superadmin, dono do MedCardio
@@ -255,20 +256,9 @@ describe('B) o estranho para de enxergar', () => {
 describe('C) cadastro pelo navegador ainda funciona', () => {
   const NOVO = 'uidNovoCadastro';
 
-  // ⚠️ Payload REAL de createProfile() (src/lib/firestore.ts:39). Ele SEMPRE
-  // manda superadmin:false. A primeira versao deste teste usava um payload
-  // inventado, sem o campo — e por isso nao pegou que a regra quebrava todo
-  // cadastro novo em producao. Teste com dado de mentira prova mentira.
-  const payloadRealCreateProfile = (uid) => ({
-    uid, nome: 'Novo Usuario', email: 'novo@exemplo.com',
-    crm: '123', ufCrm: 'PA', especialidade: 'Cardiologia',
-    cpf: '', rqe: '', tipoPerfil: 'assistente',
-    superadmin: false,
-    criadoEm: new Date(), atualizadoEm: new Date(),
-  });
 
   test('cria o proprio perfil com o payload REAL do app (superadmin:false)', async () => {
-    await assertSucceeds(setDoc(doc(como(NOVO), 'profissionais', NOVO), payloadRealCreateProfile(NOVO)));
+    await assertSucceeds(setDoc(doc(como(NOVO), 'profissionais', NOVO), payloadCreateProfile(NOVO)));
   });
 
   test('cria o proprio perfil sem o campo superadmin', async () => {
@@ -277,7 +267,7 @@ describe('C) cadastro pelo navegador ainda funciona', () => {
 
   test('nao nasce com adminRole', async () => {
     await assertFails(setDoc(doc(como('uidAdminRole'), 'profissionais', 'uidAdminRole'), {
-      ...payloadRealCreateProfile('uidAdminRole'), adminRole: 'financeiro',
+      ...payloadCreateProfile('uidAdminRole'), adminRole: 'financeiro',
     }));
   });
 

@@ -1223,5 +1223,5 @@ Só depois disso o Plano 2 começa.
 
 | Plano | Conteúdo |
 |---|---|
-| **Plano 2 — Fluxos e telas** | `/api/signup` no servidor; "esqueci a senha" e "reenviar verificação"; seletor único de local; papéis na interface; convites; cadastro PJ; cancelar/transferir/apagar laudo com log e devolução de franquia. **Termina publicando a fechadura** (Fase 5). |
+| **Plano 2 — Fluxos e telas** | `/api/signup` no servidor (**primeira tarefa**: enquanto ele não existe, todo cadastro novo nasce no formato antigo e a dívida de migração cresce); seletor único de local; papéis na interface; convites; cadastro PJ; cancelar/transferir/apagar laudo com log e devolução de franquia. **Termina publicando a fechadura** (Fase 5). · "Esqueci a senha" e "reenviar verificação" ✅ já entregues em 09/08. |
 | **Plano 3 — Segredos e limpeza** | Fase 6 (gaveta de segredos + 3 linhas no Wader + deploy na clínica — **do Claude da clínica**) e Fase 7 (apagar vínculos antigos, fallbacks legados, `profissionalId`). |

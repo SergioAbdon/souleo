@@ -71,3 +71,9 @@ firebase-debug.log
 [INFO] Recording command outcome: printf
 
 [OK] Command outcome recorded
+
+# telemetria do plugin (PID, contadores) — ruido entre as duas maquinas
+.claude-flow/
+
+# telemetria do plugin (PID, contadores) — ruido entre as duas maquinas
+.claude-flow/

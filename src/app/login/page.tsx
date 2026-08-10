@@ -48,7 +48,9 @@ export default function LoginPage() {
     try {
       const cred = await signInWithEmailAndPassword(auth, email, senha);
       if (!cred.user.emailVerified) {
-        setErro('Verifique seu email antes de entrar. Cheque sua caixa de entrada.');
+        // Sem setErro aqui: a caixa âmbar do `precisaVerificar` já diz isso, e
+        // com o botão de reenviar junto. Dois avisos iguais na mesma tela é
+        // barulho — o segundo não acrescenta e ainda esconde a ação.
         setPrecisaVerificar(true);
         await auth.signOut();
         setLoading(false);
