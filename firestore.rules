@@ -51,9 +51,12 @@ service cloud.firestore {
     function vincRef(contaId) {
       return /databases/$(database)/documents/vinculos/$(contaId + '_' + uid());
     }
+    // Exige papel valido: vinculo sem `papel` (malformado ou meio-criado) nao
+    // pode conceder acesso clinico so por existir e estar 'ativo'.
     function membroDaConta(contaId) {
       return auth() && exists(vincRef(contaId))
-        && get(vincRef(contaId)).data.status == 'ativo';
+        && get(vincRef(contaId)).data.status == 'ativo'
+        && get(vincRef(contaId)).data.papel in ['dono', 'medico', 'recepcao'];
     }
     function papelNaConta(contaId) { return get(vincRef(contaId)).data.papel; }
 
@@ -111,11 +114,16 @@ service cloud.firestore {
       // (confirmado pelos 2 testes falhando). Listar as subcolecoes reais
       // (exames, pacientes) em vez do coringa evita a sobreposicao — mesmo
       // padrao ja usado em firestore.rules.definitiva.
-      // ponytail: a recepcao ainda pode escrever no conteudo do laudo aqui —
-      // a separacao "so o autor edita" e da fechadura definitiva (Plano 2),
-      // que ja esta escrita e testada. Aqui o que importa e o isolamento
-      // entre clinicas e o financeiro; o resto a tela cobre por enquanto.
-      match /exames/{docId}    { allow read, write: if superadmin() || alcancaLocal(wsId); }
+      // Laudo EMITIDO e documento assinado: a recepcao nao altera nem apaga.
+      // Ela cadastra, mexe na fila e no exame ainda nao emitido — o resto e
+      // de medico. A separacao fina "so o AUTOR edita" e da fechadura
+      // definitiva (Plano 2); aqui protege-se o que ja foi assinado.
+      match /exames/{docId} {
+        allow read:   if superadmin() || alcancaLocal(wsId);
+        allow create: if superadmin() || alcancaLocal(wsId);
+        allow update, delete: if superadmin() || medicoNoLocal(wsId)
+                              || (alcancaLocal(wsId) && resource.data.status != 'emitido');
+      }
       match /pacientes/{docId} { allow read, write: if superadmin() || alcancaLocal(wsId); }
     }
 
@@ -160,8 +168,13 @@ service cloud.firestore {
     // ── ASSINATURAS ── duas formas convivem durante a migracao:
     //   antiga: doc com workspaceId  ·  nova: doc id = contaId, sem workspaceId
     match /subscriptions/{subId} {
+      // O medico nao-dono TAMBEM precisa ler a assinatura ANTIGA (a que tem
+      // workspaceId): e nela que billing.ts:157 consulta a franquia antes de
+      // emitir. Sem isso, o 2o medico da clinica recebe "sem_plano" e nao
+      // consegue emitir laudo nenhum.
       allow get, list: if superadmin()
                        || ('workspaceId' in resource.data && donoDoLocal(resource.data.workspaceId))
+                       || ('workspaceId' in resource.data && medicoNoLocal(resource.data.workspaceId))
                        || ('contaId' in resource.data && donoDaConta(resource.data.contaId))
                        || ('contaId' in resource.data && membroDaConta(resource.data.contaId)
                            && papelNaConta(resource.data.contaId) in ['dono', 'medico']);

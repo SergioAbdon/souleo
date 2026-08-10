@@ -85,6 +85,10 @@ before(async () => {
       contaId: 'contaMedCardio', medicoUid: 'uidInativo',
       papel: 'medico', locais: [], status: 'inativo',
     });
+    // Vinculo malformado: ativo, mas sem papel. Nao pode valer.
+    await setDoc(doc(db, 'vinculos', 'contaMedCardio_uidSemPapel'), {
+      contaId: 'contaMedCardio', medicoUid: 'uidSemPapel', locais: [], status: 'ativo',
+    });
   });
 });
 
@@ -420,5 +424,51 @@ describe('E) membro da conta', () => {
 
   test('estranho sem vinculo continua sem ver nada', async () => {
     await assertFails(getDocs(collection(como(INVASOR), `workspaces/${WS_MEDCARDIO}/exames`)));
+  });
+
+  // ── Laudo emitido e documento assinado ──
+  test('recepcao NAO altera laudo emitido', async () => {
+    await assertFails(updateDoc(doc(como(RECEPCAO), `workspaces/${WS_MEDCARDIO}/exames`, 'ex1'), {
+      conclusoes: 'alterado pela recepcao',
+    }));
+  });
+
+  test('recepcao NAO apaga laudo emitido', async () => {
+    await assertFails(deleteDoc(doc(como(RECEPCAO), `workspaces/${WS_MEDCARDIO}/exames`, 'ex1')));
+  });
+
+  test('recepcao altera e remove exame ainda NAO emitido (fila do dia)', async () => {
+    await assertSucceeds(setDoc(doc(como(RECEPCAO), `workspaces/${WS_MEDCARDIO}/exames`, 'exFila'), {
+      pacienteNome: 'Na fila', status: 'aguardando',
+    }));
+    await assertSucceeds(updateDoc(doc(como(RECEPCAO), `workspaces/${WS_MEDCARDIO}/exames`, 'exFila'), {
+      status: 'nao-realizado',
+    }));
+    await assertSucceeds(deleteDoc(doc(como(RECEPCAO), `workspaces/${WS_MEDCARDIO}/exames`, 'exFila')));
+  });
+
+  test('medico da conta altera laudo emitido', async () => {
+    await assertSucceeds(updateDoc(doc(como(MEDICO2), `workspaces/${WS_MEDCARDIO}/exames`, 'ex1'), {
+      conclusoes: 'revisado pelo medico',
+    }));
+  });
+
+  // ── O 2o medico precisa ler a assinatura ANTIGA para conseguir emitir ──
+  test('medico nao-dono le a assinatura antiga (a que o billing consulta)', async () => {
+    await assertSucceeds(getDocs(query(
+      collection(como(MEDICO2), 'subscriptions'), where('workspaceId', '==', WS_MEDCARDIO),
+    )));
+  });
+
+  test('recepcao NAO le a assinatura antiga', async () => {
+    await assertFails(getDocs(query(
+      collection(como(RECEPCAO), 'subscriptions'), where('workspaceId', '==', WS_MEDCARDIO),
+    )));
+  });
+
+  // ── Vinculo malformado nao vale ──
+  test('vinculo ativo SEM papel nao concede acesso', async () => {
+    await assertFails(getDoc(doc(como('uidSemPapel'), `workspaces/${WS_MEDCARDIO}/exames`, 'ex1')));
+    await assertFails(getDoc(doc(como('uidSemPapel'), 'workspaces', WS_MEDCARDIO)));
   });
 });

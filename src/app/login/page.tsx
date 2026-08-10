@@ -95,10 +95,16 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const cred = await signInWithEmailAndPassword(auth, email, senha);
-      await sendEmailVerification(cred.user);
-      await auth.signOut();
-      setSucesso(`Reenviamos a verificação para ${email}. Cheque também o spam.`);
-      setPrecisaVerificar(false);
+      try {
+        await sendEmailVerification(cred.user);
+        setSucesso(`Reenviamos a verificação para ${email}. Cheque também o spam.`);
+        setPrecisaVerificar(false);
+      } finally {
+        // Sair SEMPRE. Se o envio falhasse aqui, a sessão ficava de pé e um
+        // usuário sem e-mail verificado alcançaria /dashboard digitando a URL
+        // — a tela só checa se existe usuário, não se ele verificou.
+        await auth.signOut().catch(() => {});
+      }
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code || '';
       if (code === 'auth/too-many-requests') setErro('Muitas tentativas. Aguarde alguns minutos.');

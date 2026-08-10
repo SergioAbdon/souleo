@@ -64,23 +64,63 @@ async function main() {
   }
   console.log(`Conta:    ${conta.data().nome} (${contaId})\n`);
 
+  // 2b. Os --local informados existem e sao mesmo desta conta?
+  for (const wsId of locais) {
+    const ws = await db.doc(`workspaces/${wsId}`).get();
+    if (!ws.exists) {
+      console.error(`Local ${wsId} nao existe. Um typo aqui grava um vinculo que nao da acesso a nada.`);
+      process.exit(1);
+    }
+    if (ws.data().contaId !== contaId) {
+      console.error(`Local ${wsId} pertence a conta ${ws.data().contaId ?? '(nenhuma)'}, nao a ${contaId}.`);
+      process.exit(1);
+    }
+  }
+
+  // 2c. Ja existe vinculo dessa pessoa nessa conta? Sobrescrever em silencio
+  // trocaria papel e locais sem ninguem perceber.
+  const vincExistente = await db.doc(`vinculos/${contaId}_${user.uid}`).get();
+  if (vincExistente.exists && !process.argv.includes('--forcar')) {
+    const v = vincExistente.data();
+    console.error(
+      `Ja existe vinculo desta pessoa nesta conta:\n` +
+      `  papel=${v.papel}  locais=${JSON.stringify(v.locais)}  status=${v.status}\n` +
+      `Se a intencao e MUDAR isso, rode de novo com --forcar.`
+    );
+    process.exit(1);
+  }
+
   // 3. A ilha que o cadastro dela criou (local proprio, vazio)
   const ilhas = await db.collection('workspaces').where('ownerUid', '==', user.uid).get();
   const paraApagar = [];
-  for (const ws of ilhas.docs) {
-    const [ex, pac] = await Promise.all([
-      ws.ref.collection('exames').count().get(),
-      ws.ref.collection('pacientes').count().get(),
-    ]);
-    if (ex.data().count > 0 || pac.data().count > 0) {
-      console.log(`Local ${ws.id} do usuario tem ${ex.data().count} exames e ${pac.data().count} pacientes — NAO sera apagado.`);
-      continue;
+  if (ilhas.size > 1) {
+    console.log(
+      `ATENCAO: esta pessoa e dona de ${ilhas.size} locais (${ilhas.docs.map(d => d.id).join(', ')}).\n` +
+      `Nao vou apagar nenhum automaticamente — apagar o local errado nao tem volta.\n` +
+      `Apague na mao o que for a ilha e rode este script de novo.`
+    );
+  } else {
+    for (const ws of ilhas.docs) {
+      // "Vazio" precisa considerar TODAS as subcolecoes que o app usa: apagar o
+      // documento pai no Firestore NAO apaga as subcolecoes, elas viram orfas.
+      const contagens = await Promise.all(
+        ['exames', 'pacientes', 'config', 'extratos'].map(async (sub) => [
+          sub, (await ws.ref.collection(sub).count().get()).data().count,
+        ])
+      );
+      const naoVazias = contagens.filter(([, n]) => n > 0);
+      if (naoVazias.length > 0) {
+        console.log(
+          `Local ${ws.id} NAO sera apagado — tem ${naoVazias.map(([s, n]) => `${n} ${s}`).join(', ')}.`
+        );
+        continue;
+      }
+      paraApagar.push(ws.ref);
+      const subs = await db.collection('subscriptions').where('workspaceId', '==', ws.id).get();
+      subs.docs.forEach(s => paraApagar.push(s.ref));
+      const vincs = await db.collection('vinculos').where('workspaceId', '==', ws.id).get();
+      vincs.docs.forEach(v => paraApagar.push(v.ref));
     }
-    paraApagar.push(ws.ref);
-    const subs = await db.collection('subscriptions').where('workspaceId', '==', ws.id).get();
-    subs.docs.forEach(s => paraApagar.push(s.ref));
-    const vincs = await db.collection('vinculos').where('workspaceId', '==', ws.id).get();
-    vincs.docs.forEach(v => paraApagar.push(v.ref));
   }
 
   // 4. O vinculo novo
