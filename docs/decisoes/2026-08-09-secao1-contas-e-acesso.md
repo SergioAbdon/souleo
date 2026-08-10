@@ -264,6 +264,39 @@ reescrito depois (papel incluído); `empresas` era legível por qualquer autenti
 `AuthContext` sem `try/finally` prendia a tela em "carregando"; e o caminho novo
 assumia a sessão mesmo cobrindo só parte dos locais do usuário.
 
+## 8.2 Auditoria do estado final (10/08 00:36)
+
+As correções da §8.1 foram feitas em cima das revisões e publicadas direto —
+**ninguém tinha revisado o resultado.** Auditoria do que estava no ar, por Codex
+e Ruflo em paralelo.
+
+**Corrigido em produção:**
+
+| Achado | Por quê importava |
+|---|---|
+| A **recepção podia emitir** por fora do `/api/emitir` | A regra olhava só o estado anterior; ela pegava um exame "aguardando" e gravava `status:'emitido'` com conclusões de uma vez — sem franquia, sem log, sem PDF. Agora o estado **resultante** também é checado |
+| `intacto()` era a versão ingênua | Um `setDoc` sem merge **apagava** o campo protegido e passava: dava para remover `ownerUid` do próprio local (travando o acesso de todos, inclusive do dono) |
+
+**Corrigido na fechadura definitiva** (que estava divergindo em silêncio):
+vínculo sem papel voltaria a dar acesso; `empresas` voltaria a ser legível por
+qualquer autenticado; `profissionais` create **repetiria o apagão de cadastro**;
+e o autor podia transferir o laudo trocando `medicoUid` na própria edição.
+
+> ⚠️ **Antes da Fase 5, reler a definitiva linha a linha contra a publicada.**
+> Dois arquivos irmãos sincronizados na mão divergiram na **primeira semana**.
+> Os 59 testes dela provam consistência interna — não que ela incorporou o que o
+> irmão aprendeu sob fogo. Melhor ainda: rodar o mesmo payload contra as duas.
+
+**A dívida está crescendo, não encolhendo** (achado do Ruflo). O cadastro
+continua criando vínculo no formato antigo (`role`, id aleatório, sem `conta`).
+Só as 2 contas da migração existem no modelo novo; todo usuário novo nasce no
+velho. **O `/api/signup` do Plano 2 é o que estanca isso** — cada semana de
+atraso aumenta a base a remigrar.
+
+**Sobre confiar em revisor:** o Codex deu como correto o item do `profissionais`
+create na definitiva; o Ruflo disse que estava quebrado. Conferi na mão — o
+Ruflo estava certo. Revisor é ótica, não oráculo.
+
 ## 9. Fora de escopo (Seção 1 não resolve)
 
 - Gateway de pagamento real (Stripe/Asaas).
