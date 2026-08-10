@@ -49,6 +49,9 @@ before(async () => {
     });
     await setDoc(doc(db, `workspaces/${WS_MEDCARDIO}/pacientes`, 'pac1'), { nome: 'Paciente Real', cpf: '000' });
     await setDoc(doc(db, `workspaces/${WS_MEDCARDIO}/config`, 'honorarios'), { UNIMED: 120 });
+    await setDoc(doc(db, `workspaces/${WS_MEDCARDIO}/extratos`, '2026-08'), { emitidos: 3 });
+    await setDoc(doc(db, `workspaces/${WS_OUTRO}/config`, 'honorarios'), { UNIMED: 100 });
+    await setDoc(doc(db, `workspaces/${WS_OUTRO}/extratos`, '2026-08'), { emitidos: 1 });
     await setDoc(doc(db, `workspaces/${WS_WADER}/exames`, 'exw'), { pacienteNome: 'Teste Wader' });
 
     await setDoc(doc(db, 'subscriptions', 'sub-medcardio'), {
@@ -489,5 +492,25 @@ describe('E) membro da conta', () => {
   test('vinculo ativo SEM papel nao concede acesso', async () => {
     await assertFails(getDoc(doc(como('uidSemPapel'), `workspaces/${WS_MEDCARDIO}/exames`, 'ex1')));
     await assertFails(getDoc(doc(como('uidSemPapel'), 'workspaces', WS_MEDCARDIO)));
+  });
+});
+
+describe('correcoes do Plano 2A (mesmos casos da suite definitiva — regra de ouro)', () => {
+  test('superadmin le e escreve config (honorarios) de local alheio', async () => {
+    await assertSucceeds(getDoc(doc(como(SERGIO), `workspaces/${WS_OUTRO}/config`, 'honorarios')));
+    await assertSucceeds(setDoc(doc(como(SERGIO), `workspaces/${WS_OUTRO}/config`, 'honorarios'), { UNIMED: 130 }));
+  });
+  test('superadmin le extratos de local alheio', async () => {
+    await assertSucceeds(getDoc(doc(como(SERGIO), `workspaces/${WS_OUTRO}/extratos`, '2026-08')));
+  });
+  test('superadmin atualiza assinatura (Direx: troca de plano, creditos)', async () => {
+    await assertSucceeds(updateDoc(doc(como(SERGIO), 'subscriptions', 'contaOutro'), { creditosExtras: 10 }));
+  });
+  test('dono NAO atualiza a assinatura por conta', async () => {
+    await assertFails(updateDoc(doc(como(OUTRO), 'subscriptions', 'contaOutro'), { franquiaUsada: 0 }));
+  });
+  test('recepcao NAO le config nem extratos', async () => {
+    await assertFails(getDoc(doc(como('uidRecepcao'), `workspaces/${WS_MEDCARDIO}/config`, 'honorarios')));
+    await assertFails(getDoc(doc(como('uidRecepcao'), `workspaces/${WS_MEDCARDIO}/extratos`, '2026-08')));
   });
 });

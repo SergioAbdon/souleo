@@ -48,6 +48,7 @@ before(async () => {
     });
     await setDoc(doc(db, `workspaces/${LOCAL_A1}/pacientes`, 'pac1'), { nome: 'Paciente A1' });
     await setDoc(doc(db, `workspaces/${LOCAL_A1}/config`, 'honorarios'), { UNIMED: 120 });
+    await setDoc(doc(db, `workspaces/${LOCAL_A1}/extratos`, '2026-08'), { emitidos: 3 });
 
     // Exame cadastrado pela recepcao, ainda sem medico definido (secao 10).
     await setDoc(doc(db, `workspaces/${LOCAL_A1}/exames`, 'exSemAutor'), {
@@ -360,5 +361,31 @@ describe('11. vinculo inativo nao alcanca nada', () => {
   });
   test('vinculo inativo nao le a conta', async () => {
     await assertFails(getDoc(doc(como(INATIVO), 'contas', CONTA_A)));
+  });
+});
+
+describe('9. correcoes do Plano 2A (Lacuna 1 + Direx)', () => {
+  test('superadmin le e escreve config (honorarios) de local alheio', async () => {
+    await assertSucceeds(getDoc(doc(como(ADMIN), `workspaces/${LOCAL_A1}/config`, 'honorarios')));
+    await assertSucceeds(setDoc(doc(como(ADMIN), `workspaces/${LOCAL_A1}/config`, 'honorarios'), { UNIMED: 130 }));
+  });
+  test('superadmin le extratos de local alheio', async () => {
+    await assertSucceeds(getDoc(doc(como(ADMIN), `workspaces/${LOCAL_A1}/extratos`, '2026-08')));
+  });
+  test('superadmin atualiza assinatura (Direx: troca de plano, creditos)', async () => {
+    await assertSucceeds(updateDoc(doc(como(ADMIN), 'subscriptions', CONTA_A), { creditosExtras: 10 }));
+  });
+  test('dono NAO atualiza a propria assinatura', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), 'subscriptions', CONTA_A), { franquiaUsada: 0 }));
+  });
+  test('recepcao NAO le config nem extratos', async () => {
+    await assertFails(getDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/config`, 'honorarios')));
+    await assertFails(getDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/extratos`, '2026-08')));
+  });
+  test('dono da conta le o vinculo de um membro da propria conta', async () => {
+    await assertSucceeds(getDoc(doc(como(DR_A), 'vinculos', `${CONTA_A}_${RITA}`)));
+  });
+  test('dono de OUTRA conta nao le vinculo alheio', async () => {
+    await assertFails(getDoc(doc(como(DR_B), 'vinculos', `${CONTA_A}_${RITA}`)));
   });
 });
