@@ -16,6 +16,7 @@ import { doc, getDoc, collection, writeBatch, serverTimestamp, type DocumentRefe
 import { useRouter } from 'next/navigation';
 import { checkEmissao } from '@/lib/billing';
 import DicomGallery from '@/components/laudo/DicomGallery';
+import { podeEditarLaudo, podeRemoverDaFila } from '@/lib/permissoes';
 
 // v3: helper pra enviar token Firebase nas chamadas Feegow
 async function feegowAuthFetch(url: string, options?: RequestInit) {
@@ -51,7 +52,7 @@ type ExameItem = Record<string, unknown> & {
   id: string; pacienteId?: string; pacienteNome?: string; pacienteDtnasc?: string;
   status?: string; tipoExame?: string; dataExame?: string; horarioChegada?: string;
   convenio?: string; solicitante?: string; sexo?: string; origem?: string;
-  feegowAppointId?: string | number;
+  feegowAppointId?: string | number; medicoUid?: string;
 };
 
 const TIPOS_EXAME: Record<string, string> = {
@@ -62,9 +63,8 @@ const TIPOS_EXAME: Record<string, string> = {
 };
 
 export default function Worklist() {
-  const { workspace, profile, membership } = useAuth();
+  const { workspace, profile, papel, user } = useAuth();
   const router = useRouter();
-  const ehMedico = membership?.role === 'medico';
 
   const [worklist, setWorklist] = useState<ExameItem[]>([]);
   const [naoRealizados, setNaoRealizados] = useState<ExameItem[]>([]);
@@ -670,7 +670,9 @@ export default function Worklist() {
                             <>
                               <Btn cor="blue" onClick={() => abrirLaudo(item.id)}>📋 Laudar</Btn>
                               <Btn cor="gray" onClick={() => editarPaciente(item)}>👤 Editar</Btn>
-                              <Btn cor="red" onClick={() => removerDaFila(item)}>🗑</Btn>
+                              {podeRemoverDaFila(papel) && (
+                                <Btn cor="red" onClick={() => removerDaFila(item)}>🗑</Btn>
+                              )}
                             </>
                           );
                         }
@@ -685,7 +687,7 @@ export default function Worklist() {
                         // emitido
                         return (
                           <>
-                            {ehMedico && (
+                            {podeEditarLaudo(profile, item, user?.uid || '') && (
                               <Btn cor="amber" onClick={() => editarLaudoEmitido(item.id)}>✏️ Editar</Btn>
                             )}
                             <Btn cor="gray" onClick={() => imprimirPdf(item.id)}>🖨️ Imprimir</Btn>

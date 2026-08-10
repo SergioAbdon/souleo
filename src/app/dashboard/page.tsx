@@ -15,11 +15,12 @@ import Historico from '@/components/Historico';
 import Extrato from '@/components/Extrato';
 import SeletorLocal from '@/components/SeletorLocal';
 import EscolherLocalGate from '@/components/EscolherLocalGate';
+import { podeVerFinanceiro } from '@/lib/permissoes';
 
 type Tab = 'worklist' | 'historico' | 'extrato';
 
 export default function DashboardPage() {
-  const { user, profile, workspace, subscription, contextos, loading, reloadProfile } = useAuth();
+  const { user, profile, workspace, subscription, contextos, papel, loading, reloadProfile } = useAuth();
   const router = useRouter();
   const [perfilOpen, setPerfilOpen] = useState(false);
   const [localOpen, setLocalOpen] = useState(false);
@@ -132,15 +133,17 @@ export default function DashboardPage() {
                 className={`py-3 px-4 text-sm font-semibold transition border-b-2 ${tab === 'historico' ? 'text-[#1E3A5F] border-[#1E3A5F]' : 'text-gray-400 border-transparent'}`}>
                 📁 Histórico
               </button>
-              <button onClick={() => setTab('extrato')}
-                className={`py-3 px-4 text-sm font-semibold transition border-b-2 ${tab === 'extrato' ? 'text-[#1E3A5F] border-[#1E3A5F]' : 'text-gray-400 border-transparent'}`}>
-                📊 Extrato
-              </button>
+              {podeVerFinanceiro(papel) && (
+                <button onClick={() => setTab('extrato')}
+                  className={`py-3 px-4 text-sm font-semibold transition border-b-2 ${tab === 'extrato' ? 'text-[#1E3A5F] border-[#1E3A5F]' : 'text-gray-400 border-transparent'}`}>
+                  📊 Extrato
+                </button>
+              )}
             </div>
             <div className="p-4">
               {tab === 'worklist' && <Worklist />}
               {tab === 'historico' && <Historico />}
-              {tab === 'extrato' && <Extrato />}
+              {tab === 'extrato' && podeVerFinanceiro(papel) && <Extrato />}
             </div>
           </div>
           </EscolherLocalGate>

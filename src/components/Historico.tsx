@@ -26,10 +26,10 @@ const TIPOS_EXAME: Record<string, string> = {
 };
 
 export default function Historico() {
-  const { workspace, contextos, user } = useAuth();
+  const { workspace, user } = useAuth();
   const router = useRouter();
 
-  const [wsIdSel, setWsIdSel] = useState(workspace?.id || '');
+  const wsIdSel = workspace?.id || '';
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [convenioSel, setConvenioSel] = useState('');
@@ -41,11 +41,6 @@ export default function Historico() {
   const [hasMore, setHasMore] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteNome, setDeleteNome] = useState('');
-
-  // Sincronizar wsIdSel com workspace ativo
-  useEffect(() => {
-    if (workspace?.id && !wsIdSel) setWsIdSel(workspace.id);
-  }, [workspace?.id, wsIdSel]);
 
   // v3: Buscar dados com paginacao
   const fetchData = useCallback(async () => {
@@ -161,20 +156,6 @@ export default function Historico() {
 
   return (
     <div>
-      {/* Seletor de workspace */}
-      {contextos.length > 1 && (
-        <div className="mb-3">
-          <select value={wsIdSel} onChange={e => setWsIdSel(e.target.value)}
-            className="border rounded-lg px-3 py-2 text-sm font-semibold text-[#1E3A5F] focus:outline-none focus:border-[#1E3A5F] w-full">
-            {contextos.map(ctx => (
-              <option key={ctx.workspace.id} value={ctx.workspace.id}>
-                {ctx.workspace.nomeClinica || 'Consultório'}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
       {/* Filtros */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
