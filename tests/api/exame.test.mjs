@@ -145,3 +145,24 @@ describe('transferir', () => {
     assert.equal(r.motivo, 'alvo_invalido');
   });
 });
+
+describe('devolucao liquida (anti double-refund)', () => {
+  test('reemissao pos-cancelamento: 2o cancelamento devolve SO o consumo novo', async () => {
+    await seedEmitido('dr1');                                    // 1 consumo franquia
+    await cancelarExame(db, { wsId: WS, exameId: 'dr1', uid: DONO, motivo: 'x', subRef: subRef(), apagarPdf });
+    // reemissao: novo consumo + status emitido de novo
+    await db.collection('consumo').add({ workspaceId: WS, exameId: 'dr1', tipo: 'franquia' });
+    await db.doc(`workspaces/${WS}/exames/dr1`).set({ pacienteNome: 'P', medicoUid: MED, status: 'emitido' });
+    await cancelarExame(db, { wsId: WS, exameId: 'dr1', uid: DONO, motivo: 'y', subRef: subRef(), apagarPdf });
+    // beforeEach zera em 10; 1a devolucao: 10-1=9; 2a: devolve SO 1 → 8 (nao 7)
+    assert.equal((await subRef().get()).data().franquiaUsada, 8);
+  });
+  test('retry apos falha parcial: chamar a devolucao 2x nao devolve 2x', async () => {
+    await seedEmitido('dr2', { consumos: 2 });
+    await cancelarExame(db, { wsId: WS, exameId: 'dr2', uid: DONO, motivo: 'x', subRef: subRef(), apagarPdf });
+    // simula retry apos falha: exame de volta a 'emitido' sem consumo novo
+    await db.doc(`workspaces/${WS}/exames/dr2`).set({ pacienteNome: 'P', medicoUid: MED, status: 'emitido' });
+    await cancelarExame(db, { wsId: WS, exameId: 'dr2', uid: DONO, motivo: 'x', subRef: subRef(), apagarPdf });
+    assert.equal((await subRef().get()).data().franquiaUsada, 8, 'liquido: nada a devolver na 2a');
+  });
+});

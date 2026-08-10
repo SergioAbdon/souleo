@@ -39,30 +39,41 @@ function medicoAlcanca(exame: Record<string, unknown>, uid: string) {
   return !exame.medicoUid || exame.medicoUid === uid;
 }
 
-// Devolve TODOS os consumos do exame (P1/D8) e registra a devolucao em
-// `consumo` (append-only). Transacao: contadores nunca ficam pela metade.
+// Devolve o SALDO LIQUIDO dos consumos do exame (P1/D8): tudo que foi
+// consumido MENOS o que ja foi devolvido em registros 'cancelamento'
+// anteriores. Idempotente por construcao — retry apos falha parcial e
+// reemissao pos-cancelamento devolvem so a diferenca. O registro da
+// devolucao entra NA MESMA transacao dos contadores: ou os dois existem,
+// ou nenhum.
 async function devolverConsumo(db: Firestore, p: Params, acao: string) {
-  const snap = await db.collection('consumo').where('exameId', '==', p.exameId).get();
-  // P7: sem indice composto — filtra o workspace em codigo.
-  const doExame = snap.docs.map(d => d.data()).filter(c => c.workspaceId === p.wsId);
-  const nFranquia = doExame.filter(c => c.tipo === 'franquia').length;
-  const nCredito = doExame.filter(c => c.tipo === 'credito').length;
-  if (!nFranquia && !nCredito) return;
-  if (p.subRef) {
-    await db.runTransaction(async (t) => {
-      const sub = await t.get(p.subRef!);
-      if (!sub.exists) return;
-      const usada = (sub.data()!.franquiaUsada as number) || 0;
-      t.update(p.subRef!, {
-        franquiaUsada: Math.max(0, usada - nFranquia),
-        creditosExtras: FieldValue.increment(nCredito),
-      });
+  await db.runTransaction(async (t) => {
+    const snap = await t.get(db.collection('consumo').where('exameId', '==', p.exameId));
+    // P7: sem indice composto — filtra o workspace em codigo.
+    const doExame = snap.docs.map(d => d.data()).filter(c => c.workspaceId === p.wsId);
+    const gastoFranquia = doExame.filter(c => c.tipo === 'franquia').length;
+    const gastoCredito = doExame.filter(c => c.tipo === 'credito').length;
+    const devolvidos = doExame.filter(c => c.tipo === 'cancelamento');
+    const jaFranquia = devolvidos.reduce((s, c) => s + ((c.devolvidoFranquia as number) || 0), 0);
+    const jaCredito = devolvidos.reduce((s, c) => s + ((c.devolvidoCreditos as number) || 0), 0);
+    const nFranquia = Math.max(0, gastoFranquia - jaFranquia);
+    const nCredito = Math.max(0, gastoCredito - jaCredito);
+    if (!nFranquia && !nCredito) return;
+
+    if (p.subRef) {
+      const sub = await t.get(p.subRef);
+      if (sub.exists) {
+        const usada = (sub.data()!.franquiaUsada as number) || 0;
+        t.update(p.subRef, {
+          franquiaUsada: Math.max(0, usada - nFranquia),
+          creditosExtras: FieldValue.increment(nCredito),
+        });
+      }
+    }
+    t.set(db.collection('consumo').doc(), {
+      workspaceId: p.wsId, exameId: p.exameId, tipo: 'cancelamento', acao,
+      devolvidoFranquia: nFranquia, devolvidoCreditos: nCredito,
+      por: p.uid, emitidoEm: FieldValue.serverTimestamp(),
     });
-  }
-  await db.collection('consumo').add({
-    workspaceId: p.wsId, exameId: p.exameId, tipo: 'cancelamento', acao,
-    devolvidoFranquia: nFranquia, devolvidoCreditos: nCredito,
-    por: p.uid, emitidoEm: FieldValue.serverTimestamp(),
   });
 }
 
