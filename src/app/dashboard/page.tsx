@@ -24,7 +24,13 @@ export default function DashboardPage() {
   const router = useRouter();
   const [perfilOpen, setPerfilOpen] = useState(false);
   const [localOpen, setLocalOpen] = useState(false);
-  const [tab, setTab] = useState<Tab>('worklist');
+  const [tabRaw, setTab] = useState<Tab>('worklist');
+  // Painel orfao (bug de UX): se o papel perde acesso ao financeiro (ex: troca
+  // de local pra um onde e recepcao) enquanto a aba 'extrato' esta ativa, a
+  // aba some (Step 4) mas `tab` continuava 'extrato' -> painel em branco.
+  // Fix como valor derivado no render (sem useEffect: setState direto num
+  // useEffect dispara react-hooks/set-state-in-effect, erro novo de lint).
+  const tab: Tab = tabRaw === 'extrato' && !podeVerFinanceiro(papel) ? 'worklist' : tabRaw;
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"><span className="text-4xl animate-pulse">🫀</span></div>;
   if (!user) { router.replace('/login'); return null; }
