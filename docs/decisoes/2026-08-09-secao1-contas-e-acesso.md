@@ -470,6 +470,39 @@ cadastro PJ):
 - TOCTOU do `/api/corrigir-laudo` (update fora de transação) + `handleConsultar`/`carregarMais` obsoletos não resetam loading + validação de tipo/tamanho do corpo → estreitos, **Plano 3**.
 - `AuthContext` não reage a mudança de vínculo em runtime (convite/PJ só aparecem ao relogar) → **Plano 2B-B**.
 
+## 8.5 Plano 2B-B1 — PJ + trava do CRM (10-11/08/2026)
+
+Primeiro bloco do 2B-B: cadastro PJ e a trava do CRM (a decisão de §8.4 no ar).
+Spec em `docs/superpowers/specs/2026-08-10-secao1-plano2b-b1-pj-e-crm-design.md`.
+
+| Entrega | O que |
+|---|---|
+| **Trava do CRM (banco)** | `exames update`: editar conteúdo/reabrir laudo exige `ehMedicoDeVerdade` (perfil médico) + autoria. Dono não-médico só administra a **fila não-emitida**, e — decisão do Sérgio — **só campos administrativos** (whitelist `camposAdministrativos()`); conteúdo clínico (conclusões/medidas/achados) é só de médico, **até em rascunho**. Idem no `create`. Correção administrativa de emitido é da `/api/corrigir-laudo` |
+| **`ehMedicoDeVerdade`** | médico = `tipoPerfil` ausente **ou** `'medico'` (qualquer outro valor não é médico); alinhado com `permissoes.ts` e `/api/emitir` |
+| **Cadastro PJ** | `/api/signup` roteia PF/PJ por `tipoConta`; `executarSignupPJ` cria empresa+conta PJ+local+vínculo dono+assinatura, atômico, CNPJ único (query na transação), rollback do Auth; `ja_cadastrado` antes de `dados_invalidos` |
+| **Verificação de CRM plugável** | `crmVerificacao` no perfil via provedor injetado (no-op agora); **imutável** no self-update (só servidor/superadmin seta) e **não nasce 'verificado'** no create — o selo não é forjável. Pesquisa das fontes (CFM SOAP ~R$948/ano com carta de finalidade; Consultar.IO ~R$0,20/consulta) resumida no spec §7 |
+| **Selo interno** | `SeloCrm` lê `crmVerificacao`; rótulo honesto (só diz "verificado" quando é); **nunca entra no laudo/PDF** (grep prova) |
+| **Cancelar laudo** | Botão no Histórico → `/api/exame` (`acao:'cancelar'`); gate `podeCancelarLaudo` (dono ou médico autor); some quando já cancelado |
+
+**Tríade (Codex/Ruflo/Ponytail) + 3 rodadas adversariais do Codex — fechado na leva:**
+selo forjável por self-update E por create (crmVerificacao imutável/não-nasce-verificado);
+`ehMedicoDeVerdade` frouxo (valor esquisito virava médico); conteúdo clínico gravável
+por não-médico em rascunho (whitelist fail-closed no create+update); conteúdo clínico no
+create por médico-de-perfil com papel recepção (exige `ehMedicoDeVerdade && ehMedicoNoLocal`).
+Suítes: unit 22/22, api 39/39, rules 96/96.
+
+**DECISÃO do Dr. Sérgio (10/08):** verificação real de CRM = **Consultar.IO/CFM** (a forte),
+mas **plugável** — a trava (exigir+guardar CRM, banco travado) sobe agora; o provedor real
+liga depois sem mexer em cadastro nem regra. E: **só médico escreve conteúdo do laudo, até
+em rascunho** (não a equipe).
+
+**Pendências do 2B-B1, com destino:**
+- Ligar o provedor real de verificação de CRM (Consultar.IO/CFM) → follow-up quando o Sérgio contratar. **Ao ligar:** falha do provedor deve degradar para `nao_verificado` (não abortar o cadastro — hoje o `catch` apaga o Auth) — achado Ruflo.
+- Convite (recepção/médico entra em conta existente) = rota própria `/api/convite`, **não** crescer `/api/signup` → **Plano 2B-B2**. Ao criar recepção, setar `tipoPerfil:'assistente'` (hoje recepção com `tipoPerfil` ausente contaria como médico na trava do create).
+- Unificar a matriz "quem mexe no laudo": `exame-admin.ts` (cancelar/apagar/transferir) ainda gateia por **papel** só, sem `tipoPerfil` — um `papel:'medico'` com `tipoPerfil:'assistente'` cancelaria/transferiria → **Plano 2B-B2**.
+- CNPJ: unicidade sob corrida (dois cadastros simultâneos do mesmo CNPJ) + dígitos verificadores; e-mail do corpo não conferido contra o Auth (vale PF e PJ) → **follow-up de segurança**.
+- Extrair passos repetidos do signup (perfil/vínculo/assinatura) + `planoPorId` (dedup `planoTrial`/`planoTrialPJ`) + apagar `createEmpresa`/`getEmpresa`/`getEmpresaByCNPJ` mortos → **Plano 3**.
+
 ## 9. Fora de escopo (Seção 1 não resolve)
 
 - Gateway de pagamento real (Stripe/Asaas).
