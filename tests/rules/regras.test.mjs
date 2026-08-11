@@ -502,4 +502,27 @@ describe('12. trava do CRM (ato medico) — Plano 2B-B1', () => {
   test('gestor NAO-medico NAO marca exame da fila como emitido', async () => {
     await assertFails(updateDoc(doc(como(GESTOR), `workspaces/${LOCAL_C}/exames`, 'exCfila'), { status: 'emitido' }));
   });
+  // Conteudo clinico do laudo, ate em rascunho, e ato medico (ADR 8.4): o gestor
+  // NAO-medico so administra a fila (paciente, convenio, agendamento).
+  test('gestor NAO-medico NAO escreve conclusoes em rascunho', async () => {
+    await assertFails(updateDoc(doc(como(GESTOR), `workspaces/${LOCAL_C}/exames`, 'exCfila'), { conclusoes: 'laudo do gestor' }));
+  });
+  test('gestor NAO-medico NAO escreve medidas em rascunho', async () => {
+    await assertFails(updateDoc(doc(como(GESTOR), `workspaces/${LOCAL_C}/exames`, 'exCfila'), { medidas: { b7: '10' } }));
+  });
+  test('gestor NAO-medico NAO cria exame ja com conteudo clinico', async () => {
+    await assertFails(setDoc(doc(como(GESTOR), `workspaces/${LOCAL_C}/exames`, 'exCnovoClinico'), {
+      status: 'aguardando', conclusoes: 'laudo inventado',
+    }));
+  });
+  test('gestor NAO-medico cria exame na fila (so administrativo)', async () => {
+    await assertSucceeds(setDoc(doc(como(GESTOR), `workspaces/${LOCAL_C}/exames`, 'exCnovoAdmin'), {
+      pacienteNome: 'Novo Fila C', status: 'aguardando', convenio: 'UNIMED',
+    }));
+  });
+  test('medico cria exame com conteudo clinico (nao pode quebrar)', async () => {
+    await assertSucceeds(setDoc(doc(como(DR_C), `workspaces/${LOCAL_C}/exames`, 'exCmedicoClinico'), {
+      pacienteNome: 'Pac Medico', status: 'aguardando', conclusoes: 'laudo do medico', medicoUid: DR_C,
+    }));
+  });
 });

@@ -80,6 +80,22 @@ service cloud.firestore {
         : !(campo in request.resource.data);
     }
 
+    // Campos ADMINISTRATIVOS do exame (pre-assinatura): identificacao do
+    // paciente, agendamento, convenio, metadados de fila. TUDO que o Worklist
+    // grava no cadastro — saveExame manual + import Feegow (src/components/
+    // Worklist.tsx) + os campos que saveExame acrescenta (src/lib/firestore.ts:
+    // id, status, versao, medicoUid, criadoEm, atualizadoEm). Conteudo CLINICO
+    // (medidas, achados, conclusoes, imagensSelecionadasPdf, medidasDicom...)
+    // NAO esta aqui: por ser whitelist, qualquer campo clinico OU desconhecido
+    // tocado por nao-medico e negado (fail-closed). Decisao Dr. Sergio (ADR 8.4):
+    // editar/liberar conteudo de laudo, ate em rascunho, e ATO MEDICO.
+    function camposAdministrativos() {
+      return ['id', 'acc', 'pacienteId', 'pacienteNome', 'pacienteDtnasc',
+        'cpf', 'feegowPacienteId', 'tipoExame', 'dataExame', 'horarioChegada',
+        'status', 'convenio', 'solicitante', 'medicoExecutor', 'sexo', 'origem',
+        'feegowAppointId', 'medicoUid', 'versao', 'criadoEm', 'atualizadoEm'];
+    }
+
     // ── CONTAS ── so o servidor cria e altera
     match /contas/{contaId} {
       allow get, list: if superadmin() || temVinculo(contaId);
@@ -120,7 +136,11 @@ service cloud.firestore {
                           || request.resource.data.get('status', '') != 'emitido')
                       && (!('medicoUid' in request.resource.data)
                           || request.resource.data.medicoUid == uid()
-                          || ehDonoDoLocal(wsId));
+                          || ehDonoDoLocal(wsId))
+                      // Quem NAO e medico so cria exame com campos administrativos
+                      // (cadastro/fila). Conteudo clinico ja no create = ato medico.
+                      && (ehMedicoDeVerdade(uid())
+                          || request.resource.data.keys().hasOnly(camposAdministrativos()));
         // Conteudo do laudo: o autor edita; um exame sem autor ainda pode
         // ser assumido por qualquer medico do local. O dono ajusta qualquer um.
         // `intacto('medicoUid')` fecha a transferencia disfarcada de edicao: sem
@@ -141,7 +161,10 @@ service cloud.firestore {
                             && ('medicoUid' in resource.data ? intacto('medicoUid') : true))
                           || (ehDonoDoLocal(wsId) && intacto('medicoUid')
                               && resource.data.get('status', '') != 'emitido'
-                              && request.resource.data.get('status', '') != 'emitido'));
+                              && request.resource.data.get('status', '') != 'emitido'
+                              // Dono NAO-medico so mexe no administrativo da fila;
+                              // qualquer campo clinico tocado aqui e negado (ADR 8.4).
+                              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(camposAdministrativos())));
         // Apagar/cancelar/transferir passam pelo servidor (log + franquia)
         allow delete: if false;
       }
