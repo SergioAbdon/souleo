@@ -59,6 +59,14 @@ service cloud.firestore {
       return alcancaLocal(wsId) && vinc(contaDoLocal(wsId)).papel in ['dono', 'medico'];
     }
 
+    // Ato medico = ter CRM. tipoPerfil ausente conta como medico (default do app,
+    // licao do apagao de cadastro 09/08); so 'assistente' explicito nao e medico.
+    // E o eixo que a decisao do Dr. Sergio (ADR 8.4) exige para editar/liberar laudo.
+    function ehMedicoDeVerdade(u) {
+      return exists(/databases/$(database)/documents/profissionais/$(u))
+        && get(/databases/$(database)/documents/profissionais/$(u)).data.get('tipoPerfil', 'medico') != 'assistente';
+    }
+
     // Precisa resistir a setDoc() sem merge: nesse caso a operacao ainda e
     // classificada como 'update', mas request.resource.data so tem os
     // campos enviados — o campo protegido pode desaparecer do resultado.
@@ -120,11 +128,18 @@ service cloud.firestore {
         // Cancelar e do servidor (/api/exame): devolve franquia e loga. Pelo
         // navegador o status 'cancelado' viraria laudo sumido sem devolucao.
         // Reabrir para 'andamento' continua livre para o autor.
+        // Conteudo do laudo / reabrir emitido = ATO MEDICO (CRM) + autoria. Um
+        // dono NAO-medico nao edita laudo (decisao Dr. Sergio, ADR 8.4).
+        // Administracao da fila (exame NAO-emitido) continua do dono: paciente,
+        // convenio, agendamento — pre-assinatura, nao e ato medico. Correcao
+        // administrativa de EMITIDO vai pela /api/corrigir-laudo (log + servidor).
         allow update: if request.resource.data.get('status', '') != 'cancelado'
-                      && ((ehDonoDoLocal(wsId) && intacto('medicoUid'))
-                          || (ehMedicoNoLocal(wsId)
-                              && (!('medicoUid' in resource.data) || resource.data.medicoUid == uid())
-                              && ('medicoUid' in resource.data ? intacto('medicoUid') : true)));
+                      && ((ehMedicoDeVerdade(uid()) && ehMedicoNoLocal(wsId)
+                            && (!('medicoUid' in resource.data) || resource.data.medicoUid == uid())
+                            && ('medicoUid' in resource.data ? intacto('medicoUid') : true))
+                          || (ehDonoDoLocal(wsId) && intacto('medicoUid')
+                              && resource.data.get('status', '') != 'emitido'
+                              && request.resource.data.get('status', '') != 'emitido'));
         // Apagar/cancelar/transferir passam pelo servidor (log + franquia)
         allow delete: if false;
       }

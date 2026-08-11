@@ -15,6 +15,8 @@ const CONTA_A = 'contaA', CONTA_B = 'contaB';
 const LOCAL_A1 = 'localA1', LOCAL_A2 = 'localA2', LOCAL_B = 'localB';
 const DR_A = 'uidDrA', DR_A2 = 'uidDrA2', RITA = 'uidRita', DR_B = 'uidDrB', ADMIN = 'uidAdmin';
 const INATIVO = 'uidInativo'; // vinculo com status != 'ativo', usado na secao 11
+// Conta C: gestor NAO-medico como dono + medico membro (trava do CRM, secao 12).
+const CONTA_C = 'contaC', LOCAL_C = 'localC', GESTOR = 'uidGestor', DR_C = 'uidDrC';
 
 before(async () => {
   env = await initializeTestEnvironment({
@@ -66,12 +68,26 @@ before(async () => {
     await setDoc(doc(db, 'vinculos', `${CONTA_A}_${INATIVO}`), { contaId: CONTA_A, medicoUid: INATIVO, papel: 'medico', locais: [], status: 'inativo' });
 
     await setDoc(doc(db, 'profissionais', DR_A), { nome: 'Dr A', superadmin: false });
+    // DR_A2 e medico (sem tipoPerfil = default medico). O perfil precisa existir:
+    // ehMedicoDeVerdade confere profissionais/{uid} para liberar edicao de laudo.
+    await setDoc(doc(db, 'profissionais', DR_A2), { nome: 'Dr A2', superadmin: false });
     await setDoc(doc(db, 'profissionais', DR_B), { nome: 'Dr B', superadmin: false });
     await setDoc(doc(db, 'profissionais', RITA), { nome: 'Rita', superadmin: false });
     await setDoc(doc(db, 'profissionais', ADMIN), { nome: 'Direx', superadmin: true });
 
     await setDoc(doc(db, 'subscriptions', CONTA_A), { contaId: CONTA_A, tipo: 'expert', franquiaMensal: 600, franquiaUsada: 10 });
     await setDoc(doc(db, 'subscriptions', CONTA_B), { contaId: CONTA_B, tipo: 'trial', franquiaMensal: 600, franquiaUsada: 0 });
+
+    // ── Conta C: gestor NAO-medico como dono (o caso que a trava do CRM protege) ──
+    await setDoc(doc(db, 'contas', CONTA_C), { tipo: 'PJ', nome: 'Clinica C', ownerUid: GESTOR });
+    await setDoc(doc(db, 'workspaces', LOCAL_C), { contaId: CONTA_C, nomeClinica: 'Clinica C' });
+    await setDoc(doc(db, 'vinculos', `${CONTA_C}_${GESTOR}`), { contaId: CONTA_C, medicoUid: GESTOR, papel: 'dono', locais: [], status: 'ativo' });
+    await setDoc(doc(db, 'vinculos', `${CONTA_C}_${DR_C}`),   { contaId: CONTA_C, medicoUid: DR_C,   papel: 'medico', locais: [], status: 'ativo' });
+    // GESTOR e assistente (nao tem CRM); DR_C e medico.
+    await setDoc(doc(db, 'profissionais', GESTOR), { nome: 'Gestor', superadmin: false, tipoPerfil: 'assistente' });
+    await setDoc(doc(db, 'profissionais', DR_C),   { nome: 'Dr C',   superadmin: false, tipoPerfil: 'medico' });
+    await setDoc(doc(db, `workspaces/${LOCAL_C}/exames`, 'exCemitido'), { pacienteNome: 'Pac C', medicoUid: DR_C, status: 'emitido' });
+    await setDoc(doc(db, `workspaces/${LOCAL_C}/exames`, 'exCfila'),    { pacienteNome: 'Fila C', status: 'aguardando' });
     await setDoc(doc(db, 'configPlanos', 'atual'), { planos: [] });
     await setDoc(doc(db, 'pagamentos', 'pg1'), { valor: 100 });
   });
@@ -158,8 +174,11 @@ describe('4. autoria do laudo', () => {
   test('o autor edita o proprio laudo', async () => {
     await assertSucceeds(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'ex1'), { conclusoes: 'ok' }));
   });
-  test('dono ajusta exame que nao e dele (administrativo)', async () => {
-    await assertSucceeds(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A2}/exames`, 'ex2'), { convenio: 'UNIMED' }));
+  test('dono medico NAO ajusta laudo EMITIDO de outro pelo cliente (vai pela /api/corrigir-laudo)', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A2}/exames`, 'ex2'), { convenio: 'UNIMED' }));
+  });
+  test('dono administra a fila: ajusta exame NAO-emitido', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'exSemAutor'), { convenio: 'UNIMED' }));
   });
   test('medico comum (nao dono), autor do exame, edita com sucesso', async () => {
     await assertSucceeds(updateDoc(doc(como(DR_A2), `workspaces/${LOCAL_A2}/exames`, 'ex2'), { conclusoes: 'medico comum ok' }));
@@ -284,8 +303,11 @@ describe('7.1 sincronia com a regra publicada (achados da auditoria)', () => {
     }));
   });
 
-  test('dono ajusta o administrativo sem tocar no autor', async () => {
-    await assertSucceeds(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A2}/exames`, 'ex2'), {
+  // Antes o dono ajustava o administrativo de qualquer exame; agora, se o laudo
+  // esta EMITIDO, a correcao vai pela /api/corrigir-laudo (ADR 8.4). A fila
+  // continua com o dono — coberto por '4. dono administra a fila'.
+  test('dono NAO ajusta o administrativo de laudo EMITIDO pelo cliente (vai pela /api/corrigir-laudo)', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A2}/exames`, 'ex2'), {
       convenio: 'PARTICULAR',
     }));
   });
@@ -432,5 +454,23 @@ describe('13. tipoPerfil nao e autoeditavel', () => {
   });
   test('superadmin muda o tipoPerfil de outro', async () => {
     await assertSucceeds(updateDoc(doc(como(ADMIN), 'profissionais', ASSIST), { tipoPerfil: 'medico' }));
+  });
+});
+
+describe('12. trava do CRM (ato medico) — Plano 2B-B1', () => {
+  test('gestor NAO-medico (dono) NAO edita conteudo de laudo emitido', async () => {
+    await assertFails(updateDoc(doc(como(GESTOR), `workspaces/${LOCAL_C}/exames`, 'exCemitido'), { conclusoes: 'x' }));
+  });
+  test('gestor NAO-medico NAO reabre laudo emitido', async () => {
+    await assertFails(updateDoc(doc(como(GESTOR), `workspaces/${LOCAL_C}/exames`, 'exCemitido'), { status: 'andamento' }));
+  });
+  test('gestor NAO-medico administra a fila (exame nao-emitido)', async () => {
+    await assertSucceeds(updateDoc(doc(como(GESTOR), `workspaces/${LOCAL_C}/exames`, 'exCfila'), { convenio: 'BRADESCO' }));
+  });
+  test('medico autor edita/reabre o proprio laudo emitido', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_C), `workspaces/${LOCAL_C}/exames`, 'exCemitido'), { conclusoes: 'ok', status: 'andamento' }));
+  });
+  test('gestor NAO-medico NAO marca exame da fila como emitido', async () => {
+    await assertFails(updateDoc(doc(como(GESTOR), `workspaces/${LOCAL_C}/exames`, 'exCfila'), { status: 'emitido' }));
   });
 });
