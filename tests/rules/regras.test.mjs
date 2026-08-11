@@ -17,6 +17,9 @@ const DR_A = 'uidDrA', DR_A2 = 'uidDrA2', RITA = 'uidRita', DR_B = 'uidDrB', ADM
 const INATIVO = 'uidInativo'; // vinculo com status != 'ativo', usado na secao 11
 // Conta C: gestor NAO-medico como dono + medico membro (trava do CRM, secao 12).
 const CONTA_C = 'contaC', LOCAL_C = 'localC', GESTOR = 'uidGestor', DR_C = 'uidDrC';
+// Medico-de-perfil com papel recepcao: nao atende no local, so administra a fila
+// (furo B do create — conteudo clinico exige medico-no-local, nao so tipoPerfil).
+const MEDREC = 'uidMedRec';
 
 before(async () => {
   env = await initializeTestEnvironment({
@@ -91,6 +94,9 @@ before(async () => {
     await setDoc(doc(db, 'profissionais', DR_C),   { nome: 'Dr C',   superadmin: false, tipoPerfil: 'medico' });
     await setDoc(doc(db, `workspaces/${LOCAL_C}/exames`, 'exCemitido'), { pacienteNome: 'Pac C', medicoUid: DR_C, status: 'emitido' });
     await setDoc(doc(db, `workspaces/${LOCAL_C}/exames`, 'exCfila'),    { pacienteNome: 'Fila C', status: 'aguardando' });
+    // Medico-de-perfil, mas papel recepcao no local: nao atende, so administra a fila.
+    await setDoc(doc(db, 'profissionais', MEDREC), { nome: 'Med Recepcao', superadmin: false, tipoPerfil: 'medico' });
+    await setDoc(doc(db, 'vinculos', `${CONTA_C}_${MEDREC}`), { contaId: CONTA_C, medicoUid: MEDREC, papel: 'recepcao', locais: [LOCAL_C], status: 'ativo' });
     await setDoc(doc(db, 'configPlanos', 'atual'), { planos: [] });
     await setDoc(doc(db, 'pagamentos', 'pg1'), { valor: 100 });
   });
@@ -242,6 +248,22 @@ describe('7. perfil e autopromocao', () => {
   });
   test('cria o proprio perfil sem superadmin', async () => {
     await assertSucceeds(setDoc(doc(como('uidNovo2'), 'profissionais', 'uidNovo2'), { nome: 'Novo 2' }));
+  });
+  // Furo A: o cadastro real cria o perfil pelo servidor (Admin SDK). O create
+  // client-side NUNCA pode nascer 'verificado' — senao forja o selo do CRM.
+  test('NAO cria o proprio perfil ja com crmVerificacao verificado', async () => {
+    await assertFails(setDoc(doc(como('uidSelo'), 'profissionais', 'uidSelo'), {
+      nome: 'Selo Forjado', tipoPerfil: 'medico',
+      crmVerificacao: { status: 'verificado', fonte: 'x', checadoEm: '2026-01-01' },
+    }));
+  });
+  test('cria o proprio perfil com crmVerificacao nao_verificado', async () => {
+    await assertSucceeds(setDoc(doc(como('uidSeloNv'), 'profissionais', 'uidSeloNv'), {
+      nome: 'Selo Ok', tipoPerfil: 'medico', crmVerificacao: { status: 'nao_verificado' },
+    }));
+  });
+  test('cria o proprio perfil SEM crmVerificacao', async () => {
+    await assertSucceeds(setDoc(doc(como('uidSemSelo'), 'profissionais', 'uidSemSelo'), { nome: 'Sem Selo' }));
   });
 });
 
@@ -523,6 +545,18 @@ describe('12. trava do CRM (ato medico) — Plano 2B-B1', () => {
   test('medico cria exame com conteudo clinico (nao pode quebrar)', async () => {
     await assertSucceeds(setDoc(doc(como(DR_C), `workspaces/${LOCAL_C}/exames`, 'exCmedicoClinico'), {
       pacienteNome: 'Pac Medico', status: 'aguardando', conclusoes: 'laudo do medico', medicoUid: DR_C,
+    }));
+  });
+  // Furo B: medico-DE-PERFIL com papel recepcao NAO atende no local. Conteudo
+  // clinico no create exige medico-NO-local (papel dono/medico), igual /api/emitir.
+  test('medico-de-perfil com papel recepcao NAO cria exame com conteudo clinico', async () => {
+    await assertFails(setDoc(doc(como(MEDREC), `workspaces/${LOCAL_C}/exames`, 'exMedRecClinico'), {
+      status: 'aguardando', conclusoes: 'x',
+    }));
+  });
+  test('medico-de-perfil com papel recepcao cria exame administrativo (fila)', async () => {
+    await assertSucceeds(setDoc(doc(como(MEDREC), `workspaces/${LOCAL_C}/exames`, 'exMedRecAdmin'), {
+      pacienteNome: 'Fila MedRec', status: 'aguardando', convenio: 'UNIMED',
     }));
   });
 });

@@ -137,9 +137,12 @@ service cloud.firestore {
                       && (!('medicoUid' in request.resource.data)
                           || request.resource.data.medicoUid == uid()
                           || ehDonoDoLocal(wsId))
-                      // Quem NAO e medico so cria exame com campos administrativos
-                      // (cadastro/fila). Conteudo clinico ja no create = ato medico.
-                      && (ehMedicoDeVerdade(uid())
+                      // Quem NAO e medico-no-local so cria exame com campos
+                      // administrativos (cadastro/fila). Conteudo clinico ja no
+                      // create = ato medico: exige perfil medico E papel dono/medico
+                      // no local (igual /api/emitir). Medico-de-perfil com papel
+                      // recepcao NAO atende aqui — fica preso a whitelist.
+                      && (( ehMedicoDeVerdade(uid()) && ehMedicoNoLocal(wsId) )
                           || request.resource.data.keys().hasOnly(camposAdministrativos()));
         // Conteudo do laudo: o autor edita; um exame sem autor ainda pode
         // ser assumido por qualquer medico do local. O dono ajusta qualquer um.
@@ -210,7 +213,12 @@ service cloud.firestore {
       allow create: if auth() && profId == uid()
                     && (!('superadmin' in request.resource.data)
                         || request.resource.data.superadmin == false)
-                    && !('adminRole' in request.resource.data);
+                    && !('adminRole' in request.resource.data)
+                    // O selo so nasce 'nao_verificado' pelo navegador. O cadastro
+                    // real cria o perfil pelo servidor (Admin SDK, ignora regras);
+                    // create client-side NUNCA pode nascer 'verificado' (selo forjado).
+                    && (!('crmVerificacao' in request.resource.data)
+                        || request.resource.data.crmVerificacao.status == 'nao_verificado');
       // `tipoPerfil` tambem e imutavel pelo proprio: /api/emitir exige perfil
       // medico para assinar laudo (matriz §4), e sem isso um assistente com
       // papel dono se autopromovia a medico e passava no gate. Reenviar o MESMO
