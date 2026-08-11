@@ -78,7 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // rede) interrompe o callback antes do setLoading(false) e a tela fica
       // presa no coracao pulsando, para sempre, sem dizer o que houve.
       try {
-      setUser(fbUser);
+      if (meuGen === genRef.current) setUser(fbUser);
       if (fbUser) {
         // Carregar perfil
         const prof = await getProfile(fbUser.uid);
@@ -161,7 +161,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (e) {
         console.error('AuthContext: falha ao montar a sessao', e);
       } finally {
-        setLoading(false);
+        if (meuGen === genRef.current) setLoading(false);
       }
     });
     return () => unsub();

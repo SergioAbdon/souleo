@@ -45,6 +45,9 @@ export default function Extrato() {
   // do local anterior nao pode sobrescrever honorarios/contador/exames — o
   // contador stale chegaria a gerar/logar cobranca pro local errado.
   const genRef = useRef(0);
+  // De qual local sao os `exames` exibidos. Na janela de troca, wsIdSel ja e o
+  // B mas os exames ainda sao do A; so gera extrato quando batem.
+  const carregadoWsId = useRef('');
 
   // Carregar honorários quando muda workspace
   useEffect(() => {
@@ -74,6 +77,7 @@ export default function Extrato() {
     const result = await getHistorico(wsIdSel, { dateFrom, dateTo, limitN: 500 });
     if (meuGen !== genRef.current) return;
     setExames(result.items as ExameItem[]);
+    carregadoWsId.current = wsIdSel;
     setLoading(false);
     setGerado(true);
   }
@@ -138,6 +142,11 @@ export default function Extrato() {
   // Gerar extrato (imprimir)
   async function handleGerarExtrato() {
     if (!wsIdSel || !user?.uid) return;
+    // Nao cobrar/logar o local B com os exames ainda do A (janela de troca).
+    if (carregadoWsId.current !== wsIdSel) {
+      alert('Aguarde os dados do local carregarem.');
+      return;
+    }
 
     // Billing check — verifica limite do plano
     const limiteExtrato = await checkExtratoLimit(wsIdSel);
