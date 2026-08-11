@@ -8,10 +8,12 @@ export type Papel = 'dono' | 'medico' | 'recepcao';
 type PerfilLite = { tipoPerfil?: string } | null | undefined;
 type ExameLite = { medicoUid?: string } | null | undefined;
 
-// tipoPerfil ausente conta como medico: e o default do resto do app e nao
-// pode travar perfis antigos sem o campo (licao do apagao de cadastro 09/08).
+// tipoPerfil ausente conta como medico (default do resto do app, nao pode
+// travar perfis antigos sem o campo — licao do apagao de cadastro 09/08) OU
+// == 'medico'. Qualquer outro valor ('assistente', 'gestor', typo) nao e
+// medico — mesmo criterio do /api/emitir e da fechadura (ehMedicoDeVerdade).
 export function ehMedico(perfil: PerfilLite): boolean {
-  return (perfil?.tipoPerfil ?? 'medico') !== 'assistente';
+  return (perfil?.tipoPerfil ?? 'medico') === 'medico';
 }
 
 // Assinar/editar laudo = ser medico de perfil E ser o autor (ou exame sem autor).
@@ -21,6 +23,16 @@ export function podeEditarLaudo(perfil: PerfilLite, exame: ExameLite, uid: strin
   if (!ehMedico(perfil)) return false;
   const autor = exame?.medicoUid;
   return !autor || autor === uid;
+}
+
+// Cancelar laudo emitido: o dono (administrativo) ou o medico autor. Recepcao nao.
+// (A rota /api/exame acao:'cancelar' devolve franquia, loga e apaga o PDF.)
+export function podeCancelarLaudo(
+  perfil: PerfilLite, exame: ExameLite, uid: string, papel: Papel | null | undefined,
+): boolean {
+  if (papel === 'dono') return true;
+  if (papel === 'medico' && ehMedico(perfil)) return exame?.medicoUid === uid;
+  return false;
 }
 
 export function podeVerFinanceiro(papel: Papel | null | undefined): boolean {

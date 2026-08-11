@@ -15,6 +15,11 @@ const CONTA_A = 'contaA', CONTA_B = 'contaB';
 const LOCAL_A1 = 'localA1', LOCAL_A2 = 'localA2', LOCAL_B = 'localB';
 const DR_A = 'uidDrA', DR_A2 = 'uidDrA2', RITA = 'uidRita', DR_B = 'uidDrB', ADMIN = 'uidAdmin';
 const INATIVO = 'uidInativo'; // vinculo com status != 'ativo', usado na secao 11
+// Conta C: gestor NAO-medico como dono + medico membro (trava do CRM, secao 12).
+const CONTA_C = 'contaC', LOCAL_C = 'localC', GESTOR = 'uidGestor', DR_C = 'uidDrC';
+// Medico-de-perfil com papel recepcao: nao atende no local, so administra a fila
+// (furo B do create — conteudo clinico exige medico-no-local, nao so tipoPerfil).
+const MEDREC = 'uidMedRec';
 
 before(async () => {
   env = await initializeTestEnvironment({
@@ -65,13 +70,33 @@ before(async () => {
     // Usuario novo, vinculado a conta A mas ainda nao ativado (secao 11).
     await setDoc(doc(db, 'vinculos', `${CONTA_A}_${INATIVO}`), { contaId: CONTA_A, medicoUid: INATIVO, papel: 'medico', locais: [], status: 'inativo' });
 
-    await setDoc(doc(db, 'profissionais', DR_A), { nome: 'Dr A', superadmin: false });
+    await setDoc(doc(db, 'profissionais', DR_A), {
+      nome: 'Dr A', superadmin: false, crm: '111', ufCrm: 'PA',
+      crmVerificacao: { status: 'pendente' },
+    });
+    // DR_A2 e medico (sem tipoPerfil = default medico). O perfil precisa existir:
+    // ehMedicoDeVerdade confere profissionais/{uid} para liberar edicao de laudo.
+    await setDoc(doc(db, 'profissionais', DR_A2), { nome: 'Dr A2', superadmin: false });
     await setDoc(doc(db, 'profissionais', DR_B), { nome: 'Dr B', superadmin: false });
     await setDoc(doc(db, 'profissionais', RITA), { nome: 'Rita', superadmin: false });
     await setDoc(doc(db, 'profissionais', ADMIN), { nome: 'Direx', superadmin: true });
 
     await setDoc(doc(db, 'subscriptions', CONTA_A), { contaId: CONTA_A, tipo: 'expert', franquiaMensal: 600, franquiaUsada: 10 });
     await setDoc(doc(db, 'subscriptions', CONTA_B), { contaId: CONTA_B, tipo: 'trial', franquiaMensal: 600, franquiaUsada: 0 });
+
+    // ── Conta C: gestor NAO-medico como dono (o caso que a trava do CRM protege) ──
+    await setDoc(doc(db, 'contas', CONTA_C), { tipo: 'PJ', nome: 'Clinica C', ownerUid: GESTOR });
+    await setDoc(doc(db, 'workspaces', LOCAL_C), { contaId: CONTA_C, nomeClinica: 'Clinica C' });
+    await setDoc(doc(db, 'vinculos', `${CONTA_C}_${GESTOR}`), { contaId: CONTA_C, medicoUid: GESTOR, papel: 'dono', locais: [], status: 'ativo' });
+    await setDoc(doc(db, 'vinculos', `${CONTA_C}_${DR_C}`),   { contaId: CONTA_C, medicoUid: DR_C,   papel: 'medico', locais: [], status: 'ativo' });
+    // GESTOR e assistente (nao tem CRM); DR_C e medico.
+    await setDoc(doc(db, 'profissionais', GESTOR), { nome: 'Gestor', superadmin: false, tipoPerfil: 'assistente' });
+    await setDoc(doc(db, 'profissionais', DR_C),   { nome: 'Dr C',   superadmin: false, tipoPerfil: 'medico' });
+    await setDoc(doc(db, `workspaces/${LOCAL_C}/exames`, 'exCemitido'), { pacienteNome: 'Pac C', medicoUid: DR_C, status: 'emitido' });
+    await setDoc(doc(db, `workspaces/${LOCAL_C}/exames`, 'exCfila'),    { pacienteNome: 'Fila C', status: 'aguardando' });
+    // Medico-de-perfil, mas papel recepcao no local: nao atende, so administra a fila.
+    await setDoc(doc(db, 'profissionais', MEDREC), { nome: 'Med Recepcao', superadmin: false, tipoPerfil: 'medico' });
+    await setDoc(doc(db, 'vinculos', `${CONTA_C}_${MEDREC}`), { contaId: CONTA_C, medicoUid: MEDREC, papel: 'recepcao', locais: [LOCAL_C], status: 'ativo' });
     await setDoc(doc(db, 'configPlanos', 'atual'), { planos: [] });
     await setDoc(doc(db, 'pagamentos', 'pg1'), { valor: 100 });
   });
@@ -158,8 +183,11 @@ describe('4. autoria do laudo', () => {
   test('o autor edita o proprio laudo', async () => {
     await assertSucceeds(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'ex1'), { conclusoes: 'ok' }));
   });
-  test('dono ajusta exame que nao e dele (administrativo)', async () => {
-    await assertSucceeds(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A2}/exames`, 'ex2'), { convenio: 'UNIMED' }));
+  test('dono medico NAO ajusta laudo EMITIDO de outro pelo cliente (vai pela /api/corrigir-laudo)', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A2}/exames`, 'ex2'), { convenio: 'UNIMED' }));
+  });
+  test('dono administra a fila: ajusta exame NAO-emitido', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'exSemAutor'), { convenio: 'UNIMED' }));
   });
   test('medico comum (nao dono), autor do exame, edita com sucesso', async () => {
     await assertSucceeds(updateDoc(doc(como(DR_A2), `workspaces/${LOCAL_A2}/exames`, 'ex2'), { conclusoes: 'medico comum ok' }));
@@ -220,6 +248,46 @@ describe('7. perfil e autopromocao', () => {
   });
   test('cria o proprio perfil sem superadmin', async () => {
     await assertSucceeds(setDoc(doc(como('uidNovo2'), 'profissionais', 'uidNovo2'), { nome: 'Novo 2' }));
+  });
+  // Furo A: o cadastro real cria o perfil pelo servidor (Admin SDK). O create
+  // client-side NUNCA pode nascer 'verificado' — senao forja o selo do CRM.
+  test('NAO cria o proprio perfil ja com crmVerificacao verificado', async () => {
+    await assertFails(setDoc(doc(como('uidSelo'), 'profissionais', 'uidSelo'), {
+      nome: 'Selo Forjado', tipoPerfil: 'medico',
+      crmVerificacao: { status: 'verificado', fonte: 'x', checadoEm: '2026-01-01' },
+    }));
+  });
+  test('cria o proprio perfil com crmVerificacao nao_verificado', async () => {
+    await assertSucceeds(setDoc(doc(como('uidSeloNv'), 'profissionais', 'uidSeloNv'), {
+      nome: 'Selo Ok', tipoPerfil: 'medico', crmVerificacao: { status: 'nao_verificado' },
+    }));
+  });
+  test('cria o proprio perfil SEM crmVerificacao', async () => {
+    await assertSucceeds(setDoc(doc(como('uidSemSelo'), 'profissionais', 'uidSemSelo'), { nome: 'Sem Selo' }));
+  });
+});
+
+// crmVerificacao (selo "CRM verificado no CFM"), crm e ufCrm sao do servidor:
+// se o proprio usuario grava, um medico forja o selo ou troca o proprio CRM.
+describe('7.2 crmVerificacao/crm/ufCrm imutaveis no self-update (Plano 2B-B1)', () => {
+  test('usuario NAO forja o selo crmVerificacao em si mesmo', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), 'profissionais', DR_A), {
+      crmVerificacao: { status: 'verificado', fonte: 'x', checadoEm: '2026-01-01' },
+    }));
+  });
+  test('usuario NAO muda o proprio crm', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), 'profissionais', DR_A), { crm: '999' }));
+  });
+  test('usuario NAO muda a propria ufCrm', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), 'profissionais', DR_A), { ufCrm: 'SP' }));
+  });
+  test('usuario edita o proprio nome (crm/crmVerificacao intactos no merge)', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A), 'profissionais', DR_A), { nome: 'Dr A Renomeado' }));
+  });
+  test('superadmin muda o crmVerificacao de outro (servidor seta o selo)', async () => {
+    await assertSucceeds(updateDoc(doc(como(ADMIN), 'profissionais', DR_A), {
+      crmVerificacao: { status: 'verificado', fonte: 'cfm', checadoEm: '2026-08-11' },
+    }));
   });
 });
 
@@ -284,8 +352,11 @@ describe('7.1 sincronia com a regra publicada (achados da auditoria)', () => {
     }));
   });
 
-  test('dono ajusta o administrativo sem tocar no autor', async () => {
-    await assertSucceeds(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A2}/exames`, 'ex2'), {
+  // Antes o dono ajustava o administrativo de qualquer exame; agora, se o laudo
+  // esta EMITIDO, a correcao vai pela /api/corrigir-laudo (ADR 8.4). A fila
+  // continua com o dono — coberto por '4. dono administra a fila'.
+  test('dono NAO ajusta o administrativo de laudo EMITIDO pelo cliente (vai pela /api/corrigir-laudo)', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A2}/exames`, 'ex2'), {
       convenio: 'PARTICULAR',
     }));
   });
@@ -415,8 +486,10 @@ describe('13. tipoPerfil nao e autoeditavel', () => {
   const ASSIST = 'uidAssistente';
   before(async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
+      // Assistente realista: sem CRM (crm/ufCrm vazios). O PerfilModal reenvia
+      // esses mesmos valores no save — intacto permite igual, nao trava o modal.
       await setDoc(doc(ctx.firestore(), 'profissionais', ASSIST), {
-        ...payloadCreateProfile(ASSIST), tipoPerfil: 'assistente',
+        ...payloadCreateProfile(ASSIST), tipoPerfil: 'assistente', crm: '', ufCrm: '',
       });
     });
   });
@@ -432,5 +505,58 @@ describe('13. tipoPerfil nao e autoeditavel', () => {
   });
   test('superadmin muda o tipoPerfil de outro', async () => {
     await assertSucceeds(updateDoc(doc(como(ADMIN), 'profissionais', ASSIST), { tipoPerfil: 'medico' }));
+  });
+});
+
+describe('12. trava do CRM (ato medico) — Plano 2B-B1', () => {
+  test('gestor NAO-medico (dono) NAO edita conteudo de laudo emitido', async () => {
+    await assertFails(updateDoc(doc(como(GESTOR), `workspaces/${LOCAL_C}/exames`, 'exCemitido'), { conclusoes: 'x' }));
+  });
+  test('gestor NAO-medico NAO reabre laudo emitido', async () => {
+    await assertFails(updateDoc(doc(como(GESTOR), `workspaces/${LOCAL_C}/exames`, 'exCemitido'), { status: 'andamento' }));
+  });
+  test('gestor NAO-medico administra a fila (exame nao-emitido)', async () => {
+    await assertSucceeds(updateDoc(doc(como(GESTOR), `workspaces/${LOCAL_C}/exames`, 'exCfila'), { convenio: 'BRADESCO' }));
+  });
+  test('medico autor edita/reabre o proprio laudo emitido', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_C), `workspaces/${LOCAL_C}/exames`, 'exCemitido'), { conclusoes: 'ok', status: 'andamento' }));
+  });
+  test('gestor NAO-medico NAO marca exame da fila como emitido', async () => {
+    await assertFails(updateDoc(doc(como(GESTOR), `workspaces/${LOCAL_C}/exames`, 'exCfila'), { status: 'emitido' }));
+  });
+  // Conteudo clinico do laudo, ate em rascunho, e ato medico (ADR 8.4): o gestor
+  // NAO-medico so administra a fila (paciente, convenio, agendamento).
+  test('gestor NAO-medico NAO escreve conclusoes em rascunho', async () => {
+    await assertFails(updateDoc(doc(como(GESTOR), `workspaces/${LOCAL_C}/exames`, 'exCfila'), { conclusoes: 'laudo do gestor' }));
+  });
+  test('gestor NAO-medico NAO escreve medidas em rascunho', async () => {
+    await assertFails(updateDoc(doc(como(GESTOR), `workspaces/${LOCAL_C}/exames`, 'exCfila'), { medidas: { b7: '10' } }));
+  });
+  test('gestor NAO-medico NAO cria exame ja com conteudo clinico', async () => {
+    await assertFails(setDoc(doc(como(GESTOR), `workspaces/${LOCAL_C}/exames`, 'exCnovoClinico'), {
+      status: 'aguardando', conclusoes: 'laudo inventado',
+    }));
+  });
+  test('gestor NAO-medico cria exame na fila (so administrativo)', async () => {
+    await assertSucceeds(setDoc(doc(como(GESTOR), `workspaces/${LOCAL_C}/exames`, 'exCnovoAdmin'), {
+      pacienteNome: 'Novo Fila C', status: 'aguardando', convenio: 'UNIMED',
+    }));
+  });
+  test('medico cria exame com conteudo clinico (nao pode quebrar)', async () => {
+    await assertSucceeds(setDoc(doc(como(DR_C), `workspaces/${LOCAL_C}/exames`, 'exCmedicoClinico'), {
+      pacienteNome: 'Pac Medico', status: 'aguardando', conclusoes: 'laudo do medico', medicoUid: DR_C,
+    }));
+  });
+  // Furo B: medico-DE-PERFIL com papel recepcao NAO atende no local. Conteudo
+  // clinico no create exige medico-NO-local (papel dono/medico), igual /api/emitir.
+  test('medico-de-perfil com papel recepcao NAO cria exame com conteudo clinico', async () => {
+    await assertFails(setDoc(doc(como(MEDREC), `workspaces/${LOCAL_C}/exames`, 'exMedRecClinico'), {
+      status: 'aguardando', conclusoes: 'x',
+    }));
+  });
+  test('medico-de-perfil com papel recepcao cria exame administrativo (fila)', async () => {
+    await assertSucceeds(setDoc(doc(como(MEDREC), `workspaces/${LOCAL_C}/exames`, 'exMedRecAdmin'), {
+      pacienteNome: 'Fila MedRec', status: 'aguardando', convenio: 'UNIMED',
+    }));
   });
 });

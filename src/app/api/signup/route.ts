@@ -5,11 +5,12 @@
 // ══════════════════════════════════════════════════════════════════
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb, requireUid } from '@/lib/auth-admin';
-import { executarSignup, type DadosSignup } from '@/lib/signup-server';
+import { executarSignup, executarSignupPJ, type DadosSignup, type DadosSignupPJ } from '@/lib/signup-server';
+import { verificarCrmNoOp } from '@/lib/verificar-crm';
 
 export const runtime = 'nodejs';
 
-const STATUS: Record<string, number> = { dados_invalidos: 400, ja_cadastrado: 409, erro: 500 };
+const STATUS: Record<string, number> = { dados_invalidos: 400, ja_cadastrado: 409, cnpj_duplicado: 409, erro: 500 };
 
 export async function POST(req: NextRequest) {
   const uid = await requireUid(req);
@@ -17,8 +18,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, motivo: 'nao_autenticado' }, { status: 401 });
   }
   try {
-    const dados = (await req.json()) as DadosSignup;
-    const r = await executarSignup(adminDb(), adminAuth(), uid, dados);
+    const body = (await req.json()) as (DadosSignup | DadosSignupPJ) & { tipoConta?: 'PF' | 'PJ' };
+    const r = body.tipoConta === 'PJ'
+      ? await executarSignupPJ(adminDb(), adminAuth(), uid, body as DadosSignupPJ, verificarCrmNoOp)
+      : await executarSignup(adminDb(), adminAuth(), uid, body as DadosSignup, verificarCrmNoOp);
     return NextResponse.json(r, { status: r.ok ? 200 : STATUS[r.motivo] ?? 500 });
   } catch (e) {
     console.error('API /signup:', e);

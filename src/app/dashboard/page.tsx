@@ -15,6 +15,7 @@ import Historico from '@/components/Historico';
 import Extrato from '@/components/Extrato';
 import SeletorLocal from '@/components/SeletorLocal';
 import EscolherLocalGate from '@/components/EscolherLocalGate';
+import SeloCrm from '@/components/SeloCrm';
 import { podeVerFinanceiro } from '@/lib/permissoes';
 
 type Tab = 'worklist' | 'historico' | 'extrato';
@@ -78,6 +79,7 @@ export default function DashboardPage() {
             </div>
             <h3 className="font-bold text-sm mt-2 text-[#1E3A5F]">{profile?.nome || 'Usuário'}</h3>
             <p className="text-xs text-blue-600 font-semibold capitalize">{profile?.tipoPerfil || 'Médico'}</p>
+            <div className="mt-1 flex justify-center"><SeloCrm /></div>
             <p className="text-xs text-gray-400 mt-1 truncate">{user.email}</p>
             <button onClick={() => setPerfilOpen(true)}
               className="mt-3 border border-gray-300 rounded-lg px-4 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition w-full">

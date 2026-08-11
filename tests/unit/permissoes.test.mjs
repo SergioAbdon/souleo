@@ -4,7 +4,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ehMedico, podeEditarLaudo, podeVerFinanceiro, podeEditarLocal,
-  podeGerenciarMembros, podeRemoverDaFila, modoEntrada,
+  podeGerenciarMembros, podeRemoverDaFila, modoEntrada, podeCancelarLaudo,
 } from '../../src/lib/permissoes.ts';
 
 describe('ehMedico', () => {
@@ -13,6 +13,10 @@ describe('ehMedico', () => {
   test('tipoPerfil ausente conta como medico (perfis antigos)', () => {
     assert.equal(ehMedico({}), true);
     assert.equal(ehMedico(null), true);
+  });
+  test('valor esquisito (nao medico nem ausente) NAO e medico', () => {
+    assert.equal(ehMedico({ tipoPerfil: 'gestor' }), false);
+    assert.equal(ehMedico({ tipoPerfil: '' }), false);
   });
 });
 
@@ -46,6 +50,23 @@ describe('gates por papel', () => {
     assert.equal(podeRemoverDaFila('dono'), true);
     assert.equal(podeRemoverDaFila('medico'), true);
     assert.equal(podeRemoverDaFila('recepcao'), false);
+  });
+});
+
+describe('podeCancelarLaudo', () => {
+  const medico = { tipoPerfil: 'medico' };
+  const assist = { tipoPerfil: 'assistente' };
+  test('dono cancela qualquer laudo', () => {
+    assert.equal(podeCancelarLaudo(assist, { medicoUid: 'outro' }, 'donoUid', 'dono'), true);
+  });
+  test('medico autor cancela o seu', () => {
+    assert.equal(podeCancelarLaudo(medico, { medicoUid: 'u1' }, 'u1', 'medico'), true);
+  });
+  test('medico NAO autor nao cancela', () => {
+    assert.equal(podeCancelarLaudo(medico, { medicoUid: 'u2' }, 'u1', 'medico'), false);
+  });
+  test('recepcao nao cancela', () => {
+    assert.equal(podeCancelarLaudo(medico, { medicoUid: 'u1' }, 'u1', 'recepcao'), false);
   });
 });
 
