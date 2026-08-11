@@ -6,11 +6,12 @@
 // Billing: 1 extrato grátis/mês/local
 // ══════════════════════════════════════════════════════════════════
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getHistorico, getHonorarios, saveHonorarios, getExtratoContador, incrementarExtrato, logAction } from '@/lib/firestore';
 import { checkExtratoLimit } from '@/lib/billing';
 import type { HonorariosConfig } from '@/lib/firestore';
+import { podeVerFinanceiro } from '@/lib/permissoes';
 
 type ExameItem = Record<string, unknown> & {
   id: string; pacienteNome?: string; tipoExame?: string;
@@ -26,9 +27,9 @@ const TIPOS_EXAME: Record<string, string> = {
 };
 
 export default function Extrato() {
-  const { workspace, contextos, user } = useAuth();
+  const { workspace, papel, user } = useAuth();
 
-  const [wsIdSel, setWsIdSel] = useState(workspace?.id || '');
+  const wsIdSel = workspace?.id || '';
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [exames, setExames] = useState<ExameItem[]>([]);
@@ -40,16 +41,20 @@ export default function Extrato() {
   const [salvandoValores, setSalvandoValores] = useState(false);
   const [extratoInfo, setExtratoInfo] = useState({ emitidos: 0, mes: '' });
   const [gerado, setGerado] = useState(false);
-
-  // Sync wsIdSel
-  useEffect(() => {
-    if (workspace?.id && !wsIdSel) setWsIdSel(workspace.id);
-  }, [workspace?.id, wsIdSel]);
+  // Anti-corrida: troca de local dispara nova carga/consulta; a resposta lenta
+  // do local anterior nao pode sobrescrever honorarios/contador/exames — o
+  // contador stale chegaria a gerar/logar cobranca pro local errado.
+  const genRef = useRef(0);
+  // De qual local sao os `exames` exibidos. Na janela de troca, wsIdSel ja e o
+  // B mas os exames ainda sao do A; so gera extrato quando batem.
+  const carregadoWsId = useRef('');
 
   // Carregar honorários quando muda workspace
   useEffect(() => {
     if (!wsIdSel) return;
+    const meuGen = ++genRef.current;
     getHonorarios(wsIdSel).then(h => {
+      if (meuGen !== genRef.current) return;
       setHonorarios(h);
       setUsarValorUnico(h.valorUnico !== null);
       setValorUnicoInput(h.valorUnico !== null ? String(h.valorUnico) : '');
@@ -58,6 +63,7 @@ export default function Extrato() {
     const anoMes = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}`;
     setExtratoInfo(prev => ({ ...prev, mes: anoMes }));
     getExtratoContador(wsIdSel, anoMes).then(c => {
+      if (meuGen !== genRef.current) return;
       setExtratoInfo({ emitidos: c.emitidos, mes: anoMes });
     });
   }, [wsIdSel]);
@@ -65,10 +71,13 @@ export default function Extrato() {
   // Buscar exames — só quando clica "Consultar"
   async function handleConsultar() {
     if (!wsIdSel || !dateFrom || !dateTo) return;
+    const meuGen = genRef.current;
     setLoading(true);
     setGerado(false);
     const result = await getHistorico(wsIdSel, { dateFrom, dateTo, limitN: 500 });
+    if (meuGen !== genRef.current) return;
     setExames(result.items as ExameItem[]);
+    carregadoWsId.current = wsIdSel;
     setLoading(false);
     setGerado(true);
   }
@@ -77,7 +86,7 @@ export default function Extrato() {
   useEffect(() => { setGerado(false); setExames([]); }, [wsIdSel, dateFrom, dateTo]);
 
   // Nome do workspace selecionado
-  const wsNome = contextos.find(c => c.workspace.id === wsIdSel)?.workspace.nomeClinica || 'Consultório';
+  const wsNome = workspace?.nomeClinica || 'Consultório';
 
   // Agrupar por convênio
   const resumo = exames.reduce<Record<string, number>>((acc, ex) => {
@@ -133,6 +142,11 @@ export default function Extrato() {
   // Gerar extrato (imprimir)
   async function handleGerarExtrato() {
     if (!wsIdSel || !user?.uid) return;
+    // Nao cobrar/logar o local B com os exames ainda do A (janela de troca).
+    if (carregadoWsId.current !== wsIdSel) {
+      alert('Aguarde os dados do local carregarem.');
+      return;
+    }
 
     // Billing check — verifica limite do plano
     const limiteExtrato = await checkExtratoLimit(wsIdSel);
@@ -215,23 +229,16 @@ export default function Extrato() {
     return '—';
   }
 
+  if (!podeVerFinanceiro(papel)) {
+    return (
+      <div className="text-center text-gray-400 py-12 text-sm">
+        O extrato financeiro é restrito a médicos e ao responsável pela conta.
+      </div>
+    );
+  }
+
   return (
     <div>
-      {/* Seletor de workspace */}
-      {contextos.length > 1 && (
-        <div className="mb-3">
-          <label className="block text-[10px] font-semibold text-gray-400 uppercase mb-1">Local de trabalho</label>
-          <select value={wsIdSel} onChange={e => setWsIdSel(e.target.value)}
-            className="border rounded-lg px-3 py-2 text-sm font-semibold text-[#1E3A5F] focus:outline-none focus:border-[#1E3A5F] w-full">
-            {contextos.map(ctx => (
-              <option key={ctx.workspace.id} value={ctx.workspace.id}>
-                {ctx.workspace.nomeClinica || 'Consultório'}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
       {/* Filtros de período */}
       <div className="flex items-center gap-2 mb-4">
         <label className="text-xs text-gray-500">De</label>

@@ -6,45 +6,43 @@
 // Decidido c/ Dr. Sérgio 17/05 (Phase E).
 // ══════════════════════════════════════════════════════════════════
 import { NextRequest, NextResponse } from 'next/server';
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { FieldValue } from 'firebase-admin/firestore';
 import { gerarESalvarPdf } from '@/lib/pdf-server';
+import { requireUid, adminDb } from '@/lib/auth-admin';
+import { resolverPapel, podeCorrigir } from '@/lib/exame-admin';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-if (!getApps().length) {
-  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'leo-sistema-laudos';
-  const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || 'leo-sistema-laudos.firebasestorage.app';
-  initializeApp({
-    credential: cert({
-      projectId,
-      clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL!,
-      privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-    storageBucket,
-  });
-}
-const dbAdmin = getFirestore();
+const dbAdmin = adminDb();
 
 export async function POST(req: NextRequest) {
+  const uid = await requireUid(req);
+  if (!uid) {
+    return NextResponse.json({ ok: false, error: 'nao_autenticado' }, { status: 401 });
+  }
   try {
     const body = await req.json();
-    const { wsId, exameId, convenio, solicitante, pdfHtml, nomeArq, medicoUid } = body as {
+    const { wsId, exameId, convenio, solicitante, pdfHtml, nomeArq } = body as {
       wsId: string;
       exameId: string;
       convenio?: string;
       solicitante?: string;
       pdfHtml?: string;
       nomeArq?: string;
-      medicoUid: string;
     };
 
-    if (!wsId || !exameId || !medicoUid) {
+    if (!wsId || !exameId) {
       return NextResponse.json(
-        { ok: false, error: 'wsId, exameId e medicoUid sao obrigatorios' },
+        { ok: false, error: 'wsId e exameId sao obrigatorios' },
         { status: 400 },
       );
+    }
+
+    // So dono/medico do local corrigem dados administrativos (matriz §4).
+    const papel = await resolverPapel(dbAdmin, wsId, uid);
+    if (papel !== 'dono' && papel !== 'medico') {
+      return NextResponse.json({ ok: false, error: 'sem_permissao' }, { status: 403 });
     }
 
     const ref = dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`);
@@ -53,6 +51,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'exame nao encontrado' }, { status: 404 });
     }
     const antes = snap.data() || {};
+
+    // Correção é pós-emissão e respeita autoria (matriz §4): dono corrige
+    // qualquer um, médico só os seus. Rascunho/aguardando não passa por aqui.
+    const decisao = podeCorrigir(papel, antes.status, antes.medicoUid, uid);
+    if (!decisao.ok) {
+      return NextResponse.json(
+        { ok: false, error: decisao.motivo },
+        { status: decisao.motivo === 'nao_emitido' ? 409 : 403 },
+      );
+    }
 
     // Atualiza SÓ os 2 campos administrativos no TOPO (fonte única — Phase B).
     // NÃO toca emitidoEm/status/medidas/billing. Sem crédito.
@@ -82,7 +90,7 @@ export async function POST(req: NextRequest) {
         tipo: 'correcao_admin',
         wsId,
         exameId,
-        medicoUid,
+        medicoUid: uid,
         de: { convenio: antes.convenio ?? '', solicitante: antes.solicitante ?? '' },
         para: { convenio: convenio ?? '', solicitante: solicitante ?? '' },
         ts: FieldValue.serverTimestamp(),

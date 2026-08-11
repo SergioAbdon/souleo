@@ -13,15 +13,24 @@ import LocalModal from '@/components/LocalModal';
 import Worklist from '@/components/Worklist';
 import Historico from '@/components/Historico';
 import Extrato from '@/components/Extrato';
+import SeletorLocal from '@/components/SeletorLocal';
+import EscolherLocalGate from '@/components/EscolherLocalGate';
+import { podeVerFinanceiro } from '@/lib/permissoes';
 
 type Tab = 'worklist' | 'historico' | 'extrato';
 
 export default function DashboardPage() {
-  const { user, profile, workspace, subscription, loading, reloadProfile } = useAuth();
+  const { user, profile, workspace, subscription, contextos, papel, loading, reloadProfile } = useAuth();
   const router = useRouter();
   const [perfilOpen, setPerfilOpen] = useState(false);
   const [localOpen, setLocalOpen] = useState(false);
-  const [tab, setTab] = useState<Tab>('worklist');
+  const [tabRaw, setTab] = useState<Tab>('worklist');
+  // Painel orfao (bug de UX): se o papel perde acesso ao financeiro (ex: troca
+  // de local pra um onde e recepcao) enquanto a aba 'extrato' esta ativa, a
+  // aba some (Step 4) mas `tab` continuava 'extrato' -> painel em branco.
+  // Fix como valor derivado no render (sem useEffect: setState direto num
+  // useEffect dispara react-hooks/set-state-in-effect, erro novo de lint).
+  const tab: Tab = tabRaw === 'extrato' && !podeVerFinanceiro(papel) ? 'worklist' : tabRaw;
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"><span className="text-4xl animate-pulse">🫀</span></div>;
   if (!user) { router.replace('/login'); return null; }
@@ -47,9 +56,12 @@ export default function DashboardPage() {
             <div className="font-semibold">{profile?.nome || 'Usuário'}</div>
             {profile?.crm && <div className="text-xs opacity-70">CRM/{profile.ufCrm} {profile.crm}</div>}
           </div>
-          <div className="bg-white/20 px-3 py-1.5 rounded-lg text-xs font-semibold">
-            {workspace?.nomeClinica || 'Consultório'}
-          </div>
+          <SeletorLocal />
+          {contextos.length < 2 && (
+            <div className="bg-white/20 px-3 py-1.5 rounded-lg text-xs font-semibold">
+              {workspace?.nomeClinica || 'Consultório'}
+            </div>
+          )}
         </div>
         <button onClick={() => { auth.signOut(); router.replace('/login'); }}
           className="bg-red-500 text-white px-4 py-1.5 rounded-lg text-sm font-semibold hover:bg-red-600 transition">
@@ -92,6 +104,7 @@ export default function DashboardPage() {
 
         {/* CONTEÚDO */}
         <div className="flex-1">
+          <EscolherLocalGate>
           {/* Billing */}
           <div className="grid grid-cols-4 gap-4 mb-6">
             <div className="bg-white rounded-xl shadow p-4">
@@ -126,17 +139,20 @@ export default function DashboardPage() {
                 className={`py-3 px-4 text-sm font-semibold transition border-b-2 ${tab === 'historico' ? 'text-[#1E3A5F] border-[#1E3A5F]' : 'text-gray-400 border-transparent'}`}>
                 📁 Histórico
               </button>
-              <button onClick={() => setTab('extrato')}
-                className={`py-3 px-4 text-sm font-semibold transition border-b-2 ${tab === 'extrato' ? 'text-[#1E3A5F] border-[#1E3A5F]' : 'text-gray-400 border-transparent'}`}>
-                📊 Extrato
-              </button>
+              {podeVerFinanceiro(papel) && (
+                <button onClick={() => setTab('extrato')}
+                  className={`py-3 px-4 text-sm font-semibold transition border-b-2 ${tab === 'extrato' ? 'text-[#1E3A5F] border-[#1E3A5F]' : 'text-gray-400 border-transparent'}`}>
+                  📊 Extrato
+                </button>
+              )}
             </div>
             <div className="p-4">
               {tab === 'worklist' && <Worklist />}
               {tab === 'historico' && <Historico />}
-              {tab === 'extrato' && <Extrato />}
+              {tab === 'extrato' && podeVerFinanceiro(papel) && <Extrato />}
             </div>
           </div>
+          </EscolherLocalGate>
         </div>
       </div>
 

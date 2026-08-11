@@ -5,12 +5,13 @@
 // Disponível em toda a aplicação via useAuth()
 // ══════════════════════════════════════════════════════════════════
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { getProfile, getMemberships, getWorkspace } from '@/lib/firestore';
 import { getSubscription } from '@/lib/billing';
 import { getVinculosDoUsuario, getConta, getLocaisDaConta, type Conta, type Papel } from '@/lib/contas';
+import { modoEntrada } from '@/lib/permissoes';
 
 // Tipos
 export type Profile = Record<string, unknown> & { id: string; nome?: string; crm?: string; ufCrm?: string; especialidade?: string; tipoPerfil?: string; cpf?: string; sigB64?: string; };
@@ -34,15 +35,22 @@ type AuthState = {
   subscription: Subscription | null;
   contextos: Contexto[];
   loading: boolean;
+  localAtivo: Contexto | null;
+  precisaEscolher: boolean;
+  semLocal: boolean;
+  papel?: Papel;
   // Ações
   selecionarContexto: (ctx: Contexto) => void;
+  selecionarLocal: (wsId: string) => void;
   reloadProfile: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState>({
   user: null, profile: null, workspace: null, membership: null,
   subscription: null, contextos: [], loading: true,
+  localAtivo: null, precisaEscolher: false, semLocal: false,
   selecionarContexto: () => {},
+  selecionarLocal: () => {},
   reloadProfile: async () => {},
 });
 
@@ -54,18 +62,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [contextos, setContextos] = useState<Contexto[]>([]);
   const [loading, setLoading] = useState(true);
+  const [localAtivo, setLocalAtivo] = useState<Contexto | null>(null);
+  const [precisaEscolher, setPrecisaEscolher] = useState(false);
+  const [semLocal, setSemLocal] = useState(false);
+  // Anti-corrida: trocar de conta entre abas faz uma leitura antiga terminar
+  // depois e aplicar o usuario anterior. Cada callback ganha um gen; so aplica
+  // estado se ainda for o gen mais novo.
+  const genRef = useRef(0);
 
   // Ouvir mudanças de auth
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
+      const meuGen = ++genRef.current;
       // try/finally: sem isso, uma leitura negada pelas regras (ou queda de
       // rede) interrompe o callback antes do setLoading(false) e a tela fica
       // presa no coracao pulsando, para sempre, sem dizer o que houve.
       try {
-      setUser(fbUser);
+      if (meuGen === genRef.current) setUser(fbUser);
       if (fbUser) {
         // Carregar perfil
         const prof = await getProfile(fbUser.uid);
+        if (meuGen !== genRef.current) return;
         setProfile(prof as Profile | null);
 
         // v3: Carregar contextos (workspaces) em PARALELO
@@ -100,8 +117,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               return ws && !cobertos.has(ws);
             });
             if (ctxNovos.length > 0 && legadoDescoberto.length === 0) {
+              if (meuGen !== genRef.current) return;
               setContextos(ctxNovos);
-              if (ctxNovos.length === 1) selecionarContexto(ctxNovos[0]);
+              aplicarEntrada(ctxNovos);
               setLoading(false);
               return;
             }
@@ -126,12 +144,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               })
           );
           const ctxs = ctxResults.filter((c): c is Contexto => c !== null);
+          if (meuGen !== genRef.current) return;
           setContextos(ctxs);
-
-          // Auto-selecionar se só tem 1 contexto
-          if (ctxs.length === 1) {
-            selecionarContexto(ctxs[0]);
-          }
+          aplicarEntrada(ctxs);
         }
       } else {
         setProfile(null);
@@ -139,11 +154,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setMembership(null);
         setSubscription(null);
         setContextos([]);
+        setLocalAtivo(null);
+        setPrecisaEscolher(false);
+        setSemLocal(false);
       }
       } catch (e) {
         console.error('AuthContext: falha ao montar a sessao', e);
       } finally {
-        setLoading(false);
+        if (meuGen === genRef.current) setLoading(false);
       }
     });
     return () => unsub();
@@ -154,6 +172,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setWorkspace(ctx.workspace);
     setMembership(ctx.membership);
     setSubscription(ctx.subscription);
+    setLocalAtivo(ctx);
+    setPrecisaEscolher(false);
+    setSemLocal(false);
+  }
+
+  // Troca o local ativo pelo id do workspace (seletor do topo / gate de escolha).
+  function selecionarLocal(wsId: string) {
+    const ctx = contextos.find(c => c.workspace.id === wsId);
+    if (ctx) selecionarContexto(ctx);
   }
 
   async function reloadProfile() {
@@ -163,10 +190,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // Decide a entrada a partir dos locais acessiveis (A2 do spec):
+  // 0 → aviso "conta sem local"; 1 → entra direto; 2+ → escolher.
+  function aplicarEntrada(ctxs: Contexto[]) {
+    setLocalAtivo(null);
+    setSemLocal(false);
+    setPrecisaEscolher(false);
+    const modo = modoEntrada(ctxs.length);
+    if (modo === 'sem-local') setSemLocal(true);
+    else if (modo === 'entrar') selecionarContexto(ctxs[0]);
+    else setPrecisaEscolher(true);   // 2+: NAO auto-seleciona
+  }
+
   return (
     <AuthContext.Provider value={{
       user, profile, workspace, membership, subscription,
-      contextos, loading, selecionarContexto, reloadProfile
+      contextos, loading,
+      localAtivo, precisaEscolher, semLocal,
+      papel: membership?.role as Papel | undefined,
+      selecionarContexto, selecionarLocal,
+      reloadProfile
     }}>
       {children}
     </AuthContext.Provider>
