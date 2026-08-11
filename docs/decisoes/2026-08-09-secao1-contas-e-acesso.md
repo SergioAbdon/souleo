@@ -433,6 +433,43 @@ CRM) — verificação de identidade médica é produto, pendência do Plano 2B.
 - Fallbacks legados (assinatura por `workspaceId`, `ownerUid` em `workspaces`) morrem no **Plano 3**, com critério verificável: `npm run secao1:inventario` mostra **zero workspaces sem `contaId` e zero vínculos sem `papel`**.
 - Código morto listado pelo Ponytail, remoção no **Plano 3**: `createProfile`, `createWorkspace`, `createMembership`, `emitExame`, `createSubscription`, `consumirEmissao`, `convites`.
 
+## 8.4 Plano 2B-A — dor diária (10/08/2026)
+
+Primeiro bloco do 2B: seletor de local, papéis na tela, aviso "conta sem local",
+`/api/corrigir-laudo` autenticada. Executado com o pipeline padrão (brainstorm →
+plano → subagentes → tríade). Spec em `docs/superpowers/specs/2026-08-10-secao1-plano2b-a-dor-diaria.md`.
+
+| Entrega | O que |
+|---|---|
+| Fluxo de entrada | 0 locais → tela "conta sem local" (fim da fila-vazia-silenciosa do incidente 10/08); 1 → entra direto; 2+ → "qual local hoje?" (contexto de sessão, sem localStorage) |
+| Seletor único | No topo, só com 2+ locais; `AuthContext` é a fonte única (`localAtivo`/`selecionarLocal`). Histórico e Extrato largaram o `wsIdSel` próprio |
+| Papéis na tela | `src/lib/permissoes.ts` (matriz §4 em código puro, testável). Esconde o que o papel não pode. Gate de editar laudo virou **perfil médico + autoria** — corrigiu o bug do dono-médico (botão "Editar" sumido) |
+| `/api/corrigir-laudo` | Última rota aberta fechada: `requireUid` + `resolverPapel` (401/403); `medicoUid` deixou de vir do corpo; **médico só corrige os seus**, dono qualquer, só laudo emitido (`podeCorrigir` em `exame-admin.ts`) |
+
+**Tríade (Codex/Ruflo/Ponytail) — corrigido na mesma leva:** corrida de troca de
+conta entre abas (guarda de geração `genRef` no `AuthContext`: callback obsoleto
+não reescreve user, não solta o loading, não aplica contexto antigo); corrida de
+troca de local (guarda de geração em Histórico/Extrato; Extrato só gera/cobra com
+`carregadoWsId === wsIdSel` — não cobra o local errado).
+
+**DECISÃO do Dr. Sérgio (10/08) — ato médico = CRM:** *"editar e liberar laudo é
+ato médico; quem tem CRM pode, quem não tem, não — e a distinção nasce no cadastro."*
+Consequências, a cravar no **Plano 2B-B** (onde surge o dono não-médico, com o
+cadastro PJ):
+- **Cadastro** captura e valida CRM; `tipoPerfil='medico'` passa a significar CRM real (hoje é autodeclarado).
+- **Banco** (`firestore.rules`, `exames update`): hoje o braço do dono
+  (`ehDonoDoLocal && intacto('medicoUid')`) deixa um dono **não-médico** editar
+  conteúdo clínico de laudo alheio — contra a matriz §4. **Must-fix no 2B-B**, com
+  regra + teste + tríade próprios. Exposição hoje é **zero** (o único dono é o Dr.
+  Sérgio, que é médico); a UI já trava certo (`podeEditarLaudo` = médico+autoria).
+
+**Pendências aceitas do 2B-A, com destino:**
+- Regra do banco "conteúdo clínico = só médico (CRM)" + validação de CRM no cadastro → **Plano 2B-B** (decisão do Sérgio acima).
+- Unificar a matriz de "quem edita laudo", hoje em 3 lugares (`permissoes.ts` por perfil, `exame-admin.ts` por papel, `/api/emitir` por perfil) num ponto de verdade → **Plano 2B-B**.
+- Wrapper único de rota autenticada (`requireUid`+`resolverPapel` repete em 4 rotas) → **Plano 2B-B**.
+- TOCTOU do `/api/corrigir-laudo` (update fora de transação) + `handleConsultar`/`carregarMais` obsoletos não resetam loading + validação de tipo/tamanho do corpo → estreitos, **Plano 3**.
+- `AuthContext` não reage a mudança de vínculo em runtime (convite/PJ só aparecem ao relogar) → **Plano 2B-B**.
+
 ## 9. Fora de escopo (Seção 1 não resolve)
 
 - Gateway de pagamento real (Stripe/Asaas).
