@@ -176,10 +176,10 @@ export async function executarSignupPJ(
   const tipoPerfil = dados.tipoPerfil === 'medico' ? 'medico' : 'assistente';
   const invalido = !nome || !email || cnpj.length !== 14 || !razaoSocial
     || (tipoPerfil === 'medico' && (!dados.crm || !dados.ufCrm));
-  if (invalido) return falhar('dados_invalidos');
 
   try {
-    const crmVerificacao = tipoPerfil === 'medico'
+    // Nao chamar o provedor de CRM quando o dado ja e invalido (evita I/O inutil).
+    const crmVerificacao = (!invalido && tipoPerfil === 'medico')
       ? await verificarCrm(dados.crm ?? '', (dados.ufCrm ?? '').toUpperCase())
       : { status: 'nao_verificado' as const, fonte: 'nenhum', checadoEm: null };
 
@@ -194,6 +194,8 @@ export async function executarSignupPJ(
       const perfilRef = db.doc(`profissionais/${uid}`);
       const perfilExistente = await t.get(perfilRef);
       if (perfilExistente.exists) return 'ja_cadastrado' as const;
+      // Usuario ja cadastrado NUNCA cai no rollback: 'invalido' so vale depois disso.
+      if (invalido) return 'dados_invalidos' as const;
       // CNPJ unico: query dentro da transacao (leitura antes de qualquer escrita)
       const dup = await t.get(db.collection('empresas').where('cnpj', '==', cnpj).limit(1));
       if (!dup.empty) return 'cnpj_duplicado' as const;
@@ -236,6 +238,7 @@ export async function executarSignupPJ(
     });
 
     if (motivo === 'ja_cadastrado') return { ok: false, motivo };
+    if (motivo === 'dados_invalidos') return falhar('dados_invalidos');
     if (motivo === 'cnpj_duplicado') return falhar('cnpj_duplicado');
     return { ok: true, contaId, wsId: wsRef.id, empresaId: empresaRef.id };
   } catch (e) {

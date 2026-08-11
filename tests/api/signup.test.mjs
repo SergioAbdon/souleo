@@ -125,6 +125,14 @@ describe('executarSignupPJ', () => {
     assert.equal(r.motivo, 'dados_invalidos');
     await assert.rejects(authAdmin.getUser(uid));
   });
+  test('ja cadastrado (PJ): recusa e NAO apaga o Auth user, mesmo com dados invalidos', async () => {
+    const { uid } = await authAdmin.createUser({ email: 'pjexiste@exemplo.com', password: 'x'.repeat(8) });
+    await db.doc(`profissionais/${uid}`).set({ uid, nome: 'Ja Existo' });
+    const r = await executarSignupPJ(db, authAdmin, uid, { ...PJ, email: 'pjexiste@exemplo.com', cnpj: '' });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'ja_cadastrado');
+    await assert.doesNotReject(authAdmin.getUser(uid), 'usuario ja cadastrado jamais e apagado');
+  });
   test('CNPJ duplicado e recusado', async () => {
     const { uid: u1 } = await authAdmin.createUser({ email: 'pjdup1@exemplo.com', password: 'x'.repeat(8) });
     await executarSignupPJ(db, authAdmin, u1, { ...PJ, email: 'pjdup1@exemplo.com', cnpj: '55666777000188' });
