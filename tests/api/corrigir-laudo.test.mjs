@@ -4,7 +4,7 @@ import { test, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
-import { resolverPapel } from '../../src/lib/exame-admin.ts';
+import { resolverPapel, podeCorrigir } from '../../src/lib/exame-admin.ts';
 
 let db;
 const CONTA = 'contaC', WS = 'wsC';
@@ -28,5 +28,26 @@ describe('autorizacao corrigir-laudo (via resolverPapel)', () => {
   });
   test('forasteiro sem vinculo → null', async () => {
     assert.equal(await resolverPapel(db, WS, 'uidForasteiro'), null);
+  });
+});
+
+// resolverPapel so resolve o PAPEL; a autoria + status "emitido" e a regra §4,
+// decidida na funcao pura podeCorrigir e checada na rota antes do update.
+describe('autoria/emitido corrigir-laudo (podeCorrigir)', () => {
+  test('dono + emitido → ok (corrige qualquer autor)', () => {
+    assert.deepEqual(podeCorrigir('dono', 'emitido', 'outroMed', DONO), { ok: true });
+  });
+  test('medico autor + emitido → ok', () => {
+    assert.deepEqual(podeCorrigir('medico', 'emitido', MED, MED), { ok: true });
+  });
+  test('medico sem autor no exame + emitido → ok (assume)', () => {
+    assert.deepEqual(podeCorrigir('medico', 'emitido', undefined, MED), { ok: true });
+  });
+  test('medico nao-autor + emitido → nao_e_autor', () => {
+    assert.deepEqual(podeCorrigir('medico', 'emitido', 'outroMed', MED), { ok: false, motivo: 'nao_e_autor' });
+  });
+  test('qualquer papel + status aguardando → nao_emitido', () => {
+    assert.deepEqual(podeCorrigir('dono', 'aguardando', DONO, DONO), { ok: false, motivo: 'nao_emitido' });
+    assert.deepEqual(podeCorrigir('medico', 'andamento', MED, MED), { ok: false, motivo: 'nao_emitido' });
   });
 });

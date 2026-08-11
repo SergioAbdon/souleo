@@ -5,7 +5,7 @@
 // Ações: Ver, Imprimir, Excluir (reabrir é na própria tela do laudo)
 // ══════════════════════════════════════════════════════════════════
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getHistorico, getExame, type HistoricoResult } from '@/lib/firestore';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
@@ -41,10 +41,14 @@ export default function Historico() {
   const [hasMore, setHasMore] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteNome, setDeleteNome] = useState('');
+  // Anti-corrida: troca de local dispara nova busca; a resposta lenta do local
+  // anterior nao pode sobrescrever a lista do local atual.
+  const genRef = useRef(0);
 
   // v3: Buscar dados com paginacao
   const fetchData = useCallback(async () => {
     if (!wsIdSel) return;
+    const meuGen = ++genRef.current;
     setLoading(true);
     setCursor(null);
     const filtros: Record<string, unknown> = { limitN: 50 };
@@ -53,6 +57,7 @@ export default function Historico() {
     if (convenioSel) filtros.convenio = convenioSel;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result: HistoricoResult = await getHistorico(wsIdSel, filtros as any);
+    if (meuGen !== genRef.current) return;
     setExames(result.items as ExameItem[]);
     setCursor(result.lastDoc as DocumentSnapshot | null);
     setHasMore(result.hasMore);
@@ -61,6 +66,7 @@ export default function Historico() {
 
   async function carregarMais() {
     if (!wsIdSel || !cursor || loadingMore) return;
+    const meuGen = genRef.current;
     setLoadingMore(true);
     const filtros: Record<string, unknown> = { limitN: 50, cursor };
     if (dateFrom) filtros.dateFrom = dateFrom;
@@ -68,6 +74,7 @@ export default function Historico() {
     if (convenioSel) filtros.convenio = convenioSel;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result: HistoricoResult = await getHistorico(wsIdSel, filtros as any);
+    if (meuGen !== genRef.current) return;
     setExames(prev => [...prev, ...(result.items as ExameItem[])]);
     setCursor(result.lastDoc as DocumentSnapshot | null);
     setHasMore(result.hasMore);

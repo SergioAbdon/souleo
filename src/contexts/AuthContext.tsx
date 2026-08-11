@@ -5,7 +5,7 @@
 // Disponível em toda a aplicação via useAuth()
 // ══════════════════════════════════════════════════════════════════
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { getProfile, getMemberships, getWorkspace } from '@/lib/firestore';
@@ -65,10 +65,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [localAtivo, setLocalAtivo] = useState<Contexto | null>(null);
   const [precisaEscolher, setPrecisaEscolher] = useState(false);
   const [semLocal, setSemLocal] = useState(false);
+  // Anti-corrida: trocar de conta entre abas faz uma leitura antiga terminar
+  // depois e aplicar o usuario anterior. Cada callback ganha um gen; so aplica
+  // estado se ainda for o gen mais novo.
+  const genRef = useRef(0);
 
   // Ouvir mudanças de auth
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
+      const meuGen = ++genRef.current;
       // try/finally: sem isso, uma leitura negada pelas regras (ou queda de
       // rede) interrompe o callback antes do setLoading(false) e a tela fica
       // presa no coracao pulsando, para sempre, sem dizer o que houve.
@@ -77,6 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (fbUser) {
         // Carregar perfil
         const prof = await getProfile(fbUser.uid);
+        if (meuGen !== genRef.current) return;
         setProfile(prof as Profile | null);
 
         // v3: Carregar contextos (workspaces) em PARALELO
@@ -111,6 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               return ws && !cobertos.has(ws);
             });
             if (ctxNovos.length > 0 && legadoDescoberto.length === 0) {
+              if (meuGen !== genRef.current) return;
               setContextos(ctxNovos);
               aplicarEntrada(ctxNovos);
               setLoading(false);
@@ -137,6 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               })
           );
           const ctxs = ctxResults.filter((c): c is Contexto => c !== null);
+          if (meuGen !== genRef.current) return;
           setContextos(ctxs);
           aplicarEntrada(ctxs);
         }

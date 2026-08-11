@@ -6,7 +6,7 @@
 // Billing: 1 extrato grátis/mês/local
 // ══════════════════════════════════════════════════════════════════
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getHistorico, getHonorarios, saveHonorarios, getExtratoContador, incrementarExtrato, logAction } from '@/lib/firestore';
 import { checkExtratoLimit } from '@/lib/billing';
@@ -41,11 +41,17 @@ export default function Extrato() {
   const [salvandoValores, setSalvandoValores] = useState(false);
   const [extratoInfo, setExtratoInfo] = useState({ emitidos: 0, mes: '' });
   const [gerado, setGerado] = useState(false);
+  // Anti-corrida: troca de local dispara nova carga/consulta; a resposta lenta
+  // do local anterior nao pode sobrescrever honorarios/contador/exames — o
+  // contador stale chegaria a gerar/logar cobranca pro local errado.
+  const genRef = useRef(0);
 
   // Carregar honorários quando muda workspace
   useEffect(() => {
     if (!wsIdSel) return;
+    const meuGen = ++genRef.current;
     getHonorarios(wsIdSel).then(h => {
+      if (meuGen !== genRef.current) return;
       setHonorarios(h);
       setUsarValorUnico(h.valorUnico !== null);
       setValorUnicoInput(h.valorUnico !== null ? String(h.valorUnico) : '');
@@ -54,6 +60,7 @@ export default function Extrato() {
     const anoMes = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}`;
     setExtratoInfo(prev => ({ ...prev, mes: anoMes }));
     getExtratoContador(wsIdSel, anoMes).then(c => {
+      if (meuGen !== genRef.current) return;
       setExtratoInfo({ emitidos: c.emitidos, mes: anoMes });
     });
   }, [wsIdSel]);
@@ -61,9 +68,11 @@ export default function Extrato() {
   // Buscar exames — só quando clica "Consultar"
   async function handleConsultar() {
     if (!wsIdSel || !dateFrom || !dateTo) return;
+    const meuGen = genRef.current;
     setLoading(true);
     setGerado(false);
     const result = await getHistorico(wsIdSel, { dateFrom, dateTo, limitN: 500 });
+    if (meuGen !== genRef.current) return;
     setExames(result.items as ExameItem[]);
     setLoading(false);
     setGerado(true);

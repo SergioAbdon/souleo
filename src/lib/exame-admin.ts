@@ -41,6 +41,20 @@ function medicoAlcanca(exame: Record<string, unknown>, uid: string) {
   return !exame.medicoUid || exame.medicoUid === uid;
 }
 
+// /api/corrigir-laudo: correcao administrativa e SO de laudo EMITIDO; dono
+// corrige qualquer um, medico so os seus (autor), exame sem autor pode ser
+// assumido. Puro/testavel — a rota resolve papel antes (recepcao/forasteiro ja
+// barrados) e mapeia o motivo em HTTP (nao_emitido→409, nao_e_autor→403).
+export function podeCorrigir(
+  papel: Papel, antesStatus: unknown, antesMedicoUid: unknown, uid: string,
+): { ok: boolean; motivo?: string } {
+  if (antesStatus !== 'emitido') return { ok: false, motivo: 'nao_emitido' };
+  if (papel === 'medico' && antesMedicoUid && antesMedicoUid !== uid) {
+    return { ok: false, motivo: 'nao_e_autor' };
+  }
+  return { ok: true };
+}
+
 // Devolve o SALDO LIQUIDO dos consumos do exame (P1/D8): tudo que foi
 // consumido MENOS o que ja foi devolvido em registros 'cancelamento'
 // anteriores. Idempotente por construcao — retry apos falha parcial e

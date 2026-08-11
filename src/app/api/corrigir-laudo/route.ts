@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { gerarESalvarPdf } from '@/lib/pdf-server';
 import { requireUid, adminDb } from '@/lib/auth-admin';
-import { resolverPapel } from '@/lib/exame-admin';
+import { resolverPapel, podeCorrigir } from '@/lib/exame-admin';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -51,6 +51,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'exame nao encontrado' }, { status: 404 });
     }
     const antes = snap.data() || {};
+
+    // Correção é pós-emissão e respeita autoria (matriz §4): dono corrige
+    // qualquer um, médico só os seus. Rascunho/aguardando não passa por aqui.
+    const decisao = podeCorrigir(papel, antes.status, antes.medicoUid, uid);
+    if (!decisao.ok) {
+      return NextResponse.json(
+        { ok: false, error: decisao.motivo },
+        { status: decisao.motivo === 'nao_emitido' ? 409 : 403 },
+      );
+    }
 
     // Atualiza SÓ os 2 campos administrativos no TOPO (fonte única — Phase B).
     // NÃO toca emitidoEm/status/medidas/billing. Sem crédito.
