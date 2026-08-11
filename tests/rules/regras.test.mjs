@@ -67,7 +67,10 @@ before(async () => {
     // Usuario novo, vinculado a conta A mas ainda nao ativado (secao 11).
     await setDoc(doc(db, 'vinculos', `${CONTA_A}_${INATIVO}`), { contaId: CONTA_A, medicoUid: INATIVO, papel: 'medico', locais: [], status: 'inativo' });
 
-    await setDoc(doc(db, 'profissionais', DR_A), { nome: 'Dr A', superadmin: false });
+    await setDoc(doc(db, 'profissionais', DR_A), {
+      nome: 'Dr A', superadmin: false, crm: '111', ufCrm: 'PA',
+      crmVerificacao: { status: 'pendente' },
+    });
     // DR_A2 e medico (sem tipoPerfil = default medico). O perfil precisa existir:
     // ehMedicoDeVerdade confere profissionais/{uid} para liberar edicao de laudo.
     await setDoc(doc(db, 'profissionais', DR_A2), { nome: 'Dr A2', superadmin: false });
@@ -239,6 +242,30 @@ describe('7. perfil e autopromocao', () => {
   });
   test('cria o proprio perfil sem superadmin', async () => {
     await assertSucceeds(setDoc(doc(como('uidNovo2'), 'profissionais', 'uidNovo2'), { nome: 'Novo 2' }));
+  });
+});
+
+// crmVerificacao (selo "CRM verificado no CFM"), crm e ufCrm sao do servidor:
+// se o proprio usuario grava, um medico forja o selo ou troca o proprio CRM.
+describe('7.2 crmVerificacao/crm/ufCrm imutaveis no self-update (Plano 2B-B1)', () => {
+  test('usuario NAO forja o selo crmVerificacao em si mesmo', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), 'profissionais', DR_A), {
+      crmVerificacao: { status: 'verificado', fonte: 'x', checadoEm: '2026-01-01' },
+    }));
+  });
+  test('usuario NAO muda o proprio crm', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), 'profissionais', DR_A), { crm: '999' }));
+  });
+  test('usuario NAO muda a propria ufCrm', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), 'profissionais', DR_A), { ufCrm: 'SP' }));
+  });
+  test('usuario edita o proprio nome (crm/crmVerificacao intactos no merge)', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A), 'profissionais', DR_A), { nome: 'Dr A Renomeado' }));
+  });
+  test('superadmin muda o crmVerificacao de outro (servidor seta o selo)', async () => {
+    await assertSucceeds(updateDoc(doc(como(ADMIN), 'profissionais', DR_A), {
+      crmVerificacao: { status: 'verificado', fonte: 'cfm', checadoEm: '2026-08-11' },
+    }));
   });
 });
 
@@ -437,8 +464,10 @@ describe('13. tipoPerfil nao e autoeditavel', () => {
   const ASSIST = 'uidAssistente';
   before(async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
+      // Assistente realista: sem CRM (crm/ufCrm vazios). O PerfilModal reenvia
+      // esses mesmos valores no save — intacto permite igual, nao trava o modal.
       await setDoc(doc(ctx.firestore(), 'profissionais', ASSIST), {
-        ...payloadCreateProfile(ASSIST), tipoPerfil: 'assistente',
+        ...payloadCreateProfile(ASSIST), tipoPerfil: 'assistente', crm: '', ufCrm: '',
       });
     });
   });

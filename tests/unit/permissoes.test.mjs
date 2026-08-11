@@ -14,6 +14,10 @@ describe('ehMedico', () => {
     assert.equal(ehMedico({}), true);
     assert.equal(ehMedico(null), true);
   });
+  test('valor esquisito (nao medico nem ausente) NAO e medico', () => {
+    assert.equal(ehMedico({ tipoPerfil: 'gestor' }), false);
+    assert.equal(ehMedico({ tipoPerfil: '' }), false);
+  });
 });
 
 describe('podeEditarLaudo (perfil medico + autoria)', () => {

@@ -8,10 +8,12 @@ export type Papel = 'dono' | 'medico' | 'recepcao';
 type PerfilLite = { tipoPerfil?: string } | null | undefined;
 type ExameLite = { medicoUid?: string } | null | undefined;
 
-// tipoPerfil ausente conta como medico: e o default do resto do app e nao
-// pode travar perfis antigos sem o campo (licao do apagao de cadastro 09/08).
+// tipoPerfil ausente conta como medico (default do resto do app, nao pode
+// travar perfis antigos sem o campo — licao do apagao de cadastro 09/08) OU
+// == 'medico'. Qualquer outro valor ('assistente', 'gestor', typo) nao e
+// medico — mesmo criterio do /api/emitir e da fechadura (ehMedicoDeVerdade).
 export function ehMedico(perfil: PerfilLite): boolean {
-  return (perfil?.tipoPerfil ?? 'medico') !== 'assistente';
+  return (perfil?.tipoPerfil ?? 'medico') === 'medico';
 }
 
 // Assinar/editar laudo = ser medico de perfil E ser o autor (ou exame sem autor).

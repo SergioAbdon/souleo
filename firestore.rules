@@ -59,12 +59,14 @@ service cloud.firestore {
       return alcancaLocal(wsId) && vinc(contaDoLocal(wsId)).papel in ['dono', 'medico'];
     }
 
-    // Ato medico = ter CRM. tipoPerfil ausente conta como medico (default do app,
-    // licao do apagao de cadastro 09/08); so 'assistente' explicito nao e medico.
-    // E o eixo que a decisao do Dr. Sergio (ADR 8.4) exige para editar/liberar laudo.
+    // Ato medico: tipoPerfil ausente conta como medico (default do app, licao do
+    // apagao de cadastro 09/08) OU == 'medico' explicito. Qualquer outro valor
+    // ('assistente', 'gestor', typo, '') NAO e medico — mesmo criterio do
+    // /api/emitir (matriz §4). E o eixo que a decisao do Dr. Sergio (ADR 8.4)
+    // exige para editar/liberar laudo.
     function ehMedicoDeVerdade(u) {
       return exists(/databases/$(database)/documents/profissionais/$(u))
-        && get(/databases/$(database)/documents/profissionais/$(u)).data.get('tipoPerfil', 'medico') != 'assistente';
+        && get(/databases/$(database)/documents/profissionais/$(u)).data.get('tipoPerfil', 'medico') == 'medico';
     }
 
     // Precisa resistir a setDoc() sem merge: nesse caso a operacao ainda e
@@ -191,9 +193,14 @@ service cloud.firestore {
       // papel dono se autopromovia a medico e passava no gate. Reenviar o MESMO
       // valor continua valendo (intacto permite igual) — o PerfilModal manda o
       // campo em todo save; so a MUDANCA e negada. O Direx (branch separado) muda.
+      // `crmVerificacao` (selo "CRM verificado no CFM") so o servidor/superadmin
+      // seta — senao o medico gravava status:'verificado' em si e forjava o selo.
+      // `crm`/`ufCrm` nascem no cadastro e nao mudam pelo proprio (a distincao e
+      // do onboarding). Reenviar o mesmo valor continua passando (intacto).
       allow update: if superadmin()
                     || (auth() && profId == uid()
-                        && intacto('superadmin') && intacto('adminRole') && intacto('tipoPerfil'));
+                        && intacto('superadmin') && intacto('adminRole') && intacto('tipoPerfil')
+                        && intacto('crmVerificacao') && intacto('crm') && intacto('ufCrm'));
       allow delete: if false;
     }
 

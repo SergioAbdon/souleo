@@ -259,7 +259,7 @@ export default function Historico() {
                         className="bg-red-50 text-red-500 px-2.5 py-1 rounded text-xs font-semibold hover:bg-red-100 transition">
                         🗑
                       </button>
-                      {podeCancelarLaudo(profile, ex, user?.uid || '', papel) && (
+                      {podeCancelarLaudo(profile, ex, user?.uid || '', papel) && ex.status !== 'cancelado' && (
                         <button onClick={() => setCancelId(ex.id)}
                           className="text-xs text-orange-600 hover:underline">Cancelar</button>
                       )}
