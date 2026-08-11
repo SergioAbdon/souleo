@@ -22,6 +22,12 @@ export type ResultadoSignup =
   | { ok: true; contaId: string; wsId: string }
   | { ok: false; motivo: 'dados_invalidos' | 'ja_cadastrado' | 'erro' };
 
+// Espelho de CrmVerificacao/VerificarCrm (src/lib/verificar-crm.ts). Duplicado
+// aqui porque este arquivo nao pode ter import relativo (ver topo) — a rota
+// injeta a funcao real por parametro (DI).
+type CrmVerificacao = { status: 'nao_verificado' | 'verificado' | 'reprovado'; fonte: string; checadoEm: string | null };
+type VerificarCrm = (crm: string, uf: string) => Promise<CrmVerificacao>;
+
 // Espelho da linha 'trial' de PLANOS_DEFAULT (src/lib/billing.ts:69).
 // Duplicado aqui porque este arquivo nao pode ter import relativo (ver topo).
 // Se configPlanos/atual existir no banco, ele vence — isto e so a rede.
@@ -42,7 +48,8 @@ async function planoTrial(db: Firestore) {
 }
 
 export async function executarSignup(
-  db: Firestore, authAdmin: Auth, uid: string, dados: DadosSignup
+  db: Firestore, authAdmin: Auth, uid: string, dados: DadosSignup,
+  verificarCrm: VerificarCrm = async () => ({ status: 'nao_verificado', fonte: 'nenhum', checadoEm: null }),
 ): Promise<ResultadoSignup> {
   // Rollback do Auth user orfao: sem ele o email fica preso (retry daria
   // email-already-in-use para sempre). SO e chamado quando o perfil NAO
@@ -60,6 +67,9 @@ export async function executarSignup(
 
   try {
     const plano = await planoTrial(db);
+    const crmVerificacao: CrmVerificacao = tipoPerfil === 'medico'
+      ? await verificarCrm(dados.crm ?? '', (dados.ufCrm ?? '').toUpperCase())
+      : { status: 'nao_verificado', fonte: 'nenhum', checadoEm: null };
     const agora = new Date();
     const contaRef = db.collection('contas').doc();
     const wsRef = db.collection('workspaces').doc();
@@ -82,7 +92,7 @@ export async function executarSignup(
         uid, nome, email,
         crm: dados.crm ?? '', ufCrm: (dados.ufCrm ?? '').toUpperCase(),
         especialidade: dados.especialidade ?? '', tipoPerfil,
-        cpf: '', rqe: '', superadmin: false,
+        cpf: '', rqe: '', superadmin: false, crmVerificacao,
         criadoEm: FieldValue.serverTimestamp(), atualizadoEm: FieldValue.serverTimestamp(),
       });
       // 2. Conta (a camada nova)

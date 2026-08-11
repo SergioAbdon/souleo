@@ -78,4 +78,13 @@ describe('executarSignup', () => {
     assert.equal(r.ok, false);
     assert.equal(r.motivo, 'dados_invalidos');
   });
+
+  test('perfil medico nasce com crmVerificacao nao_verificado', async () => {
+    const { uid } = await authAdmin.createUser({ email: 'crm@exemplo.com', password: 'x'.repeat(8) });
+    const r = await executarSignup(db, authAdmin, uid, { ...DADOS, email: 'crm@exemplo.com' });
+    assert.equal(r.ok, true);
+    const prof = (await db.doc(`profissionais/${uid}`).get()).data();
+    assert.equal(prof.crmVerificacao.status, 'nao_verificado');
+    assert.equal(prof.crmVerificacao.fonte, 'nenhum');
+  });
 });
