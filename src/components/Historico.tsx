@@ -9,13 +9,14 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getHistorico, getExame, type HistoricoResult } from '@/lib/firestore';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
+import { podeCancelarLaudo } from '@/lib/permissoes';
 import { DocumentSnapshot } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 
 type ExameItem = Record<string, unknown> & {
   id: string; pacienteNome?: string; tipoExame?: string;
   dataExame?: string; convenio?: string; solicitante?: string;
-  emitidoEm?: { toDate?: () => Date };
+  emitidoEm?: { toDate?: () => Date }; medicoUid?: string; status?: string;
 };
 
 const TIPOS_EXAME: Record<string, string> = {
@@ -26,7 +27,7 @@ const TIPOS_EXAME: Record<string, string> = {
 };
 
 export default function Historico() {
-  const { workspace, user } = useAuth();
+  const { workspace, user, papel, profile } = useAuth();
   const router = useRouter();
 
   const wsIdSel = workspace?.id || '';
@@ -41,6 +42,8 @@ export default function Historico() {
   const [hasMore, setHasMore] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteNome, setDeleteNome] = useState('');
+  const [cancelId, setCancelId] = useState<string | null>(null);
+  const [cancelMotivo, setCancelMotivo] = useState('');
   // Anti-corrida: troca de local dispara nova busca; a resposta lenta do local
   // anterior nao pode sobrescrever a lista do local atual.
   const genRef = useRef(0);
@@ -145,6 +148,29 @@ export default function Historico() {
     }
   }
 
+  async function confirmarCancelamento() {
+    if (!cancelId || !wsIdSel || !user?.uid) return;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/exame', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ acao: 'cancelar', wsId: wsIdSel, exameId: cancelId, motivo: cancelMotivo }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        alert(data.motivo === 'sem_permissao' ? 'Cancelar laudo é ação do médico autor ou do responsável.' : 'Não foi possível cancelar. Tente novamente.');
+        setCancelId(null); return;
+      }
+      setExames(prev => prev.map(e => e.id === cancelId ? { ...e, status: 'cancelado' } : e));
+      setCancelId(null); setCancelMotivo('');
+    } catch (e) {
+      console.error('Erro ao cancelar:', e);
+      alert('Não foi possível cancelar. Verifique a conexão.');
+      setCancelId(null);
+    }
+  }
+
   // ── Formatação ──
 
   function fmtDate(d: string | undefined): string {
@@ -233,6 +259,10 @@ export default function Historico() {
                         className="bg-red-50 text-red-500 px-2.5 py-1 rounded text-xs font-semibold hover:bg-red-100 transition">
                         🗑
                       </button>
+                      {podeCancelarLaudo(profile, ex, user?.uid || '', papel) && (
+                        <button onClick={() => setCancelId(ex.id)}
+                          className="text-xs text-orange-600 hover:underline">Cancelar</button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -271,6 +301,22 @@ export default function Historico() {
                 className="px-6 py-2 text-sm bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition">
                 Excluir
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal cancelar laudo */}
+      {cancelId && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setCancelId(null)}>
+          <div className="bg-white rounded-xl p-6 max-w-sm w-full" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-[#1E3A5F]">Cancelar laudo</h3>
+            <p className="text-sm text-gray-500 mt-1">O laudo deixa de ser servido, a franquia é devolvida e fica registrado. Informe o motivo:</p>
+            <input type="text" value={cancelMotivo} onChange={e => setCancelMotivo(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2 text-sm mt-3 focus:outline-none focus:border-[#1E3A5F]" placeholder="Ex.: exame repetido" />
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setCancelId(null)} className="flex-1 border rounded-lg py-2 text-sm">Voltar</button>
+              <button onClick={confirmarCancelamento} className="flex-1 bg-orange-600 text-white rounded-lg py-2 text-sm font-semibold">Cancelar laudo</button>
             </div>
           </div>
         </div>

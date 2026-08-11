@@ -23,6 +23,16 @@ export function podeEditarLaudo(perfil: PerfilLite, exame: ExameLite, uid: strin
   return !autor || autor === uid;
 }
 
+// Cancelar laudo emitido: o dono (administrativo) ou o medico autor. Recepcao nao.
+// (A rota /api/exame acao:'cancelar' devolve franquia, loga e apaga o PDF.)
+export function podeCancelarLaudo(
+  perfil: PerfilLite, exame: ExameLite, uid: string, papel: Papel | null | undefined,
+): boolean {
+  if (papel === 'dono') return true;
+  if (papel === 'medico' && ehMedico(perfil)) return exame?.medicoUid === uid;
+  return false;
+}
+
 export function podeVerFinanceiro(papel: Papel | null | undefined): boolean {
   return papel === 'dono' || papel === 'medico';
 }
