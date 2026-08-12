@@ -281,6 +281,12 @@ service cloud.firestore {
       allow write:     if false;
     }
 
+    // ── CONVITES ── 100% servidor (Admin SDK). O cliente nunca le o token nem
+    // cria/aceita pelo navegador: convite e aceite passam por /api/convite.
+    match /convites/{conviteId} {
+      allow read, write: if false;
+    }
+
     // ── Tudo o mais: fechado ──
     match /{document=**} {
       allow read, write: if false;

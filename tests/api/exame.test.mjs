@@ -21,6 +21,9 @@ before(async () => {
   for (const [uid, papel] of [[DONO, 'dono'], [MED, 'medico'], [MED2, 'medico'], [RITA, 'recepcao']]) {
     await db.doc(`vinculos/${CONTA}_${uid}`).set({ contaId: CONTA, medicoUid: uid, papel, locais: [], status: 'ativo' });
   }
+  // Vinculo papel:'medico' mas perfil assistente — nao deveria cancelar (C7).
+  await db.doc(`vinculos/${CONTA}_uidFalsoMed`).set({ contaId: CONTA, medicoUid: 'uidFalsoMed', papel: 'medico', locais: [], status: 'ativo' });
+  await db.doc('profissionais/uidFalsoMed').set({ uid: 'uidFalsoMed', nome: 'Falso', tipoPerfil: 'assistente' });
 });
 
 beforeEach(async () => {
@@ -56,6 +59,9 @@ describe('resolverPapel', () => {
       contaId: CONTA, medicoUid: 'uidPreso', papel: 'medico', locais: ['outroLocal'], status: 'ativo',
     });
     assert.equal(await resolverPapel(db, WS, 'uidPreso'), null);
+  });
+  test('wsId com barra (remonta path do Admin SDK) → null, sem excecao', async () => {
+    assert.equal(await resolverPapel(db, 'a/b', DONO), null);
   });
 });
 
@@ -117,6 +123,13 @@ describe('cancelar', () => {
     assert.equal(r2.motivo, 'nao_emitido');
     assert.equal((await subRef().get()).data().franquiaUsada, 9, 'so 1 devolucao');
   });
+  test('papel medico mas tipoPerfil assistente NAO cancela (C7)', async () => {
+    await seedEmitido('emC7');
+    await db.doc(`workspaces/${WS}/exames/emC7`).update({ medicoUid: 'uidFalsoMed' });
+    const r = await cancelarExame(db, { wsId: WS, exameId: 'emC7', uid: 'uidFalsoMed', motivo: 'x', subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'sem_permissao');
+  });
   test('devolucao de credito volta como credito', async () => {
     await db.doc(`workspaces/${WS}/exames/em5`).set({ pacienteNome: 'P', medicoUid: MED, status: 'emitido' });
     await db.collection('consumo').add({ workspaceId: WS, exameId: 'em5', tipo: 'credito' });
@@ -144,9 +157,28 @@ describe('transferir', () => {
     assert.equal(r.ok, true);
     assert.equal((await subRef().get()).data().franquiaUsada, 10);
   });
+  test('papel medico mas tipoPerfil assistente NAO transfere (C7)', async () => {
+    await db.doc(`workspaces/${WS}/exames/trC7`).set({ pacienteNome: 'P', medicoUid: 'uidFalsoMed', status: 'aguardando' });
+    const r = await transferirExame(db, { wsId: WS, exameId: 'trC7', uid: 'uidFalsoMed', novoMedicoUid: MED2, subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'sem_permissao');
+  });
+  test('alvo papel:medico mas perfil assistente NAO recebe (D)', async () => {
+    await db.doc(`workspaces/${WS}/exames/trD`).set({ pacienteNome: 'P', medicoUid: MED, status: 'aguardando' });
+    const r = await transferirExame(db, { wsId: WS, exameId: 'trD', uid: DONO, novoMedicoUid: 'uidFalsoMed', subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'alvo_invalido');
+    assert.equal((await db.doc(`workspaces/${WS}/exames/trD`).get()).data().medicoUid, MED, 'alvo nao herdou');
+  });
   test('alvo precisa ser medico/dono da conta', async () => {
     await db.doc(`workspaces/${WS}/exames/tr3`).set({ pacienteNome: 'P', medicoUid: MED, status: 'aguardando' });
     const r = await transferirExame(db, { wsId: WS, exameId: 'tr3', uid: DONO, novoMedicoUid: RITA, subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'alvo_invalido');
+  });
+  test('novoMedicoUid com barra (remonta path do Admin SDK) → alvo_invalido, sem excecao', async () => {
+    await db.doc(`workspaces/${WS}/exames/trBarra`).set({ pacienteNome: 'P', medicoUid: MED, status: 'aguardando' });
+    const r = await transferirExame(db, { wsId: WS, exameId: 'trBarra', uid: DONO, novoMedicoUid: 'a/b', subRef: subRef(), apagarPdf });
     assert.equal(r.ok, false);
     assert.equal(r.motivo, 'alvo_invalido');
   });

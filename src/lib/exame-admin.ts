@@ -10,6 +10,13 @@
 import type { Firestore, DocumentReference } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
 
+// Ids interpolados no path do Admin SDK (workspaces/${wsId}, profissionais/${uid}):
+// um id com '/' remonta o path e escaparia da colecao. Duplicado de convite-server.ts
+// (arquivo sem import @/, testado direto por node --test).
+function idValido(s: unknown): s is string {
+  return typeof s === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(s);
+}
+
 export type Papel = 'dono' | 'medico' | 'recepcao' | null;
 type Resultado = { ok: true } | { ok: false; motivo: string };
 type Params = {
@@ -24,6 +31,7 @@ type Params = {
 // locais da conta. Sem fallback por ownerUid: a regra nao tem esse braco, e
 // a producao esta migrada (inventario: zero workspaces sem contaId).
 export async function resolverPapel(db: Firestore, wsId: string, uid: string): Promise<Papel> {
+  if (!idValido(wsId)) return null;
   const ws = await db.doc(`workspaces/${wsId}`).get();
   if (!ws.exists) return null;
   const contaId = ws.data()!.contaId as string | undefined;
@@ -39,6 +47,14 @@ export async function resolverPapel(db: Firestore, wsId: string, uid: string): P
 // Autor ou sem autor: o que um medico pode mexer alem do que e do dono.
 function medicoAlcanca(exame: Record<string, unknown>, uid: string) {
   return !exame.medicoUid || exame.medicoUid === uid;
+}
+
+// Ato medico = perfil medico (tipoPerfil ausente ou 'medico'). Espelha
+// ehMedicoDeVerdade da regra e o gate do /api/emitir. C7: papel:'medico' no
+// vinculo nao basta para cancelar/transferir laudo — o perfil tem que ser medico.
+export async function ehMedicoDeVerdade(db: Firestore, uid: string): Promise<boolean> {
+  const p = await db.doc(`profissionais/${uid}`).get();
+  return (p.data()?.tipoPerfil ?? 'medico') === 'medico';
 }
 
 // /api/corrigir-laudo: correcao administrativa e SO de laudo EMITIDO; dono
@@ -148,7 +164,8 @@ export async function cancelarExame(db: Firestore, p: Params): Promise<Resultado
   if (!exameSnap.exists) return { ok: false, motivo: 'nao_encontrado' };
   const exame = exameSnap.data()!;
   if (exame.status !== 'emitido') return { ok: false, motivo: 'nao_emitido' };
-  const pode = papel === 'dono' || (papel === 'medico' && exame.medicoUid === p.uid);
+  const pode = papel === 'dono'
+    || (papel === 'medico' && exame.medicoUid === p.uid && await ehMedicoDeVerdade(db, p.uid));
   if (!pode) return { ok: false, motivo: 'sem_permissao' };
 
   await devolverConsumo(db, p, 'cancelar');
@@ -165,14 +182,18 @@ export async function cancelarExame(db: Firestore, p: Params): Promise<Resultado
 }
 
 export async function transferirExame(db: Firestore, p: Params): Promise<Resultado> {
-  if (!p.novoMedicoUid) return { ok: false, motivo: 'alvo_invalido' };
+  if (!idValido(p.novoMedicoUid)) return { ok: false, motivo: 'alvo_invalido' };
   const { papel, exameSnap } = await carregar(db, p);
   if (!exameSnap.exists) return { ok: false, motivo: 'nao_encontrado' };
   const exame = exameSnap.data()!;
-  const pode = papel === 'dono' || (papel === 'medico' && medicoAlcanca(exame, p.uid));
+  const pode = papel === 'dono'
+    || (papel === 'medico' && medicoAlcanca(exame, p.uid) && await ehMedicoDeVerdade(db, p.uid));
   if (!pode) return { ok: false, motivo: 'sem_permissao' };
   const papelAlvo = await resolverPapel(db, p.wsId, p.novoMedicoUid);
   if (papelAlvo !== 'medico' && papelAlvo !== 'dono') return { ok: false, motivo: 'alvo_invalido' };
+  // C7/D: papel:'medico' no vinculo nao basta — o alvo precisa ser medico de
+  // verdade (tipoPerfil), senao herda o laudo e nao consegue emitir.
+  if (!(await ehMedicoDeVerdade(db, p.novoMedicoUid))) return { ok: false, motivo: 'alvo_invalido' };
 
   const emitido = exame.status === 'emitido';
   if (emitido) {
