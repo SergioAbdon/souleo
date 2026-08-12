@@ -131,7 +131,7 @@ describe('preCadastrarConvite', () => {
   test('médico: cria perfil médico com CRM, SEM vínculo', async () => {
     const token = await novoConvite('medico', []);
     const r = await preCadastrarConvite(db, { uid: 'uidPreMed', token,
-      dadosPerfil: { nome: 'Dra Pre', email: 'pre@x.com', crm: '999', ufCrm: 'pa' }, verificarCrm: noop });
+      dadosPerfil: { nome: 'Dra Pre', email: 'pre@x.com', crm: '999', ufCrm: 'pa' }, verificarCrm: noop, agora: HOJE });
     assert.equal(r.ok, true);
     const prof = (await db.doc('profissionais/uidPreMed').get()).data();
     assert.equal(prof.tipoPerfil, 'medico');
@@ -142,22 +142,30 @@ describe('preCadastrarConvite', () => {
   test('recepção: perfil nasce assistente sem CRM', async () => {
     const token = await novoConvite('recepcao', []);
     const r = await preCadastrarConvite(db, { uid: 'uidPreRec', token,
-      dadosPerfil: { nome: 'Recep Pre', email: 'rp@x.com' }, verificarCrm: noop });
+      dadosPerfil: { nome: 'Recep Pre', email: 'rp@x.com' }, verificarCrm: noop, agora: HOJE });
     assert.equal(r.ok, true);
     assert.equal((await db.doc('profissionais/uidPreRec').get()).data().tipoPerfil, 'assistente');
   });
   test('médico sem CRM → dados_invalidos', async () => {
     const token = await novoConvite('medico', []);
     const r = await preCadastrarConvite(db, { uid: 'uidPreSemCrm', token,
-      dadosPerfil: { nome: 'X', email: 'x@x.com', crm: '', ufCrm: '' }, verificarCrm: noop });
+      dadosPerfil: { nome: 'X', email: 'x@x.com', crm: '', ufCrm: '' }, verificarCrm: noop, agora: HOJE });
     assert.equal(r.ok, false);
     assert.equal(r.motivo, 'dados_invalidos');
+  });
+  test('convite expirado → expirado, nenhum perfil criado', async () => {
+    const token = await novoConvite('medico', []);
+    const r = await preCadastrarConvite(db, { uid: 'uidPreExpirado', token,
+      dadosPerfil: { nome: 'Y', email: 'y@x.com', crm: '444', ufCrm: 'BA' }, verificarCrm: noop, agora: DEPOIS });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'expirado');
+    assert.equal((await db.doc('profissionais/uidPreExpirado').get()).exists, false);
   });
   test('perfil já existente → jaExiste, sem sobrescrever', async () => {
     await db.doc('profissionais/uidPreJa').set({ uid: 'uidPreJa', nome: 'Original', tipoPerfil: 'medico', crm: '111' });
     const token = await novoConvite('medico', []);
     const r = await preCadastrarConvite(db, { uid: 'uidPreJa', token,
-      dadosPerfil: { nome: 'Outro', email: 'o@x.com', crm: '222', ufCrm: 'SP' }, verificarCrm: noop });
+      dadosPerfil: { nome: 'Outro', email: 'o@x.com', crm: '222', ufCrm: 'SP' }, verificarCrm: noop, agora: HOJE });
     assert.equal(r.ok, true);
     assert.equal(r.jaExiste, true);
     assert.equal((await db.doc('profissionais/uidPreJa').get()).data().nome, 'Original');
@@ -165,7 +173,7 @@ describe('preCadastrarConvite', () => {
   test('tipoPerfil vem do convite mesmo que cliente mande outro', async () => {
     const token = await novoConvite('recepcao', []);
     const r = await preCadastrarConvite(db, { uid: 'uidPreForca', token,
-      dadosPerfil: { nome: 'R', email: 'r@x.com', crm: '333', ufCrm: 'RJ' }, verificarCrm: noop });
+      dadosPerfil: { nome: 'R', email: 'r@x.com', crm: '333', ufCrm: 'RJ' }, verificarCrm: noop, agora: HOJE });
     assert.equal(r.ok, true);
     const prof = (await db.doc('profissionais/uidPreForca').get()).data();
     assert.equal(prof.tipoPerfil, 'assistente');
@@ -174,7 +182,7 @@ describe('preCadastrarConvite', () => {
   test('depois do pré-cadastro, aceite cria vínculo sem exigir CRM', async () => {
     const token1 = await novoConvite('medico', []);
     await preCadastrarConvite(db, { uid: 'uidPreEAceita', token: token1,
-      dadosPerfil: { nome: 'Fluxo', email: 'f@x.com', crm: '555', ufCrm: 'MG' }, verificarCrm: noop });
+      dadosPerfil: { nome: 'Fluxo', email: 'f@x.com', crm: '555', ufCrm: 'MG' }, verificarCrm: noop, agora: HOJE });
     const token2 = await novoConvite('medico', []);
     const r = await aceitarConvite(db, { uid: 'uidPreEAceita', token: token2, dadosPerfil: {}, verificarCrm: noop, agora: HOJE });
     assert.equal(r.ok, true);

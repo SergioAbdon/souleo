@@ -134,15 +134,16 @@ export async function aceitarConvite(
 // o CRM não se perde na troca de sessão/aba entre cadastrar e voltar verificado.
 export async function preCadastrarConvite(
   db: Firestore,
-  args: { uid: string; token: string; dadosPerfil: DadosPerfilConvite; verificarCrm: VerificarCrm },
+  args: { uid: string; token: string; dadosPerfil: DadosPerfilConvite; verificarCrm: VerificarCrm; agora: Date },
 ): Promise<{ ok: true; jaExiste?: true } | { ok: false; motivo: string }> {
-  const { uid, token, dadosPerfil, verificarCrm } = args;
+  const { uid, token, dadosPerfil, verificarCrm, agora } = args;
   if (!idValido(token)) return { ok: false, motivo: 'invalido' };
   try {
     const conviteSnap = await db.doc(`convites/${token}`).get();
     if (!conviteSnap.exists) return { ok: false, motivo: 'invalido' };
     const convite = conviteSnap.data()!;
     if (convite.usado) return { ok: false, motivo: 'ja_usado' };
+    if ((convite.expiraEm as Timestamp).toDate() < agora) return { ok: false, motivo: 'expirado' };
 
     const tipoPerfil = (convite.papel as PapelConvite) === 'medico' ? 'medico' : 'assistente';
 

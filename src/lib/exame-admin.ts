@@ -10,6 +10,13 @@
 import type { Firestore, DocumentReference } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
 
+// Ids interpolados no path do Admin SDK (workspaces/${wsId}, profissionais/${uid}):
+// um id com '/' remonta o path e escaparia da colecao. Duplicado de convite-server.ts
+// (arquivo sem import @/, testado direto por node --test).
+function idValido(s: unknown): s is string {
+  return typeof s === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(s);
+}
+
 export type Papel = 'dono' | 'medico' | 'recepcao' | null;
 type Resultado = { ok: true } | { ok: false; motivo: string };
 type Params = {
@@ -24,6 +31,7 @@ type Params = {
 // locais da conta. Sem fallback por ownerUid: a regra nao tem esse braco, e
 // a producao esta migrada (inventario: zero workspaces sem contaId).
 export async function resolverPapel(db: Firestore, wsId: string, uid: string): Promise<Papel> {
+  if (!idValido(wsId)) return null;
   const ws = await db.doc(`workspaces/${wsId}`).get();
   if (!ws.exists) return null;
   const contaId = ws.data()!.contaId as string | undefined;
@@ -174,7 +182,7 @@ export async function cancelarExame(db: Firestore, p: Params): Promise<Resultado
 }
 
 export async function transferirExame(db: Firestore, p: Params): Promise<Resultado> {
-  if (!p.novoMedicoUid) return { ok: false, motivo: 'alvo_invalido' };
+  if (!idValido(p.novoMedicoUid)) return { ok: false, motivo: 'alvo_invalido' };
   const { papel, exameSnap } = await carregar(db, p);
   if (!exameSnap.exists) return { ok: false, motivo: 'nao_encontrado' };
   const exame = exameSnap.data()!;

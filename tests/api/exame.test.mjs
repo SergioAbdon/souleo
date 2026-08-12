@@ -60,6 +60,9 @@ describe('resolverPapel', () => {
     });
     assert.equal(await resolverPapel(db, WS, 'uidPreso'), null);
   });
+  test('wsId com barra (remonta path do Admin SDK) → null, sem excecao', async () => {
+    assert.equal(await resolverPapel(db, 'a/b', DONO), null);
+  });
 });
 
 describe('apagar', () => {
@@ -170,6 +173,12 @@ describe('transferir', () => {
   test('alvo precisa ser medico/dono da conta', async () => {
     await db.doc(`workspaces/${WS}/exames/tr3`).set({ pacienteNome: 'P', medicoUid: MED, status: 'aguardando' });
     const r = await transferirExame(db, { wsId: WS, exameId: 'tr3', uid: DONO, novoMedicoUid: RITA, subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'alvo_invalido');
+  });
+  test('novoMedicoUid com barra (remonta path do Admin SDK) → alvo_invalido, sem excecao', async () => {
+    await db.doc(`workspaces/${WS}/exames/trBarra`).set({ pacienteNome: 'P', medicoUid: MED, status: 'aguardando' });
+    const r = await transferirExame(db, { wsId: WS, exameId: 'trBarra', uid: DONO, novoMedicoUid: 'a/b', subRef: subRef(), apagarPdf });
     assert.equal(r.ok, false);
     assert.equal(r.motivo, 'alvo_invalido');
   });
