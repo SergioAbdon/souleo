@@ -167,6 +167,7 @@ export async function cancelarConvite(
   const ref = db.doc(`convites/${args.token}`);
   const snap = await ref.get();
   if (!snap.exists || snap.data()!.contaId !== args.contaId) return { ok: false, motivo: 'nao_encontrado' };
+  if (snap.data()!.usado) return { ok: false, motivo: 'ja_usado' };
   await ref.update({ usado: true, usadoPor: null, usadoEm: FieldValue.serverTimestamp() });
   return { ok: true };
 }

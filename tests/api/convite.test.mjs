@@ -160,4 +160,24 @@ describe('gestão de membros', () => {
     const r = await cancelarConvite(db, { contaId: 'outraConta', token });
     assert.equal(r.ok, false);
   });
+  test('cancelarConvite NAO apaga rastro de convite ja aceito', async () => {
+    const token = await novoConvite('recepcao', []);
+    await aceitarConvite(db, { uid: 'uidAceitou', token, dadosPerfil: { nome: 'A', email: 'a@x.com' }, verificarCrm: noop, agora: HOJE });
+    const r = await cancelarConvite(db, { contaId: CONTA, token });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'ja_usado');
+    assert.equal((await db.doc(`convites/${token}`).get()).data().usadoPor, 'uidAceitou');
+  });
+  test('editarMembro NAO edita vinculo de dono (outro dono)', async () => {
+    await db.doc(`vinculos/${CONTA}_uidDono2`).set({ contaId: CONTA, medicoUid: 'uidDono2', papel: 'dono', locais: [], status: 'ativo' });
+    const r = await editarMembro(db, { contaId: CONTA, alvoUid: 'uidDono2', papel: 'medico' });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'dono_imutavel');
+  });
+  test('revogarMembro NAO revoga outro dono', async () => {
+    await db.doc(`vinculos/${CONTA}_uidDono3`).set({ contaId: CONTA, medicoUid: 'uidDono3', papel: 'dono', locais: [], status: 'ativo' });
+    const r = await revogarMembro(db, { contaId: CONTA, alvoUid: 'uidDono3', donoUid: DONO });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'dono_imutavel');
+  });
 });
