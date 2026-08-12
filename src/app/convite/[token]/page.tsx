@@ -9,6 +9,7 @@ export default function ConvitePage() {
   const router = useRouter();
   const [info, setInfo] = useState<{ clinica: string; papel: string } | null>(null);
   const [erro, setErro] = useState('');
+  const [sucesso, setSucesso] = useState('');
   const [modo, setModo] = useState<'login' | 'cadastro'>('login');
   const [email, setEmail] = useState(''); const [senha, setSenha] = useState('');
   const [nome, setNome] = useState(''); const [crm, setCrm] = useState(''); const [uf, setUf] = useState('');
@@ -31,6 +32,7 @@ export default function ConvitePage() {
       setErro(d.motivo === 'ja_membro' ? 'Você já faz parte dessa clínica.'
         : d.motivo === 'perfil_incompativel' ? 'Seu perfil não é de médico — peça um convite de recepção.'
         : d.motivo === 'dados_invalidos' ? 'Preencha nome e, se médico, CRM/UF.'
+        : d.motivo === 'email_nao_verificado' ? 'Verifique seu email antes de entrar.'
         : 'Não foi possível aceitar o convite.');
       await auth.signOut().catch(() => {});
       return;
@@ -39,18 +41,24 @@ export default function ConvitePage() {
   }
 
   async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault(); setErro(''); setLoading(true);
+    e.preventDefault(); setErro(''); setSucesso(''); setLoading(true);
     try {
       const ehMedico = info?.papel === 'medico';
       if (modo === 'login') {
         const cred = await signInWithEmailAndPassword(auth, email, senha);
         if (!cred.user.emailVerified) { setErro('Verifique seu email antes de entrar.'); await auth.signOut(); setLoading(false); return; }
-        await aceitar(await cred.user.getIdToken(), {});
+        // nome/crm/uf só são usados pelo servidor se o perfil ainda não existir
+        // (ex.: voltou pra mesma aba após verificar o email do cadastro).
+        await aceitar(await cred.user.getIdToken(), { nome, email, crm, ufCrm: uf.toUpperCase() });
       } else {
         if (!nome || (ehMedico && (!crm || !uf))) { setErro('Preencha nome e, se médico, CRM/UF.'); setLoading(false); return; }
         const cred = await createUserWithEmailAndPassword(auth, email, senha);
-        await aceitar(await cred.user.getIdToken(), { nome, email, crm, ufCrm: uf.toUpperCase() });
         await sendEmailVerification(cred.user).catch(() => {});
+        // Conta acaba de nascer não-verificada — o servidor recusaria o aceite agora.
+        // Não chamar aceitar(): deslogar e pedir pra abrir o link de novo após verificar.
+        await auth.signOut();
+        setSucesso('Conta criada! Verifique seu email e abra o link do convite de novo para entrar na clínica.');
+        setModo('login');
       }
     } catch { setErro('Confira email e senha.'); }
     setLoading(false);
@@ -69,6 +77,7 @@ export default function ConvitePage() {
           <button onClick={() => setModo('cadastro')} className={`flex-1 py-2 rounded-lg ${modo === 'cadastro' ? 'bg-[#1E3A5F] text-white' : 'border'}`}>Criar conta</button>
         </div>
         {erro && <div className="bg-red-50 text-red-700 text-sm p-3 rounded-lg mb-3">{erro}</div>}
+        {sucesso && <div className="bg-green-50 text-green-700 text-sm p-3 rounded-lg mb-3">{sucesso}</div>}
         <form onSubmit={handleSubmit} className="space-y-3">
           {modo === 'cadastro' && <input placeholder="Nome completo" value={nome} onChange={e => setNome(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" required />}
           {modo === 'cadastro' && info.papel === 'medico' && (
