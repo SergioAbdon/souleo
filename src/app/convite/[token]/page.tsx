@@ -53,9 +53,23 @@ export default function ConvitePage() {
       } else {
         if (!nome || (ehMedico && (!crm || !uf))) { setErro('Preencha nome e, se médico, CRM/UF.'); setLoading(false); return; }
         const cred = await createUserWithEmailAndPassword(auth, email, senha);
+        // Cria o PERFIL agora (com CRM), antes de verificar o e-mail — assim o CRM
+        // não se perde na troca de sessão/aba. O vínculo (acesso) vem só no aceite
+        // verificado. Não chamar aceitar() aqui.
+        const res = await fetch('/api/convite/pre-cadastro', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await cred.user.getIdToken()}` },
+          body: JSON.stringify({ token, dadosPerfil: { nome, email, crm, ufCrm: uf.toUpperCase() } }),
+        });
+        const d = await res.json();
+        if (!d.ok) {
+          setErro(d.motivo === 'dados_invalidos' ? 'Preencha nome e, se médico, CRM/UF.'
+            : d.motivo === 'ja_usado' ? 'Este convite já foi usado.'
+            : d.motivo === 'invalido' ? 'Convite inválido.'
+            : 'Não foi possível criar a conta.');
+          await auth.signOut().catch(() => {});
+          setLoading(false); return;
+        }
         await sendEmailVerification(cred.user).catch(() => {});
-        // Conta acaba de nascer não-verificada — o servidor recusaria o aceite agora.
-        // Não chamar aceitar(): deslogar e pedir pra abrir o link de novo após verificar.
         await auth.signOut();
         setSucesso('Conta criada! Verifique seu email e abra o link do convite de novo para entrar na clínica.');
         setModo('login');

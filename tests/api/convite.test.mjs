@@ -3,7 +3,7 @@ import { test, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
-import { criarConvite, aceitarConvite, listarMembros, editarMembro, revogarMembro, cancelarConvite } from '../../src/lib/convite-server.ts';
+import { criarConvite, aceitarConvite, preCadastrarConvite, listarMembros, editarMembro, revogarMembro, cancelarConvite } from '../../src/lib/convite-server.ts';
 
 let db;
 const CONTA = 'contaConv', DONO = 'uidDonoConv';
@@ -124,6 +124,61 @@ describe('aceitarConvite', () => {
     const r = await aceitarConvite(db, { uid: 'uidBarra', token: 'a/b/c', dadosPerfil: {}, verificarCrm: noop, agora: HOJE });
     assert.equal(r.ok, false);
     assert.equal(r.motivo, 'invalido');
+  });
+});
+
+describe('preCadastrarConvite', () => {
+  test('médico: cria perfil médico com CRM, SEM vínculo', async () => {
+    const token = await novoConvite('medico', []);
+    const r = await preCadastrarConvite(db, { uid: 'uidPreMed', token,
+      dadosPerfil: { nome: 'Dra Pre', email: 'pre@x.com', crm: '999', ufCrm: 'pa' }, verificarCrm: noop });
+    assert.equal(r.ok, true);
+    const prof = (await db.doc('profissionais/uidPreMed').get()).data();
+    assert.equal(prof.tipoPerfil, 'medico');
+    assert.equal(prof.crm, '999');
+    assert.equal(prof.ufCrm, 'PA');
+    assert.equal((await db.doc(`vinculos/${CONTA}_uidPreMed`).get()).exists, false, 'sem vínculo');
+  });
+  test('recepção: perfil nasce assistente sem CRM', async () => {
+    const token = await novoConvite('recepcao', []);
+    const r = await preCadastrarConvite(db, { uid: 'uidPreRec', token,
+      dadosPerfil: { nome: 'Recep Pre', email: 'rp@x.com' }, verificarCrm: noop });
+    assert.equal(r.ok, true);
+    assert.equal((await db.doc('profissionais/uidPreRec').get()).data().tipoPerfil, 'assistente');
+  });
+  test('médico sem CRM → dados_invalidos', async () => {
+    const token = await novoConvite('medico', []);
+    const r = await preCadastrarConvite(db, { uid: 'uidPreSemCrm', token,
+      dadosPerfil: { nome: 'X', email: 'x@x.com', crm: '', ufCrm: '' }, verificarCrm: noop });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'dados_invalidos');
+  });
+  test('perfil já existente → jaExiste, sem sobrescrever', async () => {
+    await db.doc('profissionais/uidPreJa').set({ uid: 'uidPreJa', nome: 'Original', tipoPerfil: 'medico', crm: '111' });
+    const token = await novoConvite('medico', []);
+    const r = await preCadastrarConvite(db, { uid: 'uidPreJa', token,
+      dadosPerfil: { nome: 'Outro', email: 'o@x.com', crm: '222', ufCrm: 'SP' }, verificarCrm: noop });
+    assert.equal(r.ok, true);
+    assert.equal(r.jaExiste, true);
+    assert.equal((await db.doc('profissionais/uidPreJa').get()).data().nome, 'Original');
+  });
+  test('tipoPerfil vem do convite mesmo que cliente mande outro', async () => {
+    const token = await novoConvite('recepcao', []);
+    const r = await preCadastrarConvite(db, { uid: 'uidPreForca', token,
+      dadosPerfil: { nome: 'R', email: 'r@x.com', crm: '333', ufCrm: 'RJ' }, verificarCrm: noop });
+    assert.equal(r.ok, true);
+    const prof = (await db.doc('profissionais/uidPreForca').get()).data();
+    assert.equal(prof.tipoPerfil, 'assistente');
+    assert.equal(prof.crm, '');
+  });
+  test('depois do pré-cadastro, aceite cria vínculo sem exigir CRM', async () => {
+    const token1 = await novoConvite('medico', []);
+    await preCadastrarConvite(db, { uid: 'uidPreEAceita', token: token1,
+      dadosPerfil: { nome: 'Fluxo', email: 'f@x.com', crm: '555', ufCrm: 'MG' }, verificarCrm: noop });
+    const token2 = await novoConvite('medico', []);
+    const r = await aceitarConvite(db, { uid: 'uidPreEAceita', token: token2, dadosPerfil: {}, verificarCrm: noop, agora: HOJE });
+    assert.equal(r.ok, true);
+    assert.equal((await db.doc(`vinculos/${CONTA}_uidPreEAceita`).get()).data().status, 'ativo');
   });
 });
 

@@ -128,6 +128,46 @@ export async function aceitarConvite(
   } catch (e) { console.error('aceitarConvite:', e); return { ok: false, motivo: 'erro' }; }
 }
 
+// Pré-cadastro: cria SÓ o perfil (com CRM se médico), sem vínculo. Chamado no
+// cadastro pela landing, ANTES de verificar e-mail — criar perfil não é acessar
+// dado de paciente (o acesso é o vínculo, criado só no aceite verificado). Assim
+// o CRM não se perde na troca de sessão/aba entre cadastrar e voltar verificado.
+export async function preCadastrarConvite(
+  db: Firestore,
+  args: { uid: string; token: string; dadosPerfil: DadosPerfilConvite; verificarCrm: VerificarCrm },
+): Promise<{ ok: true; jaExiste?: true } | { ok: false; motivo: string }> {
+  const { uid, token, dadosPerfil, verificarCrm } = args;
+  if (!idValido(token)) return { ok: false, motivo: 'invalido' };
+  try {
+    const conviteSnap = await db.doc(`convites/${token}`).get();
+    if (!conviteSnap.exists) return { ok: false, motivo: 'invalido' };
+    const convite = conviteSnap.data()!;
+    if (convite.usado) return { ok: false, motivo: 'ja_usado' };
+
+    const tipoPerfil = (convite.papel as PapelConvite) === 'medico' ? 'medico' : 'assistente';
+
+    if ((await db.doc(`profissionais/${uid}`).get()).exists) return { ok: true, jaExiste: true };
+
+    if (tipoPerfil === 'medico' && (!dadosPerfil.crm || !dadosPerfil.ufCrm || !dadosPerfil.nome)) {
+      return { ok: false, motivo: 'dados_invalidos' };
+    }
+
+    const crmVerificacao = tipoPerfil === 'medico'
+      ? await verificarCrm(dadosPerfil.crm ?? '', (dadosPerfil.ufCrm ?? '').toUpperCase())
+      : { status: 'nao_verificado' as const, fonte: 'nenhum', checadoEm: null };
+
+    await db.doc(`profissionais/${uid}`).set({
+      uid, nome: (dadosPerfil.nome ?? '').trim(), email: (dadosPerfil.email ?? '').trim(),
+      crm: tipoPerfil === 'medico' ? (dadosPerfil.crm ?? '') : '',
+      ufCrm: tipoPerfil === 'medico' ? (dadosPerfil.ufCrm ?? '').toUpperCase() : '',
+      especialidade: dadosPerfil.especialidade ?? '',
+      tipoPerfil, cpf: '', rqe: '', superadmin: false, crmVerificacao,
+      criadoEm: FieldValue.serverTimestamp(), atualizadoEm: FieldValue.serverTimestamp(),
+    });
+    return { ok: true };
+  } catch (e) { console.error('preCadastrarConvite:', e); return { ok: false, motivo: 'erro' }; }
+}
+
 export async function listarMembros(db: Firestore, contaId: string) {
   const vincSnap = await db.collection('vinculos').where('contaId', '==', contaId).get();
   const membros = await Promise.all(vincSnap.docs
