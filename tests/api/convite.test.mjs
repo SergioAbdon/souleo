@@ -3,7 +3,7 @@ import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
-import { criarConvite, aceitarConvite } from '../../src/lib/convite-server.ts';
+import { criarConvite, aceitarConvite, listarMembros, editarMembro, revogarMembro, cancelarConvite } from '../../src/lib/convite-server.ts';
 
 let db;
 const CONTA = 'contaConv', DONO = 'uidDonoConv';
@@ -119,5 +119,45 @@ describe('aceitarConvite', () => {
     const r = await aceitarConvite(db, { uid: 'uidZ', token: 'naoexiste', dadosPerfil: {}, verificarCrm: noop, agora: HOJE });
     assert.equal(r.ok, false);
     assert.equal(r.motivo, 'invalido');
+  });
+});
+
+describe('gestão de membros', () => {
+  test('listarMembros traz membros ativos com nome + pendentes', async () => {
+    await db.doc('profissionais/uidM1').set({ uid: 'uidM1', nome: 'Membro 1', tipoPerfil: 'medico' });
+    await db.doc(`vinculos/${CONTA}_uidM1`).set({ contaId: CONTA, medicoUid: 'uidM1', papel: 'medico', locais: [], status: 'ativo' });
+    const token = await novoConvite('recepcao', []);
+    const r = await listarMembros(db, CONTA);
+    const m1 = r.membros.find(m => m.uid === 'uidM1');
+    assert.equal(m1.nome, 'Membro 1');
+    assert.ok(r.pendentes.some(p => p.token === token));
+  });
+  test('editarMembro muda papel/locais', async () => {
+    await db.doc(`vinculos/${CONTA}_uidE1`).set({ contaId: CONTA, medicoUid: 'uidE1', papel: 'recepcao', locais: [], status: 'ativo' });
+    const r = await editarMembro(db, { contaId: CONTA, alvoUid: 'uidE1', papel: 'recepcao', locais: ['wsConv'] });
+    assert.equal(r.ok, true);
+    assert.deepEqual((await db.doc(`vinculos/${CONTA}_uidE1`).get()).data().locais, ['wsConv']);
+  });
+  test('revogarMembro inativa o vínculo', async () => {
+    await db.doc(`vinculos/${CONTA}_uidR1`).set({ contaId: CONTA, medicoUid: 'uidR1', papel: 'medico', locais: [], status: 'ativo' });
+    const r = await revogarMembro(db, { contaId: CONTA, alvoUid: 'uidR1', donoUid: DONO });
+    assert.equal(r.ok, true);
+    assert.equal((await db.doc(`vinculos/${CONTA}_uidR1`).get()).data().status, 'inativo');
+  });
+  test('dono NÃO revoga a si mesmo', async () => {
+    const r = await revogarMembro(db, { contaId: CONTA, alvoUid: DONO, donoUid: DONO });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'nao_pode_a_si');
+  });
+  test('cancelarConvite marca pendente como usado (não aceitável)', async () => {
+    const token = await novoConvite('recepcao', []);
+    const r = await cancelarConvite(db, { contaId: CONTA, token });
+    assert.equal(r.ok, true);
+    assert.equal((await db.doc(`convites/${token}`).get()).data().usado, true);
+  });
+  test('cancelarConvite de outra conta é recusado', async () => {
+    const token = await novoConvite('recepcao', []);
+    const r = await cancelarConvite(db, { contaId: 'outraConta', token });
+    assert.equal(r.ok, false);
   });
 });

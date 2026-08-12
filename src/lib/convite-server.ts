@@ -116,3 +116,57 @@ export async function aceitarConvite(
     return { ok: true, contaId };
   } catch (e) { console.error('aceitarConvite:', e); return { ok: false, motivo: 'erro' }; }
 }
+
+export async function listarMembros(db: Firestore, contaId: string) {
+  const vincSnap = await db.collection('vinculos').where('contaId', '==', contaId).get();
+  const membros = await Promise.all(vincSnap.docs
+    .filter(d => d.data().status === 'ativo')
+    .map(async (d) => {
+      const v = d.data();
+      const prof = await db.doc(`profissionais/${v.medicoUid}`).get();
+      return { uid: v.medicoUid, nome: prof.data()?.nome ?? '(sem nome)', papel: v.papel, locais: v.locais ?? [], status: v.status };
+    }));
+  const convSnap = await db.collection('convites').where('contaId', '==', contaId).where('usado', '==', false).get();
+  const agora = new Date();
+  const pendentes = convSnap.docs
+    .filter(d => (d.data().expiraEm as Timestamp).toDate() >= agora)
+    .map(d => ({ token: d.id, papel: d.data().papel, locais: d.data().locais ?? [], expiraEm: (d.data().expiraEm as Timestamp).toDate().toISOString() }));
+  return { membros, pendentes };
+}
+
+export async function editarMembro(
+  db: Firestore, args: { contaId: string; alvoUid: string; papel?: PapelConvite; locais?: string[] },
+): Promise<{ ok: boolean; motivo?: string }> {
+  const ref = db.doc(`vinculos/${args.contaId}_${args.alvoUid}`);
+  const snap = await ref.get();
+  if (!snap.exists) return { ok: false, motivo: 'nao_encontrado' };
+  if (snap.data()!.papel === 'dono') return { ok: false, motivo: 'dono_imutavel' };
+  const patch: Record<string, unknown> = {};
+  if (args.papel === 'medico' || args.papel === 'recepcao') patch.papel = args.papel;
+  if (Array.isArray(args.locais)) patch.locais = args.locais;
+  if (Object.keys(patch).length === 0) return { ok: false, motivo: 'nada_a_mudar' };
+  await ref.update(patch);
+  return { ok: true };
+}
+
+export async function revogarMembro(
+  db: Firestore, args: { contaId: string; alvoUid: string; donoUid: string },
+): Promise<{ ok: boolean; motivo?: string }> {
+  if (args.alvoUid === args.donoUid) return { ok: false, motivo: 'nao_pode_a_si' };
+  const ref = db.doc(`vinculos/${args.contaId}_${args.alvoUid}`);
+  const snap = await ref.get();
+  if (!snap.exists) return { ok: false, motivo: 'nao_encontrado' };
+  if (snap.data()!.papel === 'dono') return { ok: false, motivo: 'dono_imutavel' };
+  await ref.update({ status: 'inativo', saiu: FieldValue.serverTimestamp() });
+  return { ok: true };
+}
+
+export async function cancelarConvite(
+  db: Firestore, args: { contaId: string; token: string },
+): Promise<{ ok: boolean; motivo?: string }> {
+  const ref = db.doc(`convites/${args.token}`);
+  const snap = await ref.get();
+  if (!snap.exists || snap.data()!.contaId !== args.contaId) return { ok: false, motivo: 'nao_encontrado' };
+  await ref.update({ usado: true, usadoPor: null, usadoEm: FieldValue.serverTimestamp() });
+  return { ok: true };
+}
