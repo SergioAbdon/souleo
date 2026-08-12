@@ -13,12 +13,13 @@ import LocalModal from '@/components/LocalModal';
 import Worklist from '@/components/Worklist';
 import Historico from '@/components/Historico';
 import Extrato from '@/components/Extrato';
+import Membros from '@/components/Membros';
 import SeletorLocal from '@/components/SeletorLocal';
 import EscolherLocalGate from '@/components/EscolherLocalGate';
 import SeloCrm from '@/components/SeloCrm';
-import { podeVerFinanceiro } from '@/lib/permissoes';
+import { podeVerFinanceiro, podeGerenciarMembros } from '@/lib/permissoes';
 
-type Tab = 'worklist' | 'historico' | 'extrato';
+type Tab = 'worklist' | 'historico' | 'extrato' | 'membros';
 
 export default function DashboardPage() {
   const { user, profile, workspace, subscription, contextos, papel, loading, reloadProfile } = useAuth();
@@ -31,7 +32,8 @@ export default function DashboardPage() {
   // aba some (Step 4) mas `tab` continuava 'extrato' -> painel em branco.
   // Fix como valor derivado no render (sem useEffect: setState direto num
   // useEffect dispara react-hooks/set-state-in-effect, erro novo de lint).
-  const tab: Tab = tabRaw === 'extrato' && !podeVerFinanceiro(papel) ? 'worklist' : tabRaw;
+  const tab: Tab = (tabRaw === 'extrato' && !podeVerFinanceiro(papel)) || (tabRaw === 'membros' && !podeGerenciarMembros(papel))
+    ? 'worklist' : tabRaw;
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"><span className="text-4xl animate-pulse">🫀</span></div>;
   if (!user) { router.replace('/login'); return null; }
@@ -147,11 +149,18 @@ export default function DashboardPage() {
                   📊 Extrato
                 </button>
               )}
+              {podeGerenciarMembros(papel) && (
+                <button onClick={() => setTab('membros')}
+                  className={`py-3 px-4 text-sm font-semibold transition border-b-2 ${tabRaw === 'membros' ? 'text-[#1E3A5F] border-[#1E3A5F]' : 'text-gray-400 border-transparent'}`}>
+                  👥 Membros
+                </button>
+              )}
             </div>
             <div className="p-4">
               {tab === 'worklist' && <Worklist />}
               {tab === 'historico' && <Historico />}
               {tab === 'extrato' && podeVerFinanceiro(papel) && <Extrato />}
+              {tab === 'membros' && podeGerenciarMembros(papel) && <Membros />}
             </div>
           </div>
           </EscolherLocalGate>
