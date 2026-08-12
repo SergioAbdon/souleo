@@ -503,6 +503,45 @@ em rascunho** (não a equipe).
 - CNPJ: unicidade sob corrida (dois cadastros simultâneos do mesmo CNPJ) + dígitos verificadores; e-mail do corpo não conferido contra o Auth (vale PF e PJ) → **follow-up de segurança**.
 - Extrair passos repetidos do signup (perfil/vínculo/assinatura) + `planoPorId` (dedup `planoTrial`/`planoTrialPJ`) + apagar `createEmpresa`/`getEmpresa`/`getEmpresaByCNPJ` mortos → **Plano 3**.
 
+## 8.6 Plano 2B-B2 — convite + gestão de membros (SEÇÃO 1 FECHADA, 12/08/2026)
+
+Último bloco da Seção 1: dar equipe a uma clínica. Spec em
+`docs/superpowers/specs/2026-08-11-secao1-plano2b-b2-convite-design.md`.
+
+| Entrega | O que |
+|---|---|
+| **Convite por link** | Dono gera link (papel médico/recepção + locais) → uso único, expira em 7 dias. `convites` é coleção 100% servidor (`if false`). papel/locais vêm sempre do doc do convite, nunca do corpo |
+| **Aceite** | Novo ou existente. `aceitarConvite` cria perfil (se novo) + vínculo numa transação, perfil lido DENTRO da tx (guard `perfil_incompativel` atômico). Recepção nasce `assistente`; médico exige CRM |
+| **E-mail verificado (decisão Sérgio)** | Acesso à clínica (o vínculo) só após verificar e-mail — a rota de aceite recusa 403 se `emailVerified` falso. O **cadastro** cria só o PERFIL (com CRM, via `preCadastrarConvite`); o vínculo/acesso espera a verificação |
+| **Gestão de membros** | Aba "Membros" do dono: lista, convida, revoga (vínculo → `inativo`), cancela pendente (transacional). Editar papel/locais via rota (`editarMembro` recusa promover assistente→médico); UI inline de edição é follow-up |
+| **C7** | `cancelarExame`/`transferirExame` exigem `ehMedicoDeVerdade` (tipoPerfil) no braço do médico; transferir valida o ALVO também. `resolverPapel` valida `wsId` (idValido) |
+
+**Tríade + verificação adversarial do Codex (4 rodadas) — fechado na leva:** aceite
+sem convite/atômico e uso único sob corrida (perfil na tx); promover assistente→médico
+pelo PATCH; `cancelarConvite` corrida apaga auditoria (transacional); transferir para
+"médico falso"; `idValido` faltando em `/info`/`alvoUid`/`wsId`/`novoMedicoUid`; e-mail
+do corpo em vez do Auth; pré-cadastro sem checar expiração. Suítes: unit 22, api 77, rules 99.
+
+**Item aceito como negligível:** a expiração é reavaliada dentro da transação contra o
+`agora` do início da requisição (não do commit) — janela de milissegundos num token de
+7 dias; não vale contorcer a testabilidade.
+
+---
+
+### ✅ SEÇÃO 1 CONCLUÍDA (12/08/2026)
+
+Cadastro, contas e acesso, de ponta a ponta: fechadura publicada (2A) → dor diária
+(2B-A: seletor de local, papéis na tela, corrigir-laudo autenticada) → PJ + trava do
+CRM (2B-B1: ato médico = CRM, até em rascunho) → convite + membros (2B-B2). Pipeline
+padrão (brainstorm→plano→subagentes→tríade) em todos.
+
+**Follow-ups que sobrevivem à Seção 1:**
+- Ligar o provedor real de verificação de CRM (Consultar.IO/CFM). Ao ligar: falha do provedor degrada para `nao_verificado`, não aborta o cadastro.
+- UI inline de editar papel/locais de membro (rota `PATCH /api/membro` já existe/testada).
+- Reforço de segurança do cadastro PJ: unicidade de CNPJ sob corrida + dígitos verificadores; e-mail do corpo vs Auth no signup PF/PJ (já feito no convite).
+- **Fase 6** (segredos + Wader): Claude da clínica.
+- **Plano 3 (limpeza):** apagar código morto confirmado (`createProfile`/`createWorkspace`/`createMembership`/`emitExame`/`createSubscription`/`consumirEmissao`/`acceptInvite`/`rejectInvite`/`getPendingInvites`/`deactivateMembership`/`getProfileByCPF`/`createEmpresa`/`getEmpresa`/`getEmpresaByCNPJ`); fallbacks legados (assinatura por `workspaceId`, `ownerUid`); dedup do signup (`planoPorId`, esqueleto perfil/vínculo); extrair `resolverPapel`/`ehMedicoDeVerdade` para módulo próprio (hoje em `exame-admin.ts`) + helper `requireDono`; 1 teste que cruza o predicado "é médico" (TS) contra o emulador de regras.
+
 ## 9. Fora de escopo (Seção 1 não resolve)
 
 - Gateway de pagamento real (Stripe/Asaas).
