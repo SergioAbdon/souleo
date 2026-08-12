@@ -99,6 +99,9 @@ before(async () => {
     await setDoc(doc(db, 'vinculos', `${CONTA_C}_${MEDREC}`), { contaId: CONTA_C, medicoUid: MEDREC, papel: 'recepcao', locais: [LOCAL_C], status: 'ativo' });
     await setDoc(doc(db, 'configPlanos', 'atual'), { planos: [] });
     await setDoc(doc(db, 'pagamentos', 'pg1'), { valor: 100 });
+
+    // Convite real, para provar que o cliente nao le nem escreve (secao 13).
+    await setDoc(doc(db, 'convites', 'conv1'), { contaId: CONTA_A, papel: 'medico', locais: [], usado: false });
   });
 });
 
@@ -558,5 +561,17 @@ describe('12. trava do CRM (ato medico) — Plano 2B-B1', () => {
     await assertSucceeds(setDoc(doc(como(MEDREC), `workspaces/${LOCAL_C}/exames`, 'exMedRecAdmin'), {
       pacienteNome: 'Fila MedRec', status: 'aguardando', convenio: 'UNIMED',
     }));
+  });
+});
+
+describe('13. convites sao 100% servidor', () => {
+  test('cliente NAO le convite (nem com o token)', async () => {
+    await assertFails(getDoc(doc(como(DR_A), 'convites', 'conv1')));
+  });
+  test('cliente NAO cria convite', async () => {
+    await assertFails(setDoc(doc(como(DR_A), 'convites', 'forjado'), { contaId: CONTA_A, papel: 'dono', locais: [], usado: false }));
+  });
+  test('cliente NAO marca convite usado', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), 'convites', 'conv1'), { usado: true }));
   });
 });

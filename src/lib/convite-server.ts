@@ -14,6 +14,13 @@ export type DadosPerfilConvite = { nome?: string; email?: string; crm?: string; 
 
 const SETE_DIAS = 7 * 864e5;
 
+// Ids interpolados no path do Admin SDK (convites/${token}, vinculos/${...}):
+// um id com '/' remonta o path e escaparia da colecao. So aceita o charset de
+// doc-id gerado pelo Firestore. contaId vem do servidor (nao precisa guard).
+function idValido(s: unknown): s is string {
+  return typeof s === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(s);
+}
+
 export async function criarConvite(
   db: Firestore,
   args: { contaId: string; criadoPor: string; papel: PapelConvite; locais: string[]; agora: Date },
@@ -37,6 +44,7 @@ export async function aceitarConvite(
   args: { uid: string; token: string; dadosPerfil: DadosPerfilConvite; verificarCrm: VerificarCrm; agora: Date },
 ): Promise<{ ok: true; contaId: string } | { ok: false; motivo: string }> {
   const { uid, token, dadosPerfil, verificarCrm, agora } = args;
+  if (!idValido(token)) return { ok: false, motivo: 'invalido' };
   try {
     // A verificação de CRM (I/O) fica FORA da transação; só é usada se o perfil
     // for criado como médico. Resolvida depois de saber o papel do convite.
@@ -164,6 +172,7 @@ export async function revogarMembro(
 export async function cancelarConvite(
   db: Firestore, args: { contaId: string; token: string },
 ): Promise<{ ok: boolean; motivo?: string }> {
+  if (!idValido(args.token)) return { ok: false, motivo: 'nao_encontrado' };
   const ref = db.doc(`convites/${args.token}`);
   const snap = await ref.get();
   if (!snap.exists || snap.data()!.contaId !== args.contaId) return { ok: false, motivo: 'nao_encontrado' };

@@ -120,6 +120,11 @@ describe('aceitarConvite', () => {
     assert.equal(r.ok, false);
     assert.equal(r.motivo, 'invalido');
   });
+  test('token com barra (remonta path do Admin SDK) → invalido, sem excecao', async () => {
+    const r = await aceitarConvite(db, { uid: 'uidBarra', token: 'a/b/c', dadosPerfil: {}, verificarCrm: noop, agora: HOJE });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'invalido');
+  });
 });
 
 describe('gestão de membros', () => {

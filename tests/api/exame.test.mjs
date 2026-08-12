@@ -21,6 +21,9 @@ before(async () => {
   for (const [uid, papel] of [[DONO, 'dono'], [MED, 'medico'], [MED2, 'medico'], [RITA, 'recepcao']]) {
     await db.doc(`vinculos/${CONTA}_${uid}`).set({ contaId: CONTA, medicoUid: uid, papel, locais: [], status: 'ativo' });
   }
+  // Vinculo papel:'medico' mas perfil assistente — nao deveria cancelar (C7).
+  await db.doc(`vinculos/${CONTA}_uidFalsoMed`).set({ contaId: CONTA, medicoUid: 'uidFalsoMed', papel: 'medico', locais: [], status: 'ativo' });
+  await db.doc('profissionais/uidFalsoMed').set({ uid: 'uidFalsoMed', nome: 'Falso', tipoPerfil: 'assistente' });
 });
 
 beforeEach(async () => {
@@ -117,6 +120,13 @@ describe('cancelar', () => {
     assert.equal(r2.motivo, 'nao_emitido');
     assert.equal((await subRef().get()).data().franquiaUsada, 9, 'so 1 devolucao');
   });
+  test('papel medico mas tipoPerfil assistente NAO cancela (C7)', async () => {
+    await seedEmitido('emC7');
+    await db.doc(`workspaces/${WS}/exames/emC7`).update({ medicoUid: 'uidFalsoMed' });
+    const r = await cancelarExame(db, { wsId: WS, exameId: 'emC7', uid: 'uidFalsoMed', motivo: 'x', subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'sem_permissao');
+  });
   test('devolucao de credito volta como credito', async () => {
     await db.doc(`workspaces/${WS}/exames/em5`).set({ pacienteNome: 'P', medicoUid: MED, status: 'emitido' });
     await db.collection('consumo').add({ workspaceId: WS, exameId: 'em5', tipo: 'credito' });
@@ -143,6 +153,12 @@ describe('transferir', () => {
     const r = await transferirExame(db, { wsId: WS, exameId: 'tr2', uid: MED, novoMedicoUid: MED2, subRef: subRef(), apagarPdf });
     assert.equal(r.ok, true);
     assert.equal((await subRef().get()).data().franquiaUsada, 10);
+  });
+  test('papel medico mas tipoPerfil assistente NAO transfere (C7)', async () => {
+    await db.doc(`workspaces/${WS}/exames/trC7`).set({ pacienteNome: 'P', medicoUid: 'uidFalsoMed', status: 'aguardando' });
+    const r = await transferirExame(db, { wsId: WS, exameId: 'trC7', uid: 'uidFalsoMed', novoMedicoUid: MED2, subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'sem_permissao');
   });
   test('alvo precisa ser medico/dono da conta', async () => {
     await db.doc(`workspaces/${WS}/exames/tr3`).set({ pacienteNome: 'P', medicoUid: MED, status: 'aguardando' });

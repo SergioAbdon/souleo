@@ -41,6 +41,14 @@ function medicoAlcanca(exame: Record<string, unknown>, uid: string) {
   return !exame.medicoUid || exame.medicoUid === uid;
 }
 
+// Ato medico = perfil medico (tipoPerfil ausente ou 'medico'). Espelha
+// ehMedicoDeVerdade da regra e o gate do /api/emitir. C7: papel:'medico' no
+// vinculo nao basta para cancelar/transferir laudo — o perfil tem que ser medico.
+export async function ehMedicoDeVerdade(db: Firestore, uid: string): Promise<boolean> {
+  const p = await db.doc(`profissionais/${uid}`).get();
+  return (p.data()?.tipoPerfil ?? 'medico') === 'medico';
+}
+
 // /api/corrigir-laudo: correcao administrativa e SO de laudo EMITIDO; dono
 // corrige qualquer um, medico so os seus (autor), exame sem autor pode ser
 // assumido. Puro/testavel — a rota resolve papel antes (recepcao/forasteiro ja
@@ -148,7 +156,8 @@ export async function cancelarExame(db: Firestore, p: Params): Promise<Resultado
   if (!exameSnap.exists) return { ok: false, motivo: 'nao_encontrado' };
   const exame = exameSnap.data()!;
   if (exame.status !== 'emitido') return { ok: false, motivo: 'nao_emitido' };
-  const pode = papel === 'dono' || (papel === 'medico' && exame.medicoUid === p.uid);
+  const pode = papel === 'dono'
+    || (papel === 'medico' && exame.medicoUid === p.uid && await ehMedicoDeVerdade(db, p.uid));
   if (!pode) return { ok: false, motivo: 'sem_permissao' };
 
   await devolverConsumo(db, p, 'cancelar');
@@ -169,7 +178,8 @@ export async function transferirExame(db: Firestore, p: Params): Promise<Resulta
   const { papel, exameSnap } = await carregar(db, p);
   if (!exameSnap.exists) return { ok: false, motivo: 'nao_encontrado' };
   const exame = exameSnap.data()!;
-  const pode = papel === 'dono' || (papel === 'medico' && medicoAlcanca(exame, p.uid));
+  const pode = papel === 'dono'
+    || (papel === 'medico' && medicoAlcanca(exame, p.uid) && await ehMedicoDeVerdade(db, p.uid));
   if (!pode) return { ok: false, motivo: 'sem_permissao' };
   const papelAlvo = await resolverPapel(db, p.wsId, p.novoMedicoUid);
   if (papelAlvo !== 'medico' && papelAlvo !== 'dono') return { ok: false, motivo: 'alvo_invalido' };
