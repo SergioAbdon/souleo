@@ -1,31 +1,35 @@
-# Plano de Correção — Seção 2 (Worklist) Implementation Plan
+# Plano de Correção — Seção 2 (Worklist) Implementation Plan · v2 (pós-tríade)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Corrigir os 22 achados da revisão tríade da Seção 2 (`docs/planos/2026-08-12-revisao-secao2-worklist.md`): destravar o fluxo recepção→médico, fechar corridas de CPF/ACC (chave DICOM), alinhar a Worklist ao modelo da Seção 1.
 
-**Architecture:** O código da Worklist é anterior à fechadura da Seção 1. As correções seguem o modelo estabelecido: regra + código + teste com payload real no MESMO commit; lógica de servidor vive em `src/lib/*-admin.ts` (testável no emulador) e a rota só compõe; escritas sensíveis migram pro servidor (import Feegow), escritas administrativas continuam client-side sob regra.
+**Architecture:** Regra + código + teste com payload real no MESMO commit; lógica de servidor em `src/lib/*-admin.ts` (testável no emulador, importando TS direto — padrão `billing-admin.test.mjs`), rota só compõe; a importação Feegow migra pro servidor com autorização por vínculo (`resolverPapel`) e criação atômica por transação; reserva de ACC (`accIndex/{acc}`) vive SÓ no servidor.
 
 **Tech Stack:** Next.js (App Router) · Firebase Web SDK + Admin SDK · Firestore Rules · `node --test` + `@firebase/rules-unit-testing` (emulador).
+
+## Revisão da tríade sobre o plano (v1 → v2)
+
+Aplicado: **[Codex-1]** autorização por vínculo na rota de importação (crítico — cross-tenant); **[Codex-2]** autor só com perfil médico E papel dono/medico (caso MEDREC); **[Codex-3]** `salvarLaudo` assume o exame órfão; **[Codex-4]** regras publicadas ANTES do merge (são aditivas, seguras com código velho); **[Codex-5/6]** criação Feegow por transação atômica e idempotente (`tx.create`), só `ALREADY_EXISTS` vira retry; **[Codex-9]** teste de mwlStatus em exame com autor; **[Codex-10]** cron devolve 500 em erro parcial; **[Codex-11]** validação numérica dos ids Feegow; **[Codex-14/Arq-1]** testes explícitos MEDREC + médico não-autor; **[Pony-1]** reserva de ACC só no servidor (sem `runTransaction`/regra/testes client — cinto manual atual fica, com comentário `ponytail:`); **[Pony-2]** tarefa de sincronia por regex cortada (a seção 14 do emulador JÁ roda os payloads reais contra a regra real); **[Pony-3]** teste de fuso importa o TS real; **[Pony-4]** edição morta no batch client cortada; **[Pony-5/Arq-4]** `agoraBelem` nasce em utils; **[Pony-6]** um build só, na T12; **[Arq-2]** MWL client com `await` sequencial + teto documentado; **[Arq-3]** init do Admin em `feegow/route.ts` migra pra `auth-admin`; **[Arq-6]** assinatura de `montarCandidatos` explícita.
+
+Rejeitado (com motivo): **[Codex-8]** gravar `cpf:''` no exame quando o campo é esvaziado — contraria a decisão #7c (campo vazio = "não mexer", proteção contra apagão de CPF); limitação documentada em comentário. **[Arq-1 parcial]** restringir o ramo administrativo pra excluir papel `medico` — o dono já tinha esse poder, recepção precisa dele, e médico corrigir convênio de fila é fluxo real; o risco fica limitado por whitelist + não-emitido + `medicoUid` intacto, e os testes novos documentam a concessão. **[Arq-2 total]** mover MWL pro servidor — fica no cliente por ora (o `/api/orthanc` já autentica; mwlStatus da T10 dá visibilidade); teto anotado.
 
 ## Global Constraints
 
 - **Regra de ouro:** mudança de segurança entra em `firestore.rules` E no código no MESMO commit, com teste usando payload REAL (`tests/rules/fixtures.mjs`).
 - **NÃO usar `git stash`** (daemon `.claude-flow` engole edições).
 - **Commit + push após cada tarefa** (protocolo Dual Claude).
-- **Publicar regras em produção** (`scripts/secao1/04-publicar-regras.mjs --commit`) é ação sensível: SÓ com confirmação do Sergio, uma única vez, na Tarefa 14.
-- Branch de trabalho: `feat/secao2-worklist-fixes`, criada a partir de `feat/secao1-plano2b-b2` (as regras que este plano estende vivem lá).
-- Testes: `npm run test:rules` (emulador Firestore) · `npm run test:unit` · `npm run test:api` (emulador Firestore+Auth). Build: `npm run build`.
+- **Publicar regras em produção** (`scripts/secao1/04-publicar-regras.mjs --commit`) é ação sensível: SÓ com confirmação do Sergio, uma única vez, na Task 12 — e ANTES do merge do código (as regras novas são aditivas: código velho continua funcionando com elas; código novo NÃO funciona com regras velhas).
+- Branch de trabalho: `feat/secao2-worklist-fixes`, criada a partir de `feat/secao1-plano2b-b2`.
+- Testes: `npm run test:rules` · `npm run test:unit` · `npm run test:api`. `npx tsc --noEmit` por tarefa; `npm run build` UMA vez, na T12.
 - Ponytail full: menor diff que funciona; corner cortado de propósito ganha comentário `ponytail:`.
 - Fuso da clínica: `America/Belem` (UTC-3 fixo, sem horário de verão).
 
-**Mapa achado → tarefa:** A2→T1 · A1→T2 · A3,A5,A8,A21→T3 · A6→T4 · A12→T5 · A4,A9(cron),A19→T6 · A7→T7 · A14,A9(import),A10,A18→T8 · A11→T9 · A13→T10 · A15→T11 · A16→T12 · A17,A20,A22→T13 · deploy→T14.
+**Mapa achado → tarefa:** A2→T1 · A1→T2 · A3,A5,A8,A21→T3 · A6→T4 · A12→T5 · A4,A9(cron),A19→T6 · A7,A9(import),A10,A14,A18→T7 · A11→T8 · A13→T9 · A15→T10 · A16→T1+T10 (payloads reais no emulador SÃO o teste de sincronia) · A17,A20,A22→T11 · deploy→T12.
 
 ---
 
 ### Task 0: Branch de trabalho
-
-**Files:** nenhum (só git).
 
 - [ ] **Step 1: Criar a branch**
 
@@ -37,26 +41,24 @@ git checkout feat/secao1-plano2b-b2 && git pull && git checkout -b feat/secao2-w
 
 ### Task 1: Regra — membro do local edita o administrativo da fila (Achado 2)
 
-A regra de update de `/exames` não tem caminho pra papel `recepcao`: o botão "👤 Editar" falha com `permission-denied` pra secretária. O ramo do dono já faz exatamente o que a recepção precisa (só administrativo, só não-emitido, `medicoUid` intacto) — a correção mínima é abrir esse ramo pra qualquer membro que alcança o local.
+A regra de update de `/exames` não tem caminho pra papel `recepcao`: "👤 Editar" falha com `permission-denied` pra secretária. O ramo do dono já faz o necessário (só administrativo, só não-emitido, `medicoUid` intacto) — abrir esse ramo pra qualquer membro que alcança o local. **Decisão consciente:** isso também deixa médico não-autor editar campos administrativos de exame de colega (fluxo real de fila); o teto é whitelist + não-emitido + autor intacto.
 
 **Files:**
-- Modify: `firestore.rules:165-170` (ramo dono do update de exames)
-- Modify: `tests/rules/fixtures.mjs` (payloads reais novos)
-- Modify: `tests/rules/regras.test.mjs` (seção nova + docs no `before()`)
+- Modify: `firestore.rules:165-170`
+- Modify: `tests/rules/fixtures.mjs`
+- Modify: `tests/rules/regras.test.mjs`
 
 **Interfaces:**
-- Produces: `payloadCadastroExame(extra)` e `payloadEditarExame(extra)` em fixtures.mjs — usados pelas Tarefas 2, 11 e 12.
+- Produces: `payloadCadastroExame(extra)` e `payloadEditarExame(extra)` em fixtures.mjs — usados pelas Tasks 2 e 10; docs `exFila1`, `exComAutor` no seed — usados pela Task 10.
 
-- [ ] **Step 1: Adicionar payloads reais em `tests/rules/fixtures.mjs`**
-
-Espelham exatamente o que `Worklist.tsx` + `saveExame` enviam (cadastro) e o que a edição do modal envia. Anexar ao fim do arquivo:
+- [ ] **Step 1: Payloads reais em `tests/rules/fixtures.mjs`** (anexar ao fim)
 
 ```js
 /**
  * Payload identico ao cadastro manual da Worklist (handleSalvarPaciente →
  * saveExame create, src/components/Worklist.tsx + src/lib/firestore.ts).
- * SEM medicoUid: apos a correcao do Achado 1, exame criado por nao-medico
- * nasce orfao (qualquer medico do local assume depois).
+ * SEM medicoUid: apos a correcao do Achado 1, exame criado por quem nao
+ * assina nasce orfao (um medico do local assume depois, no salvarLaudo).
  */
 export const payloadCadastroExame = (extra = {}) => ({
   id: 'exNovo',
@@ -81,7 +83,7 @@ export const payloadCadastroExame = (extra = {}) => ({
 
 /**
  * Payload identico a EDICAO de paciente pela Worklist (handleSalvarPaciente
- * com editExameId → saveExame update). Inclui cpf (Achado 8) e atualizadoEm.
+ * com editExameId → writeBatch, Task 3). Inclui cpf (Achado 8) e atualizadoEm.
  */
 export const payloadEditarExame = (extra = {}) => ({
   pacienteNome: 'PACIENTE CORRIGIDO',
@@ -96,32 +98,34 @@ export const payloadEditarExame = (extra = {}) => ({
 });
 ```
 
-- [ ] **Step 2: Escrever os testes que falham (`tests/rules/regras.test.mjs`)**
+- [ ] **Step 2: Seeds + testes que falham (`tests/rules/regras.test.mjs`)**
 
-No `before()`, depois da linha que cria `exSemAutor`, adicionar dois docs dedicados (não reutilizar `exSemAutor`, que outras seções mutam):
+No `before()`, depois de `exSemAutor`:
 
 ```js
-    // Fila da Secao 2: exames aguardando para os testes da worklist (secao 14).
+    // Fila da Secao 2 (secao 14): exames aguardando + um rascunho COM autor.
     await setDoc(doc(db, `workspaces/${LOCAL_A1}/exames`, 'exFila1'), {
       pacienteNome: 'Fila Um', status: 'aguardando', cpf: '11111111111',
     });
     await setDoc(doc(db, `workspaces/${LOCAL_A1}/exames`, 'exFila2'), {
       pacienteNome: 'Fila Dois', status: 'aguardando',
     });
+    await setDoc(doc(db, `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), {
+      pacienteNome: 'Rascunho do Dr A', status: 'rascunho', medicoUid: DR_A,
+    });
 ```
 
-No import do topo, acrescentar os payloads novos:
+Import: `import { payloadCreateProfile, payloadCadastroExame, payloadEditarExame } from './fixtures.mjs';`
+
+Seção nova ao fim do arquivo:
 
 ```js
-import { payloadCreateProfile, payloadCadastroExame, payloadEditarExame } from './fixtures.mjs';
-```
-
-Ao fim do arquivo, seção nova:
-
-```js
-describe('14. worklist — recepcao administra a fila (Secao 2)', () => {
+describe('14. worklist — administracao da fila por membro do local (Secao 2)', () => {
   test('recepcao edita administrativo de exame aguardando (payload real)', async () => {
     await assertSucceeds(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exFila1'), payloadEditarExame()));
+  });
+  test('recepcao edita administrativo de rascunho COM autor (autor intacto)', async () => {
+    await assertSucceeds(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), { convenio: 'UNIMED' }));
   });
   test('recepcao NAO toca campo clinico', async () => {
     await assertFails(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exFila1'), { medidas: { fe: 60 } }));
@@ -132,40 +136,47 @@ describe('14. worklist — recepcao administra a fila (Secao 2)', () => {
   test('recepcao NAO promove status a emitido', async () => {
     await assertFails(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exFila1'), { status: 'emitido' }));
   });
-  test('recepcao NAO troca medicoUid de exame com autor', async () => {
-    await assertFails(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A2}/exames`, 'ex2'), { medicoUid: RITA }));
+  test('recepcao NAO troca o medicoUid', async () => {
+    await assertFails(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), { medicoUid: RITA }));
   });
-  test('medico de outro exame edita administrativo da fila (mesmo ramo)', async () => {
-    await assertSucceeds(updateDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/exames`, 'exFila2'), { convenio: 'UNIMED' }));
+  test('medico NAO-autor edita administrativo do rascunho do colega (concessao documentada)', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), { horarioChegada: '11:00' }));
+  });
+  test('medico NAO-autor continua SEM tocar o clinico do colega', async () => {
+    await assertFails(updateDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), { medidas: { fe: 60 } }));
+  });
+  // MEDREC: medico de perfil com papel recepcao — administra a fila, nao assina.
+  test('MEDREC edita administrativo de exame aguardando', async () => {
+    await assertSucceeds(updateDoc(doc(como(MEDREC), `workspaces/${LOCAL_C}/exames`, 'exCfila'), { convenio: 'UNIMED' }));
+  });
+  test('MEDREC NAO grava conteudo clinico via update', async () => {
+    await assertFails(updateDoc(doc(como(MEDREC), `workspaces/${LOCAL_C}/exames`, 'exCfila'), { medidas: { fe: 60 } }));
   });
 });
 ```
 
-(Obs.: `recepcao NAO troca medicoUid` usa `ex2` de LOCAL_A2 — Rita só alcança LOCAL_A1, então falha por alcance E por intacto; trocar para um doc de LOCAL_A1 com autor se quiser isolar: criar `exComAutor` no before com `medicoUid: DR_A2, status: 'rascunho'` em LOCAL_A1 e testar contra ele. Fazer assim.)
-
 - [ ] **Step 3: Rodar e ver falhar**
 
 Run: `npm run test:rules`
-Expected: os testes `recepcao edita administrativo...` e `medico de outro exame edita...` FALHAM (permission-denied); os `assertFails` passam.
+Expected: os 4 `assertSucceeds` de recepção/MEDREC/médico-não-autor FALHAM; os `assertFails` passam.
 
-- [ ] **Step 4: Mudança mínima na regra**
-
-Em `firestore.rules`, no ramo dono do update de `/exames` (linha ~165), trocar `ehDonoDoLocal(wsId)` por `alcancaLocal(wsId)` e ajustar o comentário:
+- [ ] **Step 4: Mudança mínima na regra** — em `firestore.rules` (~linha 165), trocar `ehDonoDoLocal(wsId)` por `alcancaLocal(wsId)` no ramo administrativo do update e ajustar o comentário:
 
 ```
                           || (alcancaLocal(wsId) && intacto('medicoUid')
                               && resource.data.get('status', '') != 'emitido'
                               && request.resource.data.get('status', '') != 'emitido'
-                              // Qualquer membro do local (dono, medico, recepcao) so
-                              // mexe no ADMINISTRATIVO da fila (pre-assinatura);
-                              // campo clinico tocado aqui e negado (ADR 8.4).
+                              // Qualquer MEMBRO do local (dono, medico, recepcao) mexe
+                              // no ADMINISTRATIVO da fila pre-assinatura (Secao 2, A2).
+                              // Campo clinico tocado aqui e negado (ADR 8.4); autor
+                              // intacto; emitido corrige via /api/corrigir-laudo.
                               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(camposAdministrativos())));
 ```
 
 - [ ] **Step 5: Rodar e ver passar**
 
 Run: `npm run test:rules`
-Expected: PASS (todas as seções, inclusive as antigas — o ramo dono continua coberto porque `alcancaLocal` inclui o dono).
+Expected: PASS — inclusive TODAS as seções antigas (o dono continua coberto por `alcancaLocal`).
 
 - [ ] **Step 6: Commit**
 
@@ -176,47 +187,46 @@ git commit -m "fix(regras): membro do local edita administrativo da fila (recepc
 
 ---
 
-### Task 2: Exame criado por não-médico nasce SEM autor (Achado 1)
+### Task 2: Autor só nasce de quem assina; médico assume o órfão no primeiro save (Achado 1 + Codex-2/3)
 
-`saveExame` grava `medicoUid` em toda criação com o uid de quem cadastra. Secretária cadastra → exame "preso" a ela → médico não consegue salvar rascunho. Correção na causa raiz: `saveExame` só grava `medicoUid` se veio preenchido, e a Worklist só preenche quando quem cria é médico de perfil. Mesmo tratamento para `medicoExecutor` e o default de `solicitante`.
+`saveExame` grava `medicoUid` em toda criação com o uid de quem cadastra — secretária cadastra, exame "prende" nela. Correção em três pontas: (1) `saveExame` só grava `medicoUid` se veio preenchido; (2) a Worklist só preenche quando quem cria tem perfil médico **E papel dono/medico** (o MEDREC — médico de perfil com papel recepcao — NÃO carimba); (3) `salvarLaudo` do motor passa a incluir `medicoUid` — é assim que o médico ASSUME o exame órfão no primeiro save (sem isso o exame ficava órfão até a emissão).
 
 **Files:**
 - Modify: `src/lib/firestore.ts:323-329` (create do saveExame)
-- Modify: `src/components/Worklist.tsx` (cadastro manual ~:258-273, default do solicitante ~:162, batch Feegow ~:424-429)
+- Modify: `src/components/Worklist.tsx` (cadastro manual, default do solicitante)
+- Modify: `src/app/laudo/[id]/page.tsx:481-485` (salvarLaudo)
 - Test: `tests/rules/regras.test.mjs` (seção 14)
 
 **Interfaces:**
-- Consumes: `payloadCadastroExame` (Task 1); `ehMedico(perfil)` de `src/lib/permissoes.ts` (já existe).
-- Produces: contrato novo de `saveExame`: `medicoUid=''` ⇒ campo AUSENTE no doc.
+- Consumes: `payloadCadastroExame` (Task 1); `ehMedico(perfil)` de `src/lib/permissoes.ts`; `papel` do `useAuth()` (já destructurado na Worklist).
+- Produces: contrato de `saveExame`: `medicoUid=''` ⇒ campo AUSENTE no doc criado.
 
-- [ ] **Step 1: Testes de regra que provam o fluxo recepção→médico**
+- [ ] **Step 1: Testes de regra (contrato do fluxo recepção→médico)**
 
-Na seção 14 de `regras.test.mjs`:
+Na seção 14:
 
 ```js
   test('recepcao cadastra exame SEM medicoUid (payload real do cadastro)', async () => {
     await assertSucceeds(setDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exNovoRita'),
       payloadCadastroExame({ id: 'exNovoRita' })));
   });
-  test('medico assume exame orfao da recepcao e grava conteudo clinico', async () => {
+  test('medico assume o orfao no primeiro save do laudo (payload real do salvarLaudo)', async () => {
     await assertSucceeds(updateDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/exames`, 'exNovoRita'),
-      { medicoUid: DR_A2, status: 'andamento', medidas: { ddve: 50 } }));
+      { medidas: { ddve: 50 }, pacienteNome: 'PACIENTE NOVO', status: 'andamento', medicoUid: DR_A2 }));
   });
 ```
 
-- [ ] **Step 2: Rodar e ver o estado**
+- [ ] **Step 2: Rodar**
 
 Run: `npm run test:rules`
-Expected: PASS já (a regra da Seção 1 sempre permitiu criar sem `medicoUid` e assumir órfão — o bug era o CÓDIGO nunca deixar o campo ausente). Os testes ficam como rede de proteção do contrato.
+Expected: PASS já (a regra da Seção 1 sempre permitiu; o bug era o CÓDIGO nunca deixar o campo ausente). Ficam como rede de proteção do contrato.
 
-- [ ] **Step 3: `saveExame` — não gravar autor vazio**
-
-Em `src/lib/firestore.ts`, no ramo de criação (após o cinto de ACC), trocar o `setDoc` por:
+- [ ] **Step 3: `saveExame` — não gravar autor vazio** (`src/lib/firestore.ts`, ramo de criação; o cinto de ACC fica como está — ver Task 7 Step 6)
 
 ```ts
       const ref = doc(collection(db, 'workspaces', wsId, 'exames'));
-      // medicoUid vazio = exame sem autor (recepcao cadastra; medico assume
-      // depois ao abrir o laudo — e o que a regra de update espera).
+      // medicoUid vazio = exame sem autor (recepcao cadastra; o medico assume
+      // no primeiro salvarLaudo — e o que a regra de update espera).
       await setDoc(ref, {
         id: ref.id, ...dados,
         status: (dados.status as string) || 'rascunho', versao: 1,
@@ -226,87 +236,69 @@ Em `src/lib/firestore.ts`, no ramo de criação (após o cinto de ACC), trocar o
       return ref.id;
 ```
 
-- [ ] **Step 4: Worklist — só médico carimba autor/executor**
+- [ ] **Step 4: Worklist — só quem assina carimba**
 
-Em `src/components/Worklist.tsx`:
+a) import: `import { podeEditarLaudo, podeRemoverDaFila, ehMedico } from '@/lib/permissoes';`
 
-a) importar `ehMedico`:
+b) logo após os states, um derivado (perfil médico E papel que atende — MEDREC fica de fora):
 
 ```ts
-import { podeEditarLaudo, podeRemoverDaFila, ehMedico } from '@/lib/permissoes';
+  // Quem pode nascer como AUTOR de exame: perfil medico E papel dono/medico
+  // no local (MEDREC — medico de perfil com papel recepcao — nao assina aqui).
+  const assinaComoAutor = ehMedico(profile) && (papel === 'dono' || papel === 'medico');
 ```
 
-b) no cadastro manual (`handleSalvarPaciente`, ramo novo paciente), trocar as linhas de `medicoExecutor` e a chamada:
+c) no cadastro manual (`handleSalvarPaciente`, ramo novo):
 
 ```ts
-      const novoExameId = await saveExame(workspace.id, {
-        acc: gerarAccessionNumber(agora2),
-        pacienteId: pacId,
-        pacienteNome: pacNome.trim().toUpperCase(),
-        pacienteDtnasc: pacDtnasc,
-        cpf: cpfLimpo,
-        tipoExame: pacTipoExame,
-        dataExame: dataLocalHoje(),
-        horarioChegada: horaChegada,
-        status: 'aguardando',
-        convenio: pacConvenio,
-        solicitante: pacSolicitante,
-        medicoExecutor: ehMedico(profile) ? (profile?.nome as string || '') : '',
+        medicoExecutor: assinaComoAutor ? (profile?.nome as string || '') : '',
         sexo: pacSexo,
         origem: 'MANUAL',
-      }, ehMedico(profile) ? (profile?.id as string || '') : '');
+      }, assinaComoAutor ? (profile?.id as string || '') : '');
 ```
 
-c) em `abrirNovoPaciente`, default do solicitante só pra médico:
+d) em `abrirNovoPaciente`: `setPacSolicitante(assinaComoAutor ? (profile?.nome as string || '') : '');`
+
+(O batch do `importarFeegow` NÃO muda aqui — a Task 7 o substitui por inteiro; nada vai a produção antes da T12.)
+
+- [ ] **Step 5: `salvarLaudo` assume o órfão** — em `src/app/laudo/[id]/page.tsx`:
 
 ```ts
-    setPacTel(''); setPacConvenio(''); setPacSolicitante(ehMedico(profile) ? (profile?.nome as string || '') : '');
+  async function salvarLaudo(status: 'rascunho' | 'andamento', extras?: Record<string, unknown>) {
+    if (!workspace?.id || !exameId || !user?.uid) return false;
+    // medicoUid no save: assume o exame orfao (cadastrado pela recepcao) no
+    // primeiro salvamento. Se ja e o autor, reenvia o mesmo valor (intacto
+    // permite); se o autor e OUTRO medico, a regra nega — como deve.
+    const dados = { id: exameId, medidas: coletarMedidas(), ...coletarIdentificacao(), status, medicoUid: user.uid, ...extras };
+    return await saveExame(workspace.id, dados, user.uid);
+  }
 ```
 
-d) no batch Feegow (`importarFeegow`, dentro do loop — provisório até a Task 8 mover pro servidor):
-
-```ts
-          solicitante: ehMedico(profile) ? (profile?.nome as string || '') : '',
-          medicoExecutor: pac.medicoExecutor || (ehMedico(profile) ? (profile?.nome as string || '') : ''),
-          sexo: pac.sexo,
-          origem: 'FEEGOW',
-          feegowAppointId: pac.feegowAppointId,
-          ...(ehMedico(profile) ? { medicoUid: profile.id as string } : {}),
-```
-
-(remover a linha antiga `medicoUid: profile.id as string,`)
-
-- [ ] **Step 5: Verificar**
+- [ ] **Step 6: Verificar**
 
 Run: `npm run test:rules && npx tsc --noEmit`
-Expected: PASS / sem erros de tipo.
+Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add src/lib/firestore.ts src/components/Worklist.tsx tests/rules/regras.test.mjs
-git commit -m "fix(worklist): exame criado por nao-medico nasce sem autor (medico assume depois)" && git push
+git add src/lib/firestore.ts src/components/Worklist.tsx src/app/laudo/[id]/page.tsx tests/rules/regras.test.mjs
+git commit -m "fix(worklist): autor so nasce de quem assina; salvarLaudo assume exame orfao" && git push
 ```
 
 ---
 
 ### Task 3: Edição atômica ficha+exame, corrida do modal, CPF propaga (Achados 3, 5, 8, 21)
 
-Três defeitos no mesmo fluxo de edição: (a) ficha salva e exame falha → estado parcial com mensagem mentirosa; (b) resposta atrasada de `getPaciente` mistura CPF/telefone de outro paciente; (c) CPF corrigido não vai pro exame. Um `writeBatch` + um guard de geração resolvem os três.
-
 **Files:**
 - Modify: `src/components/Worklist.tsx` (`editarPaciente`, `abrirNovoPaciente`, `handleSalvarPaciente`)
 
 **Interfaces:**
-- Consumes: regra da Task 1 (recepção pode o update administrativo) e `payloadEditarExame` já cobre `cpf`.
+- Consumes: regra da Task 1 (o batch de edição é exatamente o `payloadEditarExame`).
 
 - [ ] **Step 1: Guard de corrida no modal**
 
-No topo do componente (junto aos states), adicionar:
-
-```ts
-import { useState, useEffect, useCallback, useRef } from 'react';
-```
+Import: `import { useState, useEffect, useCallback, useRef } from 'react';`
 
 ```ts
   // Guard de corrida do modal (Achado 5): cada abertura incrementa a geracao;
@@ -322,7 +314,7 @@ Em `editarPaciente`:
   async function editarPaciente(item: ExameItem) {
     const req = ++editReq.current;
     setEditPacId(item.pacienteId as string || null);
-    // ... (mantém todos os sets existentes) ...
+    // ... (todos os sets existentes, inalterados) ...
     setModalPac(true);
     if (item.pacienteId && workspace?.id) {
       const pac = await getPaciente(workspace.id, item.pacienteId as string) as Record<string, unknown> | null;
@@ -335,14 +327,12 @@ Em `editarPaciente`:
   }
 ```
 
-- [ ] **Step 2: Edição atômica com CPF propagado**
-
-Em `handleSalvarPaciente`, substituir o ramo `if (editExameId)` inteiro (o `savePaciente` sai do caminho de edição — ficha e exame vão juntos num batch):
+- [ ] **Step 2: Edição atômica com CPF propagado** — substituir o ramo `if (editExameId)` inteiro de `handleSalvarPaciente` (o `savePaciente` sai do caminho de edição):
 
 ```ts
     if (editExameId) {
       // Edicao: ficha + exame na MESMA escrita (Achado 3 — antes a ficha
-      // salvava e o exame falhava, com mensagem dizendo que nada gravou).
+      // salvava e o exame falhava, com a tela dizendo que nada gravou).
       try {
         const batch = writeBatch(db);
         const dadosFicha = { ...pacData, atualizadoEm: serverTimestamp() };
@@ -357,7 +347,10 @@ Em `handleSalvarPaciente`, substituir o ramo `if (editExameId)` inteiro (o `save
           solicitante: pacSolicitante,
           tipoExame: pacTipoExame,
           sexo: pacSexo,
-          ...(cpfLimpo ? { cpf: cpfLimpo } : {}), // Achado 8: CPF e chave DICOM
+          // Achado 8: CPF e a chave de pareamento DICOM — propaga pro exame.
+          // Vazio = "nao mexer" (mesma filosofia do #7c da ficha): esvaziar o
+          // campo NAO apaga o CPF gravado.
+          ...(cpfLimpo ? { cpf: cpfLimpo } : {}),
           atualizadoEm: serverTimestamp(),
         });
         await batch.commit();
@@ -370,7 +363,7 @@ Em `handleSalvarPaciente`, substituir o ramo `if (editExameId)` inteiro (o `save
     } else {
 ```
 
-E no ramo de novo paciente, manter `savePaciente` + `saveExame` como está (Task 2 já mexeu), mas corrigir a mensagem de erro do `saveExame` para ser honesta:
+No ramo de novo paciente: manter `savePaciente` + `saveExame` (Task 2 já ajustou), trocar os dois `pacCpf.replace(/\D/g, '')` restantes por `cpfLimpo` (Achado 21) e corrigir a mensagem de erro pra ser honesta:
 
 ```ts
       if (!novoExameId) {
@@ -380,38 +373,30 @@ E no ramo de novo paciente, manter `savePaciente` + `saveExame` como está (Task
       }
 ```
 
-Também trocar os dois usos redundantes de `pacCpf.replace(/\D/g, '')` no ramo novo por `cpfLimpo` (Achado 21) — linhas do `cpf:` e do `pacienteId:` do `enviarMwlOrthanc`.
-
-- [ ] **Step 3: Verificar tipos e regras**
+- [ ] **Step 3: Verificar**
 
 Run: `npx tsc --noEmit && npm run test:rules`
-Expected: sem erros; seção 14 continua PASS (o batch de edição é exatamente o `payloadEditarExame`).
+Expected: PASS.
 
-- [ ] **Step 4: Verificação no preview**
-
-Subir o dev server (preview), logar, abrir a Worklist: editar um paciente, salvar, conferir que ficha e exame mudaram juntos. Abrir "Editar" de A e imediatamente de B: campos de B não podem ser sobrescritos pelos de A.
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add src/components/Worklist.tsx
-git commit -m "fix(worklist): edicao atomica ficha+exame, guard de corrida no modal, CPF propaga ao exame" && git push
+git commit -m "fix(worklist): edicao atomica ficha+exame, guard de corrida no modal, CPF propaga" && git push
 ```
 
 ---
 
 ### Task 4: Corrida na busca de CPF do Feegow (Achado 6)
 
-Resposta atrasada de um CPF anterior sobrescreve nome/nascimento/sexo do CPF atual → identidade híbrida.
-
 **Files:**
-- Modify: `src/components/Worklist.tsx` (`buscarCpfFeegow` + ref do CPF)
+- Modify: `src/components/Worklist.tsx` (`buscarCpfFeegow`)
 
 - [ ] **Step 1: Ref com o CPF atual + guard na resposta**
 
 ```ts
-  // CPF atual do campo, lido na CHEGADA da resposta (Achado 6): se o usuario
-  // corrigiu o CPF enquanto a busca A voava, a resposta de A e descartada.
+  // CPF atual do campo, conferido na CHEGADA da resposta (Achado 6): se o
+  // usuario corrigiu o CPF enquanto a busca A voava, a resposta de A e descartada.
   const pacCpfRef = useRef('');
   useEffect(() => { pacCpfRef.current = pacCpf.replace(/\D/g, ''); }, [pacCpf]);
 ```
@@ -422,12 +407,9 @@ Em `buscarCpfFeegow`, logo após `const data = await res.json();`:
       if (pacCpfRef.current !== cpfLimpo) return; // campo ja tem OUTRO cpf
 ```
 
-- [ ] **Step 2: Verificar**
+- [ ] **Step 2: Verificar e commitar**
 
 Run: `npx tsc --noEmit`
-Expected: sem erros.
-
-- [ ] **Step 3: Commit**
 
 ```bash
 git add src/components/Worklist.tsx
@@ -436,34 +418,26 @@ git commit -m "fix(worklist): descarta resposta atrasada da busca de CPF no Feeg
 
 ---
 
-### Task 5: Uma única fonte de "hoje BRT" (Achado 12)
+### Task 5: Fonte única de tempo BRT (Achado 12)
 
-Quatro implementações de "hoje": `utils.ts` (local), `api/feegow` (Intl Belém — a certa), cron (`-3h` na mão), `listenNaoRealizados` (UTC puro — janela errada 21h–00h). Unificar na `utils.ts`, que roda em cliente E servidor.
+Quatro implementações de "hoje" divergem (utils local, feegow Intl-Belém, cron `-3h`, listenNaoRealizados UTC). Unificar em `utils.ts` — que também ganha `agoraBelem()` (a Task 7 consome no servidor; sem isso ela criaria a 4ª implementação de fuso, apontado pela tríade).
 
 **Files:**
-- Modify: `src/lib/utils.ts` (dataLocalHoje vira Intl Belém; helper novo)
+- Modify: `src/lib/utils.ts`
 - Modify: `src/lib/firestore.ts` (`listenNaoRealizados`)
-- Modify: `src/app/api/feegow/route.ts` (remove a cópia local, importa de utils)
-- Test: `tests/unit/data-brt.test.mjs` (novo)
+- Modify: `src/app/api/feegow/route.ts` (remove a cópia local)
+- Test: `tests/unit/data-brt.test.mjs` (novo — importa o TS real, padrão `permissoes.test.mjs`)
 
 **Interfaces:**
-- Produces: `dataLocalBRT(d: Date): string` e `dataLocalHoje(): string` em `src/lib/utils.ts` — Tarefas 6 e 8 consomem.
+- Produces: `dataLocalBRT(d: Date): string`, `dataLocalHoje(): string`, `agoraBelem(): Date` em `src/lib/utils.ts` — Tasks 6 e 7 consomem.
 
-- [ ] **Step 1: Teste unitário que falha**
-
-Criar `tests/unit/data-brt.test.mjs`. Obs.: `node --test` não importa TS — o teste valida a MESMA expressão Intl usada em utils (documentado no teste; a Task 12 mostra o padrão de sincronia por leitura de fonte):
+- [ ] **Step 1: Teste que falha** — `tests/unit/data-brt.test.mjs`:
 
 ```js
-// Valida o formato/fuso da fonte unica de "hoje BRT" (src/lib/utils.ts).
-// Node nao importa TS: replica a expressao exata e confere contra utils.ts
-// por leitura de fonte — se alguem mudar la sem mudar aqui, o grep quebra.
+// Fonte unica de "hoje/agora" no fuso da clinica (Achado 12 da Secao 2).
 import { test } from 'node:test';
-import assert from 'node:assert';
-import { readFileSync } from 'node:fs';
-
-const dataLocalBRT = (d) => new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'America/Belem', year: 'numeric', month: '2-digit', day: '2-digit',
-}).format(d);
+import assert from 'node:assert/strict';
+import { dataLocalBRT, agoraBelem } from '../../src/lib/utils.ts';
 
 test('01h30 UTC ainda e o dia anterior em Belem', () => {
   assert.equal(dataLocalBRT(new Date('2026-08-13T01:30:00Z')), '2026-08-12');
@@ -471,53 +445,57 @@ test('01h30 UTC ainda e o dia anterior em Belem', () => {
 test('12h UTC e o mesmo dia em Belem', () => {
   assert.equal(dataLocalBRT(new Date('2026-08-12T12:00:00Z')), '2026-08-12');
 });
-test('utils.ts usa a mesma expressao (fuso America/Belem)', () => {
-  const src = readFileSync('src/lib/utils.ts', 'utf8');
-  assert.ok(src.includes("timeZone: 'America/Belem'"), 'utils.ts deve fixar America/Belem');
+test('agoraBelem devolve Date cuja data local casa com dataLocalHoje', () => {
+  const d = agoraBelem();
+  const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  assert.equal(ymd, dataLocalBRT(new Date()));
 });
 ```
 
 - [ ] **Step 2: Rodar e ver falhar**
 
 Run: `npm run test:unit`
-Expected: o 3º teste FALHA (utils.ts ainda usa data local da máquina).
+Expected: FAIL — `dataLocalBRT`/`agoraBelem` não existem.
 
-- [ ] **Step 3: Implementar em `src/lib/utils.ts`**
-
-Substituir a `dataLocalHoje` atual por:
+- [ ] **Step 3: Implementar em `src/lib/utils.ts`** — substituir a `dataLocalHoje` atual por:
 
 ```ts
-// Fonte UNICA de "hoje" no fuso da clinica (America/Belem, UTC-3 fixo).
+// Fonte UNICA de tempo no fuso da clinica (America/Belem, UTC-3 fixo).
 // Roda igual em cliente e servidor (Vercel = UTC; depois das 21h BRT o
 // new Date() do servidor ja virou o dia — bug real de 22/06/2026).
+const FUSO_CLINICA = 'America/Belem';
+
 export function dataLocalBRT(d: Date): string {
   return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Belem', year: 'numeric', month: '2-digit', day: '2-digit',
+    timeZone: FUSO_CLINICA, year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(d);
 }
+
 export function dataLocalHoje(): string {
   return dataLocalBRT(new Date());
+}
+
+// "Agora" como Date cujos getters LOCAIS devolvem os componentes de Belem —
+// pro gerarAccessionNumber funcionar igual no Vercel (UTC) e na clinica (BRT).
+export function agoraBelem(): Date {
+  const p = new Intl.DateTimeFormat('en-CA', {
+    timeZone: FUSO_CLINICA, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).formatToParts(new Date()).reduce((a, x) => ({ ...a, [x.type]: x.value }), {} as Record<string, string>);
+  return new Date(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second, new Date().getMilliseconds());
 }
 ```
 
 - [ ] **Step 4: Trocar os call-sites divergentes**
 
-a) `src/lib/firestore.ts`, `listenNaoRealizados` — trocar as 3 linhas do cálculo de `dataLimite`:
-
-```ts
-import { dataLocalHoje, dataLocalBRT } from './utils';
-```
+a) `src/lib/firestore.ts` — import vira `import { dataLocalHoje, dataLocalBRT } from './utils';` e o começo de `listenNaoRealizados` vira:
 
 ```ts
 export function listenNaoRealizados(wsId: string, callback: (items: Record<string, unknown>[]) => void, dias: number = 30): Unsubscribe {
   const dataLimite = dataLocalBRT(new Date(Date.now() - dias * 86400000));
 ```
 
-b) `src/app/api/feegow/route.ts` — apagar o bloco `const CLINIC_TZ...function dataLocalHoje()` (linhas ~110-118, manter o comentário do bug numa linha acima do import) e importar:
-
-```ts
-import { dataLocalHoje } from '@/lib/utils';
-```
+b) `src/app/api/feegow/route.ts` — apagar o bloco `const CLINIC_TZ ... function dataLocalHoje() {...}` (linhas ~110-118) e adicionar `import { dataLocalHoje } from '@/lib/utils';` (manter uma linha de comentário apontando o bug de 22/06 pra história).
 
 - [ ] **Step 5: Rodar e ver passar**
 
@@ -528,14 +506,12 @@ Expected: PASS.
 
 ```bash
 git add src/lib/utils.ts src/lib/firestore.ts src/app/api/feegow/route.ts tests/unit/data-brt.test.mjs
-git commit -m "fix(fuso): dataLocalHoje unica em America/Belem (cliente e servidor)" && git push
+git commit -m "fix(fuso): dataLocalBRT/agoraBelem unicos em America/Belem (cliente e servidor)" && git push
 ```
 
 ---
 
-### Task 6: Cron fail-closed, init compartilhado, chunking (Achados 4, 10, 19)
-
-Cron hoje: roda SEM auth se `CRON_SECRET` faltar; init do admin copiado na mão; batch único estoura em >500 docs e a resposta ainda diz `ok:true`.
+### Task 6: Cron fail-closed, init compartilhado, chunking, erro visível (Achados 4, 9-cron, 19 + Codex-10)
 
 **Files:**
 - Modify: `src/app/api/cron/cleanup-worklist/route.ts` (reescrever)
@@ -589,7 +565,7 @@ export async function GET(req: NextRequest) {
           .get();
         if (examesSnap.empty) continue;
 
-        // Chunking (Achado 10): batch unico estourava o limite de 500 e
+        // Chunking (Achado 9): batch unico estourava o limite de 500 e
         // NENHUM exame era marcado — com a resposta ainda dizendo ok.
         const docs = examesSnap.docs;
         for (let i = 0; i < docs.length; i += CHUNK) {
@@ -609,163 +585,51 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Erro parcial = 500 (Codex-10): 2xx faria monitor/log do Vercel tratar
+    // como sucesso. O corpo preserva o que JA foi processado.
     return NextResponse.json({
       ok: erros.length === 0,
       hoje: dataHoje,
       totalMarcados: total,
       detalhes,
       erros: erros.length > 0 ? erros : undefined,
-    }, { status: erros.length > 0 ? 207 : 200 });
+    }, { status: erros.length > 0 ? 500 : 200 });
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'erro' }, { status: 500 });
   }
 }
 ```
 
-- [ ] **Step 2: Verificar**
+- [ ] **Step 2: Verificar e commitar**
 
-Run: `npx tsc --noEmit && npm run build`
-Expected: sem erros. Conferir no painel Vercel que `CRON_SECRET` está setada em produção ANTES do deploy (anotar pra Task 14).
-
-- [ ] **Step 3: Commit**
+Run: `npx tsc --noEmit`. Anotar pra T12: conferir `CRON_SECRET` no painel Vercel.
 
 ```bash
 git add src/app/api/cron/cleanup-worklist/route.ts
-git commit -m "fix(cron): fail-closed sem CRON_SECRET, init compartilhado, chunking de batch" && git push
+git commit -m "fix(cron): fail-closed sem CRON_SECRET, init compartilhado, chunking, 500 em erro parcial" && git push
 ```
 
 ---
 
-### Task 7: Reserva atômica de ACC (Achado 7)
+### Task 7: Importação Feegow no SERVIDOR — autorizada, atômica, idempotente (Achados 7, 9-import, 10, 14, 18 + Codex-1/2/5/6/11)
 
-O cinto atual é ler-depois-escrever sem transação (duas máquinas passam juntas). Trocar por reserva transacional: doc `workspaces/{wsId}/accIndex/{acc}` criado na MESMA transação do exame. O ACC já embute a data (`EXddmmaa...`), então o id do doc de reserva é o próprio ACC.
-
-**Files:**
-- Modify: `src/lib/firestore.ts` (`saveExame` — substituir o loop de 5 leituras)
-- Modify: `firestore.rules` (subcoleção `accIndex`)
-- Test: `tests/rules/regras.test.mjs` (seção 14)
-
-**Interfaces:**
-- Produces: convenção `accIndex/{acc}` = `{ exameId, criadoEm }` — a Task 8 (servidor) usa a MESMA convenção via Admin SDK (`.create()`).
-
-- [ ] **Step 1: Testes de regra**
-
-Seção 14 de `regras.test.mjs`:
-
-```js
-  test('membro cria reserva de ACC no proprio local', async () => {
-    await assertSucceeds(setDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/accIndex`, 'EX12082611000000'),
-      { exameId: 'exFila1', criadoEm: new Date() }));
-  });
-  test('reserva de ACC e imutavel (update negado)', async () => {
-    await assertFails(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/accIndex`, 'EX12082611000000'),
-      { exameId: 'outro' }));
-  });
-  test('fora do local nao cria reserva', async () => {
-    await assertFails(setDoc(doc(como(DR_B), `workspaces/${LOCAL_A1}/accIndex`, 'EX12082612000000'), { exameId: 'x' }));
-  });
-```
-
-- [ ] **Step 2: Rodar e ver falhar**
-
-Run: `npm run test:rules`
-Expected: os dois primeiros FALHAM (accIndex cai no catch-all `if false`).
-
-- [ ] **Step 3: Regra da subcoleção**
-
-Em `firestore.rules`, dentro de `match /workspaces/{wsId}`, depois do bloco de exames:
-
-```
-      // Reserva atomica de ACC (Achado 7 da Secao 2): o doc id E o proprio
-      // ACC; criar em transacao junto com o exame garante unicidade entre
-      // maquinas. Imutavel: reserva nao se edita nem se apaga pelo navegador.
-      match /accIndex/{acc} {
-        allow read, create: if alcancaLocal(wsId);
-        allow update, delete: if false;
-      }
-```
-
-- [ ] **Step 4: Rodar e ver passar**
-
-Run: `npm run test:rules`
-Expected: PASS.
-
-- [ ] **Step 5: Transação no `saveExame`**
-
-Em `src/lib/firestore.ts`: adicionar `runTransaction` ao import de `firebase/firestore` e substituir TODO o bloco do cinto de ACC + `setDoc` do ramo de criação por:
-
-```ts
-    } else {
-      const ref = doc(collection(db, 'workspaces', wsId, 'exames'));
-      const docExame = {
-        id: ref.id, ...dados,
-        status: (dados.status as string) || 'rascunho', versao: 1,
-        ...(medicoUid ? { medicoUid } : {}),
-        criadoEm: now()
-      };
-      if (dados.acc) {
-        // Reserva atomica de ACC (substitui o cinto ler-depois-escrever de
-        // 12/05/2026, que tinha janela de corrida entre maquinas). A reserva
-        // e o exame nascem na MESMA transacao: se outra maquina reservou o
-        // mesmo ACC, o get ve o doc e regenera com offset.
-        // ponytail: accIndex acumula 1 doc minusculo por exame; limpeza so
-        // se um dia virar custo (nao ha TTL hoje).
-        await runTransaction(db, async (tx) => {
-          let acc = dados.acc as string;
-          for (let t = 0; t < 5; t++) {
-            const resSnap = await tx.get(doc(db, 'workspaces', wsId, 'accIndex', acc));
-            if (!resSnap.exists()) {
-              tx.set(doc(db, 'workspaces', wsId, 'accIndex', acc), { exameId: ref.id, criadoEm: now() });
-              tx.set(ref, { ...docExame, acc });
-              return;
-            }
-            acc = gerarAccessionNumber(new Date(), (t + 1) * 100);
-          }
-          throw new Error('ACC: 5 colisoes seguidas');
-        });
-      } else {
-        await setDoc(ref, docExame);
-      }
-      return ref.id;
-    }
-```
-
-(Os imports de `limit`/`where`/`getDocs` continuam usados por outras funções — não remover.)
-
-- [ ] **Step 6: Verificar**
-
-Run: `npm run test:rules && npx tsc --noEmit`
-Expected: PASS.
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add src/lib/firestore.ts firestore.rules tests/rules/regras.test.mjs
-git commit -m "fix(acc): reserva atomica em accIndex/{acc} — fecha corrida entre maquinas" && git push
-```
-
----
-
-### Task 8: Importação Feegow grava no SERVIDOR (Achados 14, 9, 18; fecha 7 e 10 no caminho batch)
-
-`/api/feegow?action=importar` já monta os candidatos no servidor e devolve pro navegador fazer o `writeBatch`. Mover a gravação pro servidor: lógica em `src/lib/feegow-admin.ts` (padrão `exame-admin.ts` — testável no emulador), rota compõe, cliente encolhe pra um POST. Ganha: auditoria (`logAction`), chunking, ACC via `.create()` atômico, dedup só por `feegowAppointId` (mata o caminho legado por nome), campos `undefined` saneados.
+`/api/feegow?action=importar` já monta os candidatos no servidor; a gravação migra pra `src/lib/feegow-admin.ts` (padrão `exame-admin.ts`). Decisões da tríade embutidas: **autorização por vínculo** (`resolverPapel` — sem ela qualquer logado gravaria em qualquer clínica), **autor só se perfil médico E papel dono/medico** (MEDREC não carimba), **transação por candidato** com `tx.create` (idempotente sob concorrência; só `ALREADY_EXISTS` vira retry de ACC), **ids validados** (`/^\d+$/`), reserva `accIndex/{acc}` só no servidor, `agoraBelem` de utils, init do Admin via `auth-admin`.
 
 **Files:**
 - Create: `src/lib/feegow-admin.ts`
-- Modify: `src/app/api/feegow/route.ts` (POST ganha `action:'importar'`; GET `importar` reutiliza o mesmo montador)
-- Modify: `src/components/Worklist.tsx` (`importarFeegow` vira um POST)
+- Modify: `src/app/api/feegow/route.ts` (init via auth-admin; `montarCandidatos`; POST `action:'importar'`)
+- Modify: `src/components/Worklist.tsx` (`importarFeegow` vira um POST; morre o batch client + dedup por nome)
+- Modify: `src/lib/firestore.ts` (só comentário `ponytail:` no cinto de ACC)
 - Test: `tests/api/feegow-admin.test.mjs` (novo)
 
 **Interfaces:**
-- Consumes: convenção `accIndex/{acc}` (Task 7); `dataLocalHoje` de utils (Task 5); tipo `Candidato` = o objeto que o `case 'importar'` do GET já monta (feegowAppointId, feegowPacienteId, pacienteNome, pacienteDtnasc, sexo, cpf, telefone, convenio, tipoExame, medicoExecutor, horarioChegada, dataExame, origem).
-- Produces: `gravarImportacao(dbAdmin, { wsId, candidatos, uid, ehMed, nomeCriador }): Promise<{ criados: Array<{ exameId, pac }> }>`; resposta do POST: `{ ok, criados }`.
+- Consumes: `agoraBelem` (Task 5); `resolverPapel`, `ehMedicoDeVerdade` de `src/lib/exame-admin.ts` (já exportados); `gerarAccessionNumber` (existente).
+- Produces: `gravarImportacao(dbAdmin, { wsId, candidatos, uid, ehMed, nomeCriador }): Promise<{ criados: Array<{ exameId: string; pac: Candidato }> }>`; convenção `accIndex/{acc}` = `{ exameId, criadoEm }` (SÓ servidor — Admin SDK ignora regras; nenhuma mudança em firestore.rules); resposta do POST: `{ ok, total, criados }`.
 
-- [ ] **Step 1: Teste no emulador (`tests/api/feegow-admin.test.mjs`)**
-
-Padrão dos testes existentes em `tests/api/` (ex.: `billing-admin.test.mjs`): importa o TS direto (`../../src/lib/*.ts`) e usa `initializeApp({ projectId: 'leo-testes' })` contra o emulador.
+- [ ] **Step 1: Teste no emulador — `tests/api/feegow-admin.test.mjs`** (padrão `billing-admin.test.mjs`: importa TS direto, `initializeApp({ projectId: 'leo-testes' })`)
 
 ```js
-// Importacao Feegow server-side (Secao 2, Achados 14/9/10). Emulador Firestore.
+// Importacao Feegow server-side (Secao 2, A7/A9/A10/A14). Emulador Firestore.
 import { test, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeApp, getApps } from 'firebase-admin/app';
@@ -796,10 +660,9 @@ describe('gravarImportacao', () => {
     assert.equal(criados.length, 2);
     const ex1 = (await db.doc(`workspaces/${WS}/exames/fg-1`).get()).data();
     assert.equal(ex1.status, 'aguardando');
-    assert.equal(ex1.medicoUid, undefined); // nao-medico NAO carimba autor
+    assert.equal(ex1.medicoUid, undefined); // quem nao assina NAO carimba autor
     assert.equal(ex1.medicoExecutor, '');
-    const reserva = await db.doc(`workspaces/${WS}/accIndex/${ex1.acc}`).get();
-    assert.ok(reserva.exists, 'reserva de ACC criada');
+    assert.ok((await db.doc(`workspaces/${WS}/accIndex/${ex1.acc}`).get()).exists, 'reserva de ACC criada');
   });
   test('re-importar os mesmos candidatos e idempotente', async () => {
     const { criados } = await gravarImportacao(db, {
@@ -807,16 +670,28 @@ describe('gravarImportacao', () => {
     });
     assert.equal(criados.length, 0);
   });
-  test('campo opcional undefined nao derruba o batch', async () => {
+  test('duas importacoes CONCORRENTES nao duplicam nem sobrescrevem', async () => {
+    const [a, b] = await Promise.all([
+      gravarImportacao(db, { wsId: WS, candidatos: [candidato(6)], uid: 'u1', ehMed: false, nomeCriador: 'X' }),
+      gravarImportacao(db, { wsId: WS, candidatos: [candidato(6)], uid: 'u2', ehMed: false, nomeCriador: 'Y' }),
+    ]);
+    assert.equal(a.criados.length + b.criados.length, 1); // exatamente UM venceu
+  });
+  test('campo opcional undefined nao derruba a importacao', async () => {
     const { criados } = await gravarImportacao(db, {
       wsId: WS, candidatos: [candidato(3, { telefone: undefined, sexo: undefined })],
       uid: 'uidRita', ehMed: false, nomeCriador: 'Rita',
     });
     assert.equal(criados.length, 1);
-    const ex3 = (await db.doc(`workspaces/${WS}/exames/fg-3`).get()).data();
-    assert.equal(ex3.sexo, '');
+    assert.equal((await db.doc(`workspaces/${WS}/exames/fg-3`).get()).data().sexo, '');
   });
-  test('medico importando carimba medicoUid e ACCs nunca colidem', async () => {
+  test('appointId nao-numerico e descartado (path safety)', async () => {
+    const { criados } = await gravarImportacao(db, {
+      wsId: WS, candidatos: [candidato('7/../x')], uid: 'uidRita', ehMed: false, nomeCriador: 'Rita',
+    });
+    assert.equal(criados.length, 0);
+  });
+  test('medico importando carimba medicoUid e ACCs nao colidem', async () => {
     const { criados } = await gravarImportacao(db, {
       wsId: WS, candidatos: [candidato(4), candidato(5)], uid: 'uidDrA', ehMed: true, nomeCriador: 'Dr A',
     });
@@ -839,12 +714,14 @@ Expected: FAIL — `feegow-admin` não existe.
 ```ts
 // ══════════════════════════════════════════════════════════════════
 // LEO · Importacao Feegow server-side (Secao 2, Achado 14)
-// A rota /api/feegow compoe; a logica vive aqui (testavel no emulador,
-// padrao exame-admin.ts). Admin SDK — ignora as regras.
+// A rota /api/feegow compoe (auth + papel); a logica vive aqui —
+// testavel no emulador, padrao exame-admin.ts. Admin SDK ignora regras:
+// a AUTORIZACAO (resolverPapel) e responsabilidade do chamador.
 // ══════════════════════════════════════════════════════════════════
-import type { Firestore } from 'firebase-admin/firestore';
+import type { Firestore, Transaction } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
 import { gerarAccessionNumber } from './gerarAccessionNumber';
+import { agoraBelem } from './utils';
 
 export type Candidato = {
   feegowAppointId: number | string;
@@ -855,89 +732,77 @@ export type Candidato = {
   horarioChegada?: string; dataExame?: string;
 };
 
-const LOTE = 200; // 2 escritas por candidato → 400 ops < limite de 500
-
-// "Agora" no fuso da clinica, como Date utilizavel pelos getters locais do
-// gerarAccessionNumber (o servidor Vercel roda em UTC).
-function agoraBelem(): Date {
-  const p = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Belem', year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
-  }).formatToParts(new Date()).reduce((a, x) => ({ ...a, [x.type]: x.value }), {} as Record<string, string>);
-  return new Date(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second, new Date().getMilliseconds());
-}
-
-// Reserva um ACC unico via create() (falha se ja existe) — mesma convencao
-// accIndex/{acc} da reserva client-side (firestore.ts).
-async function reservarAcc(dbAdmin: Firestore, wsId: string, exameId: string, base: Date, offsetMs: number): Promise<string> {
-  for (let t = 0; t < 5; t++) {
-    const acc = gerarAccessionNumber(base, offsetMs + t * 100);
-    try {
-      await dbAdmin.doc(`workspaces/${wsId}/accIndex/${acc}`)
-        .create({ exameId, criadoEm: FieldValue.serverTimestamp() });
-      return acc;
-    } catch { /* ALREADY_EXISTS → tenta o proximo offset */ }
-  }
-  throw new Error('ACC: 5 colisoes seguidas na importacao');
-}
+const jaExiste = (e: unknown) =>
+  (e as { code?: number })?.code === 6 || String(e).includes('ALREADY_EXISTS');
 
 export async function gravarImportacao(dbAdmin: Firestore, args: {
   wsId: string; candidatos: Candidato[]; uid: string; ehMed: boolean; nomeCriador: string;
 }): Promise<{ criados: Array<{ exameId: string; pac: Candidato }> }> {
   const { wsId, candidatos, uid, ehMed, nomeCriador } = args;
-
-  // Dedup por doc id deterministico fg-<appointId> (unico caminho: todo
-  // agendamento Feegow tem id — o dedup legado por nome morreu aqui).
-  const comId = candidatos.filter(c => c.feegowAppointId != null && c.feegowAppointId !== '');
-  const refs = comId.map(c => dbAdmin.doc(`workspaces/${wsId}/exames/fg-${c.feegowAppointId}`));
-  const snaps = refs.length ? await dbAdmin.getAll(...refs) : [];
-  const novos = comId.filter((_, i) => !snaps[i].exists);
-
   const base = agoraBelem();
   const criados: Array<{ exameId: string; pac: Candidato }> = [];
 
-  for (let i = 0; i < novos.length; i += LOTE) {
-    const batch = dbAdmin.batch();
-    const fatia = novos.slice(i, i + LOTE);
-    for (let j = 0; j < fatia.length; j++) {
-      const c = fatia[j];
-      const exameRef = dbAdmin.doc(`workspaces/${wsId}/exames/fg-${c.feegowAppointId}`);
-      const acc = await reservarAcc(dbAdmin, wsId, exameRef.id, base, (i + j) * 10);
-      const pacRef = c.feegowPacienteId
-        ? dbAdmin.doc(`workspaces/${wsId}/pacientes/fg-${c.feegowPacienteId}`)
-        : dbAdmin.collection(`workspaces/${wsId}/pacientes`).doc();
-      // `?? ''` em todo campo opcional: um unico undefined derruba o batch
-      // inteiro (Achado 10).
-      batch.set(pacRef, {
-        id: pacRef.id, nome: c.pacienteNome ?? '', cpf: c.cpf ?? '',
-        dtnasc: c.pacienteDtnasc ?? '', sexo: c.sexo ?? '',
-        telefone: c.telefone ?? '', feegowPacienteId: c.feegowPacienteId ?? null,
-        criadoEm: FieldValue.serverTimestamp(),
-      }, { merge: true });
-      batch.set(exameRef, {
-        id: exameRef.id, acc,
-        pacienteId: pacRef.id,
-        pacienteNome: c.pacienteNome ?? '', pacienteDtnasc: c.pacienteDtnasc ?? '',
-        cpf: c.cpf ?? '', feegowPacienteId: c.feegowPacienteId ?? null,
-        tipoExame: c.tipoExame ?? '', dataExame: c.dataExame ?? '',
-        horarioChegada: c.horarioChegada ?? '', status: 'aguardando',
-        convenio: c.convenio ?? '',
-        solicitante: ehMed ? nomeCriador : '',
-        medicoExecutor: c.medicoExecutor || (ehMed ? nomeCriador : ''),
-        sexo: c.sexo ?? '', origem: 'FEEGOW',
-        feegowAppointId: c.feegowAppointId,
-        ...(ehMed ? { medicoUid: uid } : {}),
-        versao: 1, criadoEm: FieldValue.serverTimestamp(),
+  for (let seq = 0; seq < candidatos.length; seq++) {
+    const c = candidatos[seq];
+    // Path safety (Codex-11): id externo entra em path do Firestore.
+    const fgId = String(c.feegowAppointId ?? '');
+    if (!/^\d+$/.test(fgId)) continue;
+    const fgPacId = /^\d+$/.test(String(c.feegowPacienteId ?? '')) ? String(c.feegowPacienteId) : null;
+
+    const exameRef = dbAdmin.doc(`workspaces/${wsId}/exames/fg-${fgId}`);
+    try {
+      // Transacao por candidato: exame + reserva de ACC nascem JUNTOS.
+      // tx.create falha com ALREADY_EXISTS se o exame ja existe (re-import,
+      // 2 POSTs concorrentes) — idempotencia real, nao check-then-write.
+      await dbAdmin.runTransaction(async (tx: Transaction) => {
+        let acc = '';
+        for (let t = 0; t < 5; t++) {
+          const tent = gerarAccessionNumber(base, seq * 10 + t * 100);
+          const res = await tx.get(dbAdmin.doc(`workspaces/${wsId}/accIndex/${tent}`));
+          if (!res.exists) { acc = tent; break; }
+        }
+        if (!acc) throw new Error('ACC: 5 colisoes seguidas na importacao');
+
+        const pacRef = fgPacId
+          ? dbAdmin.doc(`workspaces/${wsId}/pacientes/fg-${fgPacId}`)
+          : dbAdmin.collection(`workspaces/${wsId}/pacientes`).doc();
+        // `?? ''` em todo opcional: um unico undefined derruba a escrita (A10).
+        tx.set(pacRef, {
+          id: pacRef.id, nome: c.pacienteNome ?? '', cpf: c.cpf ?? '',
+          dtnasc: c.pacienteDtnasc ?? '', sexo: c.sexo ?? '',
+          telefone: c.telefone ?? '', feegowPacienteId: fgPacId,
+          criadoEm: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        tx.create(exameRef, {
+          id: exameRef.id, acc,
+          pacienteId: pacRef.id,
+          pacienteNome: c.pacienteNome ?? '', pacienteDtnasc: c.pacienteDtnasc ?? '',
+          cpf: c.cpf ?? '', feegowPacienteId: fgPacId,
+          tipoExame: c.tipoExame ?? '', dataExame: c.dataExame ?? '',
+          horarioChegada: c.horarioChegada ?? '', status: 'aguardando',
+          convenio: c.convenio ?? '',
+          solicitante: ehMed ? nomeCriador : '',
+          medicoExecutor: c.medicoExecutor || (ehMed ? nomeCriador : ''),
+          sexo: c.sexo ?? '', origem: 'FEEGOW',
+          feegowAppointId: fgId,
+          ...(ehMed ? { medicoUid: uid } : {}),
+          versao: 1, criadoEm: FieldValue.serverTimestamp(),
+        });
+        tx.create(dbAdmin.doc(`workspaces/${wsId}/accIndex/${acc}`), {
+          exameId: exameRef.id, criadoEm: FieldValue.serverTimestamp(),
+        });
       });
       criados.push({ exameId: exameRef.id, pac: c });
+    } catch (e) {
+      if (jaExiste(e)) continue; // exame ja na fila (re-import/concorrencia) — pula
+      throw e; // qualquer outro erro NAO e colisao: propaga (Codex-5)
     }
-    await batch.commit();
   }
 
   if (criados.length > 0) {
     await dbAdmin.collection('logs').add({
       tipo: 'importar_feegow', wsId, quantidade: criados.length,
-      medicoUid: uid, ts: FieldValue.serverTimestamp(),
+      por: uid, ts: FieldValue.serverTimestamp(),
     });
   }
   return { criados };
@@ -947,35 +812,61 @@ export async function gravarImportacao(dbAdmin: Firestore, args: {
 - [ ] **Step 4: Rodar os testes do emulador**
 
 Run: `npm run test:api`
-Expected: PASS (4 casos).
+Expected: PASS (6 casos).
 
-- [ ] **Step 5: Rota — POST `action:'importar'`**
+- [ ] **Step 5: Rota — init compartilhado + `montarCandidatos` + POST autorizado**
 
 Em `src/app/api/feegow/route.ts`:
 
-a) extrair o corpo do `case 'importar'` do GET pra uma função `montarCandidatos(token: string, wsId: string | null): Promise<Candidato[]>` no mesmo arquivo (o GET passa a chamá-la e continua respondendo `{ ok, total, pacientes }` — sem quebrar quem mais usa). No topo do arquivo: `import { gravarImportacao, type Candidato } from '@/lib/feegow-admin';`.
+a) **Init:** apagar o bloco `if (!getApps().length) initializeApp({...})` + `const fbAuth/dbAdmin` (linhas ~12-23) e usar o compartilhado (Arq-3):
 
-b) no handler POST, antes do `return action invalida`:
+```ts
+import { adminDb, adminAuth } from '@/lib/auth-admin';
+import { resolverPapel, ehMedicoDeVerdade } from '@/lib/exame-admin';
+import { gravarImportacao, type Candidato } from '@/lib/feegow-admin';
+
+const fbAuth = adminAuth();
+const dbAdmin = adminDb();
+```
+
+b) **Extração:** mover o corpo do `case 'importar'` do GET (resolução de procMap/profMap/convMap + loop de agendamentos, linhas ~273-343) pra função no mesmo arquivo, `verbatim`:
+
+```ts
+// Monta a lista de candidatos da sala de espera Feegow (era o case 'importar'
+// do GET — corpo movido sem alteracao). NAO grava nada.
+async function montarCandidatos(token: string, wsId: string | null): Promise<Candidato[]> {
+  // ... corpo identico ao case atual, terminando em `return pacientes;` ...
+}
+```
+
+O GET vira: `case 'importar': { const pacientes = await montarCandidatos(token, req.nextUrl.searchParams.get('wsId')); return NextResponse.json({ ok: true, total: pacientes.length, pacientes }); }` — resposta byte-idêntica à atual (conferir chamando o GET no preview antes/depois).
+
+c) **POST:** antes do `return action invalida`:
 
 ```ts
     if (body.action === 'importar') {
       const wsId = req.nextUrl.searchParams.get('wsId');
-      if (!wsId) return NextResponse.json({ error: 'wsId obrigatorio' }, { status: 400 });
-      const uid = await verificarAuth(req); // proteger() ja validou; aqui so pega o uid
+      if (!wsId) return NextResponse.json({ ok: false, error: 'wsId obrigatorio' }, { status: 400 });
+      const uid = await verificarAuth(req);
+      if (!uid) return NextResponse.json({ ok: false, error: 'nao autenticado' }, { status: 401 });
+      // AUTORIZACAO (Codex-1): Admin SDK ignora as regras — sem esta checagem
+      // qualquer logado gravaria exames em QUALQUER clinica via wsId alheio.
+      const papel = await resolverPapel(dbAdmin, wsId, uid);
+      if (!papel) return NextResponse.json({ ok: false, error: 'sem_acesso_ao_local' }, { status: 403 });
+      // Autor so se perfil medico E papel que atende (MEDREC nao carimba) — Codex-2.
+      const ehMed = (papel === 'dono' || papel === 'medico') && await ehMedicoDeVerdade(dbAdmin, uid);
       const perfilSnap = await dbAdmin.doc(`profissionais/${uid}`).get();
-      const perfil = perfilSnap.data() || {};
-      const ehMed = ((perfil.tipoPerfil as string | undefined) ?? 'medico') === 'medico';
       const candidatos = await montarCandidatos(token, wsId);
       const { criados } = await gravarImportacao(dbAdmin, {
-        wsId, candidatos, uid: uid!, ehMed, nomeCriador: (perfil.nome as string) || '',
+        wsId, candidatos, uid, ehMed, nomeCriador: (perfilSnap.data()?.nome as string) || '',
       });
       return NextResponse.json({ ok: true, total: candidatos.length, criados });
     }
 ```
 
-- [ ] **Step 6: Cliente encolhe**
+- [ ] **Step 6: Cliente encolhe + comentário no cinto**
 
-Em `src/components/Worklist.tsx`, substituir `importarFeegow` INTEIRO (morre: dedup por nome, `semAppt`, writeBatch, getDoc de existência — Achado 18) por:
+a) Em `src/components/Worklist.tsx`, substituir `importarFeegow` INTEIRO (morrem: dedup por nome, `semAppt`, `writeBatch` do import, `getDoc` de existência — Achado 18):
 
 ```ts
   async function importarFeegow() {
@@ -989,19 +880,23 @@ Em `src/components/Worklist.tsx`, substituir `importarFeegow` INTEIRO (morre: de
       });
       const data = await res.json();
       if (!data.ok) {
-        alert(data.error || 'Erro ao importar do Feegow.');
+        alert(data.error === 'sem_acesso_ao_local'
+          ? 'Seu usuário não tem acesso a este local.'
+          : (data.error || 'Erro ao importar do Feegow.'));
       } else if (data.criados.length === 0) {
         alert(data.total === 0 ? 'Nenhum paciente aguardando no Feegow.' : 'Todos os pacientes do Feegow já estão na fila.');
       } else {
-        // MWL continua saindo do cliente (o /api/orthanc ja autentica por token)
+        // ponytail: MWL continua saindo do cliente (o /api/orthanc ja autentica);
+        // fechar a aba no meio = MWL perdido, sem retry — o indicador SEM MWL
+        // (mwlStatus) da visibilidade. Mover pro servidor se virar dor real.
         for (const { exameId, pac } of data.criados) {
-          enviarMwlOrthanc({
+          await enviarMwlOrthanc({
             wsId: workspace.id, exameId,
             pacienteNome: pac.pacienteNome, pacienteId: pac.cpf,
             pacienteDtnasc: pac.pacienteDtnasc, sexo: pac.sexo,
             tipoExame: pac.tipoExame, dataExame: pac.dataExame,
             horarioChegada: pac.horarioChegada,
-            medicoNome: ehMedico(profile) ? (profile?.nome as string || '') : '',
+            medicoNome: assinaComoAutor ? (profile?.nome as string || '') : '',
           });
         }
         alert(`${data.criados.length} paciente(s) importado(s) do Feegow!`);
@@ -1014,30 +909,37 @@ Em `src/components/Worklist.tsx`, substituir `importarFeegow` INTEIRO (morre: de
   }
 ```
 
-Remover os imports que ficarem órfãos no arquivo (`doc, getDoc, collection, writeBatch` — conferir com tsc; `writeBatch`/`serverTimestamp` continuam usados pela Task 3, `doc` também).
+Limpar imports que ficarem órfãos (conferir com tsc — `writeBatch`/`serverTimestamp`/`doc` continuam usados pela Task 3; `getDoc`/`collection`/`DocumentReference` do import provavelmente saem).
+
+b) Em `src/lib/firestore.ts`, no cinto de ACC do `saveExame` (que fica), adicionar uma linha ao comentário existente:
+
+```ts
+      // ponytail: check-then-write nao-transacional — janela residual so no
+      // cadastro MANUAL simultaneo em 2 maquinas no MESMO centesimo (hhmmsscc
+      // + contador de sessao). Import em lote reserva accIndex no servidor
+      // (feegow-admin). Trocar por transacao se algum dia colidir de novo.
+```
 
 - [ ] **Step 7: Verificar**
 
-Run: `npm run test:api && npx tsc --noEmit && npm run build`
-Expected: PASS. No preview: importar do Feegow com a conta de teste (Gmail PJ), conferir exames criados e log em `/logs`.
+Run: `npm run test:api && npx tsc --noEmit`
+Expected: PASS. No preview (conta Gmail PJ): GET importar responde igual ao de antes; POST importa; segundo POST responde `criados: []`.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/lib/feegow-admin.ts src/app/api/feegow/route.ts src/components/Worklist.tsx tests/api/feegow-admin.test.mjs
-git commit -m "feat(feegow): importacao grava no servidor (idempotente, chunked, ACC atomico, auditada)" && git push
+git add src/lib/feegow-admin.ts src/app/api/feegow/route.ts src/components/Worklist.tsx src/lib/firestore.ts tests/api/feegow-admin.test.mjs
+git commit -m "feat(feegow): importacao no servidor — autorizada por vinculo, atomica, idempotente, auditada" && git push
 ```
 
 ---
 
-### Task 9: Busca por CPF de verdade (Achado 11)
-
-A variável `cpf` do filtro lê `pacienteDtnasc` — buscar CPF nunca funcionou. O campo `cpf` existe no exame; consertar custa 2 linhas (decisão registrada na revisão: consertar, não cortar).
+### Task 8: Busca por CPF de verdade (Achado 11)
 
 **Files:**
-- Modify: `src/components/Worklist.tsx:504-512` (filtro)
+- Modify: `src/components/Worklist.tsx:504-512`
 
-- [ ] **Step 1: Corrigir o filtro**
+- [ ] **Step 1: Corrigir o filtro** (a variável `cpf` lia `pacienteDtnasc`)
 
 ```ts
   const filtrada = fonteDados.filter(it => {
@@ -1052,7 +954,7 @@ A variável `cpf` do filtro lê `pacienteDtnasc` — buscar CPF nunca funcionou.
   });
 ```
 
-E atualizar o placeholder do input: `placeholder="Buscar por nome ou CPF..."`.
+Placeholder do input: `placeholder="Buscar por nome ou CPF..."`.
 
 - [ ] **Step 2: Verificar e commitar**
 
@@ -1065,14 +967,12 @@ git commit -m "fix(worklist): busca compara CPF de verdade (lia data de nascimen
 
 ---
 
-### Task 10: Timer de espera só no dia de hoje (Achado 13)
-
-Vendo outra data, o timer calcula contra a hora de hoje ("2h de atraso" pra paciente de amanhã).
+### Task 9: Timer de espera só no dia de hoje (Achado 13)
 
 **Files:**
-- Modify: `src/components/Worklist.tsx:595` (linha do `espera` na tabela)
+- Modify: `src/components/Worklist.tsx:595`
 
-- [ ] **Step 1: Condicionar à data selecionada**
+- [ ] **Step 1:**
 
 ```ts
               const espera = item.status === 'aguardando' && dataSel === dataLocalHoje()
@@ -1091,20 +991,21 @@ git commit -m "fix(worklist): timer de espera so aparece na data de hoje" && git
 
 ---
 
-### Task 11: Estado do MWL visível (Achado 15) — regra + código juntos
-
-Falha no envio ao Orthanc hoje é um `console.warn` que ninguém vê: exame na fila sem worklist no aparelho. Gravar `mwlStatus` no exame e sinalizar na tabela. `mwlStatus` precisa entrar na whitelist `camposAdministrativos()` — regra e código no MESMO commit.
+### Task 10: Estado do MWL visível (Achado 15) — regra + código juntos
 
 **Files:**
-- Modify: `firestore.rules:92-97` (whitelist)
-- Modify: `src/components/Worklist.tsx` (`enviarMwlOrthanc` + indicador na linha)
+- Modify: `firestore.rules:92-97` (whitelist ganha `mwlStatus`)
+- Modify: `src/components/Worklist.tsx` (`enviarMwlOrthanc` + indicador)
 - Test: `tests/rules/regras.test.mjs` (seção 14)
 
-- [ ] **Step 1: Teste de regra que falha**
+- [ ] **Step 1: Testes que falham** (inclui exame COM autor — Codex-9):
 
 ```js
   test('recepcao grava mwlStatus (resultado do envio ao aparelho)', async () => {
     await assertSucceeds(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exFila1'), { mwlStatus: 'falhou' }));
+  });
+  test('recepcao grava mwlStatus em exame aguardando COM autor', async () => {
+    await assertSucceeds(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), { mwlStatus: 'enviado' }));
   });
 ```
 
@@ -1112,12 +1013,12 @@ Run: `npm run test:rules` → Expected: FAIL (fora da whitelist).
 
 - [ ] **Step 2: Whitelist + código**
 
-a) `firestore.rules`, em `camposAdministrativos()`, acrescentar `'mwlStatus'` ao array (depois de `'medicoUid'`).
+a) `firestore.rules`, em `camposAdministrativos()`, acrescentar `'mwlStatus'` (após `'medicoUid'`).
 
-b) `Worklist.tsx`, `enviarMwlOrthanc` — gravar o resultado (a função vira dependente de `db`/`doc`/`updateDoc`, que já estão importados; movê-la pra DENTRO do componente não é necessário — receber o resultado e gravar no call-site é maior; manter a função fora e gravar nela mesma):
+b) `Worklist.tsx`, `enviarMwlOrthanc` (assinatura igual):
 
 ```ts
-async function enviarMwlOrthanc(dados: { /* ...assinatura igual... */ }) {
+async function enviarMwlOrthanc(dados: { /* assinatura existente inalterada */ }) {
   try {
     const token = await auth.currentUser?.getIdToken();
     const res = await fetch('/api/orthanc', {
@@ -1126,13 +1027,14 @@ async function enviarMwlOrthanc(dados: { /* ...assinatura igual... */ }) {
       body: JSON.stringify({ action: 'criar_mwl', ...dados }),
     });
     const result = await res.json();
-    // Achado 15: o resultado deixava de existir aqui — persistir no exame
-    // pra fila mostrar quando a worklist NAO chegou ao aparelho.
+    // Achado 15: persistir o resultado — a fila mostra quando a worklist
+    // NAO chegou ao aparelho (antes era um console.warn que ninguem via).
     await updateDoc(doc(db, 'workspaces', dados.wsId, 'exames', dados.exameId), {
       mwlStatus: result.ok ? 'enviado' : 'falhou',
     });
     if (!result.ok) console.warn('Orthanc MWL falhou:', result.error);
-  } catch {
+  } catch (e) {
+    console.error('Orthanc MWL:', e);
     try {
       await updateDoc(doc(db, 'workspaces', dados.wsId, 'exames', dados.exameId), { mwlStatus: 'falhou' });
     } catch { /* offline total: fica sem status */ }
@@ -1140,7 +1042,9 @@ async function enviarMwlOrthanc(dados: { /* ...assinatura igual... */ }) {
 }
 ```
 
-c) na célula do paciente (junto aos badges, depois do span de origem):
+(imports `doc`/`updateDoc`/`db` já existem no arquivo.)
+
+c) na célula do paciente (após o span de origem):
 
 ```tsx
                       {item.mwlStatus === 'falhou' && (
@@ -1160,74 +1064,19 @@ Expected: PASS.
 
 ```bash
 git add firestore.rules src/components/Worklist.tsx tests/rules/regras.test.mjs
-git commit -m "feat(worklist): mwlStatus persistido + indicador SEM MWL na fila (regra+codigo)" && git push
+git commit -m "feat(worklist): mwlStatus persistido + indicador SEM MWL (regra+codigo)" && git push
 ```
 
 ---
 
-### Task 12: Teste de sincronia da whitelist (Achado 16)
-
-A lista `camposAdministrativos()` da regra é mantida à mão vs o que o TS escreve. Transformar desalinhamento em falha de teste: os payloads reais de `fixtures.mjs` (a fonte de verdade do que o app envia) devem caber na whitelist extraída de `firestore.rules` por leitura de fonte.
-
-**Files:**
-- Create: `tests/unit/whitelist-sincronia.test.mjs`
-
-- [ ] **Step 1: Escrever o teste**
-
-```js
-// Achado 16 da Secao 2: a whitelist camposAdministrativos() em firestore.rules
-// e mantida a mao. Este teste le a REGRA e os PAYLOADS REAIS (fixtures) e
-// falha se o app enviar campo fora da whitelist — antes de virar
-// permission-denied silencioso pra recepcao em producao.
-import { test } from 'node:test';
-import assert from 'node:assert';
-import { readFileSync } from 'node:fs';
-import { payloadCadastroExame, payloadEditarExame } from '../rules/fixtures.mjs';
-
-function whitelistDaRegra() {
-  const rules = readFileSync('firestore.rules', 'utf8');
-  const m = rules.match(/function camposAdministrativos\(\)\s*\{\s*return\s*\[([\s\S]*?)\];/);
-  assert.ok(m, 'camposAdministrativos() nao encontrada em firestore.rules');
-  return [...m[1].matchAll(/'([^']+)'/g)].map(x => x[1]);
-}
-
-test('payload de cadastro cabe na whitelist da regra', () => {
-  const wl = new Set(whitelistDaRegra());
-  for (const campo of Object.keys(payloadCadastroExame())) {
-    assert.ok(wl.has(campo), `campo '${campo}' do cadastro NAO esta em camposAdministrativos()`);
-  }
-});
-test('payload de edicao cabe na whitelist da regra', () => {
-  const wl = new Set(whitelistDaRegra());
-  for (const campo of Object.keys(payloadEditarExame())) {
-    assert.ok(wl.has(campo), `campo '${campo}' da edicao NAO esta em camposAdministrativos()`);
-  }
-});
-test('mwlStatus (gravado pelo enviarMwlOrthanc) esta na whitelist', () => {
-  assert.ok(new Set(whitelistDaRegra()).has('mwlStatus'));
-});
-```
-
-- [ ] **Step 2: Rodar, ver passar, commitar**
-
-Run: `npm run test:unit`
-Expected: PASS (Tasks 1 e 11 já alinharam tudo).
-
-```bash
-git add tests/unit/whitelist-sincronia.test.mjs
-git commit -m "test(regras): sincronia whitelist camposAdministrativos vs payloads reais" && git push
-```
-
----
-
-### Task 13: Cortes Ponytail (Achados 17, 20, 22)
+### Task 11: Cortes Ponytail (Achados 17, 20, 22)
 
 **Files:**
 - Modify: `src/components/Worklist.tsx`
 
-- [ ] **Step 1: Cortar o botão "📋 Laudo rápido"** (linhas ~538-541) — é um clone do "+ Paciente" com rótulo que mente. Deletar o `<button>` inteiro.
+- [ ] **Step 1:** Cortar o botão "📋 Laudo rápido" (~:538-541) — clone do "+ Paciente" com rótulo que mente.
 
-- [ ] **Step 2: Listener de não-realizados sob demanda** (Achado 20) — assinar só quando a aba abre:
+- [ ] **Step 2:** Listener de não-realizados sob demanda (Achado 20):
 
 ```ts
   // Aba passiva de auditoria: so assina os 30 dias quando o filtro abre
@@ -1241,9 +1090,9 @@ git commit -m "test(regras): sincronia whitelist camposAdministrativos vs payloa
   }, [wsId, statusSel]);
 ```
 
-E no contador do botão: `🚫 Não realizados{statusSel === 'nao-realizado' ? ` (${naoRealizados.length})` : ''}`.
+Contador do botão: `🚫 Não realizados{statusSel === 'nao-realizado' ? ` (${naoRealizados.length})` : ''}`.
 
-- [ ] **Step 3: Completar o tipo `ExameItem`** (Achado 22) — acrescentar os campos usados com cast manual:
+- [ ] **Step 3:** Completar `ExameItem` (Achado 22):
 
 ```ts
 type ExameItem = Record<string, unknown> & {
@@ -1257,7 +1106,7 @@ type ExameItem = Record<string, unknown> & {
 
 - [ ] **Step 4: Verificar e commitar**
 
-Run: `npx tsc --noEmit && npm run build`
+Run: `npx tsc --noEmit`
 
 ```bash
 git add src/components/Worklist.tsx
@@ -1266,7 +1115,9 @@ git commit -m "chore(worklist): cortes ponytail — botao clone, listener sob de
 
 ---
 
-### Task 14: Verificação final, publicação de regras e entrega
+### Task 12: Verificação final, publicação de regras ANTES do merge, entrega
+
+**Ordem importa (Codex-4):** as regras novas são ADITIVAS (ramo de membro + `mwlStatus`) — código velho funciona com elas, mas código novo NÃO funciona com regras velhas (recepção editando, mwlStatus). Publicar regras primeiro elimina a janela quebrada.
 
 - [ ] **Step 1: Bateria completa**
 
@@ -1276,24 +1127,18 @@ npm run test:unit && npm run test:rules && npm run test:api && npx tsc --noEmit 
 
 Expected: tudo PASS.
 
-- [ ] **Step 2: Verificação no preview (fluxo real de ponta a ponta)**
-
-Com a conta de teste (Gmail PJ — NUNCA a Yahoo): (1) logar como recepção, cadastrar paciente → exame nasce sem autor; (2) editar paciente → salva ficha+exame juntos; (3) logar como médico, abrir o rascunho da recepção → consegue laudar; (4) importar Feegow → exames criados via servidor, log gravado; (5) buscar por CPF na fila.
-
-- [ ] **Step 3: ⚠️ CONFIRMAR COM O SERGIO antes de publicar as regras**
-
-As regras novas (ramo de membro, `accIndex`, `mwlStatus` na whitelist) só valem em produção após:
+- [ ] **Step 2: ⚠️ CONFIRMAR COM O SERGIO e publicar as regras**
 
 ```bash
 node scripts/secao1/04-publicar-regras.mjs --commit
 ```
 
-**NÃO rodar sem confirmação explícita.** Conferir também no painel Vercel que `CRON_SECRET` está setada (Task 6 tornou obrigatória em produção).
+**NÃO rodar sem confirmação explícita.** Conferir também `CRON_SECRET` no painel Vercel (T6 tornou obrigatória em produção).
 
-- [ ] **Step 4: Encerrar a branch**
+- [ ] **Step 3: Verificação no preview (fluxo real de ponta a ponta, já com regras novas)**
 
-Usar a skill `superpowers:finishing-a-development-branch` — opções de merge/PR pra decisão do Sergio (a branch base `feat/secao1-plano2b-b2` ainda não está na master; a ordem de merge é dela primeiro).
+Conta de teste Gmail PJ — NUNCA a Yahoo: (1) recepção cadastra paciente → exame nasce sem autor; (2) recepção edita paciente → ficha+exame juntos; (3) médico abre o rascunho da recepção, salva → assume o exame (medicoUid dele); (4) importar Feegow → exames via servidor, log `importar_feegow` gravado, re-clique não duplica; (5) buscar por CPF; (6) badge SEM MWL aparece se o Orthanc estiver fora.
 
-- [ ] **Step 5: Documentar**
+- [ ] **Step 4: Encerrar a branch** — usar `superpowers:finishing-a-development-branch` (merge/PR = decisão do Sergio; a base `feat/secao1-plano2b-b2` entra na master primeiro).
 
-ADR curto em `docs/decisoes/2026-08-12-secao2-worklist-correcoes.md` (o que mudou de modelo: exame órfão, accIndex, import server-side, mwlStatus) + espelho no Obsidian (`Leo/Decisões/`) + memória local + push.
+- [ ] **Step 5: Documentar** — ADR em `docs/decisoes/2026-08-12-secao2-worklist-correcoes.md` (mudanças de modelo: exame órfão + assunção no salvarLaudo, ramo administrativo de membro, accIndex server-side, import Feegow autorizado no servidor, mwlStatus) + espelho Obsidian (`Leo/Decisões/`) + memória local + push.
