@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb, requireUid } from '@/lib/auth-admin';
 import { resolverPapel } from '@/lib/exame-admin';
-import { criarConvite } from '@/lib/convite-server';
+import { criarConvite, cancelarConvite } from '@/lib/convite-server';
 
 export const runtime = 'nodejs';
 
@@ -29,4 +29,17 @@ export async function POST(req: NextRequest) {
     console.error('API /convite:', e);
     return NextResponse.json({ ok: false, motivo: 'erro' }, { status: 500 });
   }
+}
+
+export async function DELETE(req: NextRequest) {
+  const uid = await requireUid(req);
+  if (!uid) return NextResponse.json({ ok: false, motivo: 'nao_autenticado' }, { status: 401 });
+  try {
+    const { wsId, token } = await req.json();
+    const db = adminDb();
+    const contaId = await contaDoDono(db, wsId, uid);
+    if (!contaId) return NextResponse.json({ ok: false, motivo: 'sem_permissao' }, { status: 403 });
+    const r = await cancelarConvite(db, { contaId, token });
+    return NextResponse.json(r, { status: r.ok ? 200 : 404 });
+  } catch (e) { console.error('API /convite DELETE:', e); return NextResponse.json({ ok: false, motivo: 'erro' }, { status: 500 }); }
 }
