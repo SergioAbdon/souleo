@@ -183,6 +183,9 @@ export async function transferirExame(db: Firestore, p: Params): Promise<Resulta
   if (!pode) return { ok: false, motivo: 'sem_permissao' };
   const papelAlvo = await resolverPapel(db, p.wsId, p.novoMedicoUid);
   if (papelAlvo !== 'medico' && papelAlvo !== 'dono') return { ok: false, motivo: 'alvo_invalido' };
+  // C7/D: papel:'medico' no vinculo nao basta — o alvo precisa ser medico de
+  // verdade (tipoPerfil), senao herda o laudo e nao consegue emitir.
+  if (!(await ehMedicoDeVerdade(db, p.novoMedicoUid))) return { ok: false, motivo: 'alvo_invalido' };
 
   const emitido = exame.status === 'emitido';
   if (emitido) {

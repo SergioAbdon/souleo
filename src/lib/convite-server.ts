@@ -17,7 +17,7 @@ const SETE_DIAS = 7 * 864e5;
 // Ids interpolados no path do Admin SDK (convites/${token}, vinculos/${...}):
 // um id com '/' remonta o path e escaparia da colecao. So aceita o charset de
 // doc-id gerado pelo Firestore. contaId vem do servidor (nao precisa guard).
-function idValido(s: unknown): s is string {
+export function idValido(s: unknown): s is string {
   return typeof s === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(s);
 }
 
@@ -83,6 +83,9 @@ export async function aceitarConvite(
       // Reads ANTES de qualquer write: convite, vínculo e perfil.
       const conv = await t.get(db.doc(`convites/${token}`));
       if (!conv.exists || conv.data()!.usado) return 'ja_usado' as const;
+      // Expiração revalidada DENTRO da tx: uma tx lenta/retry não pode commitar
+      // depois de o convite ter expirado.
+      if ((conv.data()!.expiraEm as Timestamp).toDate() < agora) return 'expirado' as const;
       const vincExistente = await t.get(db.doc(`vinculos/${contaId}_${uid}`));
       if (vincExistente.exists && vincExistente.data()!.status === 'ativo') return 'ja_membro' as const;
 
@@ -145,10 +148,17 @@ export async function listarMembros(db: Firestore, contaId: string) {
 export async function editarMembro(
   db: Firestore, args: { contaId: string; alvoUid: string; papel?: PapelConvite; locais?: string[] },
 ): Promise<{ ok: boolean; motivo?: string }> {
+  if (!idValido(args.alvoUid)) return { ok: false, motivo: 'nao_encontrado' };
   const ref = db.doc(`vinculos/${args.contaId}_${args.alvoUid}`);
   const snap = await ref.get();
   if (!snap.exists) return { ok: false, motivo: 'nao_encontrado' };
   if (snap.data()!.papel === 'dono') return { ok: false, motivo: 'dono_imutavel' };
+  // Promover a médico exige perfil médico: senão recria papel:medico+perfil:assistente
+  // que o aceite bloqueia (paridade com ehMedicoDeVerdade / aceitarConvite).
+  if (args.papel === 'medico') {
+    const prof = await db.doc(`profissionais/${args.alvoUid}`).get();
+    if (((prof.data()?.tipoPerfil as string | undefined) ?? 'medico') !== 'medico') return { ok: false, motivo: 'perfil_incompativel' };
+  }
   const patch: Record<string, unknown> = {};
   if (args.papel === 'medico' || args.papel === 'recepcao') patch.papel = args.papel;
   if (Array.isArray(args.locais)) patch.locais = args.locais;
@@ -160,6 +170,7 @@ export async function editarMembro(
 export async function revogarMembro(
   db: Firestore, args: { contaId: string; alvoUid: string; donoUid: string },
 ): Promise<{ ok: boolean; motivo?: string }> {
+  if (!idValido(args.alvoUid)) return { ok: false, motivo: 'nao_encontrado' };
   if (args.alvoUid === args.donoUid) return { ok: false, motivo: 'nao_pode_a_si' };
   const ref = db.doc(`vinculos/${args.contaId}_${args.alvoUid}`);
   const snap = await ref.get();
@@ -174,9 +185,15 @@ export async function cancelarConvite(
 ): Promise<{ ok: boolean; motivo?: string }> {
   if (!idValido(args.token)) return { ok: false, motivo: 'nao_encontrado' };
   const ref = db.doc(`convites/${args.token}`);
-  const snap = await ref.get();
-  if (!snap.exists || snap.data()!.contaId !== args.contaId) return { ok: false, motivo: 'nao_encontrado' };
-  if (snap.data()!.usado) return { ok: false, motivo: 'ja_usado' };
-  await ref.update({ usado: true, usadoPor: null, usadoEm: FieldValue.serverTimestamp() });
+  // Transacional: leitura+decisão+update num só passo — senão corre com
+  // aceitarConvite e o update incondicional apagaria usadoPor de um já aceito.
+  const motivo = await db.runTransaction(async (t) => {
+    const snap = await t.get(ref);
+    if (!snap.exists || snap.data()!.contaId !== args.contaId) return 'nao_encontrado' as const;
+    if (snap.data()!.usado) return 'ja_usado' as const;
+    t.update(ref, { usado: true, usadoPor: null, usadoEm: FieldValue.serverTimestamp() });
+    return 'ok' as const;
+  });
+  if (motivo !== 'ok') return { ok: false, motivo };
   return { ok: true };
 }

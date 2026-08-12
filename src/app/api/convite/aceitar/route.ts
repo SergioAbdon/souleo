@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDb, requireUid } from '@/lib/auth-admin';
+import { adminDb, requireUid, adminAuth } from '@/lib/auth-admin';
 import { aceitarConvite } from '@/lib/convite-server';
 import { verificarCrmNoOp } from '@/lib/verificar-crm';
 
@@ -15,8 +15,10 @@ export async function POST(req: NextRequest) {
   try {
     const { token, dadosPerfil } = await req.json();
     if (!token) return NextResponse.json({ ok: false, motivo: 'invalido' }, { status: 400 });
+    // E-mail do perfil vem do Auth (fonte da verdade), nao do corpo — o nome ainda vem do corpo.
+    const email = (await adminAuth().getUser(uid)).email ?? '';
     const r = await aceitarConvite(adminDb(), {
-      uid, token, dadosPerfil: dadosPerfil ?? {}, verificarCrm: verificarCrmNoOp, agora: new Date(),
+      uid, token, dadosPerfil: { ...(dadosPerfil ?? {}), email }, verificarCrm: verificarCrmNoOp, agora: new Date(),
     });
     return NextResponse.json(r, { status: r.ok ? 200 : STATUS[(r as { motivo: string }).motivo] ?? 500 });
   } catch (e) {

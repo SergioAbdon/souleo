@@ -160,6 +160,13 @@ describe('transferir', () => {
     assert.equal(r.ok, false);
     assert.equal(r.motivo, 'sem_permissao');
   });
+  test('alvo papel:medico mas perfil assistente NAO recebe (D)', async () => {
+    await db.doc(`workspaces/${WS}/exames/trD`).set({ pacienteNome: 'P', medicoUid: MED, status: 'aguardando' });
+    const r = await transferirExame(db, { wsId: WS, exameId: 'trD', uid: DONO, novoMedicoUid: 'uidFalsoMed', subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'alvo_invalido');
+    assert.equal((await db.doc(`workspaces/${WS}/exames/trD`).get()).data().medicoUid, MED, 'alvo nao herdou');
+  });
   test('alvo precisa ser medico/dono da conta', async () => {
     await db.doc(`workspaces/${WS}/exames/tr3`).set({ pacienteNome: 'P', medicoUid: MED, status: 'aguardando' });
     const r = await transferirExame(db, { wsId: WS, exameId: 'tr3', uid: DONO, novoMedicoUid: RITA, subRef: subRef(), apagarPdf });

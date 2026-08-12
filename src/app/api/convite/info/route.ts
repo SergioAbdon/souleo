@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/auth-admin';
+import { idValido } from '@/lib/convite-server';
 
 export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get('token');
   if (!token) return NextResponse.json({ ok: false, motivo: 'invalido' }, { status: 400 });
+  if (!idValido(token)) return NextResponse.json({ ok: false, motivo: 'invalido' }, { status: 404 });
   try {
     const db = adminDb();
     const snap = await db.doc(`convites/${token}`).get();

@@ -1,5 +1,5 @@
 // Convite por link + aceite (Plano 2B-B2). Emulador Firestore.
-import { test, before, beforeEach, describe } from 'node:test';
+import { test, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
@@ -142,6 +142,35 @@ describe('gestão de membros', () => {
     const r = await editarMembro(db, { contaId: CONTA, alvoUid: 'uidE1', papel: 'recepcao', locais: ['wsConv'] });
     assert.equal(r.ok, true);
     assert.deepEqual((await db.doc(`vinculos/${CONTA}_uidE1`).get()).data().locais, ['wsConv']);
+  });
+  test('editarMembro NAO promove assistente a medico (perfil_incompativel)', async () => {
+    await db.doc('profissionais/uidAssistE').set({ uid: 'uidAssistE', nome: 'Assist', tipoPerfil: 'assistente' });
+    await db.doc(`vinculos/${CONTA}_uidAssistE`).set({ contaId: CONTA, medicoUid: 'uidAssistE', papel: 'recepcao', locais: [], status: 'ativo' });
+    const r = await editarMembro(db, { contaId: CONTA, alvoUid: 'uidAssistE', papel: 'medico' });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'perfil_incompativel');
+    assert.equal((await db.doc(`vinculos/${CONTA}_uidAssistE`).get()).data().papel, 'recepcao', 'papel intacto');
+  });
+  test('editarMembro promove medico de verdade', async () => {
+    await db.doc('profissionais/uidMedE').set({ uid: 'uidMedE', nome: 'Med', tipoPerfil: 'medico' });
+    await db.doc(`vinculos/${CONTA}_uidMedE`).set({ contaId: CONTA, medicoUid: 'uidMedE', papel: 'recepcao', locais: [], status: 'ativo' });
+    const r = await editarMembro(db, { contaId: CONTA, alvoUid: 'uidMedE', papel: 'medico' });
+    assert.equal(r.ok, true);
+    assert.equal((await db.doc(`vinculos/${CONTA}_uidMedE`).get()).data().papel, 'medico');
+  });
+  test('editarMembro muda so locais de assistente (sem mexer no papel) → ok', async () => {
+    await db.doc(`vinculos/${CONTA}_uidAssistL`).set({ contaId: CONTA, medicoUid: 'uidAssistL', papel: 'recepcao', locais: [], status: 'ativo' });
+    const r = await editarMembro(db, { contaId: CONTA, alvoUid: 'uidAssistL', locais: ['wsConv'] });
+    assert.equal(r.ok, true);
+    assert.deepEqual((await db.doc(`vinculos/${CONTA}_uidAssistL`).get()).data().locais, ['wsConv']);
+  });
+  test('editarMembro/revogarMembro com alvoUid barra → nao_encontrado sem excecao', async () => {
+    const e = await editarMembro(db, { contaId: CONTA, alvoUid: 'a/b', papel: 'recepcao' });
+    assert.equal(e.ok, false);
+    assert.equal(e.motivo, 'nao_encontrado');
+    const v = await revogarMembro(db, { contaId: CONTA, alvoUid: 'a/b', donoUid: DONO });
+    assert.equal(v.ok, false);
+    assert.equal(v.motivo, 'nao_encontrado');
   });
   test('revogarMembro inativa o vínculo', async () => {
     await db.doc(`vinculos/${CONTA}_uidR1`).set({ contaId: CONTA, medicoUid: 'uidR1', papel: 'medico', locais: [], status: 'ativo' });
