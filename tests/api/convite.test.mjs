@@ -106,6 +106,15 @@ describe('aceitarConvite', () => {
     assert.equal(r.ok, false);
     assert.equal(r.motivo, 'ja_membro');
   });
+  test('concorrencia: dois aceites do mesmo token, so um vinculo (uso unico)', async () => {
+    const token = await novoConvite('recepcao', []);
+    const [r1, r2] = await Promise.all([
+      aceitarConvite(db, { uid: 'uidRace', token, dadosPerfil: { nome: 'R', email: 'r@x.com' }, verificarCrm: noop, agora: HOJE }),
+      aceitarConvite(db, { uid: 'uidRace', token, dadosPerfil: { nome: 'R', email: 'r@x.com' }, verificarCrm: noop, agora: HOJE }),
+    ]);
+    const oks = [r1, r2].filter(r => r.ok).length;
+    assert.equal(oks, 1, 'exatamente um aceite vence');
+  });
   test('token inexistente → invalido', async () => {
     const r = await aceitarConvite(db, { uid: 'uidZ', token: 'naoexiste', dadosPerfil: {}, verificarCrm: noop, agora: HOJE });
     assert.equal(r.ok, false);

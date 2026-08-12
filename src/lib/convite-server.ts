@@ -49,31 +49,47 @@ export async function aceitarConvite(
     const papel = convite.papel as PapelConvite;
     const contaId = convite.contaId as string;
 
-    const perfilSnap = await db.doc(`profissionais/${uid}`).get();
-    const perfilExiste = perfilSnap.exists;
-    const tipoPerfilExistente = perfilExiste ? (perfilSnap.data()!.tipoPerfil as string | undefined) : undefined;
+    // Read FORA da transação usado SÓ para decidir se roda verificarCrm (I/O não
+    // pode entrar na tx). A decisão de perfil (existe? incompatível? criar?) é
+    // feita DENTRO da tx com perfilTx — senão dois aceites concorrentes do mesmo
+    // uid novo veem ambos exists=false, o guard nunca dispara e a última escrita
+    // sobrescreve profissionais/{uid} (um assistente poderia virar médico).
+    const perfilForaTx = await db.doc(`profissionais/${uid}`).get();
 
-    // Coerência papel↔perfil: convite de MÉDICO exige perfil médico (ausente ou
-    // 'medico'). Assistente existente não vira médico (tipoPerfil é imutável).
+    // Fast-fail fora da tx (revalidado dentro): novo médico precisa de CRM+nome.
     if (papel === 'medico') {
-      if (perfilExiste) {
-        if ((tipoPerfilExistente ?? 'medico') !== 'medico') return { ok: false, motivo: 'perfil_incompativel' };
-      } else {
-        if (!dadosPerfil.crm || !dadosPerfil.ufCrm || !dadosPerfil.nome) return { ok: false, motivo: 'dados_invalidos' };
+      if (perfilForaTx.exists) {
+        if (((perfilForaTx.data()!.tipoPerfil as string | undefined) ?? 'medico') !== 'medico') return { ok: false, motivo: 'perfil_incompativel' };
+      } else if (!dadosPerfil.crm || !dadosPerfil.ufCrm || !dadosPerfil.nome) {
+        return { ok: false, motivo: 'dados_invalidos' };
       }
-    } else if (!perfilExiste && !dadosPerfil.nome) {
+    } else if (!perfilForaTx.exists && !dadosPerfil.nome) {
       return { ok: false, motivo: 'dados_invalidos' };
     }
 
-    const crmVerificacao = (!perfilExiste && papel === 'medico')
+    const crmVerificacao = (!perfilForaTx.exists && papel === 'medico')
       ? await verificarCrm(dadosPerfil.crm ?? '', (dadosPerfil.ufCrm ?? '').toUpperCase())
       : { status: 'nao_verificado' as const, fonte: 'nenhum', checadoEm: null };
 
     const motivo = await db.runTransaction(async (t) => {
+      // Reads ANTES de qualquer write: convite, vínculo e perfil.
       const conv = await t.get(db.doc(`convites/${token}`));
       if (!conv.exists || conv.data()!.usado) return 'ja_usado' as const;
       const vincExistente = await t.get(db.doc(`vinculos/${contaId}_${uid}`));
       if (vincExistente.exists && vincExistente.data()!.status === 'ativo') return 'ja_membro' as const;
+
+      // Guard atômico: decisão de perfil usa o read DENTRO da tx.
+      const perfilTx = await t.get(db.doc(`profissionais/${uid}`));
+      const perfilExiste = perfilTx.exists;
+      if (papel === 'medico') {
+        if (perfilExiste) {
+          if (((perfilTx.data()!.tipoPerfil as string | undefined) ?? 'medico') !== 'medico') return 'perfil_incompativel' as const;
+        } else if (!dadosPerfil.crm || !dadosPerfil.ufCrm || !dadosPerfil.nome) {
+          return 'dados_invalidos' as const;
+        }
+      } else if (!perfilExiste && !dadosPerfil.nome) {
+        return 'dados_invalidos' as const;
+      }
 
       if (!perfilExiste) {
         t.set(db.doc(`profissionais/${uid}`), {
