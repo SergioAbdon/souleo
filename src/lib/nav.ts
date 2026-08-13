@@ -1,6 +1,11 @@
 // Navegação da plataforma (spec §3). Dado puro — a Sidebar renderiza isto.
 // Sub-planos seguintes ACRESCENTAM itens (Pacientes, Integrações) aqui.
-import { podeVerFinanceiro, podeGerenciarMembros, type Papel } from './permissoes.ts';
+//
+// Import só de TIPO (apagado em runtime): node --test não resolve import
+// relativo sem extensão entre .ts, e import com .ts quebra o tsc (TS5097).
+// O gate de papel abaixo espelha podeVerFinanceiro (permissoes.ts, matriz §4)
+// — 1 linha, travada pelos testes de nav.test.mjs.
+import type { Papel } from './permissoes';
 
 export type ItemNav = { href: string; rotulo: string; icone: string };
 
@@ -12,10 +17,7 @@ export const NAV_PLATAFORMA: ItemNav[] = [
 ];
 
 export function itensVisiveis(papel: Papel | null | undefined): ItemNav[] {
-  return NAV_PLATAFORMA.filter(i => {
-    if (i.href === '/financeiro') return podeVerFinanceiro(papel);
-    // /clinica: todos entram (dados básicos); as subseções internas de
-    // gestão (Equipe/Plano) gateiam por podeGerenciarMembros lá dentro.
-    return true;
-  });
+  // /clinica: todos entram (dados básicos); subseções de gestão gateiam lá dentro.
+  return NAV_PLATAFORMA.filter(i =>
+    i.href !== '/financeiro' || papel === 'dono' || papel === 'medico');
 }
