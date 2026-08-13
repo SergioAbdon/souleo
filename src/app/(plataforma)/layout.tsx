@@ -1,7 +1,7 @@
 'use client';
 // Shell da plataforma (spec §3): sidebar fixa em telas largas, drawer em
 // estreitas. Auth guard + EscolherLocalGate aqui — as páginas só têm conteúdo.
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Sidebar from '@/components/shell/Sidebar';
@@ -12,8 +12,14 @@ export default function PlataformaLayout({ children }: { children: React.ReactNo
   const router = useRouter();
   const [drawer, setDrawer] = useState(false);
 
+  // Redirect em effect, não no render (o padrão antigo do dashboard disparava
+  // "Cannot update Router while rendering" no console).
+  useEffect(() => {
+    if (!loading && !user) router.replace('/login');
+  }, [loading, user, router]);
+
   if (loading) return <div className="min-h-screen flex items-center justify-center"><span className="text-4xl animate-pulse">🫀</span></div>;
-  if (!user) { router.replace('/login'); return null; }
+  if (!user) return null;
 
   return (
     <div className="h-screen flex overflow-hidden">
