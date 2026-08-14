@@ -624,4 +624,12 @@ describe('14. worklist — administracao da fila por membro do local (Secao 2)',
   test('recepcao NAO edita exame emitido', async () => {
     await assertFails(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exEmitidoS14'), payloadEditarExame()));
   });
+  test('recepcao cadastra exame SEM medicoUid (payload real do cadastro)', async () => {
+    await assertSucceeds(setDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exNovoRita'),
+      payloadCadastroExame({ id: 'exNovoRita' })));
+  });
+  test('medico assume o orfao no primeiro save do laudo (payload real do salvarLaudo)', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/exames`, 'exNovoRita'),
+      { medidas: { ddve: 50 }, pacienteNome: 'PACIENTE NOVO', status: 'andamento', medicoUid: DR_A2 }));
+  });
 });

@@ -321,9 +321,12 @@ export async function saveExame(wsId: string, dados: Record<string, unknown>, me
         dados.acc = acc;
       }
       const ref = doc(collection(db, 'workspaces', wsId, 'exames'));
+      // medicoUid vazio = exame sem autor (recepcao cadastra; o medico assume
+      // no primeiro salvarLaudo — e o que a regra de update espera).
       await setDoc(ref, {
         id: ref.id, ...dados,
-        status: (dados.status as string) || 'rascunho', versao: 1, medicoUid,
+        status: (dados.status as string) || 'rascunho', versao: 1,
+        ...(medicoUid ? { medicoUid } : {}),
         criadoEm: now()
       });
       return ref.id;

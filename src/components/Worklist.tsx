@@ -16,7 +16,7 @@ import { doc, getDoc, collection, writeBatch, serverTimestamp, type DocumentRefe
 import { useRouter } from 'next/navigation';
 import { checkEmissao } from '@/lib/billing';
 import DicomGallery from '@/components/laudo/DicomGallery';
-import { podeEditarLaudo, podeRemoverDaFila } from '@/lib/permissoes';
+import { podeEditarLaudo, podeRemoverDaFila, ehMedico } from '@/lib/permissoes';
 
 // v3: helper pra enviar token Firebase nas chamadas Feegow
 async function feegowAuthFetch(url: string, options?: RequestInit) {
@@ -65,6 +65,10 @@ const TIPOS_EXAME: Record<string, string> = {
 export default function Worklist() {
   const { workspace, profile, papel, user } = useAuth();
   const router = useRouter();
+
+  // Quem pode nascer como AUTOR de exame: perfil medico E papel dono/medico
+  // no local (MEDREC — medico de perfil com papel recepcao — nao assina aqui).
+  const assinaComoAutor = ehMedico(profile) && (papel === 'dono' || papel === 'medico');
 
   const [worklist, setWorklist] = useState<ExameItem[]>([]);
   const [naoRealizados, setNaoRealizados] = useState<ExameItem[]>([]);
@@ -159,7 +163,7 @@ export default function Worklist() {
   function abrirNovoPaciente() {
     setEditPacId(null); setEditExameId(null);
     setPacNome(''); setPacCpf(''); setPacDtnasc(''); setPacSexo('');
-    setPacTel(''); setPacConvenio(''); setPacSolicitante(profile?.nome as string || '');
+    setPacTel(''); setPacConvenio(''); setPacSolicitante(assinaComoAutor ? (profile?.nome as string || '') : '');
     setPacTipoExame('eco_tt'); setPacErro(''); setCpfFeegow(false);
     setModalPac(true);
   }
@@ -267,10 +271,10 @@ export default function Worklist() {
         status: 'aguardando',
         convenio: pacConvenio,
         solicitante: pacSolicitante,
-        medicoExecutor: profile?.nome as string || '',
+        medicoExecutor: assinaComoAutor ? (profile?.nome as string || '') : '',
         sexo: pacSexo,
         origem: 'MANUAL',
-      }, profile?.id || '');
+      }, assinaComoAutor ? (profile?.id as string || '') : '');
 
       if (!novoExameId) {
         setPacErro('Não foi possível criar o exame na fila. Nada foi gravado. (Detalhe no Console — F12.)');
