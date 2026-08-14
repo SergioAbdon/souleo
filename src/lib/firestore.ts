@@ -5,7 +5,7 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { db } from './firebase';
-import { dataLocalHoje } from './utils';
+import { dataLocalHoje, dataLocalBRT } from './utils';
 import { gerarAccessionNumber } from './gerarAccessionNumber';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc,
@@ -367,9 +367,7 @@ export function listenWorklist(wsId: string, callback: (items: Record<string, un
 
 // Tab passiva — exames que viraram 'nao-realizado' (auto-cleanup à meia-noite)
 export function listenNaoRealizados(wsId: string, callback: (items: Record<string, unknown>[]) => void, dias: number = 30): Unsubscribe {
-  const d = new Date();
-  d.setDate(d.getDate() - dias);
-  const dataLimite = d.toISOString().slice(0, 10);
+  const dataLimite = dataLocalBRT(new Date(Date.now() - dias * 86400000));
   return onSnapshot(
     query(
       collection(db, 'workspaces', wsId, 'exames'),
