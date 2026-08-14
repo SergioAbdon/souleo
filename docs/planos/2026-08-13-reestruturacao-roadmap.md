@@ -6,7 +6,7 @@
 
 | # | Sub-plano | Entrega | Depende de | Dia alvo | Status |
 |---|-----------|---------|------------|----------|--------|
-| 1 | **Fundação/Shell** | Tokens V7 em `globals.css` + shell `(plataforma)` com sidebar branca + rotas `/agenda` `/laudos` `/financeiro` `/clinica` (telas atuais dentro, sem redesign interno) + `/dashboard`→redirect + drawer responsivo | — | 1 | **PLANO PRONTO** (`2026-08-13-plano1-fundacao-shell.md`) |
+| 1 | **Fundação/Shell** | Tokens V7 em `globals.css` + shell `(plataforma)` com sidebar branca + rotas `/agenda` `/laudos` `/financeiro` `/clinica` (telas atuais dentro, sem redesign interno) + `/dashboard`→redirect + drawer responsivo | — | 1 | ✅ **CONCLUÍDO E NO AR** (merge master b98a5bc 14/08; smoke logado 8/9 OK, zero bugs; revisão final: 2 achados corrigidos) |
 | 2 | Agenda + Seção 2 | Migração visual da Worklist pro padrão novo + execução do plano de correção já revisado pela tríade (`docs/planos/2026-08-12-plano-correcao-secao2-worklist.md` — 12 tarefas: recepção destravada, corridas CPF/ACC, import Feegow no servidor) | 1 | 2 | plano v2 pronto; adaptação de anchors pós-shell |
 | 3 | Catálogo de tipos de laudo | `tiposLaudo/{id}` + seed (eco/carótidas/ecg/mapa/holter/ergométrico) + subseção Clínica→Tipos de laudo + fluxo laudo `texto` (TipTap c/ modelo) e `pdf` (anexo via rota server) + regra+teste | 1 | 3 | a escrever |
 | 4 | Pacientes | `/pacientes`: busca nome/CPF + ficha + linha do tempo dos exames (dados existentes) | 1 | 3–4 | a escrever |
