@@ -10,11 +10,11 @@ export default function SeletorLocal() {
     <select
       value={localAtivo?.workspace.id || ''}
       onChange={e => selecionarLocal(e.target.value)}
-      className="bg-white/20 text-white text-xs font-semibold rounded-lg px-3 py-1.5 focus:outline-none"
+      className="w-full bg-surface text-ink text-xs font-semibold rounded-lg px-3 py-1.5 border border-borda focus:outline-none focus:ring-1 focus:ring-p1"
       title="Trocar de local"
     >
       {contextos.map(ctx => (
-        <option key={ctx.workspace.id} value={ctx.workspace.id} className="text-gray-800">
+        <option key={ctx.workspace.id} value={ctx.workspace.id} className="text-ink">
           {ctx.workspace.nomeClinica || 'Consultório'}
         </option>
       ))}
