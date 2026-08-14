@@ -241,10 +241,6 @@ export default function Worklist() {
     // edição (ex: corrigir convênio). CPF é a chave de pareamento DICOM.
     if (cpfLimpo) pacData.cpf = cpfLimpo;
     if (pacTel) pacData.telefone = pacTel;
-    if (editPacId) pacData.id = editPacId;
-
-    const pacId = await savePaciente(workspace.id, pacData);
-    if (!pacId) { setPacErro('Erro ao salvar paciente.'); setPacLoading(false); return; }
 
     if (editExameId) {
       // Edicao: ficha + exame na MESMA escrita (Achado 3 — antes a ficha
@@ -286,6 +282,9 @@ export default function Worklist() {
       }
     } else {
       // Novo paciente — criar exame na fila
+      const pacId = await savePaciente(workspace.id, pacData);
+      if (!pacId) { setPacErro('Erro ao salvar paciente.'); setPacLoading(false); return; }
+
       const agora2 = new Date();
       const horaChegada = agora2.toTimeString().slice(0, 5);
       const novoExameId = await saveExame(workspace.id, {
