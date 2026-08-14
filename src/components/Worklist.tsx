@@ -5,7 +5,7 @@
 // Botões por status conforme V7 aprovado
 // ══════════════════════════════════════════════════════════════════
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { savePaciente, saveExame, listenWorklist, listenNaoRealizados, getExame, getPaciente } from '@/lib/firestore';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
@@ -95,6 +95,10 @@ export default function Worklist() {
   const [cpfBuscando, setCpfBuscando] = useState(false);
   const [cpfFeegow, setCpfFeegow] = useState(false); // indica se dados vieram do Feegow
 
+  // Guard de corrida do modal (Achado 5): cada abertura incrementa a geracao;
+  // resposta atrasada de getPaciente de uma abertura anterior é descartada.
+  const editReq = useRef(0);
+
   // Galeria DICOM aberta direto do Worklist (modo secretária — não entra no motor).
   // Adicionado em 14/05/2026: antes, clicar em "📸 Imagens" abria o laudo inteiro,
   // mas secretária/usuário não-médico não deve passar pelo motor.
@@ -161,6 +165,7 @@ export default function Worklist() {
   // ── Ações ──
 
   function abrirNovoPaciente() {
+    editReq.current++;
     setEditPacId(null); setEditExameId(null);
     setPacNome(''); setPacCpf(''); setPacDtnasc(''); setPacSexo('');
     setPacTel(''); setPacConvenio(''); setPacSolicitante(assinaComoAutor ? (profile?.nome as string || '') : '');
@@ -190,6 +195,7 @@ export default function Worklist() {
   }
 
   async function editarPaciente(item: ExameItem) {
+    const req = ++editReq.current;
     setEditPacId(item.pacienteId as string || null);
     setEditExameId(item.id);
     setPacNome(item.pacienteNome as string || '');
@@ -210,6 +216,7 @@ export default function Worklist() {
     // exames antigos). Assíncrono: modal já abriu, campos se completam.
     if (item.pacienteId && workspace?.id) {
       const pac = await getPaciente(workspace.id, item.pacienteId as string) as Record<string, unknown> | null;
+      if (req !== editReq.current) return; // modal ja e de OUTRO paciente
       if (pac) {
         if (pac.cpf) setPacCpf(pac.cpf as string);
         if (pac.telefone) setPacTel(pac.telefone as string);
@@ -240,17 +247,39 @@ export default function Worklist() {
     if (!pacId) { setPacErro('Erro ao salvar paciente.'); setPacLoading(false); return; }
 
     if (editExameId) {
-      // Atualizando paciente de um exame existente
-      const okExame = await saveExame(workspace.id, {
-        id: editExameId,
-        pacienteNome: pacNome.trim().toUpperCase(),
-        pacienteDtnasc: pacDtnasc,
-        convenio: pacConvenio,
-        solicitante: pacSolicitante,
-        tipoExame: pacTipoExame,
-        sexo: pacSexo,
-      }, profile?.id || '');
-      if (!okExame) {
+      // Edicao: ficha + exame na MESMA escrita (Achado 3 — antes a ficha
+      // salvava e o exame falhava, com a tela dizendo que nada gravou).
+      try {
+        const batch = writeBatch(db);
+        const dadosFicha: Record<string, unknown> = {
+          nome: pacNome.trim().toUpperCase(),
+          dtnasc: pacDtnasc,
+          sexo: pacSexo,
+          convenio: pacConvenio,
+        };
+        if (cpfLimpo) dadosFicha.cpf = cpfLimpo;
+        if (pacTel) dadosFicha.telefone = pacTel;
+        dadosFicha.atualizadoEm = serverTimestamp();
+
+        if (editPacId) {
+          batch.update(doc(db, 'workspaces', workspace.id, 'pacientes', editPacId), dadosFicha);
+        }
+        batch.update(doc(db, 'workspaces', workspace.id, 'exames', editExameId), {
+          pacienteNome: pacNome.trim().toUpperCase(),
+          pacienteDtnasc: pacDtnasc,
+          convenio: pacConvenio,
+          solicitante: pacSolicitante,
+          tipoExame: pacTipoExame,
+          sexo: pacSexo,
+          // Achado 8: CPF e a chave de pareamento DICOM — propaga pro exame.
+          // Vazio = "nao mexer" (mesma filosofia do #7c da ficha): esvaziar o
+          // campo NAO apaga o CPF gravado.
+          ...(cpfLimpo ? { cpf: cpfLimpo } : {}),
+          atualizadoEm: serverTimestamp(),
+        });
+        await batch.commit();
+      } catch (e) {
+        console.error('editar paciente:', e);
         setPacErro('Não foi possível salvar a alteração. Nada foi gravado. (Detalhe no Console — F12.)');
         setPacLoading(false);
         return;
@@ -264,7 +293,7 @@ export default function Worklist() {
         pacienteId: pacId,
         pacienteNome: pacNome.trim().toUpperCase(),
         pacienteDtnasc: pacDtnasc,
-        cpf: pacCpf.replace(/\D/g, ''),
+        cpf: cpfLimpo,
         tipoExame: pacTipoExame,
         dataExame: dataLocalHoje(),
         horarioChegada: horaChegada,
@@ -277,7 +306,7 @@ export default function Worklist() {
       }, assinaComoAutor ? (profile?.id as string || '') : '');
 
       if (!novoExameId) {
-        setPacErro('Não foi possível criar o exame na fila. Nada foi gravado. (Detalhe no Console — F12.)');
+        setPacErro('A ficha do paciente foi salva, mas o exame NÃO entrou na fila. Tente salvar de novo. (Detalhe no Console — F12.)');
         setPacLoading(false);
         return;
       }
@@ -287,7 +316,7 @@ export default function Worklist() {
         wsId: workspace.id,
         exameId: novoExameId,
         pacienteNome: pacNome.trim().toUpperCase(),
-        pacienteId: pacCpf.replace(/\D/g, ''),
+        pacienteId: cpfLimpo,
         pacienteDtnasc: pacDtnasc,
         sexo: pacSexo,
         tipoExame: pacTipoExame,
