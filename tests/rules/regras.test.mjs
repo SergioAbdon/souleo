@@ -5,7 +5,7 @@ import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebas
 import {
   doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection, getDocs, query, where,
 } from 'firebase/firestore';
-import { payloadCreateProfile } from './fixtures.mjs';
+import { payloadCreateProfile, payloadCadastroExame, payloadEditarExame } from './fixtures.mjs';
 
 let env;
 
@@ -57,6 +57,17 @@ before(async () => {
     // Exame cadastrado pela recepcao, ainda sem medico definido (secao 10).
     await setDoc(doc(db, `workspaces/${LOCAL_A1}/exames`, 'exSemAutor'), {
       pacienteNome: 'Sem Autor', status: 'aguardando',
+    });
+
+    // Fila da Secao 2 (secao 14): exames aguardando + um rascunho COM autor.
+    await setDoc(doc(db, `workspaces/${LOCAL_A1}/exames`, 'exFila1'), {
+      pacienteNome: 'Fila Um', status: 'aguardando', cpf: '11111111111',
+    });
+    await setDoc(doc(db, `workspaces/${LOCAL_A1}/exames`, 'exFila2'), {
+      pacienteNome: 'Fila Dois', status: 'aguardando',
+    });
+    await setDoc(doc(db, `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), {
+      pacienteNome: 'Rascunho do Dr A', status: 'rascunho', medicoUid: DR_A,
     });
 
     // Log ja existente, pra testar update contra um doc real (secao 8, item 3).
@@ -573,5 +584,36 @@ describe('13. convites sao 100% servidor', () => {
   });
   test('cliente NAO marca convite usado', async () => {
     await assertFails(updateDoc(doc(como(DR_A), 'convites', 'conv1'), { usado: true }));
+  });
+});
+
+describe('14. worklist — administracao da fila por membro do local (Secao 2)', () => {
+  test('recepcao edita administrativo de exame aguardando (payload real)', async () => {
+    await assertSucceeds(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exFila1'), payloadEditarExame()));
+  });
+  test('recepcao edita administrativo de rascunho COM autor (autor intacto)', async () => {
+    await assertSucceeds(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), { convenio: 'UNIMED' }));
+  });
+  test('recepcao NAO toca campo clinico', async () => {
+    await assertFails(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exFila1'), { medidas: { fe: 60 } }));
+  });
+  test('recepcao NAO promove status a emitido', async () => {
+    await assertFails(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exFila1'), { status: 'emitido' }));
+  });
+  test('recepcao NAO troca o medicoUid', async () => {
+    await assertFails(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), { medicoUid: RITA }));
+  });
+  test('medico NAO-autor edita administrativo do rascunho do colega (concessao documentada)', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), { horarioChegada: '11:00' }));
+  });
+  test('medico NAO-autor continua SEM tocar o clinico do colega', async () => {
+    await assertFails(updateDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), { medidas: { fe: 60 } }));
+  });
+  // MEDREC: medico de perfil com papel recepcao — administra a fila, nao assina.
+  test('MEDREC edita administrativo de exame aguardando', async () => {
+    await assertSucceeds(updateDoc(doc(como(MEDREC), `workspaces/${LOCAL_C}/exames`, 'exCfila'), { convenio: 'UNIMED' }));
+  });
+  test('MEDREC NAO grava conteudo clinico via update', async () => {
+    await assertFails(updateDoc(doc(como(MEDREC), `workspaces/${LOCAL_C}/exames`, 'exCfila'), { medidas: { fe: 60 } }));
   });
 });

@@ -162,11 +162,13 @@ service cloud.firestore {
                       && ((ehMedicoDeVerdade(uid()) && ehMedicoNoLocal(wsId)
                             && (!('medicoUid' in resource.data) || resource.data.medicoUid == uid())
                             && ('medicoUid' in resource.data ? intacto('medicoUid') : true))
-                          || (ehDonoDoLocal(wsId) && intacto('medicoUid')
+                          || (alcancaLocal(wsId) && intacto('medicoUid')
                               && resource.data.get('status', '') != 'emitido'
                               && request.resource.data.get('status', '') != 'emitido'
-                              // Dono NAO-medico so mexe no administrativo da fila;
-                              // qualquer campo clinico tocado aqui e negado (ADR 8.4).
+                              // Qualquer MEMBRO do local (dono, medico, recepcao) mexe
+                              // no ADMINISTRATIVO da fila pre-assinatura (Secao 2, A2).
+                              // Campo clinico tocado aqui e negado (ADR 8.4); autor
+                              // intacto; emitido corrige via /api/corrigir-laudo.
                               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(camposAdministrativos())));
         // Apagar/cancelar/transferir passam pelo servidor (log + franquia)
         allow delete: if false;
