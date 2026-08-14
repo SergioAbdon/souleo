@@ -99,6 +99,10 @@ export default function Worklist() {
   // resposta atrasada de getPaciente de uma abertura anterior é descartada.
   const editReq = useRef(0);
 
+  // CPF atual do campo, conferido na CHEGADA da resposta (Achado 6): se o
+  // usuario corrigiu o CPF enquanto a busca A voava, a resposta de A e descartada.
+  const pacCpfRef = useRef('');
+
   // Galeria DICOM aberta direto do Worklist (modo secretária — não entra no motor).
   // Adicionado em 14/05/2026: antes, clicar em "📸 Imagens" abria o laudo inteiro,
   // mas secretária/usuário não-médico não deve passar pelo motor.
@@ -122,6 +126,11 @@ export default function Worklist() {
       prev.includes(url) ? prev.filter((u) => u !== url) : [...prev, url],
     );
   }
+
+  // Atualizar pacCpfRef sempre que pacCpf muda (Achado 6)
+  useEffect(() => {
+    pacCpfRef.current = pacCpf.replace(/\D/g, '');
+  }, [pacCpf]);
 
   // Listener worklist (reage à data selecionada e ao workspace)
   const wsId = workspace?.id;
@@ -180,6 +189,7 @@ export default function Worklist() {
     try {
       const res = await feegowAuthFetch(`/api/feegow?action=buscar_cpf&cpf=${cpfLimpo}&wsId=${workspace?.id || ''}`);
       const data = await res.json();
+      if (pacCpfRef.current !== cpfLimpo) return; // campo ja tem OUTRO cpf
       if (data.ok && data.encontrado && data.paciente) {
         const p = data.paciente;
         if (p.nome) setPacNome(p.nome);
