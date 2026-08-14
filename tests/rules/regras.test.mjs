@@ -69,6 +69,11 @@ before(async () => {
     await setDoc(doc(db, `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), {
       pacienteNome: 'Rascunho do Dr A', status: 'rascunho', medicoUid: DR_A,
     });
+    // Dedicado a secao 14: 'ex1' e mutado pela secao 12 (reabre p/ 'andamento')
+    // antes da secao 14 rodar, entao nao serve mais pra testar "emitido".
+    await setDoc(doc(db, `workspaces/${LOCAL_A1}/exames`, 'exEmitidoS14'), {
+      pacienteNome: 'Emitido Intocado', status: 'emitido', medicoUid: DR_A,
+    });
 
     // Log ja existente, pra testar update contra um doc real (secao 8, item 3).
     await setDoc(doc(db, 'logs', 'log1'), { tipo: 'evento original' });
@@ -615,5 +620,8 @@ describe('14. worklist — administracao da fila por membro do local (Secao 2)',
   });
   test('MEDREC NAO grava conteudo clinico via update', async () => {
     await assertFails(updateDoc(doc(como(MEDREC), `workspaces/${LOCAL_C}/exames`, 'exCfila'), { medidas: { fe: 60 } }));
+  });
+  test('recepcao NAO edita exame emitido', async () => {
+    await assertFails(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exEmitidoS14'), payloadEditarExame()));
   });
 });
