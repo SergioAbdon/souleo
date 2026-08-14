@@ -23,3 +23,9 @@ test('todo item tem rotulo e icone', () => {
     assert.ok(i.href.startsWith('/') && i.rotulo && i.icone);
   }
 });
+test('gate de /financeiro espelha podeVerFinanceiro para todos os papeis', async () => {
+  const { podeVerFinanceiro } = await import('../../src/lib/permissoes.ts');
+  for (const papel of ['dono', 'medico', 'recepcao', null, undefined]) {
+    assert.equal(hrefs(papel).includes('/financeiro'), podeVerFinanceiro(papel), String(papel));
+  }
+});
