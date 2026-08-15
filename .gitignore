@@ -77,3 +77,4 @@ firebase-debug.log
 
 # telemetria do plugin (PID, contadores) — ruido entre as duas maquinas
 .claude-flow/
+.superpowers/
