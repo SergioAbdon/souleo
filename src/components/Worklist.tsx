@@ -59,7 +59,8 @@ type ExameItem = Record<string, unknown> & {
   id: string; pacienteId?: string; pacienteNome?: string; pacienteDtnasc?: string;
   status?: string; tipoExame?: string; dataExame?: string; horarioChegada?: string;
   convenio?: string; solicitante?: string; sexo?: string; origem?: string;
-  feegowAppointId?: string | number; medicoUid?: string; mwlStatus?: string;
+  feegowAppointId?: string | number; medicoUid?: string;
+  acc?: string; cpf?: string; imagensDicom?: string[]; mwlStatus?: string;
 };
 
 const TIPOS_EXAME: Record<string, string> = {
@@ -149,14 +150,15 @@ export default function Worklist() {
     return () => unsub();
   }, [wsId, dataSel]);
 
-  // Listener "nao-realizados" últimos 30 dias (passivo, só pra tab de auditoria)
+  // Aba passiva de auditoria: so assina os 30 dias quando o filtro abre
+  // (antes rodava em todo mount — leitura Firestore permanente a toa).
   useEffect(() => {
-    if (!wsId) return;
+    if (!wsId || statusSel !== 'nao-realizado') return;
     const unsub = listenNaoRealizados(wsId, (items) => {
       setNaoRealizados(items as ExameItem[]);
     }, 30);
     return () => unsub();
-  }, [wsId]);
+  }, [wsId, statusSel]);
 
   // Timer — atualiza a cada 30s
   useEffect(() => {
@@ -483,10 +485,6 @@ export default function Worklist() {
           className="bg-[#2563EB] text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition whitespace-nowrap">
           + Paciente
         </button>
-        <button onClick={abrirNovoPaciente}
-          className="border border-gray-300 px-4 py-2 rounded-lg text-sm font-semibold text-gray-600 hover:bg-gray-50 transition whitespace-nowrap">
-          📋 Laudo rápido
-        </button>
         <button onClick={importarFeegow} disabled={feegowLoading}
           className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-700 transition whitespace-nowrap disabled:opacity-50">
           {feegowLoading ? '⏳ Importando...' : '🔗 Feegow'}
@@ -514,7 +512,7 @@ export default function Worklist() {
         <button onClick={() => setStatusSel('nao-realizado')}
           title="Exames não realizados nos últimos 30 dias (auditoria de no-show)"
           className={`px-3 py-1 rounded-full font-semibold transition ${statusSel === 'nao-realizado' ? 'bg-gray-500 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-          🚫 Não realizados ({naoRealizados.length})
+          🚫 Não realizados{statusSel === 'nao-realizado' ? ` (${naoRealizados.length})` : ''}
         </button>
       </div>
 
