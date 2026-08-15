@@ -51,6 +51,12 @@ export async function POST(req: NextRequest) {
     // billing abaixo — nao debita franquia de um upload invalido.
     let pdfAnexadoBuf: Buffer | null = null;
     if (pdfBase64) {
+      if (!nomeArq) {
+        return NextResponse.json(
+          { ok: false, motivo: 'sem_nome_arquivo' },
+          { status: 400 }
+        );
+      }
       const validacao = validarPdfBase64(pdfBase64);
       if (!validacao.ok) {
         return NextResponse.json({ ok: false, motivo: validacao.motivo }, { status: validacao.status });

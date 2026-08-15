@@ -810,6 +810,7 @@ export default function Worklist() {
           id: anexarPdf.id,
           pacienteNome: anexarPdf.pacienteNome as string,
           tipoExame: tiposMap[(anexarPdf.tipoExame as string) || '']?.nome || (anexarPdf.tipoExame as string),
+          convenio: anexarPdf.convenio as string,
         } : null}
         wsId={workspace?.id || ''}
         medicoUid={user?.uid || ''}

@@ -12,10 +12,10 @@
 import { useState } from 'react';
 import { auth } from '@/lib/firebase';
 
-const LIMITE_BYTES = 10 * 1024 * 1024; // 10MB — mesmo limite do servidor
+const LIMITE_BYTES = 3 * 1024 * 1024; // 3MB — limite client honesto (Vercel ~4,5MB, base64 +33%)
 
 const MENSAGENS_ERRO: Record<string, string> = {
-  pdf_grande: 'PDF maior que 10MB. Reduza o arquivo e tente novamente.',
+  pdf_grande: 'PDF acima de 3MB — exporte com qualidade menor no software do aparelho.',
   nao_e_pdf: 'Arquivo não é um PDF válido.',
   sem_saldo: 'Franquia do mês esgotada. Adquira créditos extras.',
   expirado: 'Seu plano expirou. Renove para continuar emitindo laudos.',
@@ -25,7 +25,7 @@ const MENSAGENS_ERRO: Record<string, string> = {
   sem_permissao: 'Sem permissão para emitir neste local.',
 };
 
-type ExameRef = { id: string; pacienteNome?: string; tipoExame?: string };
+type ExameRef = { id: string; pacienteNome?: string; tipoExame?: string; convenio?: string };
 
 type Props = {
   open: boolean;
@@ -73,7 +73,11 @@ export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid }
           wsId,
           exameId: exame.id,
           medicoUid,
-          dadosFinais: {},
+          dadosFinais: {
+            pacienteNome: exame.pacienteNome ?? '',
+            tipoExame: exame.tipoExame ?? '',
+            convenio: exame.convenio ?? '',
+          },
           pdfBase64: base64,
           nomeArq: `laudo-${exame.id}`,
         }),
@@ -83,7 +87,11 @@ export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid }
         setErro(MENSAGENS_ERRO[data.motivo as string] || 'Erro ao anexar o PDF. Tente novamente.');
         return;
       }
-      alert('PDF anexado — laudo emitido (1 franquia consumida)');
+      if (data.pdfErro) {
+        alert('Laudo emitido, mas o PDF falhou ao salvar — anexe novamente.');
+      } else {
+        alert('PDF anexado — laudo emitido (1 franquia consumida)');
+      }
       setArquivo(null);
       onClose();
     } catch {
