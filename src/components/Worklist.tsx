@@ -341,7 +341,7 @@ export default function Worklist() {
         tipoExame: pacTipoExame,
         dataExame: dataLocalHoje(),
         horarioChegada: horaChegada,
-        medicoNome: profile?.nome as string || '',
+        medicoNome: assinaComoAutor ? (profile?.nome as string || '') : '',
       });
     }
 

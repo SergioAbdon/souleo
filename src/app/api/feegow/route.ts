@@ -344,11 +344,6 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ ok: true, total: ags.length, agendamentos: debug });
       }
 
-      case 'importar': {
-        const pacientes = await montarCandidatos(token, req.nextUrl.searchParams.get('wsId'));
-        return NextResponse.json({ ok: true, total: pacientes.length, pacientes });
-      }
-
       // Listar profissionais do Feegow (para mapeamento no LocalModal — análogo a 'procedimentos')
       case 'profissionais': {
         const profRes = await feegowFetch('/professional/list', token);
@@ -367,7 +362,7 @@ export async function GET(req: NextRequest) {
       }
 
       default:
-        return NextResponse.json({ error: 'action invalida. Use: teste, sala_espera, paciente, buscar_cpf, convenios, importar, profissionais, procedimentos' }, { status: 400 });
+        return NextResponse.json({ error: 'action invalida. Use: teste, sala_espera, paciente, buscar_cpf, convenios, profissionais, procedimentos' }, { status: 400 });
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Erro desconhecido';
