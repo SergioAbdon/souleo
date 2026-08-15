@@ -13,6 +13,9 @@ export default defineConfig({
   reporter: 'list',
   use: {
     baseURL: 'http://localhost:3000',
+    // Edge do Windows (é Chromium): o Chromium baixado pelo Playwright falha
+    // nesta máquina (side-by-side / runtime VC++ ausente).
+    channel: 'msedge',
     // Só aponta o storageState se o arquivo existir — com o caminho fixo e o
     // arquivo ausente, o Playwright erra ANTES do test.skip rodar.
     ...(fs.existsSync(AUTH_FILE) ? { storageState: AUTH_FILE } : {}),

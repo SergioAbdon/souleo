@@ -9,7 +9,10 @@ import { fileURLToPath } from 'url';
 
 const AUTH_FILE = fileURLToPath(new URL('./.auth/state.json', import.meta.url));
 
-const browser = await chromium.launch({ headless: false });
+// channel msedge: o Chromium baixado pelo Playwright falha nesta maquina
+// (erro side-by-side, runtime VC++ ausente); o Edge do Windows e Chromium
+// e sempre existe. Mesmo canal no playwright.config.ts.
+const browser = await chromium.launch({ headless: false, channel: 'msedge' });
 const context = await browser.newContext();
 const page = await context.newPage();
 await page.goto('http://localhost:3000/login');
