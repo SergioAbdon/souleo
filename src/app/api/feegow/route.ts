@@ -5,22 +5,13 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { NextRequest, NextResponse } from 'next/server';
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
+import { dataLocalHoje } from '@/lib/utils';
+import { adminDb, adminAuth } from '@/lib/auth-admin';
+import { resolverPapel, ehMedicoDeVerdade } from '@/lib/exame-admin';
+import { gravarImportacao, type Candidato } from '@/lib/feegow-admin';
 
-// ── Firebase Admin (pra verificar auth token) ──
-if (!getApps().length) {
-  initializeApp({
-    credential: cert({
-      projectId: 'leo-sistema-laudos',
-      clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL!,
-      privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-  });
-}
-const fbAuth = getAuth();
-const dbAdmin = getFirestore();
+const fbAuth = adminAuth();
+const dbAdmin = adminDb();
 
 const FEEGOW_BASE = 'https://api.feegow.com/v1/api';
 const FALLBACK_TOKEN = process.env.FEEGOW_API_TOKEN || ''; // fallback pra migracao
@@ -100,21 +91,85 @@ async function feegowFetch(endpoint: string, token: string) {
   }
 }
 
-// Data de HOJE no fuso da clinica (Belem, UTC-3) -- NAO do servidor.
 // BUG (22/06/2026): este endpoint roda no Vercel em UTC. Com `new Date()` do
 // servidor, depois das 21h de Brasilia (00h UTC) o "hoje" virava o dia seguinte,
 // e a query do Feegow (data_start/data_end=hoje) perdia os exames de hoje ainda
 // na sala de espera (ex.: carotida do Francisley). Tambem gravava dataExame no
 // dia errado, sumindo da worklist (que filtra pela data local). Fixar no fuso
-// da clinica resolve os dois sintomas.
-const CLINIC_TZ = 'America/Belem'; // UTC-3, sem horario de verao
-function dataLocalHoje(): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: CLINIC_TZ,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());
+// da clinica resolve os dois sintomas — feito em utils.ts (dataLocalBRT/Hoje).
+
+// Monta a lista de candidatos da sala de espera Feegow (era o case 'importar'
+// do GET — corpo movido sem alteracao). NAO grava nada.
+async function montarCandidatos(token: string, wsId: string | null): Promise<Candidato[]> {
+  const hoje = dataLocalHoje();
+
+  // Resolver mapas (procedimentos e profissionais): workspace ou fallback hardcoded
+  let procMap: Record<number, string> = PROC_MAP;
+  const profMap: Record<number, string> = {};
+  if (wsId) {
+    const wsDoc = await dbAdmin.doc(`workspaces/${wsId}`).get();
+    const wsData = wsDoc.data() || {};
+    const wsProcMap = wsData.feegowProcMap as Record<string, string> | undefined;
+    if (wsProcMap && Object.keys(wsProcMap).length > 0) {
+      procMap = {};
+      for (const [k, v] of Object.entries(wsProcMap)) {
+        procMap[Number(k)] = v;
+      }
+    }
+    const wsProfMap = wsData.feegowProfMap as Record<string, string> | undefined;
+    if (wsProfMap) {
+      for (const [k, v] of Object.entries(wsProfMap)) {
+        profMap[Number(k)] = v;
+      }
+    }
+  }
+
+  const salaRes = await feegowFetch(`/appoints/search?data_start=${hoje}&data_end=${hoje}&status_id=4`, token);
+  const agendamentos = salaRes?.content || [];
+
+  const convRes = await feegowFetch('/insurance/list', token);
+  const convMap: Record<number, string> = {};
+  for (const c of convRes?.content || []) {
+    convMap[c.convenio_id] = c.nome;
+  }
+
+  const pacientes = [];
+  for (const ag of agendamentos) {
+    // Pular procedimentos que não são exames do LEO
+    if (!procMap[ag.procedimento_id]) continue;
+
+    try {
+      const pacRes = await feegowFetch(`/patient/search?paciente_id=${ag.paciente_id}`, token);
+      const pac = pacRes?.content;
+      if (pac) {
+        let dtnasc = '';
+        if (pac.nascimento) {
+          const p = pac.nascimento.split('-');
+          if (p.length === 3) dtnasc = `${p[2]}-${p[1]}-${p[0]}`;
+        }
+        pacientes.push({
+          feegowAppointId: ag.agendamento_id,
+          feegowPacienteId: ag.paciente_id,
+          pacienteNome: (pac.nome || '').toUpperCase(),
+          pacienteDtnasc: dtnasc,
+          sexo: pac.sexo === 'Masculino' ? 'M' : pac.sexo === 'Feminino' ? 'F' : '',
+          cpf: (pac.documentos?.cpf || '').replace(/\D/g, ''),
+          telefone: pac.telefones?.[0] || '',
+          convenio: convMap[ag.convenio_id] || '',
+          convenioId: ag.convenio_id,
+          tipoExame: procMap[ag.procedimento_id],
+          procedimentoId: ag.procedimento_id,
+          profissionalId: ag.profissional_id,
+          medicoExecutor: profMap[ag.profissional_id] || '',
+          horarioChegada: ag.horario ? ag.horario.slice(0, 5) : '',
+          dataExame: hoje,
+          origem: 'FEEGOW',
+        });
+      }
+    } catch { /* pular paciente com erro */ }
+  }
+
+  return pacientes;
 }
 
 // ── Middleware: auth + rate limit ──
@@ -160,6 +215,25 @@ export async function POST(req: NextRequest) {
       });
       const data = await res.json();
       return NextResponse.json({ ok: true, data });
+    }
+
+    if (body.action === 'importar') {
+      const wsId = req.nextUrl.searchParams.get('wsId');
+      if (!wsId) return NextResponse.json({ ok: false, error: 'wsId obrigatorio' }, { status: 400 });
+      const uid = await verificarAuth(req);
+      if (!uid) return NextResponse.json({ ok: false, error: 'nao autenticado' }, { status: 401 });
+      // AUTORIZACAO (Codex-1): Admin SDK ignora as regras — sem esta checagem
+      // qualquer logado gravaria exames em QUALQUER clinica via wsId alheio.
+      const papel = await resolverPapel(dbAdmin, wsId, uid);
+      if (!papel) return NextResponse.json({ ok: false, error: 'sem_acesso_ao_local' }, { status: 403 });
+      // Autor so se perfil medico E papel que atende (MEDREC nao carimba) — Codex-2.
+      const ehMed = (papel === 'dono' || papel === 'medico') && await ehMedicoDeVerdade(dbAdmin, uid);
+      const perfilSnap = await dbAdmin.doc(`profissionais/${uid}`).get();
+      const candidatos = await montarCandidatos(token, wsId);
+      const { criados } = await gravarImportacao(dbAdmin, {
+        wsId, candidatos, uid, ehMed, nomeCriador: (perfilSnap.data()?.nome as string) || '',
+      });
+      return NextResponse.json({ ok: true, total: candidatos.length, criados });
     }
 
     return NextResponse.json({ error: 'action invalida' }, { status: 400 });
@@ -270,79 +344,6 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ ok: true, total: ags.length, agendamentos: debug });
       }
 
-      case 'importar': {
-        const hoje = dataLocalHoje();
-
-        // Resolver mapas (procedimentos e profissionais): workspace ou fallback hardcoded
-        let procMap: Record<number, string> = PROC_MAP;
-        const profMap: Record<number, string> = {};
-        const wsId = req.nextUrl.searchParams.get('wsId');
-        if (wsId) {
-          const wsDoc = await dbAdmin.doc(`workspaces/${wsId}`).get();
-          const wsData = wsDoc.data() || {};
-          const wsProcMap = wsData.feegowProcMap as Record<string, string> | undefined;
-          if (wsProcMap && Object.keys(wsProcMap).length > 0) {
-            procMap = {};
-            for (const [k, v] of Object.entries(wsProcMap)) {
-              procMap[Number(k)] = v;
-            }
-          }
-          const wsProfMap = wsData.feegowProfMap as Record<string, string> | undefined;
-          if (wsProfMap) {
-            for (const [k, v] of Object.entries(wsProfMap)) {
-              profMap[Number(k)] = v;
-            }
-          }
-        }
-
-        const salaRes = await feegowFetch(`/appoints/search?data_start=${hoje}&data_end=${hoje}&status_id=4`, token);
-        const agendamentos = salaRes?.content || [];
-
-        const convRes = await feegowFetch('/insurance/list', token);
-        const convMap: Record<number, string> = {};
-        for (const c of convRes?.content || []) {
-          convMap[c.convenio_id] = c.nome;
-        }
-
-        const pacientes = [];
-        for (const ag of agendamentos) {
-          // Pular procedimentos que não são exames do LEO
-          if (!procMap[ag.procedimento_id]) continue;
-
-          try {
-            const pacRes = await feegowFetch(`/patient/search?paciente_id=${ag.paciente_id}`, token);
-            const pac = pacRes?.content;
-            if (pac) {
-              let dtnasc = '';
-              if (pac.nascimento) {
-                const p = pac.nascimento.split('-');
-                if (p.length === 3) dtnasc = `${p[2]}-${p[1]}-${p[0]}`;
-              }
-              pacientes.push({
-                feegowAppointId: ag.agendamento_id,
-                feegowPacienteId: ag.paciente_id,
-                pacienteNome: (pac.nome || '').toUpperCase(),
-                pacienteDtnasc: dtnasc,
-                sexo: pac.sexo === 'Masculino' ? 'M' : pac.sexo === 'Feminino' ? 'F' : '',
-                cpf: (pac.documentos?.cpf || '').replace(/\D/g, ''),
-                telefone: pac.telefones?.[0] || '',
-                convenio: convMap[ag.convenio_id] || '',
-                convenioId: ag.convenio_id,
-                tipoExame: procMap[ag.procedimento_id],
-                procedimentoId: ag.procedimento_id,
-                profissionalId: ag.profissional_id,
-                medicoExecutor: profMap[ag.profissional_id] || '',
-                horarioChegada: ag.horario ? ag.horario.slice(0, 5) : '',
-                dataExame: hoje,
-                origem: 'FEEGOW',
-              });
-            }
-          } catch { /* pular paciente com erro */ }
-        }
-
-        return NextResponse.json({ ok: true, total: pacientes.length, pacientes });
-      }
-
       // Listar profissionais do Feegow (para mapeamento no LocalModal — análogo a 'procedimentos')
       case 'profissionais': {
         const profRes = await feegowFetch('/professional/list', token);
@@ -361,7 +362,7 @@ export async function GET(req: NextRequest) {
       }
 
       default:
-        return NextResponse.json({ error: 'action invalida. Use: teste, sala_espera, paciente, buscar_cpf, convenios, importar, profissionais, procedimentos' }, { status: 400 });
+        return NextResponse.json({ error: 'action invalida. Use: teste, sala_espera, paciente, buscar_cpf, convenios, profissionais, procedimentos' }, { status: 400 });
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Erro desconhecido';

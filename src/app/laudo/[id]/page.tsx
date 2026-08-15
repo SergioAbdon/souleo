@@ -480,7 +480,10 @@ export default function LaudoPage() {
   /** Save centralizado — medidas + identificação sempre juntos */
   async function salvarLaudo(status: 'rascunho' | 'andamento', extras?: Record<string, unknown>) {
     if (!workspace?.id || !exameId || !user?.uid) return false;
-    const dados = { id: exameId, medidas: coletarMedidas(), ...coletarIdentificacao(), status, ...extras };
+    // medicoUid no save: assume o exame orfao (cadastrado pela recepcao) no
+    // primeiro salvamento. Se ja e o autor, reenvia o mesmo valor (intacto
+    // permite); se o autor e OUTRO medico, a regra nega — como deve.
+    const dados = { id: exameId, medidas: coletarMedidas(), ...coletarIdentificacao(), status, medicoUid: user.uid, ...extras };
     return await saveExame(workspace.id, dados, user.uid);
   }
 

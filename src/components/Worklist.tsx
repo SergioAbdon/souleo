@@ -5,18 +5,19 @@
 // Botões por status conforme V7 aprovado
 // ══════════════════════════════════════════════════════════════════
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { savePaciente, saveExame, listenWorklist, listenNaoRealizados, getExame, getPaciente } from '@/lib/firestore';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
 import { dataLocalHoje } from '@/lib/utils';
 import { gerarAccessionNumber } from '@/lib/gerarAccessionNumber';
 import { db, auth } from '@/lib/firebase';
-import { doc, getDoc, collection, writeBatch, serverTimestamp, type DocumentReference } from 'firebase/firestore';
+import { doc, writeBatch, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { checkEmissao } from '@/lib/billing';
 import DicomGallery from '@/components/laudo/DicomGallery';
-import { podeEditarLaudo, podeRemoverDaFila } from '@/lib/permissoes';
+import { podeEditarLaudo, podeRemoverDaFila, ehMedico } from '@/lib/permissoes';
+import StatusPill from '@/components/shell/StatusPill';
 
 // v3: helper pra enviar token Firebase nas chamadas Feegow
 async function feegowAuthFetch(url: string, options?: RequestInit) {
@@ -27,7 +28,7 @@ async function feegowAuthFetch(url: string, options?: RequestInit) {
   });
 }
 
-// Enviar worklist (MWL) ao Orthanc — fire-and-forget, falha silenciosa
+// Enviar worklist (MWL) ao Orthanc — persiste o status no exame (Achado 15)
 async function enviarMwlOrthanc(dados: {
   wsId: string; exameId: string; pacienteNome: string; pacienteId?: string;
   pacienteDtnasc?: string; sexo?: string; tipoExame?: string;
@@ -41,10 +42,17 @@ async function enviarMwlOrthanc(dados: {
       body: JSON.stringify({ action: 'criar_mwl', ...dados }),
     });
     const result = await res.json();
-    if (result.ok) console.log(`Orthanc MWL: ${dados.pacienteNome} → ${result.accessionNumber}`);
-    else console.warn('Orthanc MWL falhou:', result.error);
-  } catch {
-    console.warn('Orthanc MWL: nao enviado (offline?)');
+    // Achado 15: persistir o resultado — a fila mostra quando a worklist
+    // NAO chegou ao aparelho (antes era um console.warn que ninguem via).
+    await updateDoc(doc(db, 'workspaces', dados.wsId, 'exames', dados.exameId), {
+      mwlStatus: result.ok ? 'enviado' : 'falhou',
+    });
+    if (!result.ok) console.warn('Orthanc MWL falhou:', result.error);
+  } catch (e) {
+    console.error('Orthanc MWL:', e);
+    try {
+      await updateDoc(doc(db, 'workspaces', dados.wsId, 'exames', dados.exameId), { mwlStatus: 'falhou' });
+    } catch { /* offline total: fica sem status */ }
   }
 }
 
@@ -53,6 +61,7 @@ type ExameItem = Record<string, unknown> & {
   status?: string; tipoExame?: string; dataExame?: string; horarioChegada?: string;
   convenio?: string; solicitante?: string; sexo?: string; origem?: string;
   feegowAppointId?: string | number; medicoUid?: string;
+  acc?: string; cpf?: string; imagensDicom?: string[]; mwlStatus?: string;
 };
 
 const TIPOS_EXAME: Record<string, string> = {
@@ -65,6 +74,10 @@ const TIPOS_EXAME: Record<string, string> = {
 export default function Worklist() {
   const { workspace, profile, papel, user } = useAuth();
   const router = useRouter();
+
+  // Quem pode nascer como AUTOR de exame: perfil medico E papel dono/medico
+  // no local (MEDREC — medico de perfil com papel recepcao — nao assina aqui).
+  const assinaComoAutor = ehMedico(profile) && (papel === 'dono' || papel === 'medico');
 
   const [worklist, setWorklist] = useState<ExameItem[]>([]);
   const [naoRealizados, setNaoRealizados] = useState<ExameItem[]>([]);
@@ -91,6 +104,14 @@ export default function Worklist() {
   const [cpfBuscando, setCpfBuscando] = useState(false);
   const [cpfFeegow, setCpfFeegow] = useState(false); // indica se dados vieram do Feegow
 
+  // Guard de corrida do modal (Achado 5): cada abertura incrementa a geracao;
+  // resposta atrasada de getPaciente de uma abertura anterior é descartada.
+  const editReq = useRef(0);
+
+  // CPF atual do campo, conferido na CHEGADA da resposta (Achado 6): se o
+  // usuario corrigiu o CPF enquanto a busca A voava, a resposta de A e descartada.
+  const pacCpfRef = useRef('');
+
   // Galeria DICOM aberta direto do Worklist (modo secretária — não entra no motor).
   // Adicionado em 14/05/2026: antes, clicar em "📸 Imagens" abria o laudo inteiro,
   // mas secretária/usuário não-médico não deve passar pelo motor.
@@ -115,6 +136,11 @@ export default function Worklist() {
     );
   }
 
+  // Atualizar pacCpfRef sempre que pacCpf muda (Achado 6)
+  useEffect(() => {
+    pacCpfRef.current = pacCpf.replace(/\D/g, '');
+  }, [pacCpf]);
+
   // Listener worklist (reage à data selecionada e ao workspace)
   const wsId = workspace?.id;
   useEffect(() => {
@@ -125,14 +151,15 @@ export default function Worklist() {
     return () => unsub();
   }, [wsId, dataSel]);
 
-  // Listener "nao-realizados" últimos 30 dias (passivo, só pra tab de auditoria)
+  // Aba passiva de auditoria: so assina os 30 dias quando o filtro abre
+  // (antes rodava em todo mount — leitura Firestore permanente a toa).
   useEffect(() => {
-    if (!wsId) return;
+    if (!wsId || statusSel !== 'nao-realizado') return;
     const unsub = listenNaoRealizados(wsId, (items) => {
       setNaoRealizados(items as ExameItem[]);
     }, 30);
     return () => unsub();
-  }, [wsId]);
+  }, [wsId, statusSel]);
 
   // Timer — atualiza a cada 30s
   useEffect(() => {
@@ -157,9 +184,10 @@ export default function Worklist() {
   // ── Ações ──
 
   function abrirNovoPaciente() {
+    editReq.current++;
     setEditPacId(null); setEditExameId(null);
     setPacNome(''); setPacCpf(''); setPacDtnasc(''); setPacSexo('');
-    setPacTel(''); setPacConvenio(''); setPacSolicitante(profile?.nome as string || '');
+    setPacTel(''); setPacConvenio(''); setPacSolicitante(assinaComoAutor ? (profile?.nome as string || '') : '');
     setPacTipoExame('eco_tt'); setPacErro(''); setCpfFeegow(false);
     setModalPac(true);
   }
@@ -171,6 +199,7 @@ export default function Worklist() {
     try {
       const res = await feegowAuthFetch(`/api/feegow?action=buscar_cpf&cpf=${cpfLimpo}&wsId=${workspace?.id || ''}`);
       const data = await res.json();
+      if (pacCpfRef.current !== cpfLimpo) return; // campo ja tem OUTRO cpf
       if (data.ok && data.encontrado && data.paciente) {
         const p = data.paciente;
         if (p.nome) setPacNome(p.nome);
@@ -186,6 +215,7 @@ export default function Worklist() {
   }
 
   async function editarPaciente(item: ExameItem) {
+    const req = ++editReq.current;
     setEditPacId(item.pacienteId as string || null);
     setEditExameId(item.id);
     setPacNome(item.pacienteNome as string || '');
@@ -206,6 +236,7 @@ export default function Worklist() {
     // exames antigos). Assíncrono: modal já abriu, campos se completam.
     if (item.pacienteId && workspace?.id) {
       const pac = await getPaciente(workspace.id, item.pacienteId as string) as Record<string, unknown> | null;
+      if (req !== editReq.current) return; // modal ja e de OUTRO paciente
       if (pac) {
         if (pac.cpf) setPacCpf(pac.cpf as string);
         if (pac.telefone) setPacTel(pac.telefone as string);
@@ -230,29 +261,50 @@ export default function Worklist() {
     // edição (ex: corrigir convênio). CPF é a chave de pareamento DICOM.
     if (cpfLimpo) pacData.cpf = cpfLimpo;
     if (pacTel) pacData.telefone = pacTel;
-    if (editPacId) pacData.id = editPacId;
-
-    const pacId = await savePaciente(workspace.id, pacData);
-    if (!pacId) { setPacErro('Erro ao salvar paciente.'); setPacLoading(false); return; }
 
     if (editExameId) {
-      // Atualizando paciente de um exame existente
-      const okExame = await saveExame(workspace.id, {
-        id: editExameId,
-        pacienteNome: pacNome.trim().toUpperCase(),
-        pacienteDtnasc: pacDtnasc,
-        convenio: pacConvenio,
-        solicitante: pacSolicitante,
-        tipoExame: pacTipoExame,
-        sexo: pacSexo,
-      }, profile?.id || '');
-      if (!okExame) {
+      // Edicao: ficha + exame na MESMA escrita (Achado 3 — antes a ficha
+      // salvava e o exame falhava, com a tela dizendo que nada gravou).
+      try {
+        const batch = writeBatch(db);
+        const dadosFicha: Record<string, unknown> = {
+          nome: pacNome.trim().toUpperCase(),
+          dtnasc: pacDtnasc,
+          sexo: pacSexo,
+          convenio: pacConvenio,
+        };
+        if (cpfLimpo) dadosFicha.cpf = cpfLimpo;
+        if (pacTel) dadosFicha.telefone = pacTel;
+        dadosFicha.atualizadoEm = serverTimestamp();
+
+        if (editPacId) {
+          batch.update(doc(db, 'workspaces', workspace.id, 'pacientes', editPacId), dadosFicha);
+        }
+        batch.update(doc(db, 'workspaces', workspace.id, 'exames', editExameId), {
+          pacienteNome: pacNome.trim().toUpperCase(),
+          pacienteDtnasc: pacDtnasc,
+          convenio: pacConvenio,
+          solicitante: pacSolicitante,
+          tipoExame: pacTipoExame,
+          sexo: pacSexo,
+          // Achado 8: CPF e a chave de pareamento DICOM — propaga pro exame.
+          // Vazio = "nao mexer" (mesma filosofia do #7c da ficha): esvaziar o
+          // campo NAO apaga o CPF gravado.
+          ...(cpfLimpo ? { cpf: cpfLimpo } : {}),
+          atualizadoEm: serverTimestamp(),
+        });
+        await batch.commit();
+      } catch (e) {
+        console.error('editar paciente:', e);
         setPacErro('Não foi possível salvar a alteração. Nada foi gravado. (Detalhe no Console — F12.)');
         setPacLoading(false);
         return;
       }
     } else {
       // Novo paciente — criar exame na fila
+      const pacId = await savePaciente(workspace.id, pacData);
+      if (!pacId) { setPacErro('Erro ao salvar paciente.'); setPacLoading(false); return; }
+
       const agora2 = new Date();
       const horaChegada = agora2.toTimeString().slice(0, 5);
       const novoExameId = await saveExame(workspace.id, {
@@ -260,20 +312,20 @@ export default function Worklist() {
         pacienteId: pacId,
         pacienteNome: pacNome.trim().toUpperCase(),
         pacienteDtnasc: pacDtnasc,
-        cpf: pacCpf.replace(/\D/g, ''),
+        cpf: cpfLimpo,
         tipoExame: pacTipoExame,
         dataExame: dataLocalHoje(),
         horarioChegada: horaChegada,
         status: 'aguardando',
         convenio: pacConvenio,
         solicitante: pacSolicitante,
-        medicoExecutor: profile?.nome as string || '',
+        medicoExecutor: assinaComoAutor ? (profile?.nome as string || '') : '',
         sexo: pacSexo,
         origem: 'MANUAL',
-      }, profile?.id || '');
+      }, assinaComoAutor ? (profile?.id as string || '') : '');
 
       if (!novoExameId) {
-        setPacErro('Não foi possível criar o exame na fila. Nada foi gravado. (Detalhe no Console — F12.)');
+        setPacErro('A ficha do paciente foi salva, mas o exame NÃO entrou na fila. Tente salvar de novo. (Detalhe no Console — F12.)');
         setPacLoading(false);
         return;
       }
@@ -283,13 +335,13 @@ export default function Worklist() {
         wsId: workspace.id,
         exameId: novoExameId,
         pacienteNome: pacNome.trim().toUpperCase(),
-        pacienteId: pacCpf.replace(/\D/g, ''),
+        pacienteId: cpfLimpo,
         pacienteDtnasc: pacDtnasc,
         sexo: pacSexo,
         tipoExame: pacTipoExame,
         dataExame: dataLocalHoje(),
         horarioChegada: horaChegada,
-        medicoNome: profile?.nome as string || '',
+        medicoNome: assinaComoAutor ? (profile?.nome as string || '') : '',
       });
     }
 
@@ -319,139 +371,37 @@ export default function Worklist() {
   }
 
   async function importarFeegow() {
-    if (!workspace?.id || !profile?.id) return;
+    if (!workspace?.id) return;
     setFeegowLoading(true);
     try {
-      const res = await feegowAuthFetch(`/api/feegow?action=importar&wsId=${workspace?.id || ''}`);
-      const data = await res.json();
-      if (!data.ok || !data.pacientes?.length) {
-        alert(data.pacientes?.length === 0 ? 'Nenhum paciente aguardando no Feegow.' : (data.error || 'Erro ao buscar Feegow'));
-        setFeegowLoading(false);
-        return;
-      }
-
-      // Dedup por AGENDAMENTO do Feegow (feegowAppointId), NÃO por nome.
-      // Um paciente pode ter 2+ exames no mesmo dia (ex.: eco + carótidas):
-      // cada agendamento tem feegowAppointId único. Deduplicar por nome
-      // descartava silenciosamente o 2º exame do paciente.
-      const apptsNaFila = new Set(
-        worklist.map(w => String(w.feegowAppointId ?? '')).filter(Boolean)
-      );
-      const nomesNaFila = new Set(worklist.map(w => (w.pacienteNome || '').toUpperCase()));
-      const novos = data.pacientes.filter((p: Record<string, string>) => {
-        const appt = String(p.feegowAppointId ?? '');
-        if (appt) return !apptsNaFila.has(appt);
-        // Candidato sem feegowAppointId (raro): cai no dedup legado por nome.
-        return !nomesNaFila.has(p.pacienteNome);
+      const res = await feegowAuthFetch(`/api/feegow?wsId=${workspace.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'importar' }),
       });
-
-      if (novos.length === 0) {
-        alert('Todos os pacientes do Feegow já estão na fila.');
-        setFeegowLoading(false);
-        return;
+      const data = await res.json();
+      if (!data.ok) {
+        alert(data.error === 'sem_acesso_ao_local'
+          ? 'Seu usuário não tem acesso a este local.'
+          : (data.error || 'Erro ao importar do Feegow.'));
+      } else if (data.criados.length === 0) {
+        alert(data.total === 0 ? 'Nenhum paciente aguardando no Feegow.' : 'Todos os pacientes do Feegow já estão na fila.');
+      } else {
+        // ponytail: MWL continua saindo do cliente (o /api/orthanc ja autentica);
+        // fechar a aba no meio = MWL perdido, sem retry — o indicador SEM MWL
+        // (mwlStatus) da visibilidade. Mover pro servidor se virar dor real.
+        for (const { exameId, pac } of data.criados) {
+          await enviarMwlOrthanc({
+            wsId: workspace.id, exameId,
+            pacienteNome: pac.pacienteNome, pacienteId: pac.cpf,
+            pacienteDtnasc: pac.pacienteDtnasc, sexo: pac.sexo,
+            tipoExame: pac.tipoExame, dataExame: pac.dataExame,
+            horarioChegada: pac.horarioChegada,
+            medicoNome: assinaComoAutor ? (profile?.nome as string || '') : '',
+          });
+        }
+        alert(`${data.criados.length} paciente(s) importado(s) do Feegow!`);
       }
-
-      // Idempotência por feegowAppointId (ADR 2026-06-22): doc id determinístico
-      // `fg-<appointId>` + checagem de existência. Assim re-clique, 2 abas ou
-      // import concorrente NÃO duplicam (colapsam no MESMO doc), e re-importar
-      // NÃO sobrescreve um exame que o médico já começou (existe → pula).
-      // Candidato sem feegowAppointId (raro) cai no id aleatório de sempre.
-      const comAppt = novos.filter((p: Record<string, string>) => p.feegowAppointId);
-      const semAppt = novos.filter((p: Record<string, string>) => !p.feegowAppointId);
-
-      const refsAppt = comAppt.map((p: Record<string, string>) =>
-        doc(db, 'workspaces', workspace.id, 'exames', `fg-${p.feegowAppointId}`),
-      );
-      const existentes = await Promise.all(refsAppt.map((r: DocumentReference) => getDoc(r)));
-
-      const aCriar = [
-        ...comAppt
-          .map((pac: Record<string, string>, i: number) => ({ pac, exameRef: refsAppt[i], existe: existentes[i].exists() }))
-          .filter((x: { existe: boolean }) => !x.existe)
-          .map((x: { pac: Record<string, string>; exameRef: ReturnType<typeof doc> }) => ({ pac: x.pac, exameRef: x.exameRef })),
-        ...semAppt.map((pac: Record<string, string>) => ({
-          pac,
-          exameRef: doc(collection(db, 'workspaces', workspace.id, 'exames')),
-        })),
-      ];
-
-      if (aCriar.length === 0) {
-        alert('Todos os pacientes do Feegow já estão na fila.');
-        setFeegowLoading(false);
-        return;
-      }
-
-      // v3: writeBatch — tudo ou nada (atomico)
-      const batch = writeBatch(db);
-      const examesCriados: Array<{ exameId: string; pac: Record<string, string> }> = [];
-      // Timestamp base do batch — cada exame ganha offset de 10ms pra evitar
-      // colisão de ACC quando loop roda em sub-centésimo de segundo.
-      const baseTime = new Date();
-
-      for (let i = 0; i < aCriar.length; i++) {
-        const { pac, exameRef } = aCriar[i];
-        // Paciente: id determinístico por feegowPacienteId (não duplica o
-        // paciente quando ele tem 2 exames no dia). merge:true = não sobrescreve.
-        const pacRef = pac.feegowPacienteId
-          ? doc(db, 'workspaces', workspace.id, 'pacientes', `fg-${pac.feegowPacienteId}`)
-          : doc(collection(db, 'workspaces', workspace.id, 'pacientes'));
-        batch.set(pacRef, {
-          id: pacRef.id,
-          nome: pac.pacienteNome,
-          cpf: pac.cpf,
-          dtnasc: pac.pacienteDtnasc,
-          sexo: pac.sexo,
-          telefone: pac.telefone,
-          feegowPacienteId: pac.feegowPacienteId,
-          criadoEm: serverTimestamp(),
-        }, { merge: true });
-
-        // Exame: id determinístico `fg-<appointId>` (os já existentes foram
-        // filtrados acima). set sem merge — não mexe em status de exame em curso.
-        batch.set(exameRef, {
-          id: exameRef.id,
-          acc: gerarAccessionNumber(baseTime, i * 10),
-          pacienteId: pacRef.id,
-          pacienteNome: pac.pacienteNome,
-          pacienteDtnasc: pac.pacienteDtnasc,
-          cpf: pac.cpf,
-          feegowPacienteId: pac.feegowPacienteId,
-          tipoExame: pac.tipoExame,
-          dataExame: pac.dataExame,
-          horarioChegada: pac.horarioChegada,
-          status: 'aguardando',
-          convenio: pac.convenio,
-          solicitante: profile?.nome as string || '',
-          medicoExecutor: pac.medicoExecutor || (profile?.nome as string || ''),
-          sexo: pac.sexo,
-          origem: 'FEEGOW',
-          feegowAppointId: pac.feegowAppointId,
-          medicoUid: profile.id as string,
-          versao: 1,
-          criadoEm: serverTimestamp(),
-        });
-        examesCriados.push({ exameId: exameRef.id, pac });
-      }
-
-      await batch.commit();
-
-      // Enviar MWL ao Orthanc (fire-and-forget, não bloqueia)
-      for (const { exameId, pac } of examesCriados) {
-        enviarMwlOrthanc({
-          wsId: workspace.id,
-          exameId,
-          pacienteNome: pac.pacienteNome,
-          pacienteId: pac.cpf,
-          pacienteDtnasc: pac.pacienteDtnasc,
-          sexo: pac.sexo,
-          tipoExame: pac.tipoExame,
-          dataExame: pac.dataExame,
-          horarioChegada: pac.horarioChegada,
-          medicoNome: profile?.nome as string || '',
-        });
-      }
-
-      alert(`${examesCriados.length} paciente(s) importado(s) do Feegow!`);
     } catch (e) {
       console.error('importarFeegow:', e);
       alert('Erro ao conectar com o Feegow.');
@@ -505,39 +455,29 @@ export default function Worklist() {
     if (statusSel !== 'todos' && statusSel !== 'nao-realizado' && it.status !== statusSel) return false;
     if (busca) {
       const nome = (it.pacienteNome as string || '').toLowerCase();
-      const cpf = (it.pacienteDtnasc as string || '');
-      if (!nome.includes(busca.toLowerCase()) && !cpf.includes(busca)) return false;
+      const cpf = String(it.cpf ?? '');
+      const buscaDigitos = busca.replace(/\D/g, '');
+      if (!nome.includes(busca.toLowerCase()) && !(buscaDigitos && cpf.includes(buscaDigitos))) return false;
     }
     return true;
   });
-
-  const statusBadge: Record<string, { cor: string; icone: string; texto: string }> = {
-    aguardando: { cor: 'bg-yellow-100 text-yellow-700', icone: '⏳', texto: 'Aguardando' },
-    andamento: { cor: 'bg-blue-100 text-blue-700', icone: '✏️', texto: 'Em andamento' },
-    rascunho: { cor: 'bg-gray-100 text-gray-600', icone: '📝', texto: 'Rascunho' },
-    emitido: { cor: 'bg-green-100 text-green-700', icone: '✅', texto: 'Emitido' },
-  };
 
   return (
     <div>
       {/* Barra de ações */}
       <div className="flex items-center gap-3 mb-4">
         <input type="date" value={dataSel} onChange={e => setDataSel(e.target.value)}
-          className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] w-40" />
+          className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1 w-40" />
         {dataSel !== dataLocalHoje() && (
           <button onClick={() => setDataSel(dataLocalHoje())}
-            className="text-xs text-[#2563EB] hover:underline whitespace-nowrap">Hoje</button>
+            className="text-xs text-p2 hover:underline whitespace-nowrap">Hoje</button>
         )}
-        <input type="text" placeholder="Buscar por nome..."
+        <input type="text" placeholder="Buscar por nome ou CPF..."
           value={busca} onChange={e => setBusca(e.target.value)}
-          className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+          className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
         <button onClick={abrirNovoPaciente}
-          className="bg-[#2563EB] text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition whitespace-nowrap">
+          className="bg-p2 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition whitespace-nowrap">
           + Paciente
-        </button>
-        <button onClick={abrirNovoPaciente}
-          className="border border-gray-300 px-4 py-2 rounded-lg text-sm font-semibold text-gray-600 hover:bg-gray-50 transition whitespace-nowrap">
-          📋 Laudo rápido
         </button>
         <button onClick={importarFeegow} disabled={feegowLoading}
           className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-700 transition whitespace-nowrap disabled:opacity-50">
@@ -566,13 +506,14 @@ export default function Worklist() {
         <button onClick={() => setStatusSel('nao-realizado')}
           title="Exames não realizados nos últimos 30 dias (auditoria de no-show)"
           className={`px-3 py-1 rounded-full font-semibold transition ${statusSel === 'nao-realizado' ? 'bg-gray-500 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-          🚫 Não realizados ({naoRealizados.length})
+          🚫 Não realizados{statusSel === 'nao-realizado' ? ` (${naoRealizados.length})` : ''}
         </button>
       </div>
 
       {/* Tabela */}
       <div className="bg-white rounded-lg overflow-hidden border border-gray-100">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
           <thead>
             <tr className="border-b text-xs text-gray-400 uppercase bg-gray-50">
               <th className="py-2 px-3 text-left w-16">Hora</th>
@@ -591,8 +532,9 @@ export default function Worklist() {
               </td></tr>
             )}
             {filtrada.map(item => {
-              const badge = statusBadge[item.status as string] || statusBadge.aguardando;
-              const espera = item.status === 'aguardando' ? calcEspera(item.horarioChegada as string) : { texto: '', alerta: false };
+              const espera = item.status === 'aguardando' && dataSel === dataLocalHoje()
+                ? calcEspera(item.horarioChegada as string)
+                : { texto: '', alerta: false };
               const origem = (item.origem as string) || 'MANUAL';
 
               const isNaoRealizado = item.status === 'nao-realizado';
@@ -611,7 +553,7 @@ export default function Worklist() {
                       <button
                         onClick={() => { navigator.clipboard.writeText(item.acc as string); }}
                         title="Clique para copiar (transcrição manual no Vivid)"
-                        className="font-mono text-[13px] font-bold text-[#1E3A5F] hover:bg-blue-50 px-1.5 py-0.5 rounded transition cursor-pointer"
+                        className="font-mono text-[13px] font-bold text-p1 hover:bg-blue-50 px-1.5 py-0.5 rounded transition cursor-pointer"
                       >
                         {item.acc as string}
                       </button>
@@ -622,13 +564,19 @@ export default function Worklist() {
 
                   {/* Paciente */}
                   <td className="py-3 px-3">
-                    <div className="font-semibold text-[#1E3A5F] text-sm">{item.pacienteNome || '—'}</div>
+                    <div className="font-semibold text-p1 text-sm">{item.pacienteNome || '—'}</div>
                     <div className="text-xs text-gray-400 flex items-center gap-2 mt-0.5 flex-wrap">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${badge.cor}`}>{badge.icone} {badge.texto}</span>
+                      <StatusPill status={item.status as string} />
                       <span>{TIPOS_EXAME[item.tipoExame as string] || item.tipoExame}</span>
                       <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${origem === 'FEEGOW' ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-400'}`}>
                         {origem}
                       </span>
+                      {item.mwlStatus === 'falhou' && (
+                        <span title="Worklist não chegou ao aparelho — digite o ACC manualmente no Vivid"
+                          className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-600">
+                          📡 SEM MWL
+                        </span>
+                      )}
                     </div>
                   </td>
 
@@ -716,14 +664,15 @@ export default function Worklist() {
               );
             })}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
 
       {/* Modal Paciente */}
       {modalPac && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setModalPac(false)}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
-            <div className="bg-[#1E3A5F] text-white px-5 py-3 rounded-t-xl">
+            <div className="bg-p1 text-white px-5 py-3 rounded-t-xl">
               <h2 className="font-bold text-sm">{editExameId ? '✏️ Editar Paciente' : '+ Novo Paciente'}</h2>
             </div>
             <div className="p-5 space-y-3">
@@ -732,7 +681,7 @@ export default function Worklist() {
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Nome completo *</label>
                 <input type="text" value={pacNome} onChange={e => setPacNome(e.target.value)}
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
               </div>
 
               <div className="grid grid-cols-3 gap-3">
@@ -745,12 +694,12 @@ export default function Worklist() {
                     onChange={e => { setPacCpf(e.target.value); setCpfFeegow(false); }}
                     onBlur={e => buscarCpfFeegow(e.target.value)}
                     placeholder="000.000.000-00"
-                    className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] ${cpfFeegow ? 'border-green-400 bg-green-50' : ''}`} />
+                    className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1 ${cpfFeegow ? 'border-green-400 bg-green-50' : ''}`} />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Sexo</label>
                   <select value={pacSexo} onChange={e => setPacSexo(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]">
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1">
                     <option value="">—</option>
                     <option value="M">Masculino</option>
                     <option value="F">Feminino</option>
@@ -759,7 +708,7 @@ export default function Worklist() {
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Nascimento</label>
                   <input type="date" value={pacDtnasc} onChange={e => setPacDtnasc(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
                 </div>
               </div>
 
@@ -767,33 +716,33 @@ export default function Worklist() {
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Tipo exame</label>
                   <select value={pacTipoExame} onChange={e => setPacTipoExame(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]">
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1">
                     {Object.entries(TIPOS_EXAME).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Convênio</label>
                   <input type="text" value={pacConvenio} onChange={e => setPacConvenio(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Solicitante</label>
                   <input type="text" value={pacSolicitante} onChange={e => setPacSolicitante(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Telefone</label>
                 <input type="text" value={pacTel} onChange={e => setPacTel(e.target.value)}
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]"
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1"
                   placeholder="(00) 00000-0000" />
               </div>
             </div>
             <div className="px-5 py-3 border-t flex justify-end gap-3">
               <button onClick={() => setModalPac(false)} className="px-4 py-2 text-sm text-gray-500 border rounded-lg hover:bg-gray-50">Cancelar</button>
               <button onClick={handleSalvarPaciente} disabled={pacLoading}
-                className="px-6 py-2 text-sm bg-[#2563EB] text-white rounded-lg font-semibold hover:bg-blue-700 transition disabled:opacity-50">
+                className="px-6 py-2 text-sm bg-p2 text-white rounded-lg font-semibold hover:bg-blue-700 transition disabled:opacity-50">
                 {pacLoading ? 'Salvando...' : 'Salvar'}
               </button>
             </div>
@@ -821,7 +770,7 @@ export default function Worklist() {
 // ── Botão de ação ──
 function Btn({ cor, onClick, children }: { cor: 'blue' | 'green' | 'gray' | 'red' | 'amber' | 'cyan'; onClick: () => void; children: React.ReactNode }) {
   const cores = {
-    blue: 'bg-[#2563EB] text-white hover:bg-blue-700',
+    blue: 'bg-p2 text-white hover:bg-blue-700',
     green: 'bg-green-100 text-green-700 hover:bg-green-200',
     gray: 'bg-gray-100 text-gray-600 hover:bg-gray-200',
     red: 'bg-red-50 text-red-500 hover:bg-red-100',

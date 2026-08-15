@@ -25,3 +25,46 @@ export const payloadCreateProfile = (uid, extra = {}) => ({
   atualizadoEm: new Date(),
   ...extra,
 });
+
+/**
+ * Payload identico ao cadastro manual da Worklist (handleSalvarPaciente →
+ * saveExame create, src/components/Worklist.tsx + src/lib/firestore.ts).
+ * SEM medicoUid: apos a correcao do Achado 1, exame criado por quem nao
+ * assina nasce orfao (um medico do local assume depois, no salvarLaudo).
+ */
+export const payloadCadastroExame = (extra = {}) => ({
+  id: 'exNovo',
+  acc: 'EX12082610300000',
+  pacienteId: 'pac1',
+  pacienteNome: 'PACIENTE NOVO',
+  pacienteDtnasc: '1980-01-02',
+  cpf: '12345678900',
+  tipoExame: 'eco_tt',
+  dataExame: '2026-08-12',
+  horarioChegada: '10:30',
+  status: 'aguardando',
+  convenio: 'UNIMED',
+  solicitante: '',
+  medicoExecutor: '',
+  sexo: 'F',
+  origem: 'MANUAL',
+  versao: 1,
+  criadoEm: new Date(),
+  ...extra,
+});
+
+/**
+ * Payload identico a EDICAO de paciente pela Worklist (handleSalvarPaciente
+ * com editExameId → writeBatch, Task 3). Inclui cpf (Achado 8) e atualizadoEm.
+ */
+export const payloadEditarExame = (extra = {}) => ({
+  pacienteNome: 'PACIENTE CORRIGIDO',
+  pacienteDtnasc: '1980-01-02',
+  cpf: '22222222222',
+  convenio: 'BRADESCO',
+  solicitante: 'DR FULANO',
+  tipoExame: 'doppler_carotidas',
+  sexo: 'F',
+  atualizadoEm: new Date(),
+  ...extra,
+});
