@@ -68,3 +68,17 @@ export const payloadEditarExame = (extra = {}) => ({
   atualizadoEm: new Date(),
   ...extra,
 });
+
+/**
+ * Payload identico ao que a tela Clinica→Tipos de laudo grava (Task 3).
+ */
+export const payloadTipoLaudo = (extra = {}) => ({
+  id: 'ecg',
+  nome: 'ECG',
+  icone: '📈',
+  ativo: true,
+  ordem: 5,
+  modalidade: 'pdf',
+  atualizadoEm: new Date(),
+  ...extra,
+});

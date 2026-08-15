@@ -1,0 +1,104 @@
+<h2>B + A: shell por seções, pele clean</h2>
+<p class="subtitle">Estrutura do B (sidebar de seções, URLs reais) com o visual claro e sofisticado do A. Dois tratamentos possíveis pra sidebar — o resto é idêntico.</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="sidebar-branca" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0;overflow:hidden;background:#F1F5F9;">
+      <div style="font-family:'IBM Plex Sans',Inter,sans-serif;width:100%;height:250px;display:flex;">
+        <div style="width:130px;background:#fff;border-right:1px solid #E2E8F0;display:flex;flex-direction:column;padding:12px 8px;gap:2px;">
+          <div style="display:flex;align-items:center;gap:6px;padding:0 8px 12px;">
+            <div style="width:20px;height:20px;border-radius:6px;background:linear-gradient(135deg,#1E3A5F,#2563EB);display:flex;align-items:center;justify-content:center;font-size:10px;">🫀</div>
+            <span style="font-weight:800;color:#1E3A5F;font-size:12px;letter-spacing:.5px;">LEO</span>
+          </div>
+          <div style="background:#EEF2F8;color:#1E3A5F;font-size:9px;font-weight:700;padding:6px 9px;border-radius:7px;">📋 Agenda</div>
+          <div style="color:#64748B;font-size:9px;padding:6px 9px;">🗂 Laudos</div>
+          <div style="color:#64748B;font-size:9px;padding:6px 9px;">👥 Pacientes</div>
+          <div style="color:#64748B;font-size:9px;padding:6px 9px;">💰 Financeiro</div>
+          <div style="color:#64748B;font-size:9px;padding:6px 9px;">🏥 Clínica</div>
+          <div style="margin-top:auto;border-top:1px solid #F1F5F9;padding:8px 9px 0;display:flex;align-items:center;gap:5px;">
+            <div style="width:16px;height:16px;border-radius:50%;background:#1E3A5F;color:#fff;font-size:7px;display:flex;align-items:center;justify-content:center;font-weight:700;">S</div>
+            <span style="color:#64748B;font-size:8px;">Dr. Sérgio ▾</span>
+          </div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;">
+          <div style="padding:10px 14px;display:flex;align-items:center;gap:8px;">
+            <div style="font-size:12px;font-weight:700;color:#1E293B;">Agenda do dia</div>
+            <div style="background:#FEF3C7;color:#92400E;font-size:8px;font-weight:700;padding:2px 8px;border-radius:99px;">4 aguardando</div>
+            <div style="margin-left:auto;background:linear-gradient(135deg,#2563EB,#1D4ED8);color:#fff;font-size:9px;font-weight:700;padding:5px 12px;border-radius:8px;box-shadow:0 3px 10px rgba(37,99,235,.25);">+ Paciente</div>
+          </div>
+          <div style="flex:1;padding:0 14px 12px;display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;gap:8px;">
+              <div style="flex:1;background:#fff;border:1px solid #E2E8F0;border-radius:11px;padding:8px 10px;box-shadow:0 1px 3px rgba(15,23,42,.04);"><div style="font-size:7px;font-weight:700;color:#94A3B8;letter-spacing:.5px;">EMITIDOS</div><div style="font-size:15px;font-weight:700;color:#1E293B;">12</div></div>
+              <div style="flex:1;background:#fff;border:1px solid #E2E8F0;border-radius:11px;padding:8px 10px;box-shadow:0 1px 3px rgba(15,23,42,.04);"><div style="font-size:7px;font-weight:700;color:#94A3B8;letter-spacing:.5px;">ESPERA MÉDIA</div><div style="font-size:15px;font-weight:700;color:#1E293B;">18min</div></div>
+              <div style="flex:1;background:#fff;border:1px solid #E2E8F0;border-radius:11px;padding:8px 10px;box-shadow:0 1px 3px rgba(15,23,42,.04);"><div style="font-size:7px;font-weight:700;color:#94A3B8;letter-spacing:.5px;">FRANQUIA</div><div style="height:4px;background:#E2E8F0;border-radius:2px;margin-top:8px;"><div style="width:60%;height:100%;background:#2563EB;border-radius:2px;"></div></div></div>
+            </div>
+            <div style="flex:1;background:#fff;border:1px solid #E2E8F0;border-radius:11px;padding:9px;box-shadow:0 1px 3px rgba(15,23,42,.04);">
+              <div style="display:flex;flex-direction:column;gap:4px;">
+                <div style="display:flex;align-items:center;gap:7px;height:20px;border-bottom:1px solid #F1F5F9;"><span style="font-size:8px;color:#94A3B8;font-family:monospace;">08:30</span><span style="font-size:9px;font-weight:600;color:#1E293B;">MARIA S.</span><span style="font-size:7px;color:#94A3B8;">Eco TT</span><span style="margin-left:auto;background:#FEF3C7;color:#92400E;font-size:7px;font-weight:700;padding:1px 7px;border-radius:99px;">AGUARDANDO</span></div>
+                <div style="display:flex;align-items:center;gap:7px;height:20px;border-bottom:1px solid #F1F5F9;"><span style="font-size:8px;color:#94A3B8;font-family:monospace;">08:45</span><span style="font-size:9px;font-weight:600;color:#1E293B;">JOSÉ A.</span><span style="font-size:7px;color:#94A3B8;">Carótidas</span><span style="margin-left:auto;background:#DBEAFE;color:#1E40AF;font-size:7px;font-weight:700;padding:1px 7px;border-radius:99px;">ANDAMENTO</span></div>
+                <div style="display:flex;align-items:center;gap:7px;height:20px;"><span style="font-size:8px;color:#94A3B8;font-family:monospace;">09:10</span><span style="font-size:9px;font-weight:600;color:#1E293B;">ANA P.</span><span style="font-size:7px;color:#94A3B8;">Eco TT</span><span style="margin-left:auto;background:#D1FAE5;color:#065F46;font-size:7px;font-weight:700;padding:1px 7px;border-radius:99px;">EMITIDO</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>1 · Sidebar branca</h3>
+      <p>Tudo claro: sidebar branca com borda sutil, item ativo em azul-claro #EEF2F8, sombras leves. O mais clean possível — estilo Stripe/Linear. Navy aparece só em texto, logo e botões.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="sidebar-gelo" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0;overflow:hidden;background:#fff;">
+      <div style="font-family:'IBM Plex Sans',Inter,sans-serif;width:100%;height:250px;display:flex;">
+        <div style="width:130px;background:#F8FAFC;border-right:1px solid #E2E8F0;display:flex;flex-direction:column;padding:12px 8px;gap:2px;">
+          <div style="display:flex;align-items:center;gap:6px;padding:0 8px 12px;">
+            <div style="width:20px;height:20px;border-radius:6px;background:linear-gradient(135deg,#1E3A5F,#2563EB);display:flex;align-items:center;justify-content:center;font-size:10px;">🫀</div>
+            <span style="font-weight:800;color:#1E3A5F;font-size:12px;letter-spacing:.5px;">LEO</span>
+          </div>
+          <div style="background:#fff;color:#1E3A5F;font-size:9px;font-weight:700;padding:6px 9px;border-radius:7px;border:1px solid #E2E8F0;box-shadow:0 1px 2px rgba(15,23,42,.05);">📋 Agenda</div>
+          <div style="color:#64748B;font-size:9px;padding:6px 9px;">🗂 Laudos</div>
+          <div style="color:#64748B;font-size:9px;padding:6px 9px;">👥 Pacientes</div>
+          <div style="color:#64748B;font-size:9px;padding:6px 9px;">💰 Financeiro</div>
+          <div style="color:#64748B;font-size:9px;padding:6px 9px;">🏥 Clínica</div>
+          <div style="margin-top:auto;border-top:1px solid #E2E8F0;padding:8px 9px 0;display:flex;align-items:center;gap:5px;">
+            <div style="width:16px;height:16px;border-radius:50%;background:#1E3A5F;color:#fff;font-size:7px;display:flex;align-items:center;justify-content:center;font-weight:700;">S</div>
+            <span style="color:#64748B;font-size:8px;">Dr. Sérgio ▾</span>
+          </div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;background:#fff;">
+          <div style="padding:10px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #F1F5F9;">
+            <div style="font-size:12px;font-weight:700;color:#1E293B;">Agenda do dia</div>
+            <div style="background:#FEF3C7;color:#92400E;font-size:8px;font-weight:700;padding:2px 8px;border-radius:99px;">4 aguardando</div>
+            <div style="margin-left:auto;background:linear-gradient(135deg,#2563EB,#1D4ED8);color:#fff;font-size:9px;font-weight:700;padding:5px 12px;border-radius:8px;box-shadow:0 3px 10px rgba(37,99,235,.25);">+ Paciente</div>
+          </div>
+          <div style="flex:1;padding:12px 14px;display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;gap:8px;">
+              <div style="flex:1;background:#F8FAFC;border:1px solid #EEF2F7;border-radius:11px;padding:8px 10px;"><div style="font-size:7px;font-weight:700;color:#94A3B8;letter-spacing:.5px;">EMITIDOS</div><div style="font-size:15px;font-weight:700;color:#1E293B;">12</div></div>
+              <div style="flex:1;background:#F8FAFC;border:1px solid #EEF2F7;border-radius:11px;padding:8px 10px;"><div style="font-size:7px;font-weight:700;color:#94A3B8;letter-spacing:.5px;">ESPERA MÉDIA</div><div style="font-size:15px;font-weight:700;color:#1E293B;">18min</div></div>
+              <div style="flex:1;background:#F8FAFC;border:1px solid #EEF2F7;border-radius:11px;padding:8px 10px;"><div style="font-size:7px;font-weight:700;color:#94A3B8;letter-spacing:.5px;">FRANQUIA</div><div style="height:4px;background:#E2E8F0;border-radius:2px;margin-top:8px;"><div style="width:60%;height:100%;background:#2563EB;border-radius:2px;"></div></div></div>
+            </div>
+            <div style="flex:1;border:1px solid #EEF2F7;border-radius:11px;padding:9px;">
+              <div style="display:flex;flex-direction:column;gap:4px;">
+                <div style="display:flex;align-items:center;gap:7px;height:20px;border-bottom:1px solid #F8FAFC;"><span style="font-size:8px;color:#94A3B8;font-family:monospace;">08:30</span><span style="font-size:9px;font-weight:600;color:#1E293B;">MARIA S.</span><span style="font-size:7px;color:#94A3B8;">Eco TT</span><span style="margin-left:auto;background:#FEF3C7;color:#92400E;font-size:7px;font-weight:700;padding:1px 7px;border-radius:99px;">AGUARDANDO</span></div>
+                <div style="display:flex;align-items:center;gap:7px;height:20px;border-bottom:1px solid #F8FAFC;"><span style="font-size:8px;color:#94A3B8;font-family:monospace;">08:45</span><span style="font-size:9px;font-weight:600;color:#1E293B;">JOSÉ A.</span><span style="font-size:7px;color:#94A3B8;">Carótidas</span><span style="margin-left:auto;background:#DBEAFE;color:#1E40AF;font-size:7px;font-weight:700;padding:1px 7px;border-radius:99px;">ANDAMENTO</span></div>
+                <div style="display:flex;align-items:center;gap:7px;height:20px;"><span style="font-size:8px;color:#94A3B8;font-family:monospace;">09:10</span><span style="font-size:9px;font-weight:600;color:#1E293B;">ANA P.</span><span style="font-size:7px;color:#94A3B8;">Eco TT</span><span style="margin-left:auto;background:#D1FAE5;color:#065F46;font-size:7px;font-weight:700;padding:1px 7px;border-radius:99px;">EMITIDO</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>2 · Sidebar gelo, conteúdo branco</h3>
+      <p>Inversão sutil: sidebar em cinza-gelo #F8FAFC, área de conteúdo branca de ponta a ponta (sem "cards flutuando em fundo cinza"). Item ativo vira cartão branco. Ainda mais sofisticado e silencioso — estilo Notion/Linear atual.</p>
+    </div>
+  </div>
+
+</div>
+
+<div class="section">
+  <p class="subtitle">Mesmas seções, mesmas cores V7, mesmos status. É só o tratamento da superfície. Clique no que preferir — esse vira o padrão de TODA a plataforma.</p>
+</div>
