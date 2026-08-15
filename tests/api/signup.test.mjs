@@ -6,6 +6,30 @@ import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { executarSignup, executarSignupPJ } from '../../src/lib/signup-server.ts';
+// Tripwire de drift: signup-server.ts duplica TIPOS_LAUDO_PADRAO inline (sem
+// import relativo, ver comentario no topo do arquivo). Este teste importa os
+// dois e compara campo a campo — se um espelho desatualizar, quebra aqui.
+import { TIPOS_LAUDO_PADRAO } from '../../src/lib/tipos-laudo.ts';
+
+// JSON.stringify com chaves ordenadas — comparacao nao pode depender da ordem
+// de insercao do map do Firestore (nao garantida ao voltar de doc.data()).
+const canon = (o) => JSON.stringify(o, Object.keys(o).sort());
+
+async function assertCatalogoSemeado(db, wsId) {
+  const tipos = await db.collection(`workspaces/${wsId}/tiposLaudo`).get();
+  assert.equal(tipos.size, 8, 'signup semeia catalogo padrao');
+  assert.equal(tipos.docs.find(d => d.id === 'eco_tt').data().modalidade, 'motor');
+  assert.equal(tipos.docs.find(d => d.id === 'ecg').data().modalidade, 'pdf');
+  // Tripwire: cada doc semeado bate campo a campo com TIPOS_LAUDO_PADRAO
+  // (ignora criadoEm, que e FieldValue.serverTimestamp() e nao existe no fonte).
+  for (const esperado of TIPOS_LAUDO_PADRAO) {
+    const doc = tipos.docs.find(d => d.id === esperado.id);
+    assert.ok(doc, `tipo ${esperado.id} semeado`);
+    const { criadoEm, ...semeado } = doc.data();
+    assert.equal(canon(semeado), canon(esperado),
+      `tipo ${esperado.id} identico ao espelho src/lib/tipos-laudo.ts`);
+  }
+}
 
 let db, authAdmin;
 
@@ -52,6 +76,8 @@ describe('executarSignup', () => {
       'workspaceId NAO pode ir junto — duas assinaturas casariam na busca antiga');
     assert.equal(sub.data().planoId, 'trial');
     assert.equal(sub.data().franquiaUsada, 0);
+
+    await assertCatalogoSemeado(db, r.wsId);
   });
 
   test('ja cadastrado: recusa e NAO apaga o Auth user', async () => {
@@ -112,6 +138,8 @@ describe('executarSignupPJ', () => {
     const sub = (await db.doc(`subscriptions/${r.contaId}`).get()).data();
     assert.equal(sub.tipoPlano, 'PJ');
     assert.equal('workspaceId' in sub, false);
+
+    await assertCatalogoSemeado(db, r.wsId);
   });
   test('gestor nao-medico NAO precisa de CRM', async () => {
     const { uid } = await authAdmin.createUser({ email: 'pj2@exemplo.com', password: 'x'.repeat(8) });
