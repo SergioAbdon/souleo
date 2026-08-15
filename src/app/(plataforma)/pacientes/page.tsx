@@ -12,7 +12,7 @@ import { getPacientes } from '@/lib/firestore';
 import PageHeader from '@/components/shell/PageHeader';
 
 type PacienteItem = Record<string, unknown> & {
-  id: string; nome?: string; cpf?: string; nascimento?: string; telefone?: string;
+  id: string; nome?: string; cpf?: string; nascimento?: string; dtnasc?: string; telefone?: string;
 };
 
 function maskCpf(cpf?: string): string {
@@ -94,7 +94,7 @@ export default function PacientesPage() {
                   <tr key={p.id} className="border-b border-borda hover:bg-ativo transition">
                     <td className="py-3 px-3 font-semibold text-ink">{p.nome || '—'}</td>
                     <td className="py-3 px-3 text-ink-2 text-xs font-mono">{maskCpf(p.cpf)}</td>
-                    <td className="py-3 px-3 text-ink-2 text-xs">{fmtData(p.nascimento)}</td>
+                    <td className="py-3 px-3 text-ink-2 text-xs">{fmtData(p.dtnasc || p.nascimento)}</td>
                     <td className="py-3 px-3 text-ink-2 text-xs">{p.telefone || '—'}</td>
                     <td className="py-3 px-3 text-right">
                       <button onClick={() => router.push('/pacientes/' + p.id)}
