@@ -18,6 +18,11 @@ test('dono ve tudo que existe hoje', () => {
   const v = hrefs('dono');
   for (const h of ['/agenda', '/laudos', '/financeiro', '/clinica']) assert.ok(v.includes(h), h);
 });
+test('todos os papeis veem /pacientes', () => {
+  for (const papel of ['dono', 'medico', 'recepcao', null, undefined]) {
+    assert.ok(hrefs(papel).includes('/pacientes'), String(papel));
+  }
+});
 test('todo item tem rotulo e icone', () => {
   for (const i of NAV_PLATAFORMA) {
     assert.ok(i.href.startsWith('/') && i.rotulo && i.icone);

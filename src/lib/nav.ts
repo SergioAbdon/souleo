@@ -11,6 +11,7 @@ export type ItemNav = { href: string; rotulo: string; icone: string };
 
 export const NAV_PLATAFORMA: ItemNav[] = [
   { href: '/agenda', rotulo: 'Agenda', icone: '📋' },
+  { href: '/pacientes', rotulo: 'Pacientes', icone: '👥' },
   { href: '/laudos', rotulo: 'Laudos', icone: '🗂️' },
   { href: '/financeiro', rotulo: 'Financeiro', icone: '💰' },
   { href: '/clinica', rotulo: 'Clínica', icone: '🏥' },
