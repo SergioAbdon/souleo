@@ -36,6 +36,32 @@ async function resolverExecutavel(): Promise<{ executablePath: string; args: str
   throw new Error('Chrome nao encontrado');
 }
 
+// ── Salvar buffer de PDF pronto no Storage (Task 5: reusado pelo caminho
+// Puppeteer abaixo E pelo caminho de anexo direto em /api/emitir) ──
+export async function salvarPdfBuffer(
+  buf: Buffer,
+  wsId: string,
+  exameId: string,
+  nomeArq: string
+): Promise<string> {
+  const bucket = getStorage().bucket();
+  const nomeArquivo = (nomeArq || `laudo_${exameId}`)
+    .replace(/[^a-zA-Z0-9À-ÿ _-]/g, '')
+    .replace(/\s+/g, '_');
+  const filePath = `laudos/${wsId}/${nomeArquivo}.pdf`;
+  const file = bucket.file(filePath);
+
+  await file.save(buf, {
+    metadata: {
+      contentType: 'application/pdf',
+      contentDisposition: `inline; filename="${nomeArquivo}.pdf"`,
+    },
+  });
+  await file.makePublic();
+
+  return `https://storage.googleapis.com/${bucket.name}/${filePath}`;
+}
+
 // ── Gerar PDF via Puppeteer + upload Storage ──
 export async function gerarESalvarPdf(
   pdfHtml: string,
@@ -67,22 +93,7 @@ export async function gerarESalvarPdf(
     await browser.close();
     browser = null;
 
-    const bucket = getStorage().bucket();
-    const nomeArquivo = (nomeArq || `laudo_${exameId}`)
-      .replace(/[^a-zA-Z0-9À-ÿ _-]/g, '')
-      .replace(/\s+/g, '_');
-    const filePath = `laudos/${wsId}/${nomeArquivo}.pdf`;
-    const file = bucket.file(filePath);
-
-    await file.save(Buffer.from(pdfBuffer), {
-      metadata: {
-        contentType: 'application/pdf',
-        contentDisposition: `inline; filename="${nomeArquivo}.pdf"`,
-      },
-    });
-    await file.makePublic();
-
-    return `https://storage.googleapis.com/${bucket.name}/${filePath}`;
+    return await salvarPdfBuffer(Buffer.from(pdfBuffer), wsId, exameId, nomeArq);
   } finally {
     if (browser) {
       try { await browser.close(); } catch { /* */ }

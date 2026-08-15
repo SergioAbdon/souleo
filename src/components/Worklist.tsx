@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { savePaciente, saveExame, listenWorklist, listenNaoRealizados, getExame, getPaciente } from '@/lib/firestore';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
+import AnexarPdfModal from '@/components/agenda/AnexarPdfModal';
 import { dataLocalHoje } from '@/lib/utils';
 import { gerarAccessionNumber } from '@/lib/gerarAccessionNumber';
 import { db, auth } from '@/lib/firebase';
@@ -84,6 +85,7 @@ export default function Worklist() {
   const [statusSel, setStatusSel] = useState<string>('todos');
   const [agora, setAgora] = useState(new Date());
   const [modalPac, setModalPac] = useState(false);
+  const [anexarPdf, setAnexarPdf] = useState<ExameItem | null>(null);
   const [editPacId, setEditPacId] = useState<string | null>(null);
   const [editExameId, setEditExameId] = useState<string | null>(null);
 
@@ -468,15 +470,20 @@ export default function Worklist() {
 
   // Dispatch por modalidade do tipo de laudo (catálogo tiposLaudo, Sub-plano 3).
   // Tipo desconhecido/sem catálogo carregado ainda → fallback 'motor' (comportamento antigo).
-  async function abrirLaudo(exameId: string, tipoExame?: string) {
-    const modalidade = tiposMap[tipoExame || '']?.modalidade || 'motor';
+  async function abrirLaudo(item: ExameItem) {
+    const modalidade = tiposMap[(item.tipoExame as string) || '']?.modalidade || 'motor';
     if (modalidade === 'pdf') {
-      // Task 5 pluga o AnexarPdfModal aqui
-      alert('Anexar PDF: chega na próxima tarefa');
+      // Ato do médico (mesma matriz do Laudar) — a rota /api/emitir também
+      // recusa 403 nao_medico, isso aqui só evita a recepção abrir o modal à toa.
+      if (!assinaComoAutor) {
+        alert('Anexar o PDF é ato do médico.');
+        return;
+      }
+      setAnexarPdf(item);
       return;
     }
     if (!(await checarBillingOuAvisar())) return;
-    router.push(modalidade === 'texto' ? '/laudo-texto/' + exameId : '/laudo/' + exameId);
+    router.push(modalidade === 'texto' ? '/laudo-texto/' + item.id : '/laudo/' + item.id);
   }
 
   // Filtrar por status + busca texto
@@ -646,7 +653,7 @@ export default function Worklist() {
                         if (grupo === 'aguardando') {
                           return (
                             <>
-                              <Btn cor="blue" onClick={() => abrirLaudo(item.id, item.tipoExame as string)}>📋 Laudar</Btn>
+                              <Btn cor="blue" onClick={() => abrirLaudo(item)}>📋 Laudar</Btn>
                               <Btn cor="gray" onClick={() => editarPaciente(item)}>👤 Editar</Btn>
                               {podeRemoverDaFila(papel) && (
                                 <Btn cor="red" onClick={() => removerDaFila(item)}>🗑</Btn>
@@ -657,7 +664,7 @@ export default function Worklist() {
                         if (grupo === 'andamento') {
                           return (
                             <>
-                              <Btn cor="blue" onClick={() => abrirLaudo(item.id, item.tipoExame as string)}>▶ Continuar</Btn>
+                              <Btn cor="blue" onClick={() => abrirLaudo(item)}>▶ Continuar</Btn>
                               <Btn cor="gray" onClick={() => editarPaciente(item)}>👤 Editar</Btn>
                             </>
                           );
@@ -792,6 +799,20 @@ export default function Worklist() {
         permitirSelecao
         selecionadas={secretariaSelecionadas}
         onToggleSelecao={handleToggleSelecaoSecretaria}
+      />
+
+      {/* Anexar PDF (modalidade 'pdf' — ECG/MAPA/Holter/Ergométrico, Task 5).
+          Só abre pra quem assina como autor; a rota /api/emitir confirma. */}
+      <AnexarPdfModal
+        open={anexarPdf !== null}
+        onClose={() => setAnexarPdf(null)}
+        exame={anexarPdf ? {
+          id: anexarPdf.id,
+          pacienteNome: anexarPdf.pacienteNome as string,
+          tipoExame: tiposMap[(anexarPdf.tipoExame as string) || '']?.nome || (anexarPdf.tipoExame as string),
+        } : null}
+        wsId={workspace?.id || ''}
+        medicoUid={user?.uid || ''}
       />
     </div>
   );
