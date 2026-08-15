@@ -6,10 +6,12 @@ import PageHeader from '@/components/shell/PageHeader';
 import MetricCard from '@/components/shell/MetricCard';
 import Membros from '@/components/Membros';
 import LocalModal from '@/components/LocalModal';
+import TiposLaudo from '@/components/clinica/TiposLaudo';
 
 export default function ClinicaPage() {
   const { workspace, subscription, papel } = useAuth();
   const [localOpen, setLocalOpen] = useState(false);
+  const [aba, setAba] = useState<'equipe' | 'tipos'>('equipe');
   const gerencia = podeGerenciarMembros(papel);
   const usada = (subscription?.franquiaUsada as number) || 0;
   const mensal = (subscription?.franquiaMensal as number) || 100;
@@ -35,7 +37,17 @@ export default function ClinicaPage() {
 
       {gerencia ? (
         <div className="bg-card border border-borda rounded-xl p-4">
-          <Membros />
+          <div className="flex items-center gap-1 border-b border-borda mb-4 -mt-1">
+            <button onClick={() => setAba('equipe')}
+              className={`px-3 py-2 text-sm font-semibold border-b-2 transition ${aba === 'equipe' ? 'border-p2 text-p2' : 'border-transparent text-ink-2 hover:text-ink'}`}>
+              Equipe
+            </button>
+            <button onClick={() => setAba('tipos')}
+              className={`px-3 py-2 text-sm font-semibold border-b-2 transition ${aba === 'tipos' ? 'border-p2 text-p2' : 'border-transparent text-ink-2 hover:text-ink'}`}>
+              Tipos de laudo
+            </button>
+          </div>
+          {aba === 'equipe' ? <Membros /> : <TiposLaudo />}
         </div>
       ) : (
         <div className="bg-card border border-borda rounded-xl p-6 text-sm text-ink-2">

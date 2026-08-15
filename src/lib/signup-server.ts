@@ -47,6 +47,34 @@ async function planoTrial(db: Firestore) {
   return TRIAL_FALLBACK;
 }
 
+// Espelho de TIPOS_LAUDO_PADRAO (src/lib/tipos-laudo.ts) — inline porque este
+// arquivo nao pode ter import relativo (ver topo). Teste de api
+// (tests/api/signup.test.mjs) importa os dois e compara campo a campo —
+// qualquer drift entre os espelhos quebra o teste (tripwire).
+const TIPOS_PADRAO = [
+  { id: 'eco_tt', nome: 'Eco Transtorácico', icone: '🫀', ativo: true, ordem: 1, modalidade: 'motor', motorId: 'senna' },
+  { id: 'eco_te', nome: 'Eco Transesofágico', icone: '🫀', ativo: true, ordem: 2, modalidade: 'motor', motorId: 'senna' },
+  { id: 'eco_stress', nome: 'Eco Stress', icone: '🫀', ativo: true, ordem: 3, modalidade: 'motor', motorId: 'senna' },
+  {
+    id: 'doppler_carotidas', nome: 'Doppler de Carótidas', icone: '🩺', ativo: true, ordem: 4, modalidade: 'texto',
+    modeloTexto: [
+      '<h2>DOPPLER DE CARÓTIDAS E VERTEBRAIS</h2>',
+      '<p><strong>Técnica:</strong> exame realizado com transdutor linear, em repouso, com análise bidimensional, Doppler colorido e espectral.</p>',
+      '<p><strong>Carótidas comuns:</strong> trajeto, calibre e fluxo preservados bilateralmente.</p>',
+      '<p><strong>Bulbos e bifurcações:</strong> sem placas ou espessamento médio-intimal significativo.</p>',
+      '<p><strong>Carótidas internas:</strong> fluxo preservado, sem estenoses hemodinamicamente significativas.</p>',
+      '<p><strong>Carótidas externas:</strong> sem alterações.</p>',
+      '<p><strong>Vertebrais:</strong> fluxo anterógrado bilateral.</p>',
+      '<h3>CONCLUSÃO</h3>',
+      '<p>Exame dentro dos limites da normalidade.</p>',
+    ].join(''),
+  },
+  { id: 'ecg', nome: 'ECG', icone: '📈', ativo: true, ordem: 5, modalidade: 'pdf' },
+  { id: 'mapa', nome: 'MAPA', icone: '🩸', ativo: true, ordem: 6, modalidade: 'pdf' },
+  { id: 'holter', nome: 'Holter', icone: '📟', ativo: true, ordem: 7, modalidade: 'pdf' },
+  { id: 'ergometrico', nome: 'Teste Ergométrico', icone: '🏃', ativo: true, ordem: 8, modalidade: 'pdf' },
+];
+
 const PJ_STARTER_FALLBACK = {
   id: 'pj_starter', tipo: 'PJ', franquia: 300, excedente: 1.5, maxLocais: -1,
   localAdicional: 0, extratosFranquia: -1, extratoValor: 0, maxUsuarios: 3, usuarioAdicional: 66.99,
@@ -121,6 +149,11 @@ export async function executarSignup(
         corPrimaria: '#1E3A5F', corSecundaria: '#2563EB',
         criadoEm: FieldValue.serverTimestamp(),
       });
+      // 3b. Catalogo de tipos de laudo (Sub-plano 3) — semeia os 8 padroes
+      for (const tipo of TIPOS_PADRAO) {
+        t.set(wsRef.collection('tiposLaudo').doc(tipo.id),
+          { ...tipo, criadoEm: FieldValue.serverTimestamp() });
+      }
       // 4. Vinculo com id deterministico — pre-requisito de toda regra de papel
       t.set(db.doc(`vinculos/${contaId}_${uid}`), {
         id: `${contaId}_${uid}`, contaId, medicoUid: uid,
@@ -220,6 +253,11 @@ export async function executarSignupPJ(
         nomeClinica: (dados.nomeLocal ?? '').trim() || razaoSocial || 'Unidade',
         corPrimaria: '#1E3A5F', corSecundaria: '#2563EB', criadoEm: FieldValue.serverTimestamp(),
       });
+      // Catalogo de tipos de laudo (Sub-plano 3) — semeia os 8 padroes
+      for (const tipo of TIPOS_PADRAO) {
+        t.set(wsRef.collection('tiposLaudo').doc(tipo.id),
+          { ...tipo, criadoEm: FieldValue.serverTimestamp() });
+      }
       t.set(db.doc(`vinculos/${contaId}_${uid}`), {
         id: `${contaId}_${uid}`, contaId, medicoUid: uid, papel: 'dono', locais: [],
         status: 'ativo', criadoEm: FieldValue.serverTimestamp(),

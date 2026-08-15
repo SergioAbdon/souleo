@@ -6,7 +6,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import { gerarESalvarPdf } from '@/lib/pdf-server';
+import { gerarESalvarPdf, salvarPdfBuffer } from '@/lib/pdf-server';
+import { validarPdfBase64 } from '@/lib/pdf-validacao';
 import { resolverAssinatura } from '@/lib/billing-admin';
 import { adminDb, requireUid } from '@/lib/auth-admin';
 import { resolverPapel } from '@/lib/exame-admin';
@@ -29,12 +30,13 @@ export async function POST(req: NextRequest) {
   const dbAdmin = adminDb();
   try {
     const body = await req.json();
-    const { wsId, exameId, dadosFinais, medicoUid, pdfHtml, nomeArq } = body as {
+    const { wsId, exameId, dadosFinais, medicoUid, pdfHtml, pdfBase64, nomeArq } = body as {
       wsId: string;
       exameId: string;
       dadosFinais: Record<string, unknown>;
       medicoUid: string;
       pdfHtml?: string;
+      pdfBase64?: string;
       nomeArq?: string;
     };
 
@@ -43,6 +45,23 @@ export async function POST(req: NextRequest) {
         { ok: false, motivo: 'dados_invalidos', error: 'wsId, exameId e medicoUid sao obrigatorios' },
         { status: 400 }
       );
+    }
+
+    // PDF anexado (modalidade 'pdf', Task 5): valida ANTES da transacao de
+    // billing abaixo — nao debita franquia de um upload invalido.
+    let pdfAnexadoBuf: Buffer | null = null;
+    if (pdfBase64) {
+      if (!nomeArq) {
+        return NextResponse.json(
+          { ok: false, motivo: 'sem_nome_arquivo' },
+          { status: 400 }
+        );
+      }
+      const validacao = validarPdfBase64(pdfBase64);
+      if (!validacao.ok) {
+        return NextResponse.json({ ok: false, motivo: validacao.motivo }, { status: validacao.status });
+      }
+      pdfAnexadoBuf = validacao.buf;
     }
 
     // Autorizacao: papel de medico/dono NESTE local (mesmo criterio da regra
@@ -161,10 +180,21 @@ export async function POST(req: NextRequest) {
       });
     } catch { /* log nao pode quebrar emissao */ }
 
-    // ══ 3. GERAR PDF (nao critico - emissao ja foi confirmada) ══
+    // ══ 3. PDF: gerado do HTML (motor/texto) OU anexado pronto (modalidade
+    // 'pdf') — nao critico, a emissao ja foi confirmada na transacao acima.
+    // Anexo pula o Puppeteer mas passou pela MESMA transacao — franquia,
+    // ledger e log num lugar so (decisao: anexo CONSOME franquia, 15/08/2026).
     let pdfUrl: string | null = null;
     let pdfErro: string | null = null;
-    if (pdfHtml && nomeArq) {
+    if (pdfAnexadoBuf && nomeArq) {
+      try {
+        pdfUrl = await salvarPdfBuffer(pdfAnexadoBuf, wsId, exameId, nomeArq);
+        await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfUrl });
+      } catch (e) {
+        pdfErro = e instanceof Error ? e.message : 'erro_pdf';
+        console.error('PDF anexo save error:', pdfErro);
+      }
+    } else if (pdfHtml && nomeArq) {
       try {
         pdfUrl = await gerarESalvarPdf(pdfHtml, wsId, exameId, nomeArq);
         // Salvar pdfUrl no exame

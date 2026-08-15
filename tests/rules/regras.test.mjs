@@ -5,7 +5,7 @@ import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebas
 import {
   doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection, getDocs, query, where,
 } from 'firebase/firestore';
-import { payloadCreateProfile, payloadCadastroExame, payloadEditarExame } from './fixtures.mjs';
+import { payloadCreateProfile, payloadCadastroExame, payloadEditarExame, payloadTipoLaudo } from './fixtures.mjs';
 
 let env;
 
@@ -638,5 +638,23 @@ describe('14. worklist — administracao da fila por membro do local (Secao 2)',
   });
   test('recepcao grava mwlStatus em exame aguardando COM autor', async () => {
     await assertSucceeds(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), { mwlStatus: 'enviado' }));
+  });
+});
+
+describe('15. catalogo de tipos de laudo (Secao 2/Sub-plano 3)', () => {
+  test('membro do local LE o catalogo', async () => {
+    await assertSucceeds(getDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/tiposLaudo`, 'eco_tt')));
+  });
+  test('dono cria/edita tipo (payload real)', async () => {
+    await assertSucceeds(setDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/tiposLaudo`, 'ecg'), payloadTipoLaudo()));
+  });
+  test('recepcao NAO escreve no catalogo', async () => {
+    await assertFails(setDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/tiposLaudo`, 'ecg2'), payloadTipoLaudo({ id: 'ecg2' })));
+  });
+  test('medico nao-dono NAO escreve no catalogo', async () => {
+    await assertFails(setDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/tiposLaudo`, 'ecg3'), payloadTipoLaudo({ id: 'ecg3' })));
+  });
+  test('fora do local NAO le o catalogo', async () => {
+    await assertFails(getDoc(doc(como(DR_B), `workspaces/${LOCAL_A1}/tiposLaudo`, 'eco_tt')));
   });
 });

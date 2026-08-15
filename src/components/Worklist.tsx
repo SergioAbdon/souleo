@@ -9,15 +9,17 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { savePaciente, saveExame, listenWorklist, listenNaoRealizados, getExame, getPaciente } from '@/lib/firestore';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
+import AnexarPdfModal from '@/components/agenda/AnexarPdfModal';
 import { dataLocalHoje } from '@/lib/utils';
 import { gerarAccessionNumber } from '@/lib/gerarAccessionNumber';
 import { db, auth } from '@/lib/firebase';
-import { doc, writeBatch, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { doc, writeBatch, serverTimestamp, updateDoc, getDocs, collection, query, orderBy } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { checkEmissao } from '@/lib/billing';
 import DicomGallery from '@/components/laudo/DicomGallery';
 import { podeEditarLaudo, podeRemoverDaFila, ehMedico } from '@/lib/permissoes';
 import StatusPill from '@/components/shell/StatusPill';
+import { TIPOS_LAUDO_PADRAO, type TipoLaudo } from '@/lib/tipos-laudo';
 
 // v3: helper pra enviar token Firebase nas chamadas Feegow
 async function feegowAuthFetch(url: string, options?: RequestInit) {
@@ -64,13 +66,6 @@ type ExameItem = Record<string, unknown> & {
   acc?: string; cpf?: string; imagensDicom?: string[]; mwlStatus?: string;
 };
 
-const TIPOS_EXAME: Record<string, string> = {
-  'eco_tt': 'Eco TT',
-  'doppler_carotidas': 'Carótidas',
-  'eco_te': 'Eco TE',
-  'eco_stress': 'Eco Stress',
-};
-
 export default function Worklist() {
   const { workspace, profile, papel, user } = useAuth();
   const router = useRouter();
@@ -79,6 +74,10 @@ export default function Worklist() {
   // no local (MEDREC — medico de perfil com papel recepcao — nao assina aqui).
   const assinaComoAutor = ehMedico(profile) && (papel === 'dono' || papel === 'medico');
 
+  // Catálogo de tipos de laudo (Sub-plano 3): coleção vazia ou erro de leitura
+  // cai no default embutido — nunca fica sem opção no select nem sem rótulo.
+  const [tipos, setTipos] = useState<TipoLaudo[]>(TIPOS_LAUDO_PADRAO);
+
   const [worklist, setWorklist] = useState<ExameItem[]>([]);
   const [naoRealizados, setNaoRealizados] = useState<ExameItem[]>([]);
   const [busca, setBusca] = useState('');
@@ -86,6 +85,7 @@ export default function Worklist() {
   const [statusSel, setStatusSel] = useState<string>('todos');
   const [agora, setAgora] = useState(new Date());
   const [modalPac, setModalPac] = useState(false);
+  const [anexarPdf, setAnexarPdf] = useState<ExameItem | null>(null);
   const [editPacId, setEditPacId] = useState<string | null>(null);
   const [editExameId, setEditExameId] = useState<string | null>(null);
 
@@ -143,6 +143,27 @@ export default function Worklist() {
 
   // Listener worklist (reage à data selecionada e ao workspace)
   const wsId = workspace?.id;
+
+  // Catálogo de tipos de laudo — lido uma vez no mount (não precisa de
+  // onSnapshot aqui; a página de edição em Clínica é quem observa live).
+  useEffect(() => {
+    if (!wsId) return;
+    (async () => {
+      try {
+        const snap = await getDocs(query(collection(db, 'workspaces', wsId, 'tiposLaudo'), orderBy('ordem', 'asc')));
+        const lista = snap.docs.map(d => d.data() as TipoLaudo);
+        setTipos(lista.length > 0 ? lista : TIPOS_LAUDO_PADRAO);
+      } catch (e) {
+        console.error('carregar tiposLaudo:', e);
+        setTipos(TIPOS_LAUDO_PADRAO);
+      }
+    })();
+  }, [wsId]);
+
+  const tiposAtivos = tipos.filter(t => t.ativo !== false).sort((a, b) => a.ordem - b.ordem);
+  const tiposMap: Record<string, TipoLaudo> = {};
+  for (const t of tipos) tiposMap[t.id] = t;
+
   useEffect(() => {
     if (!wsId) return;
     const unsub = listenWorklist(wsId, (items) => {
@@ -188,7 +209,9 @@ export default function Worklist() {
     setEditPacId(null); setEditExameId(null);
     setPacNome(''); setPacCpf(''); setPacDtnasc(''); setPacSexo('');
     setPacTel(''); setPacConvenio(''); setPacSolicitante(assinaComoAutor ? (profile?.nome as string || '') : '');
-    setPacTipoExame('eco_tt'); setPacErro(''); setCpfFeegow(false);
+    // Default = 'eco_tt' se existir no catálogo (menor surpresa); senão o primeiro tipo ativo.
+    setPacTipoExame(tiposAtivos.some(t => t.id === 'eco_tt') ? 'eco_tt' : (tiposAtivos[0]?.id || 'eco_tt'));
+    setPacErro(''); setCpfFeegow(false);
     setModalPac(true);
   }
 
@@ -427,26 +450,49 @@ export default function Worklist() {
   }
 
   // ── Editar laudo emitido (medico apenas) ──
-  // Apenas navega pro motor de laudo. O alerta de credito e consumo
-  // acontecem dentro do motor, no botao "Desbloquear campos".
-  function editarLaudoEmitido(exameId: string) {
-    router.push('/laudo/' + exameId);
+  // Despacha por modalidade do tipo de laudo (catálogo tiposLaudo, Sub-plano 3).
+  // Tipo desconhecido/sem catálogo carregado ainda → fallback 'motor' (comportamento antigo).
+  function editarLaudoEmitido(item: ExameItem) {
+    const modalidade = tiposMap[(item.tipoExame as string) || '']?.modalidade || 'motor';
+    if (modalidade === 'pdf') {
+      setAnexarPdf(item);
+      return;
+    }
+    if (modalidade === 'texto') {
+      router.push('/laudo-texto/' + item.id);
+    } else {
+      router.push('/laudo/' + item.id);
+    }
   }
 
-  async function abrirLaudo(exameId: string) {
-    // Verificar billing antes de abrir
-    if (workspace?.id) {
-      const check = await checkEmissao(workspace.id);
-      if (!check.pode) {
-        alert(check.motivo === 'expirado'
-          ? 'Seu plano expirou. Renove para continuar emitindo laudos.'
-          : check.motivo === 'sem_saldo'
-          ? 'Franquia do mês esgotada. Adquira créditos extras.'
-          : 'Nenhum plano ativo encontrado.');
+  async function checarBillingOuAvisar(): Promise<boolean> {
+    if (!workspace?.id) return true;
+    const check = await checkEmissao(workspace.id);
+    if (check.pode) return true;
+    alert(check.motivo === 'expirado'
+      ? 'Seu plano expirou. Renove para continuar emitindo laudos.'
+      : check.motivo === 'sem_saldo'
+      ? 'Franquia do mês esgotada. Adquira créditos extras.'
+      : 'Nenhum plano ativo encontrado.');
+    return false;
+  }
+
+  // Dispatch por modalidade do tipo de laudo (catálogo tiposLaudo, Sub-plano 3).
+  // Tipo desconhecido/sem catálogo carregado ainda → fallback 'motor' (comportamento antigo).
+  async function abrirLaudo(item: ExameItem) {
+    const modalidade = tiposMap[(item.tipoExame as string) || '']?.modalidade || 'motor';
+    if (modalidade === 'pdf') {
+      // Ato do médico (mesma matriz do Laudar) — a rota /api/emitir também
+      // recusa 403 nao_medico, isso aqui só evita a recepção abrir o modal à toa.
+      if (!assinaComoAutor) {
+        alert('Anexar o PDF é ato do médico.');
         return;
       }
+      setAnexarPdf(item);
+      return;
     }
-    router.push('/laudo/' + exameId);
+    if (!(await checarBillingOuAvisar())) return;
+    router.push(modalidade === 'texto' ? '/laudo-texto/' + item.id : '/laudo/' + item.id);
   }
 
   // Filtrar por status + busca texto
@@ -567,7 +613,7 @@ export default function Worklist() {
                     <div className="font-semibold text-p1 text-sm">{item.pacienteNome || '—'}</div>
                     <div className="text-xs text-gray-400 flex items-center gap-2 mt-0.5 flex-wrap">
                       <StatusPill status={item.status as string} />
-                      <span>{TIPOS_EXAME[item.tipoExame as string] || item.tipoExame}</span>
+                      <span>{tiposMap[item.tipoExame as string]?.nome || item.tipoExame}</span>
                       <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${origem === 'FEEGOW' ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-400'}`}>
                         {origem}
                       </span>
@@ -616,7 +662,7 @@ export default function Worklist() {
                         if (grupo === 'aguardando') {
                           return (
                             <>
-                              <Btn cor="blue" onClick={() => abrirLaudo(item.id)}>📋 Laudar</Btn>
+                              <Btn cor="blue" onClick={() => abrirLaudo(item)}>📋 Laudar</Btn>
                               <Btn cor="gray" onClick={() => editarPaciente(item)}>👤 Editar</Btn>
                               {podeRemoverDaFila(papel) && (
                                 <Btn cor="red" onClick={() => removerDaFila(item)}>🗑</Btn>
@@ -627,7 +673,7 @@ export default function Worklist() {
                         if (grupo === 'andamento') {
                           return (
                             <>
-                              <Btn cor="blue" onClick={() => abrirLaudo(item.id)}>▶ Continuar</Btn>
+                              <Btn cor="blue" onClick={() => abrirLaudo(item)}>▶ Continuar</Btn>
                               <Btn cor="gray" onClick={() => editarPaciente(item)}>👤 Editar</Btn>
                             </>
                           );
@@ -636,7 +682,7 @@ export default function Worklist() {
                         return (
                           <>
                             {podeEditarLaudo(profile, item, user?.uid || '') && (
-                              <Btn cor="amber" onClick={() => editarLaudoEmitido(item.id)}>✏️ Editar</Btn>
+                              <Btn cor="amber" onClick={() => editarLaudoEmitido(item)}>✏️ Editar</Btn>
                             )}
                             <Btn cor="gray" onClick={() => imprimirPdf(item.id)}>🖨️ Imprimir</Btn>
                           </>
@@ -653,7 +699,7 @@ export default function Worklist() {
                         <Btn cor="cyan" onClick={() => setGaleria({
                           imagens: item.imagensDicom as string[],
                           paciente: (item.pacienteNome as string) || '',
-                          tipo: TIPOS_EXAME[(item.tipoExame as string) || ''] || (item.tipoExame as string) || '',
+                          tipo: tiposMap[(item.tipoExame as string) || '']?.nome || (item.tipoExame as string) || '',
                         })}>
                           📸 Imagens ({(item.imagensDicom as unknown[]).length})
                         </Btn>
@@ -717,7 +763,7 @@ export default function Worklist() {
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Tipo exame</label>
                   <select value={pacTipoExame} onChange={e => setPacTipoExame(e.target.value)}
                     className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1">
-                    {Object.entries(TIPOS_EXAME).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    {tiposAtivos.map(t => <option key={t.id} value={t.id}>{t.icone} {t.nome}</option>)}
                   </select>
                 </div>
                 <div>
@@ -762,6 +808,21 @@ export default function Worklist() {
         permitirSelecao
         selecionadas={secretariaSelecionadas}
         onToggleSelecao={handleToggleSelecaoSecretaria}
+      />
+
+      {/* Anexar PDF (modalidade 'pdf' — ECG/MAPA/Holter/Ergométrico, Task 5).
+          Só abre pra quem assina como autor; a rota /api/emitir confirma. */}
+      <AnexarPdfModal
+        open={anexarPdf !== null}
+        onClose={() => setAnexarPdf(null)}
+        exame={anexarPdf ? {
+          id: anexarPdf.id,
+          pacienteNome: anexarPdf.pacienteNome as string,
+          tipoExame: tiposMap[(anexarPdf.tipoExame as string) || '']?.nome || (anexarPdf.tipoExame as string),
+          convenio: anexarPdf.convenio as string,
+        } : null}
+        wsId={workspace?.id || ''}
+        medicoUid={user?.uid || ''}
       />
     </div>
   );
