@@ -17,6 +17,7 @@ import { useRouter } from 'next/navigation';
 import { checkEmissao } from '@/lib/billing';
 import DicomGallery from '@/components/laudo/DicomGallery';
 import { podeEditarLaudo, podeRemoverDaFila, ehMedico } from '@/lib/permissoes';
+import StatusPill from '@/components/shell/StatusPill';
 
 // v3: helper pra enviar token Firebase nas chamadas Feegow
 async function feegowAuthFetch(url: string, options?: RequestInit) {
@@ -461,28 +462,21 @@ export default function Worklist() {
     return true;
   });
 
-  const statusBadge: Record<string, { cor: string; icone: string; texto: string }> = {
-    aguardando: { cor: 'bg-yellow-100 text-yellow-700', icone: '⏳', texto: 'Aguardando' },
-    andamento: { cor: 'bg-blue-100 text-blue-700', icone: '✏️', texto: 'Em andamento' },
-    rascunho: { cor: 'bg-gray-100 text-gray-600', icone: '📝', texto: 'Rascunho' },
-    emitido: { cor: 'bg-green-100 text-green-700', icone: '✅', texto: 'Emitido' },
-  };
-
   return (
     <div>
       {/* Barra de ações */}
       <div className="flex items-center gap-3 mb-4">
         <input type="date" value={dataSel} onChange={e => setDataSel(e.target.value)}
-          className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] w-40" />
+          className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1 w-40" />
         {dataSel !== dataLocalHoje() && (
           <button onClick={() => setDataSel(dataLocalHoje())}
-            className="text-xs text-[#2563EB] hover:underline whitespace-nowrap">Hoje</button>
+            className="text-xs text-p2 hover:underline whitespace-nowrap">Hoje</button>
         )}
         <input type="text" placeholder="Buscar por nome ou CPF..."
           value={busca} onChange={e => setBusca(e.target.value)}
-          className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+          className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
         <button onClick={abrirNovoPaciente}
-          className="bg-[#2563EB] text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition whitespace-nowrap">
+          className="bg-p2 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition whitespace-nowrap">
           + Paciente
         </button>
         <button onClick={importarFeegow} disabled={feegowLoading}
@@ -518,7 +512,8 @@ export default function Worklist() {
 
       {/* Tabela */}
       <div className="bg-white rounded-lg overflow-hidden border border-gray-100">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
           <thead>
             <tr className="border-b text-xs text-gray-400 uppercase bg-gray-50">
               <th className="py-2 px-3 text-left w-16">Hora</th>
@@ -537,7 +532,6 @@ export default function Worklist() {
               </td></tr>
             )}
             {filtrada.map(item => {
-              const badge = statusBadge[item.status as string] || statusBadge.aguardando;
               const espera = item.status === 'aguardando' && dataSel === dataLocalHoje()
                 ? calcEspera(item.horarioChegada as string)
                 : { texto: '', alerta: false };
@@ -559,7 +553,7 @@ export default function Worklist() {
                       <button
                         onClick={() => { navigator.clipboard.writeText(item.acc as string); }}
                         title="Clique para copiar (transcrição manual no Vivid)"
-                        className="font-mono text-[13px] font-bold text-[#1E3A5F] hover:bg-blue-50 px-1.5 py-0.5 rounded transition cursor-pointer"
+                        className="font-mono text-[13px] font-bold text-p1 hover:bg-blue-50 px-1.5 py-0.5 rounded transition cursor-pointer"
                       >
                         {item.acc as string}
                       </button>
@@ -570,9 +564,9 @@ export default function Worklist() {
 
                   {/* Paciente */}
                   <td className="py-3 px-3">
-                    <div className="font-semibold text-[#1E3A5F] text-sm">{item.pacienteNome || '—'}</div>
+                    <div className="font-semibold text-p1 text-sm">{item.pacienteNome || '—'}</div>
                     <div className="text-xs text-gray-400 flex items-center gap-2 mt-0.5 flex-wrap">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${badge.cor}`}>{badge.icone} {badge.texto}</span>
+                      <StatusPill status={item.status as string} />
                       <span>{TIPOS_EXAME[item.tipoExame as string] || item.tipoExame}</span>
                       <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${origem === 'FEEGOW' ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-400'}`}>
                         {origem}
@@ -670,14 +664,15 @@ export default function Worklist() {
               );
             })}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
 
       {/* Modal Paciente */}
       {modalPac && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setModalPac(false)}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
-            <div className="bg-[#1E3A5F] text-white px-5 py-3 rounded-t-xl">
+            <div className="bg-p1 text-white px-5 py-3 rounded-t-xl">
               <h2 className="font-bold text-sm">{editExameId ? '✏️ Editar Paciente' : '+ Novo Paciente'}</h2>
             </div>
             <div className="p-5 space-y-3">
@@ -686,7 +681,7 @@ export default function Worklist() {
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Nome completo *</label>
                 <input type="text" value={pacNome} onChange={e => setPacNome(e.target.value)}
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
               </div>
 
               <div className="grid grid-cols-3 gap-3">
@@ -699,12 +694,12 @@ export default function Worklist() {
                     onChange={e => { setPacCpf(e.target.value); setCpfFeegow(false); }}
                     onBlur={e => buscarCpfFeegow(e.target.value)}
                     placeholder="000.000.000-00"
-                    className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] ${cpfFeegow ? 'border-green-400 bg-green-50' : ''}`} />
+                    className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1 ${cpfFeegow ? 'border-green-400 bg-green-50' : ''}`} />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Sexo</label>
                   <select value={pacSexo} onChange={e => setPacSexo(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]">
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1">
                     <option value="">—</option>
                     <option value="M">Masculino</option>
                     <option value="F">Feminino</option>
@@ -713,7 +708,7 @@ export default function Worklist() {
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Nascimento</label>
                   <input type="date" value={pacDtnasc} onChange={e => setPacDtnasc(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
                 </div>
               </div>
 
@@ -721,33 +716,33 @@ export default function Worklist() {
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Tipo exame</label>
                   <select value={pacTipoExame} onChange={e => setPacTipoExame(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]">
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1">
                     {Object.entries(TIPOS_EXAME).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Convênio</label>
                   <input type="text" value={pacConvenio} onChange={e => setPacConvenio(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Solicitante</label>
                   <input type="text" value={pacSolicitante} onChange={e => setPacSolicitante(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Telefone</label>
                 <input type="text" value={pacTel} onChange={e => setPacTel(e.target.value)}
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]"
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1"
                   placeholder="(00) 00000-0000" />
               </div>
             </div>
             <div className="px-5 py-3 border-t flex justify-end gap-3">
               <button onClick={() => setModalPac(false)} className="px-4 py-2 text-sm text-gray-500 border rounded-lg hover:bg-gray-50">Cancelar</button>
               <button onClick={handleSalvarPaciente} disabled={pacLoading}
-                className="px-6 py-2 text-sm bg-[#2563EB] text-white rounded-lg font-semibold hover:bg-blue-700 transition disabled:opacity-50">
+                className="px-6 py-2 text-sm bg-p2 text-white rounded-lg font-semibold hover:bg-blue-700 transition disabled:opacity-50">
                 {pacLoading ? 'Salvando...' : 'Salvar'}
               </button>
             </div>
@@ -775,7 +770,7 @@ export default function Worklist() {
 // ── Botão de ação ──
 function Btn({ cor, onClick, children }: { cor: 'blue' | 'green' | 'gray' | 'red' | 'amber' | 'cyan'; onClick: () => void; children: React.ReactNode }) {
   const cores = {
-    blue: 'bg-[#2563EB] text-white hover:bg-blue-700',
+    blue: 'bg-p2 text-white hover:bg-blue-700',
     green: 'bg-green-100 text-green-700 hover:bg-green-200',
     gray: 'bg-gray-100 text-gray-600 hover:bg-gray-200',
     red: 'bg-red-50 text-red-500 hover:bg-red-100',
