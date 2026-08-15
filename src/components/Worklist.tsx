@@ -533,7 +533,9 @@ export default function Worklist() {
             )}
             {filtrada.map(item => {
               const badge = statusBadge[item.status as string] || statusBadge.aguardando;
-              const espera = item.status === 'aguardando' ? calcEspera(item.horarioChegada as string) : { texto: '', alerta: false };
+              const espera = item.status === 'aguardando' && dataSel === dataLocalHoje()
+                ? calcEspera(item.horarioChegada as string)
+                : { texto: '', alerta: false };
               const origem = (item.origem as string) || 'MANUAL';
 
               const isNaoRealizado = item.status === 'nao-realizado';
