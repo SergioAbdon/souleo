@@ -20,6 +20,7 @@ import { TIPOS_LAUDO_PADRAO, TipoLaudo } from '@/lib/tipos-laudo';
 import PageHeader from '@/components/shell/PageHeader';
 import StatusPill from '@/components/shell/StatusPill';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
+import EditarPacienteModal from '@/components/pacientes/EditarPacienteModal';
 
 type Paciente = Record<string, unknown> & {
   id: string; nome?: string; cpf?: string; nascimento?: string; dtnasc?: string;
@@ -64,8 +65,9 @@ export default function FichaPacientePage() {
   const [tipos, setTipos] = useState<TipoLaudo[]>(TIPOS_LAUDO_PADRAO);
   const [loading, setLoading] = useState(true);
   const [naoEncontrado, setNaoEncontrado] = useState(false);
+  const [modalEditar, setModalEditar] = useState(false);
 
-  useEffect(() => {
+  function carregarFicha() {
     if (!wsId || !pacienteId) return;
     setLoading(true);
     Promise.all([getPaciente(wsId, pacienteId), getExames(wsId, pacienteId)]).then(([pac, exs]) => {
@@ -74,7 +76,9 @@ export default function FichaPacientePage() {
       setExames(exs as Exame[]);
       setLoading(false);
     });
-  }, [wsId, pacienteId]);
+  }
+
+  useEffect(carregarFicha, [wsId, pacienteId]);
 
   // Catálogo de tipos de laudo — carregado 1x no mount (mesmo padrão do
   // Worklist: getDocs ordenado, fallback pro default embutido).
@@ -165,11 +169,19 @@ export default function FichaPacientePage() {
   return (
     <>
       <PageHeader titulo={paciente.nome || 'Paciente'}>
-        <button
+        <button onClick={() => setModalEditar(true)}
           className="bg-p2 text-white px-3 py-1.5 rounded text-xs font-semibold hover:bg-p2-deep transition">
           ✏️ Editar cadastro
         </button>
       </PageHeader>
+
+      <EditarPacienteModal
+        open={modalEditar}
+        onClose={() => setModalEditar(false)}
+        wsId={wsId}
+        paciente={paciente}
+        onSaved={carregarFicha}
+      />
 
       <div className="bg-card border border-borda rounded-xl p-4 mb-4">
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
