@@ -24,7 +24,7 @@ const MEDREC = 'uidMedRec';
 before(async () => {
   env = await initializeTestEnvironment({
     projectId: 'leo-testes-definitiva',
-    firestore: { rules: readFileSync('firestore.rules', 'utf8'), host: '127.0.0.1', port: 8080 },
+    firestore: { rules: readFileSync('firestore.rules', 'utf8'), host: '127.0.0.1', port: 8081 },
   });
 
   await env.withSecurityRulesDisabled(async (ctx) => {
@@ -631,5 +631,12 @@ describe('14. worklist — administracao da fila por membro do local (Secao 2)',
   test('medico assume o orfao no primeiro save do laudo (payload real do salvarLaudo)', async () => {
     await assertSucceeds(updateDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/exames`, 'exNovoRita'),
       { medidas: { ddve: 50 }, pacienteNome: 'PACIENTE NOVO', status: 'andamento', medicoUid: DR_A2 }));
+  });
+
+  test('recepcao grava mwlStatus (resultado do envio ao aparelho)', async () => {
+    await assertSucceeds(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exFila1'), { mwlStatus: 'falhou' }));
+  });
+  test('recepcao grava mwlStatus em exame aguardando COM autor', async () => {
+    await assertSucceeds(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), { mwlStatus: 'enviado' }));
   });
 });

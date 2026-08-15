@@ -93,7 +93,7 @@ service cloud.firestore {
       return ['id', 'acc', 'pacienteId', 'pacienteNome', 'pacienteDtnasc',
         'cpf', 'feegowPacienteId', 'tipoExame', 'dataExame', 'horarioChegada',
         'status', 'convenio', 'solicitante', 'medicoExecutor', 'sexo', 'origem',
-        'feegowAppointId', 'medicoUid', 'versao', 'criadoEm', 'atualizadoEm'];
+        'feegowAppointId', 'medicoUid', 'mwlStatus', 'versao', 'criadoEm', 'atualizadoEm'];
     }
 
     // ── CONTAS ── so o servidor cria e altera

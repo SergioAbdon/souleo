@@ -12,7 +12,7 @@ import { abrirPdfUrl } from '@/lib/pdfUtils';
 import { dataLocalHoje } from '@/lib/utils';
 import { gerarAccessionNumber } from '@/lib/gerarAccessionNumber';
 import { db, auth } from '@/lib/firebase';
-import { doc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { doc, writeBatch, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { checkEmissao } from '@/lib/billing';
 import DicomGallery from '@/components/laudo/DicomGallery';
@@ -27,7 +27,7 @@ async function feegowAuthFetch(url: string, options?: RequestInit) {
   });
 }
 
-// Enviar worklist (MWL) ao Orthanc — fire-and-forget, falha silenciosa
+// Enviar worklist (MWL) ao Orthanc — persiste o status no exame (Achado 15)
 async function enviarMwlOrthanc(dados: {
   wsId: string; exameId: string; pacienteNome: string; pacienteId?: string;
   pacienteDtnasc?: string; sexo?: string; tipoExame?: string;
@@ -41,10 +41,17 @@ async function enviarMwlOrthanc(dados: {
       body: JSON.stringify({ action: 'criar_mwl', ...dados }),
     });
     const result = await res.json();
-    if (result.ok) console.log(`Orthanc MWL: ${dados.pacienteNome} → ${result.accessionNumber}`);
-    else console.warn('Orthanc MWL falhou:', result.error);
-  } catch {
-    console.warn('Orthanc MWL: nao enviado (offline?)');
+    // Achado 15: persistir o resultado — a fila mostra quando a worklist
+    // NAO chegou ao aparelho (antes era um console.warn que ninguem via).
+    await updateDoc(doc(db, 'workspaces', dados.wsId, 'exames', dados.exameId), {
+      mwlStatus: result.ok ? 'enviado' : 'falhou',
+    });
+    if (!result.ok) console.warn('Orthanc MWL falhou:', result.error);
+  } catch (e) {
+    console.error('Orthanc MWL:', e);
+    try {
+      await updateDoc(doc(db, 'workspaces', dados.wsId, 'exames', dados.exameId), { mwlStatus: 'falhou' });
+    } catch { /* offline total: fica sem status */ }
   }
 }
 
@@ -52,7 +59,7 @@ type ExameItem = Record<string, unknown> & {
   id: string; pacienteId?: string; pacienteNome?: string; pacienteDtnasc?: string;
   status?: string; tipoExame?: string; dataExame?: string; horarioChegada?: string;
   convenio?: string; solicitante?: string; sexo?: string; origem?: string;
-  feegowAppointId?: string | number; medicoUid?: string;
+  feegowAppointId?: string | number; medicoUid?: string; mwlStatus?: string;
 };
 
 const TIPOS_EXAME: Record<string, string> = {
@@ -572,6 +579,12 @@ export default function Worklist() {
                       <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${origem === 'FEEGOW' ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-400'}`}>
                         {origem}
                       </span>
+                      {item.mwlStatus === 'falhou' && (
+                        <span title="Worklist não chegou ao aparelho — digite o ACC manualmente no Vivid"
+                          className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-600">
+                          📡 SEM MWL
+                        </span>
+                      )}
                     </div>
                   </td>
 
