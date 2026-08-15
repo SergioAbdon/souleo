@@ -452,12 +452,16 @@ export default function Worklist() {
   // ── Editar laudo emitido (medico apenas) ──
   // Despacha por modalidade do tipo de laudo (catálogo tiposLaudo, Sub-plano 3).
   // Tipo desconhecido/sem catálogo carregado ainda → fallback 'motor' (comportamento antigo).
-  function editarLaudoEmitido(exameId: string, tipoExame: string) {
-    const modalidade = tiposMap[tipoExame || '']?.modalidade || 'motor';
+  function editarLaudoEmitido(item: ExameItem) {
+    const modalidade = tiposMap[(item.tipoExame as string) || '']?.modalidade || 'motor';
+    if (modalidade === 'pdf') {
+      setAnexarPdf(item);
+      return;
+    }
     if (modalidade === 'texto') {
-      router.push('/laudo-texto/' + exameId);
+      router.push('/laudo-texto/' + item.id);
     } else {
-      router.push('/laudo/' + exameId);
+      router.push('/laudo/' + item.id);
     }
   }
 
@@ -678,7 +682,7 @@ export default function Worklist() {
                         return (
                           <>
                             {podeEditarLaudo(profile, item, user?.uid || '') && (
-                              <Btn cor="amber" onClick={() => editarLaudoEmitido(item.id, item.tipoExame as string)}>✏️ Editar</Btn>
+                              <Btn cor="amber" onClick={() => editarLaudoEmitido(item)}>✏️ Editar</Btn>
                             )}
                             <Btn cor="gray" onClick={() => imprimirPdf(item.id)}>🖨️ Imprimir</Btn>
                           </>

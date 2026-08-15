@@ -69,10 +69,16 @@ export default function TiposLaudo() {
   async function semear() {
     if (!wsId) return;
     setSemeando(true);
-    const batch = writeBatch(db);
-    for (const t of TIPOS_LAUDO_PADRAO) batch.set(doc(db, 'workspaces', wsId, 'tiposLaudo', t.id), payload(t));
-    await batch.commit();
-    setSemeando(false);
+    try {
+      const batch = writeBatch(db);
+      for (const t of TIPOS_LAUDO_PADRAO) batch.set(doc(db, 'workspaces', wsId, 'tiposLaudo', t.id), payload(t));
+      await batch.commit();
+    } catch (e) {
+      console.error('semear catálogo:', e);
+      alert('Não foi possível semear o catálogo. Verifique a conexão.');
+    } finally {
+      setSemeando(false);
+    }
   }
 
   function abrirEdicao(t: TipoLaudo) {
