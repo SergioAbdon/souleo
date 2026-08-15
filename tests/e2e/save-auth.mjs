@@ -17,7 +17,7 @@ const context = await browser.newContext();
 const page = await context.newPage();
 await page.goto('http://localhost:3000/login');
 console.log('Faça login com a conta de TESTE (Gmail PJ). Aguardando entrar na plataforma...');
-await page.waitForURL(/\/(agenda|dashboard|laudos|financeiro|clinica)/, { timeout: 300000 });
+await page.waitForURL(/\/(agenda|dashboard|laudos|financeiro|clinica)/, { timeout: 600000 });
 await page.waitForTimeout(3000); // deixa o Firebase terminar de gravar o IndexedDB
 await context.storageState({ path: AUTH_FILE, indexedDB: true });
 await browser.close();
