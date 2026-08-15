@@ -32,6 +32,7 @@ describe('gravarImportacao', () => {
     assert.equal(ex1.medicoUid, undefined); // quem nao assina NAO carimba autor
     assert.equal(ex1.medicoExecutor, '');
     assert.ok((await db.doc(`workspaces/${WS}/accIndex/${ex1.acc}`).get()).exists, 'reserva de ACC criada');
+    assert.match(ex1.acc, /^EX\d{14}$/); // contrato DICOM: EX + 14 digitos = 16 chars (Vivid/Wader)
   });
   test('re-importar os mesmos candidatos e idempotente', async () => {
     const { criados } = await gravarImportacao(db, {
