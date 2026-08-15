@@ -24,7 +24,7 @@ const MEDREC = 'uidMedRec';
 before(async () => {
   env = await initializeTestEnvironment({
     projectId: 'leo-testes-definitiva',
-    firestore: { rules: readFileSync('firestore.rules', 'utf8'), host: '127.0.0.1', port: 8081 },
+    firestore: { rules: readFileSync('firestore.rules', 'utf8'), host: '127.0.0.1', port: 8080 },
   });
 
   await env.withSecurityRulesDisabled(async (ctx) => {
