@@ -445,8 +445,9 @@ export default function Worklist() {
     if (statusSel !== 'todos' && statusSel !== 'nao-realizado' && it.status !== statusSel) return false;
     if (busca) {
       const nome = (it.pacienteNome as string || '').toLowerCase();
-      const cpf = (it.pacienteDtnasc as string || '');
-      if (!nome.includes(busca.toLowerCase()) && !cpf.includes(busca)) return false;
+      const cpf = String(it.cpf ?? '');
+      const buscaDigitos = busca.replace(/\D/g, '');
+      if (!nome.includes(busca.toLowerCase()) && !(buscaDigitos && cpf.includes(buscaDigitos))) return false;
     }
     return true;
   });
@@ -468,7 +469,7 @@ export default function Worklist() {
           <button onClick={() => setDataSel(dataLocalHoje())}
             className="text-xs text-[#2563EB] hover:underline whitespace-nowrap">Hoje</button>
         )}
-        <input type="text" placeholder="Buscar por nome..."
+        <input type="text" placeholder="Buscar por nome ou CPF..."
           value={busca} onChange={e => setBusca(e.target.value)}
           className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
         <button onClick={abrirNovoPaciente}
