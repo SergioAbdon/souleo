@@ -16,7 +16,7 @@ Executar o **Sub-plano 4 (seção Pacientes)** da reestruturação do LEO.
 - NÃO usar `git stash` (daemon engole edições). Commit+push após cada task (Dual Claude). `.superpowers/` é git-ignored — subagentes não podem commitá-lo.
 - Verificação manual: conta Gmail PJ de teste (NUNCA a Yahoo — dados reais da clínica). O trial da conta teste está vencido: emitir laudo real falha com "plano expirado" (esperado; não é bug).
 - Emulador: se `test:rules` falhar com porta ocupada, matar o java zumbi na 8080 — NUNCA trocar a porta no repo.
-- Teste E2E: existe Playwright em `tests/e2e/` (etapa 3); roda com `npm run test:e2e` SE `tests/e2e/.auth/state.json` existir (Sergio gera com o codegen — instruções em `tests/e2e/auth.setup.md`); sem o state, os specs se auto-pulam.
+- Teste E2E: existe Playwright em `tests/e2e/` (etapa 3); roda com `npm run test:e2e` SE `tests/e2e/.auth/state.json` existir (Sergio gera com `npm run test:e2e:login` — abre navegador, ele loga 1x, o script salva com IndexedDB; codegen NÃO serve pro Firebase Auth — instruções em `tests/e2e/auth.setup.md`); sem o state, os specs se auto-pulam.
 - Sub-plano 4 NÃO muda regra nem índice (já existem) — deploy é só código, sem publicação.
 
 **Autorizações a pedir ao Sergio LOGO NO INÍCIO (em lote, pra rodar sem interrupções):** (1) executar as 5 tasks com subagentes + commits/pushes; (2) ao final, merge na master + deploy Vercel + verificação. [Sem regra e sem migração neste sub-plano.]
