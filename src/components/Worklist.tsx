@@ -450,10 +450,15 @@ export default function Worklist() {
   }
 
   // ── Editar laudo emitido (medico apenas) ──
-  // Apenas navega pro motor de laudo. O alerta de credito e consumo
-  // acontecem dentro do motor, no botao "Desbloquear campos".
-  function editarLaudoEmitido(exameId: string) {
-    router.push('/laudo/' + exameId);
+  // Despacha por modalidade do tipo de laudo (catálogo tiposLaudo, Sub-plano 3).
+  // Tipo desconhecido/sem catálogo carregado ainda → fallback 'motor' (comportamento antigo).
+  function editarLaudoEmitido(exameId: string, tipoExame: string) {
+    const modalidade = tiposMap[tipoExame || '']?.modalidade || 'motor';
+    if (modalidade === 'texto') {
+      router.push('/laudo-texto/' + exameId);
+    } else {
+      router.push('/laudo/' + exameId);
+    }
   }
 
   async function checarBillingOuAvisar(): Promise<boolean> {
@@ -673,7 +678,7 @@ export default function Worklist() {
                         return (
                           <>
                             {podeEditarLaudo(profile, item, user?.uid || '') && (
-                              <Btn cor="amber" onClick={() => editarLaudoEmitido(item.id)}>✏️ Editar</Btn>
+                              <Btn cor="amber" onClick={() => editarLaudoEmitido(item.id, item.tipoExame as string)}>✏️ Editar</Btn>
                             )}
                             <Btn cor="gray" onClick={() => imprimirPdf(item.id)}>🖨️ Imprimir</Btn>
                           </>

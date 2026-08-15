@@ -55,9 +55,14 @@ export default function LaudoTextoPage() {
       } catch { /* fallback abaixo */ }
       if (!t) t = TIPOS_LAUDO_PADRAO.find(x => x.id === tipoId) || null;
       setTipo(t);
+      // Validação de modalidade: exame de motor não pode usar rota /laudo-texto
+      if (t && t.modalidade && t.modalidade !== 'texto') {
+        router.replace('/laudo/' + exameId);
+        return;
+      }
       pendingHtml.current = (ex?.laudoTextoHtml as string) ?? t?.modeloTexto ?? '';
     })();
-  }, [workspace?.id, exameId]);
+  }, [workspace?.id, exameId, router]);
 
   // Aplicar conteúdo quando o TipTap montar (mesmo padrão do motor:
   // interval vivo enquanto montado — cobre remontagens do editor).
@@ -94,7 +99,11 @@ export default function LaudoTextoPage() {
 
   async function handleEmitir() {
     if (!workspace?.id || !user?.uid || !exame) return;
-    if (!confirm('Emitir o laudo? A emissão consome 1 laudo da franquia.')) return;
+    const jaEmitido = (exame.status as string) === 'emitido';
+    const msg = jaEmitido
+      ? 'Reemitir o laudo? Uma NOVA franquia será consumida (1 laudo).'
+      : 'Emitir o laudo? A emissão consome 1 laudo da franquia.';
+    if (!confirm(msg)) return;
     setEmitindo(true);
 
     const laudoTextoHtml = editorRef.current?.getHTML() || '';
@@ -146,6 +155,7 @@ export default function LaudoTextoPage() {
               clinica: clinicaNome,
               medNome: profile?.nome, medCrm: profile?.crm, medUf: profile?.ufCrm, p1,
             },
+            ...(jaEmitido ? { reemissao: true } : {}),
           },
           pdfHtml,
           nomeArq: `laudo-${exameId}`,
@@ -201,7 +211,7 @@ export default function LaudoTextoPage() {
         </button>
         <button onClick={handleEmitir} disabled={salvando || emitindo}
           className="shrink-0 px-3 py-1.5 rounded-lg bg-p2 text-white text-xs font-semibold hover:bg-p2-deep disabled:opacity-50 cursor-pointer">
-          {emitindo ? 'Emitindo…' : 'Emitir laudo'}
+          {emitindo ? 'Emitindo…' : (exame?.status === 'emitido' ? 'Reemitir (consome 1 franquia)' : 'Emitir laudo')}
         </button>
       </div>
 
