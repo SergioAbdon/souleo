@@ -95,8 +95,19 @@ export default function TiposLaudo() {
     if (!wsId || !draft) return;
     const nome = draft.nome.trim();
     if (!nome) { alert('Dê um nome ao tipo de exame.'); return; }
-    const id = editandoId === NOVO_ID ? slug(nome) : draft.id;
+    let id = editandoId === NOVO_ID ? slug(nome) : draft.id;
     if (!id) { alert('Nome inválido pra gerar o identificador.'); return; }
+
+    // Fix 2: Evitar colisão de slug no catálogo
+    if (editandoId === NOVO_ID) {
+      const baseId = id;
+      let counter = 2;
+      while (tipos.some(t => t.id === id)) {
+        id = `${baseId}_${counter}`;
+        counter++;
+      }
+    }
+
     const final: TipoLaudo = { ...draft, id, nome };
     await setDoc(doc(db, 'workspaces', wsId, 'tiposLaudo', id), payload(final));
     cancelarEdicao();
@@ -207,7 +218,15 @@ function LinhaEdicao({ draft, setDraft, onSalvar, onCancelar, onEditarModelo }: 
         <div>
           <label className="block text-[10px] font-semibold text-ink-3 uppercase mb-1">Modalidade</label>
           <select value={draft.modalidade}
-            onChange={e => setDraft({ ...draft, modalidade: e.target.value as ModalidadeLaudo })}
+            onChange={e => {
+              const newModalidade = e.target.value as ModalidadeLaudo;
+              // Fix 1: Setar motorId ao virar motor
+              setDraft({
+                ...draft,
+                modalidade: newModalidade,
+                ...(newModalidade === 'motor' && !draft.motorId && { motorId: 'senna' })
+              });
+            }}
             className="border border-borda rounded-lg px-3 py-1.5 text-sm bg-card">
             <option value="motor">Motor Senna</option>
             <option value="texto">Texto com modelo</option>
