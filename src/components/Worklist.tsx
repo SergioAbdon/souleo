@@ -12,7 +12,7 @@ import { abrirPdfUrl } from '@/lib/pdfUtils';
 import { dataLocalHoje } from '@/lib/utils';
 import { gerarAccessionNumber } from '@/lib/gerarAccessionNumber';
 import { db, auth } from '@/lib/firebase';
-import { doc, getDoc, collection, writeBatch, serverTimestamp, type DocumentReference } from 'firebase/firestore';
+import { doc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { checkEmissao } from '@/lib/billing';
 import DicomGallery from '@/components/laudo/DicomGallery';
@@ -361,139 +361,37 @@ export default function Worklist() {
   }
 
   async function importarFeegow() {
-    if (!workspace?.id || !profile?.id) return;
+    if (!workspace?.id) return;
     setFeegowLoading(true);
     try {
-      const res = await feegowAuthFetch(`/api/feegow?action=importar&wsId=${workspace?.id || ''}`);
-      const data = await res.json();
-      if (!data.ok || !data.pacientes?.length) {
-        alert(data.pacientes?.length === 0 ? 'Nenhum paciente aguardando no Feegow.' : (data.error || 'Erro ao buscar Feegow'));
-        setFeegowLoading(false);
-        return;
-      }
-
-      // Dedup por AGENDAMENTO do Feegow (feegowAppointId), NÃO por nome.
-      // Um paciente pode ter 2+ exames no mesmo dia (ex.: eco + carótidas):
-      // cada agendamento tem feegowAppointId único. Deduplicar por nome
-      // descartava silenciosamente o 2º exame do paciente.
-      const apptsNaFila = new Set(
-        worklist.map(w => String(w.feegowAppointId ?? '')).filter(Boolean)
-      );
-      const nomesNaFila = new Set(worklist.map(w => (w.pacienteNome || '').toUpperCase()));
-      const novos = data.pacientes.filter((p: Record<string, string>) => {
-        const appt = String(p.feegowAppointId ?? '');
-        if (appt) return !apptsNaFila.has(appt);
-        // Candidato sem feegowAppointId (raro): cai no dedup legado por nome.
-        return !nomesNaFila.has(p.pacienteNome);
+      const res = await feegowAuthFetch(`/api/feegow?wsId=${workspace.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'importar' }),
       });
-
-      if (novos.length === 0) {
-        alert('Todos os pacientes do Feegow já estão na fila.');
-        setFeegowLoading(false);
-        return;
+      const data = await res.json();
+      if (!data.ok) {
+        alert(data.error === 'sem_acesso_ao_local'
+          ? 'Seu usuário não tem acesso a este local.'
+          : (data.error || 'Erro ao importar do Feegow.'));
+      } else if (data.criados.length === 0) {
+        alert(data.total === 0 ? 'Nenhum paciente aguardando no Feegow.' : 'Todos os pacientes do Feegow já estão na fila.');
+      } else {
+        // ponytail: MWL continua saindo do cliente (o /api/orthanc ja autentica);
+        // fechar a aba no meio = MWL perdido, sem retry — o indicador SEM MWL
+        // (mwlStatus) da visibilidade. Mover pro servidor se virar dor real.
+        for (const { exameId, pac } of data.criados) {
+          await enviarMwlOrthanc({
+            wsId: workspace.id, exameId,
+            pacienteNome: pac.pacienteNome, pacienteId: pac.cpf,
+            pacienteDtnasc: pac.pacienteDtnasc, sexo: pac.sexo,
+            tipoExame: pac.tipoExame, dataExame: pac.dataExame,
+            horarioChegada: pac.horarioChegada,
+            medicoNome: assinaComoAutor ? (profile?.nome as string || '') : '',
+          });
+        }
+        alert(`${data.criados.length} paciente(s) importado(s) do Feegow!`);
       }
-
-      // Idempotência por feegowAppointId (ADR 2026-06-22): doc id determinístico
-      // `fg-<appointId>` + checagem de existência. Assim re-clique, 2 abas ou
-      // import concorrente NÃO duplicam (colapsam no MESMO doc), e re-importar
-      // NÃO sobrescreve um exame que o médico já começou (existe → pula).
-      // Candidato sem feegowAppointId (raro) cai no id aleatório de sempre.
-      const comAppt = novos.filter((p: Record<string, string>) => p.feegowAppointId);
-      const semAppt = novos.filter((p: Record<string, string>) => !p.feegowAppointId);
-
-      const refsAppt = comAppt.map((p: Record<string, string>) =>
-        doc(db, 'workspaces', workspace.id, 'exames', `fg-${p.feegowAppointId}`),
-      );
-      const existentes = await Promise.all(refsAppt.map((r: DocumentReference) => getDoc(r)));
-
-      const aCriar = [
-        ...comAppt
-          .map((pac: Record<string, string>, i: number) => ({ pac, exameRef: refsAppt[i], existe: existentes[i].exists() }))
-          .filter((x: { existe: boolean }) => !x.existe)
-          .map((x: { pac: Record<string, string>; exameRef: ReturnType<typeof doc> }) => ({ pac: x.pac, exameRef: x.exameRef })),
-        ...semAppt.map((pac: Record<string, string>) => ({
-          pac,
-          exameRef: doc(collection(db, 'workspaces', workspace.id, 'exames')),
-        })),
-      ];
-
-      if (aCriar.length === 0) {
-        alert('Todos os pacientes do Feegow já estão na fila.');
-        setFeegowLoading(false);
-        return;
-      }
-
-      // v3: writeBatch — tudo ou nada (atomico)
-      const batch = writeBatch(db);
-      const examesCriados: Array<{ exameId: string; pac: Record<string, string> }> = [];
-      // Timestamp base do batch — cada exame ganha offset de 10ms pra evitar
-      // colisão de ACC quando loop roda em sub-centésimo de segundo.
-      const baseTime = new Date();
-
-      for (let i = 0; i < aCriar.length; i++) {
-        const { pac, exameRef } = aCriar[i];
-        // Paciente: id determinístico por feegowPacienteId (não duplica o
-        // paciente quando ele tem 2 exames no dia). merge:true = não sobrescreve.
-        const pacRef = pac.feegowPacienteId
-          ? doc(db, 'workspaces', workspace.id, 'pacientes', `fg-${pac.feegowPacienteId}`)
-          : doc(collection(db, 'workspaces', workspace.id, 'pacientes'));
-        batch.set(pacRef, {
-          id: pacRef.id,
-          nome: pac.pacienteNome,
-          cpf: pac.cpf,
-          dtnasc: pac.pacienteDtnasc,
-          sexo: pac.sexo,
-          telefone: pac.telefone,
-          feegowPacienteId: pac.feegowPacienteId,
-          criadoEm: serverTimestamp(),
-        }, { merge: true });
-
-        // Exame: id determinístico `fg-<appointId>` (os já existentes foram
-        // filtrados acima). set sem merge — não mexe em status de exame em curso.
-        batch.set(exameRef, {
-          id: exameRef.id,
-          acc: gerarAccessionNumber(baseTime, i * 10),
-          pacienteId: pacRef.id,
-          pacienteNome: pac.pacienteNome,
-          pacienteDtnasc: pac.pacienteDtnasc,
-          cpf: pac.cpf,
-          feegowPacienteId: pac.feegowPacienteId,
-          tipoExame: pac.tipoExame,
-          dataExame: pac.dataExame,
-          horarioChegada: pac.horarioChegada,
-          status: 'aguardando',
-          convenio: pac.convenio,
-          solicitante: profile?.nome as string || '',
-          medicoExecutor: pac.medicoExecutor || (profile?.nome as string || ''),
-          sexo: pac.sexo,
-          origem: 'FEEGOW',
-          feegowAppointId: pac.feegowAppointId,
-          medicoUid: profile.id as string,
-          versao: 1,
-          criadoEm: serverTimestamp(),
-        });
-        examesCriados.push({ exameId: exameRef.id, pac });
-      }
-
-      await batch.commit();
-
-      // Enviar MWL ao Orthanc (fire-and-forget, não bloqueia)
-      for (const { exameId, pac } of examesCriados) {
-        enviarMwlOrthanc({
-          wsId: workspace.id,
-          exameId,
-          pacienteNome: pac.pacienteNome,
-          pacienteId: pac.cpf,
-          pacienteDtnasc: pac.pacienteDtnasc,
-          sexo: pac.sexo,
-          tipoExame: pac.tipoExame,
-          dataExame: pac.dataExame,
-          horarioChegada: pac.horarioChegada,
-          medicoNome: profile?.nome as string || '',
-        });
-      }
-
-      alert(`${examesCriados.length} paciente(s) importado(s) do Feegow!`);
     } catch (e) {
       console.error('importarFeegow:', e);
       alert('Erro ao conectar com o Feegow.');

@@ -303,6 +303,10 @@ export async function saveExame(wsId: string, dados: Record<string, unknown>, me
       // na mesma data. Se sim, regenera com offset incremental até 5 tentativas.
       // Cobre o caso de cliente rodar batch fora do gerarAccessionNumber()
       // (ex: ACC vindo de outra origem) ou contador in-memory zerado por reload.
+      // ponytail: check-then-write nao-transacional — janela residual so no
+      // cadastro MANUAL simultaneo em 2 maquinas no MESMO centesimo (hhmmsscc
+      // + contador de sessao). Import em lote reserva accIndex no servidor
+      // (feegow-admin). Trocar por transacao se algum dia colidir de novo.
       if (dados.acc && dados.dataExame) {
         let acc = dados.acc as string;
         const dataExame = dados.dataExame as string;
