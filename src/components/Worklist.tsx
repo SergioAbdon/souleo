@@ -610,7 +610,16 @@ export default function Worklist() {
 
                   {/* Paciente */}
                   <td className="py-3 px-3">
-                    <div className="font-semibold text-p1 text-sm">{item.pacienteNome || '—'}</div>
+                    {item.pacienteId ? (
+                      <button
+                        onClick={() => router.push(`/pacientes/${item.pacienteId}`)}
+                        className="font-semibold text-p1 text-sm hover:underline cursor-pointer bg-transparent border-0 p-0 text-left"
+                      >
+                        {item.pacienteNome || '—'}
+                      </button>
+                    ) : (
+                      <div className="font-semibold text-p1 text-sm">{item.pacienteNome || '—'}</div>
+                    )}
                     <div className="text-xs text-gray-400 flex items-center gap-2 mt-0.5 flex-wrap">
                       <StatusPill status={item.status as string} />
                       <span>{tiposMap[item.tipoExame as string]?.nome || item.tipoExame}</span>
