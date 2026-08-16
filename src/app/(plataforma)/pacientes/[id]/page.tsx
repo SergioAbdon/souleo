@@ -6,7 +6,8 @@
 //
 // Política 09/05/2026: o histórico do paciente NÃO mostra não-realizados
 // — são filtrados da timeline; a única marca é a contagem discreta no
-// rodapé ("N não realizados nos últimos 30 dias").
+// rodapé ("N não realizados"), sobre TODO o histórico (decisão do produto
+// na revisão final — sem janela de 30 dias).
 // ══════════════════════════════════════════════════════════════════
 
 import { useEffect, useState } from 'react';
@@ -17,13 +18,14 @@ import { getPaciente, getExames } from '@/lib/firestore';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { TIPOS_LAUDO_PADRAO, TipoLaudo } from '@/lib/tipos-laudo';
+import { fmtData, calcIdade } from '@/lib/paciente-fmt';
 import PageHeader from '@/components/shell/PageHeader';
 import StatusPill from '@/components/shell/StatusPill';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
 import EditarPacienteModal from '@/components/pacientes/EditarPacienteModal';
 
 type Paciente = Record<string, unknown> & {
-  id: string; nome?: string; cpf?: string; nascimento?: string; dtnasc?: string;
+  id: string; nome?: string; cpf?: string; dtnasc?: string;
   sexo?: string; telefone?: string; convenio?: string;
 };
 
@@ -33,25 +35,6 @@ type Exame = Record<string, unknown> & {
 };
 
 const SEXO_LABEL: Record<string, string> = { M: 'Masculino', F: 'Feminino' };
-const TRINTA_DIAS_MS = 30 * 24 * 60 * 60 * 1000;
-
-function fmtData(d?: string): string {
-  if (!d) return '—';
-  const p = d.split('-');
-  return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : d;
-}
-
-/** Idade em anos completos a partir de uma data yyyy-mm-dd. */
-function calcIdade(dtnasc?: string): number | null {
-  if (!dtnasc) return null;
-  const nasc = new Date(dtnasc + 'T00:00:00');
-  if (isNaN(nasc.getTime())) return null;
-  const hoje = new Date();
-  let idade = hoje.getFullYear() - nasc.getFullYear();
-  const aniversarioAno = new Date(hoje.getFullYear(), nasc.getMonth(), nasc.getDate());
-  if (hoje < aniversarioAno) idade--;
-  return idade >= 0 ? idade : null;
-}
 
 export default function FichaPacientePage() {
   const params = useParams();
@@ -100,21 +83,18 @@ export default function FichaPacientePage() {
   for (const t of tipos) tiposMap[t.id] = t;
 
   const timeline = exames.filter(e => e.status !== 'nao-realizado');
-
-  const agoraMs = Date.now();
-  const naoRealizados30d = exames.filter(e => {
-    if (e.status !== 'nao-realizado' || !e.dataExame) return false;
-    const t = new Date(e.dataExame + 'T00:00:00').getTime();
-    return !isNaN(t) && agoraMs - t <= TRINTA_DIAS_MS;
-  }).length;
+  const naoRealizadosTotal = exames.filter(e => e.status === 'nao-realizado').length;
 
   function abrirLaudo(item: Exame) {
     const modalidade = tiposMap[(item.tipoExame as string) || '']?.modalidade || 'motor';
     router.push(modalidade === 'texto' ? '/laudo-texto/' + item.id : '/laudo/' + item.id);
   }
 
-  function acaoLaudo(item: Exame) {
-    if (item.status === 'emitido' && item.pdfUrl) {
+  // `st` é o MESMO valor efetivo (default 'aguardando') usado pela StatusPill
+  // no JSX — antes cada um calculava o próprio fallback e podiam divergir
+  // (pill dizia "Aguardando" com botão "Abrir laudo" ao lado, contraditório).
+  function acaoLaudo(item: Exame, st: string) {
+    if (st === 'emitido' && item.pdfUrl) {
       return (
         <button onClick={() => abrirPdfUrl(item.pdfUrl as string)}
           className="bg-p2 text-white px-3 py-1.5 rounded text-xs font-semibold hover:bg-p2-deep transition">
@@ -122,7 +102,7 @@ export default function FichaPacientePage() {
         </button>
       );
     }
-    if (item.status === 'aguardando') {
+    if (st === 'aguardando') {
       return <Link href="/agenda" className="text-xs text-p2 font-semibold hover:underline">Ver na Agenda</Link>;
     }
     // Modalidade 'pdf' (ECG/MAPA/Holter/Ergométrico) ainda sem pdfUrl: NÃO
@@ -161,10 +141,12 @@ export default function FichaPacientePage() {
     );
   }
 
-  // Doc de paciente pode ter vindo do import Feegow (`dtnasc`) ou de cadastro
-  // manual (`nascimento` — convenção da Task 1); aceitar os dois.
-  const nascimento = paciente.nascimento || paciente.dtnasc;
-  const idade = calcIdade(nascimento);
+  // `dtnasc` é a ÚNICA chave real de data de nascimento em `pacientes`
+  // (ver Fix 1 da revisão final — nenhum caminho de escrita do repo grava
+  // `nascimento`; era um fallback morto que só quebraria a data se algum
+  // doc um dia tivesse o formato dd-mm-yyyy da API Feegow).
+  const dtnasc = paciente.dtnasc as string | undefined;
+  const idade = calcIdade(dtnasc);
 
   return (
     <>
@@ -180,6 +162,7 @@ export default function FichaPacientePage() {
         onClose={() => setModalEditar(false)}
         wsId={wsId}
         paciente={paciente}
+        exames={exames}
         onSaved={carregarFicha}
       />
 
@@ -191,7 +174,7 @@ export default function FichaPacientePage() {
           </div>
           <div>
             <span className="text-xs text-ink-3 block">Nascimento</span>
-            <span className="text-ink">{fmtData(nascimento)}{idade !== null ? ` (${idade} anos)` : ''}</span>
+            <span className="text-ink">{fmtData(dtnasc)}{idade !== null ? ` (${idade} anos)` : ''}</span>
           </div>
           <div>
             <span className="text-xs text-ink-3 block">Sexo</span>
@@ -216,22 +199,25 @@ export default function FichaPacientePage() {
           </div>
         ) : (
           <div className="flex flex-col gap-2">
-            {timeline.map(item => (
-              <div key={item.id} className="border border-borda rounded-lg p-3 flex items-center gap-3 flex-wrap">
-                <span className="text-xs text-ink-2 font-mono w-24">{fmtData(item.dataExame)}</span>
-                <span className="text-sm text-ink flex-1 min-w-[120px]">
-                  {tiposMap[(item.tipoExame as string) || '']?.nome || item.tipoExame || '—'}
-                </span>
-                <StatusPill status={(item.status as string) || 'aguardando'} />
-                <span className="text-xs text-ink-3 font-mono">{item.acc || '—'}</span>
-                {acaoLaudo(item)}
-              </div>
-            ))}
+            {timeline.map(item => {
+              const st = (item.status as string) || 'aguardando';
+              return (
+                <div key={item.id} className="border border-borda rounded-lg p-3 flex items-center gap-3 flex-wrap">
+                  <span className="text-xs text-ink-2 font-mono w-24">{fmtData(item.dataExame)}</span>
+                  <span className="text-sm text-ink flex-1 min-w-[120px]">
+                    {tiposMap[(item.tipoExame as string) || '']?.nome || item.tipoExame || '—'}
+                  </span>
+                  <StatusPill status={st} />
+                  <span className="text-xs text-ink-3 font-mono">{item.acc || '—'}</span>
+                  {acaoLaudo(item, st)}
+                </div>
+              );
+            })}
           </div>
         )}
-        {naoRealizados30d > 0 && (
+        {naoRealizadosTotal > 0 && (
           <p className="text-xs text-ink-3 mt-3">
-            {naoRealizados30d} não realizado{naoRealizados30d !== 1 ? 's' : ''} nos últimos 30 dias
+            {naoRealizadosTotal} não realizado{naoRealizadosTotal !== 1 ? 's' : ''}
           </p>
         )}
       </div>

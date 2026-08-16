@@ -9,23 +9,12 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { getPacientes } from '@/lib/firestore';
+import { maskCpf, fmtData } from '@/lib/paciente-fmt';
 import PageHeader from '@/components/shell/PageHeader';
 
 type PacienteItem = Record<string, unknown> & {
-  id: string; nome?: string; cpf?: string; nascimento?: string; dtnasc?: string; telefone?: string;
+  id: string; nome?: string; cpf?: string; dtnasc?: string; telefone?: string;
 };
-
-function maskCpf(cpf?: string): string {
-  const digitos = (cpf || '').replace(/\D/g, '');
-  if (digitos.length < 2) return '—';
-  return `***.***.***-${digitos.slice(-2)}`;
-}
-
-function fmtData(d?: string): string {
-  if (!d) return '—';
-  const p = d.split('-');
-  return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : d;
-}
 
 export default function PacientesPage() {
   const { workspace } = useAuth();
@@ -94,7 +83,7 @@ export default function PacientesPage() {
                   <tr key={p.id} className="border-b border-borda hover:bg-ativo transition">
                     <td className="py-3 px-3 font-semibold text-ink">{p.nome || '—'}</td>
                     <td className="py-3 px-3 text-ink-2 text-xs font-mono">{maskCpf(p.cpf)}</td>
-                    <td className="py-3 px-3 text-ink-2 text-xs">{fmtData(p.dtnasc || p.nascimento)}</td>
+                    <td className="py-3 px-3 text-ink-2 text-xs">{fmtData(p.dtnasc)}</td>
                     <td className="py-3 px-3 text-ink-2 text-xs">{p.telefone || '—'}</td>
                     <td className="py-3 px-3 text-right">
                       <button onClick={() => router.push('/pacientes/' + p.id)}

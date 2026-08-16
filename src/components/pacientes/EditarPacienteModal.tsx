@@ -1,32 +1,44 @@
 'use client';
 // ══════════════════════════════════════════════════════════════════
 // LEO · EditarPacienteModal — editar cadastro a partir da ficha do
-// paciente (Sub-plano 4, Task 3).
+// paciente (Sub-plano 4, Task 3; revisão final Fix 2).
 //
 // Mesmos campos e mesmas defesas do modal de paciente da Worklist
 // (handleSalvarPaciente): nome obrigatório (trim + UPPERCASE), CPF
 // (só dígitos) e telefone gravados SOMENTE se preenchidos — #7c: CPF
 // é a chave de pareamento DICOM, esvaziar o campo aqui NÃO apaga o
-// valor já gravado. Não toca em exames (isso é fluxo da Agenda/S2-T3).
-// ══════════════════════════════════════════════════════════════════
+// valor já gravado.
+//
+// Decisão do produto (revisão final): salvar a ficha também corrige
+// nome/CPF nos exames do paciente ainda NÃO emitidos — mesmo modelo do
+// Worklist (S2-T3): ficha + exames na MESMA writeBatch, pra não repetir
+// o bug antigo de "ficha salvou, exame não, tela não avisou nada".
+// Exame emitido NUNCA é tocado — o PDF já assinado guarda o nome histórico.
+// `cancelado` também fica de fora: a regra do Firestore nega update em
+// exame cancelado (status resultante != 'cancelado' é exigido), incluí-lo
+// no batch derrubaria a gravação inteira.
 
 import { useEffect, useState } from 'react';
-import { savePaciente } from '@/lib/firestore';
+import { db } from '@/lib/firebase';
+import { doc, writeBatch, serverTimestamp } from 'firebase/firestore';
 
 type Paciente = Record<string, unknown> & {
-  id: string; nome?: string; cpf?: string; nascimento?: string; dtnasc?: string;
+  id: string; nome?: string; cpf?: string; dtnasc?: string;
   sexo?: string; telefone?: string; convenio?: string;
 };
+
+type ExameRef = { id: string; status?: string };
 
 type Props = {
   open: boolean;
   onClose: () => void;
   wsId: string;
   paciente: Paciente | null;
+  exames: ExameRef[];
   onSaved: () => void;
 };
 
-export default function EditarPacienteModal({ open, onClose, wsId, paciente, onSaved }: Props) {
+export default function EditarPacienteModal({ open, onClose, wsId, paciente, exames, onSaved }: Props) {
   const [nome, setNome] = useState('');
   const [cpf, setCpf] = useState('');
   const [dtnasc, setDtnasc] = useState('');
@@ -36,14 +48,13 @@ export default function EditarPacienteModal({ open, onClose, wsId, paciente, onS
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
 
-  // Preencher com os dados atuais do paciente (doc pode ter vindo de
-  // import Feegow/Agenda `dtnasc` ou de cadastro manual `nascimento` —
-  // aceitar os dois na leitura; gravação sempre em `dtnasc`).
+  // Preencher com os dados atuais do paciente (`dtnasc` é a única chave
+  // real de nascimento — ver Fix 1 da revisão final).
   useEffect(() => {
     if (paciente && open) {
       setNome(paciente.nome || '');
       setCpf(paciente.cpf || '');
-      setDtnasc(paciente.dtnasc || paciente.nascimento || '');
+      setDtnasc(paciente.dtnasc || '');
       setSexo(paciente.sexo || '');
       setTelefone(paciente.telefone || '');
       setConvenio(paciente.convenio || '');
@@ -57,20 +68,45 @@ export default function EditarPacienteModal({ open, onClose, wsId, paciente, onS
     if (!wsId || !paciente?.id) { setErro('Paciente não encontrado.'); return; }
 
     setLoading(true);
+    const nomeSalvo = nome.trim().toUpperCase();
     const cpfLimpo = cpf.replace(/\D/g, '');
-    const campos: Record<string, unknown> = {
-      nome: nome.trim().toUpperCase(),
-      dtnasc, sexo, convenio,
+
+    const dadosFicha: Record<string, unknown> = {
+      nome: nomeSalvo, dtnasc, sexo, convenio,
+      atualizadoEm: serverTimestamp(),
     };
     // #7c defensivo: NÃO regravar cpf/telefone vazios por cima do valor
     // existente — esvaziar o campo aqui não apaga o que já está salvo.
-    if (cpfLimpo) campos.cpf = cpfLimpo;
-    if (telefone) campos.telefone = telefone;
+    if (cpfLimpo) dadosFicha.cpf = cpfLimpo;
+    if (telefone) dadosFicha.telefone = telefone;
 
-    const id = await savePaciente(wsId, { id: paciente.id, ...campos });
+    // Propagação pros exames ABERTOS do paciente (Fix 2): nome sempre,
+    // CPF só se preenchido — mesma defesa #7c. `telefone` não existe no
+    // exame (não está na whitelist de campos administrativos da regra),
+    // então não propaga. Emitido nunca é tocado; cancelado é excluído
+    // porque a regra recusa update de exame cancelado (derrubaria o batch).
+    const dadosExame: Record<string, unknown> = {
+      pacienteNome: nomeSalvo,
+      atualizadoEm: serverTimestamp(),
+    };
+    if (cpfLimpo) dadosExame.cpf = cpfLimpo;
+    const abertos = exames.filter(e => e.status !== 'emitido' && e.status !== 'cancelado');
+
+    try {
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'workspaces', wsId, 'pacientes', paciente.id), dadosFicha);
+      for (const ex of abertos) {
+        batch.update(doc(db, 'workspaces', wsId, 'exames', ex.id), dadosExame);
+      }
+      await batch.commit();
+    } catch (e) {
+      console.error('editar paciente:', e);
+      setErro('Não foi possível salvar a alteração. Nada foi gravado. (Detalhe no Console — F12.)');
+      setLoading(false);
+      return;
+    }
+
     setLoading(false);
-    if (!id) { setErro('Erro ao salvar. Tente novamente.'); return; }
-
     onSaved();
     onClose();
   }
