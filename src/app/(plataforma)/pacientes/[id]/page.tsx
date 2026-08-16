@@ -18,7 +18,7 @@ import { getPaciente, getExames } from '@/lib/firestore';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { TIPOS_LAUDO_PADRAO, TipoLaudo } from '@/lib/tipos-laudo';
-import { fmtData, calcIdade } from '@/lib/paciente-fmt';
+import { fmtData, calcIdade, formatCpf } from '@/lib/paciente-fmt';
 import PageHeader from '@/components/shell/PageHeader';
 import StatusPill, { statusConhecido } from '@/components/shell/StatusPill';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
@@ -177,7 +177,7 @@ export default function FichaPacientePage() {
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
           <div>
             <span className="text-xs text-ink-3 block">CPF</span>
-            <span className="text-ink font-mono">{paciente.cpf || '—'}</span>
+            <span className="text-ink font-mono">{formatCpf(paciente.cpf)}</span>
           </div>
           <div>
             <span className="text-xs text-ink-3 block">Nascimento</span>
