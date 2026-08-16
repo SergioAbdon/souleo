@@ -16,6 +16,17 @@ export function maskCpf(cpf?: string): string {
   return `***.***.***-${digitos.slice(-2)}`;
 }
 
+/** Formata o CPF com pontos e travessão: 000.000.000-00. Se não tiver 11 dígitos ou for vazio, degrada. */
+export function formatCpf(cpf?: string): string {
+  const digitos = (cpf || '').replace(/\D/g, '');
+  if (digitos.length === 11) {
+    return `${digitos.slice(0, 3)}.${digitos.slice(3, 6)}.${digitos.slice(6, 9)}-${digitos.slice(9)}`;
+  }
+  // Degrade like maskCpf: empty/undefined -> '—', else return trimmed original
+  const trimmed = (cpf || '').trim();
+  return trimmed ? trimmed : '—';
+}
+
 /** Formata yyyy-mm-dd como dd/mm/aaaa; sem data ou formato inesperado degrada. */
 export function fmtData(d?: string): string {
   if (!d) return '—';

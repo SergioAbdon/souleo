@@ -3,7 +3,7 @@
 // tinha teste antes de virar lib compartilhada.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { maskCpf, fmtData, calcIdade } from '../../src/lib/paciente-fmt.ts';
+import { maskCpf, formatCpf, fmtData, calcIdade } from '../../src/lib/paciente-fmt.ts';
 
 describe('maskCpf', () => {
   test('mostra so os 2 ultimos digitos', () => {
@@ -21,6 +21,23 @@ describe('maskCpf', () => {
   });
   test('menos de 2 digitos -> travessao', () => {
     assert.equal(maskCpf('1'), '—');
+  });
+});
+
+describe('formatCpf', () => {
+  test('11 digitos -> 000.000.000-00', () => {
+    assert.equal(formatCpf('12345678900'), '123.456.789-00');
+  });
+  test('CPF já formatado é idempotente', () => {
+    assert.equal(formatCpf('123.456.789-00'), '123.456.789-00');
+  });
+  test('menos de 11 digitos ou malformado -> degrada p/ valor original trimado', () => {
+    assert.equal(formatCpf('1234'), '1234');
+    assert.equal(formatCpf('abc'), 'abc');
+  });
+  test('vazio ou undefined -> travessao', () => {
+    assert.equal(formatCpf(''), '—');
+    assert.equal(formatCpf(undefined), '—');
   });
 });
 
