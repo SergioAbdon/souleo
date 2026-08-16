@@ -92,6 +92,11 @@ export default function EditarPacienteModal({ open, onClose, wsId, paciente, exa
     if (cpfLimpo) dadosExame.cpf = cpfLimpo;
     const abertos = exames.filter(e => e.status !== 'emitido' && e.status !== 'cancelado');
 
+    // ponytail: writeBatch aceita até 500 writes; aqui é `abertos.length + 1`
+    // (ficha + exames abertos de UM paciente) — praticamente inatingível, e
+    // se estourar falha fechado no catch abaixo (nada é gravado). Se um dia
+    // um paciente tiver 500+ exames abertos, dividir `abertos` em lotes de
+    // 499 e commitar em sequência.
     try {
       const batch = writeBatch(db);
       batch.update(doc(db, 'workspaces', wsId, 'pacientes', paciente.id), dadosFicha);
@@ -101,7 +106,11 @@ export default function EditarPacienteModal({ open, onClose, wsId, paciente, exa
       await batch.commit();
     } catch (e) {
       console.error('editar paciente:', e);
-      setErro('Não foi possível salvar a alteração. Nada foi gravado. (Detalhe no Console — F12.)');
+      // Fix D: batch pode falhar por escrita negada em outra aba (exame
+      // emitido/cancelado entre o load da ficha e este salvar) — a régua
+      // é "tudo ou nada", então o usuário precisa recarregar pra ver o
+      // estado atual antes de tentar de novo, não só re-clicar Salvar.
+      setErro('Não foi possível salvar a alteração. Nada foi gravado. Recarregue a página e tente novamente. (Detalhe no Console — F12.)');
       setLoading(false);
       return;
     }

@@ -61,4 +61,11 @@ describe('calcIdade', () => {
   test('sem data -> null', () => {
     assert.equal(calcIdade(undefined), null);
   });
+  test('data malformada (nao parseia) -> null', () => {
+    assert.equal(calcIdade('nao-e-uma-data'), null);
+  });
+  test('data de nascimento no futuro -> null', () => {
+    const dtnasc = dtnascAnosAtras(-1, 0);
+    assert.equal(calcIdade(dtnasc), null);
+  });
 });

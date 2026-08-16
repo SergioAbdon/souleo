@@ -20,7 +20,7 @@ import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { TIPOS_LAUDO_PADRAO, TipoLaudo } from '@/lib/tipos-laudo';
 import { fmtData, calcIdade } from '@/lib/paciente-fmt';
 import PageHeader from '@/components/shell/PageHeader';
-import StatusPill from '@/components/shell/StatusPill';
+import StatusPill, { statusConhecido } from '@/components/shell/StatusPill';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
 import EditarPacienteModal from '@/components/pacientes/EditarPacienteModal';
 
@@ -90,9 +90,12 @@ export default function FichaPacientePage() {
     router.push(modalidade === 'texto' ? '/laudo-texto/' + item.id : '/laudo/' + item.id);
   }
 
-  // `st` é o MESMO valor efetivo (default 'aguardando') usado pela StatusPill
-  // no JSX — antes cada um calculava o próprio fallback e podiam divergir
-  // (pill dizia "Aguardando" com botão "Abrir laudo" ao lado, contraditório).
+  // `st` vem de `statusConhecido()` — a MESMA normalização que a StatusPill
+  // usa no JSX (fonte única em StatusPill.tsx). Antes cada um calculava o
+  // próprio fallback e podiam divergir: um status desconhecido/legado (ex.
+  // 'cancelado', ou os legados 'imagens-recebidas'/'erro-imagens' do
+  // pipeline DICOM — ver comentário em Worklist.tsx) virava "Aguardando" na
+  // pill enquanto a ação caía no branch padrão de "Abrir laudo" — contraditório.
   function acaoLaudo(item: Exame, st: string) {
     if (st === 'emitido' && item.pdfUrl) {
       return (
@@ -105,6 +108,10 @@ export default function FichaPacientePage() {
     if (st === 'aguardando') {
       return <Link href="/agenda" className="text-xs text-p2 font-semibold hover:underline">Ver na Agenda</Link>;
     }
+    // Cancelado: franquia já foi devolvida (exame-admin.ts cancelarExame) e
+    // o pdfUrl foi apagado — não há laudo pra abrir nem sentido em mandar
+    // pra Agenda. Sem ação nenhuma, só a pill vermelha já conta a história.
+    if (st === 'cancelado') return null;
     // Modalidade 'pdf' (ECG/MAPA/Holter/Ergométrico) ainda sem pdfUrl: NÃO
     // oferecer "Abrir laudo" aqui — /laudo/[id] é o motor de ECHO e não tem
     // guard de modalidade, abriria o motor errado num exame de ECG/Holter/etc.
@@ -200,7 +207,7 @@ export default function FichaPacientePage() {
         ) : (
           <div className="flex flex-col gap-2">
             {timeline.map(item => {
-              const st = (item.status as string) || 'aguardando';
+              const st = statusConhecido(item.status as string);
               return (
                 <div key={item.id} className="border border-borda rounded-lg p-3 flex items-center gap-3 flex-wrap">
                   <span className="text-xs text-ink-2 font-mono w-24">{fmtData(item.dataExame)}</span>
