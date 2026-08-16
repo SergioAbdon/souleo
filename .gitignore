@@ -68,13 +68,13 @@ next-env.d.ts
 firestore.rules.PUBLICADA.txt
 firestore-debug.log
 firebase-debug.log
-[INFO] Recording command outcome: printf
-
-[OK] Command outcome recorded
-
-# telemetria do plugin (PID, contadores) — ruido entre as duas maquinas
-.claude-flow/
 
 # telemetria do plugin (PID, contadores) — ruido entre as duas maquinas
 .claude-flow/
 .superpowers/
+
+# estado de login dos testes E2E (Playwright) — NUNCA commitar
+tests/e2e/.auth/
+# artefatos do Playwright
+/test-results/
+/playwright-report/
