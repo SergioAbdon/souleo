@@ -8,13 +8,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { dataLocalHoje } from '@/lib/utils';
 import { adminDb, adminAuth } from '@/lib/auth-admin';
 import { resolverPapel, ehMedicoDeVerdade } from '@/lib/exame-admin';
-import { gravarImportacao, resolverTokenFeegow, resolverProcMap, gateAcessoWs, decidirGetFeegow, type Candidato } from '@/lib/feegow-admin';
+import { gravarImportacao, resolverTokenFeegow, resolverProcMap, decidirGetFeegow, type Candidato } from '@/lib/feegow-admin';
 
 const fbAuth = adminAuth();
 const dbAdmin = adminDb();
 
 const FEEGOW_BASE = 'https://api.feegow.com/v1/api';
-const FALLBACK_TOKEN = process.env.FEEGOW_API_TOKEN || ''; // fallback pra migracao
 const TIMEOUT_MS = 10000; // 10 segundos timeout por request Feegow
 
 // ── Rate Limiter (em memoria, por IP) ──
@@ -47,13 +46,18 @@ async function verificarAuth(req: NextRequest): Promise<string | null> {
   }
 }
 
-// ── Resolver token Feegow: SEMPRE da gaveta (privado/feegow.token), com
-// fallback do .env durante a virada — Sub-plano 5, Task 7, furo 1. O header
-// X-Feegow-Token NAO e mais aceito: resolverTokenFeegow nem tem parametro
-// pra ele, entao nao ha como um cliente forjar o proprio token aqui.
+// ── Resolver token Feegow: SEMPRE da gaveta (privado/feegow.token), sem
+// excecao — re-revisao da Task 7 (Critical): o fallback pro FEEGOW_API_TOKEN
+// do .env foi removido (a migracao roda ANTES do deploy, entao nao ha mais
+// "durante a virada" pra cobrir; o fallback so servia de furo — token real
+// da MedCardio vazando pro dono de qualquer workspace novo sem token
+// proprio). A variavel FEEGOW_API_TOKEN precisa sair do Vercel (acao
+// humana). O header X-Feegow-Token tambem NAO e aceito: resolverTokenFeegow
+// nem tem parametro pra ele, entao nao ha como um cliente forjar o proprio
+// token aqui.
 async function resolverToken(req: NextRequest): Promise<string> {
   const wsId = req.nextUrl.searchParams.get('wsId');
-  return resolverTokenFeegow(dbAdmin, wsId, FALLBACK_TOKEN);
+  return resolverTokenFeegow(dbAdmin, wsId);
 }
 
 // Procedimentos Feegow → tipo de exame LEO
@@ -177,12 +181,25 @@ async function proteger(req: NextRequest): Promise<{ blocked: NextResponse } | {
   return { uid };
 }
 
-// POST /api/feegow — atualizar status no Feegow
+// POST /api/feegow — importar sala de espera ou atualizar status no Feegow
 export async function POST(req: NextRequest) {
   // v3: protecao
   const guarda = await proteger(req);
   if ('blocked' in guarda) return guarda.blocked;
   const { uid } = guarda;
+
+  // Gate icado pra ANTES do switch de acao (re-revisao da Task 7, Important):
+  // as duas acoes do POST leem wsId da query (igual ao GET), entao o mesmo
+  // decidirGetFeegow resolve papel+token uma unica vez aqui, ANTES de saber
+  // qual acao o corpo pede. Isso fecha o padrao "gate dentro de cada if" que
+  // fez 'atualizar_status' nascer sem gate (achado avulso, corrigido depois)
+  // — uma terceira acao futura nasce protegida por construcao, sem lista pra
+  // esquecer. papel fica em escopo pro calculo de ehMed do 'importar'.
+  const wsId = req.nextUrl.searchParams.get('wsId');
+  const papel = wsId ? await resolverPapel(dbAdmin, wsId, uid) : null;
+  const veredito = await decidirGetFeegow(wsId, papel, () => resolverToken(req));
+  if (!veredito.ok) return NextResponse.json({ ok: false, error: veredito.motivo }, { status: veredito.status });
+  const token = veredito.token;
 
   try {
     const body = await req.json();
@@ -192,18 +209,6 @@ export async function POST(req: NextRequest) {
       if (!agendamento_id || !status_id) {
         return NextResponse.json({ error: 'agendamento_id e status_id obrigatorios' }, { status: 400 });
       }
-
-      // MESMO gate do 'importar': sem ele, qualquer autenticado muda o status
-      // de agendamento de QUALQUER clinica passando um wsId alheio na query —
-      // era a ultima acao da rota sem gate depois do Critical 1 da revisao.
-      const wsIdAtu = req.nextUrl.searchParams.get('wsId');
-      const papelAtu = wsIdAtu ? await resolverPapel(dbAdmin, wsIdAtu, uid) : null;
-      const gateAtu = gateAcessoWs(wsIdAtu, papelAtu);
-      if (!gateAtu.ok) return NextResponse.json({ ok: false, error: gateAtu.motivo }, { status: gateAtu.status });
-
-      // Token so depois do gate: sem acesso ao wsId, a gaveta nunca e lida.
-      const token = await resolverToken(req);
-      if (!token) return NextResponse.json({ error: 'Token Feegow nao configurado. Va em Local de Trabalho > Integracao Feegow.' }, { status: 400 });
 
       const res = await fetch(`${FEEGOW_BASE}/appoints/statusUpdate`, {
         method: 'POST',
@@ -215,23 +220,6 @@ export async function POST(req: NextRequest) {
     }
 
     if (body.action === 'importar') {
-      const wsId = req.nextUrl.searchParams.get('wsId');
-      // AUTORIZACAO (Codex-1): Admin SDK ignora as regras — sem esta checagem
-      // qualquer logado gravaria exames em QUALQUER clinica via wsId alheio.
-      // gateAcessoWs (Minor 6, Sub-plano 5 Task 7 revisao): mesma funcao que
-      // os GETs usam, em vez da versao inline que so este bloco tinha —
-      // duas grafias do mesmo gate no mesmo arquivo. uid reusado de
-      // proteger() (Minor 7): sem segundo verifyIdToken aqui.
-      const papel = wsId ? await resolverPapel(dbAdmin, wsId, uid) : null;
-      const gate = gateAcessoWs(wsId, papel);
-      if (!gate.ok) return NextResponse.json({ ok: false, error: gate.motivo }, { status: gate.status });
-
-      // Token so depois do gate (mesmo principio do Important 2 no GET):
-      // sem acesso ao wsId, a gaveta workspaces/{wsId}/privado/feegow nunca
-      // e lida.
-      const token = await resolverToken(req);
-      if (!token) return NextResponse.json({ ok: false, error: 'Token Feegow nao configurado. Va em Local de Trabalho > Integracao Feegow.' }, { status: 400 });
-
       // Autor so se perfil medico E papel que atende (MEDREC nao carimba) — Codex-2.
       const ehMed = (papel === 'dono' || papel === 'medico') && await ehMedicoDeVerdade(dbAdmin, uid);
       const perfilSnap = await dbAdmin.doc(`profissionais/${uid}`).get();

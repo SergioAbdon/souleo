@@ -56,19 +56,26 @@ const jaExiste = (e: unknown) =>
 // ══════════════════════════════════════════════════════════════════
 
 /**
- * Token do Feegow: SEMPRE da gaveta (workspaces/{wsId}/privado/feegow.token).
- * Sem parametro de header nenhum — por construcao nao ha como um
- * x-feegow-token de cliente influenciar o resultado (furo 1 fechado aqui,
+ * Token do Feegow: SEMPRE da gaveta (workspaces/{wsId}/privado/feegow.token),
+ * sem excecao. Sem parametro de header nenhum — por construcao nao ha como
+ * um x-feegow-token de cliente influenciar o resultado (furo 1 fechado aqui,
  * na funcao compartilhada; route.ts vira wrapper fino que so extrai wsId).
- * `fallback` e o FEEGOW_API_TOKEN do .env, ultimo recurso durante a virada.
+ *
+ * Re-revisao da Task 7 (Critical): existiu um fallback pro FEEGOW_API_TOKEN
+ * do .env "pra migracao" — como a migracao (`integracoes:migrar --commit`)
+ * roda ANTES do deploy, o fallback deixou de ter uso e so segurava um furo:
+ * dono de QUALQUER workspace sem token na gaveta caia no token real da
+ * MedCardio (dono e sempre 'dono' no proprio ws recem-criado no signup —
+ * o gate de papel passa, so a gaveta ta vazia). Removido por completo, sem
+ * substituto. Retorna '' quando a gaveta nao tem token — quem chama trata
+ * isso como "Feegow nao configurado" (400), nunca como convite a tentar
+ * outra fonte. A variavel FEEGOW_API_TOKEN precisa ser removida do Vercel
+ * (acao humana, fora do escopo deste arquivo).
  */
-export async function resolverTokenFeegow(db: Firestore, wsId: string | null, fallback: string): Promise<string> {
-  if (wsId) {
-    const priv = await db.doc(`workspaces/${wsId}/privado/feegow`).get();
-    const tok = priv.data()?.token as string | undefined;
-    if (tok) return tok;
-  }
-  return fallback;
+export async function resolverTokenFeegow(db: Firestore, wsId: string | null): Promise<string> {
+  if (!wsId) return '';
+  const priv = await db.doc(`workspaces/${wsId}/privado/feegow`).get();
+  return (priv.data()?.token as string | undefined) || '';
 }
 
 /**
@@ -95,9 +102,11 @@ export async function resolverProcMap(
 }
 
 /**
- * Veredito HTTP dos GETs sensiveis (buscar_cpf, sala_espera, paciente,
- * convenios) — mesmo padrao que o POST 'importar' ja aplicava. NAO resolve
- * papel (isso e resolverPapel de exame-admin.ts, ja testado em
+ * Veredito HTTP de "wsId + papel resolvido -> pode prosseguir": usado pelos
+ * GETs de /api/feegow (buscar_cpf, procedimentos, profissionais), pelos dois
+ * POSTs de /api/feegow (importar, atualizar_status) e por /api/orthanc (GET
+ * e POST criar_mwl) — mesmo gate, um unico lugar. NAO resolve papel (isso e
+ * resolverPapel de exame-admin.ts, ja testado em
  * exame.test.mjs/corrigir-laudo.test.mjs — este arquivo nao pode importar
  * de la, ver comentario do topo); so decide o codigo a partir do que a
  * rota ja tem em maos.

@@ -81,21 +81,26 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { action } = body;
+    const { action, wsId } = body;
+
+    // Gate icado pra logo depois do req.json() (re-revisao da Task 7,
+    // Important — mesma ideia do POST /api/feegow): wsId vem do corpo aqui
+    // (nao da query), entao so da pra gatear depois de ler o corpo, mas
+    // AINDA ANTES de saber qual `action` foi pedida. Minor 4 original:
+    // /api/orthanc era a unica rota da area sem gate de papel — qualquer
+    // autenticado injetava entrada de worklist em OUTRA clinica via wsId
+    // alheio. Rodar antes do `if (action === ...)` fecha isso por
+    // construcao pra qualquer acao futura, nao so 'criar_mwl'.
+    const papel = wsId ? await resolverPapel(dbAdmin, wsId, uid) : null;
+    const gate = gateAcessoWs(wsId ?? null, papel);
+    if (!gate.ok) return NextResponse.json({ ok: false, error: gate.motivo }, { status: gate.status });
 
     if (action === 'criar_mwl') {
-      const { wsId, exameId, pacienteNome, pacienteId, pacienteDtnasc, sexo, tipoExame, dataExame, horarioChegada, medicoNome } = body;
+      const { exameId, pacienteNome, pacienteId, pacienteDtnasc, sexo, tipoExame, dataExame, horarioChegada, medicoNome } = body;
 
       if (!exameId || !pacienteNome) {
         return NextResponse.json({ ok: false, error: 'exameId e pacienteNome obrigatorios' }, { status: 400 });
       }
-
-      // Minor 4 (Sub-plano 5, Task 7 revisao): /api/orthanc era a unica rota
-      // da area sem gate de papel — qualquer autenticado injetava entrada de
-      // worklist em OUTRA clinica via wsId alheio. Mesmo padrao do /api/feegow.
-      const papelMwl = wsId ? await resolverPapel(dbAdmin, wsId, uid) : null;
-      const gateMwl = gateAcessoWs(wsId ?? null, papelMwl);
-      if (!gateMwl.ok) return NextResponse.json({ ok: false, error: gateMwl.motivo }, { status: gateMwl.status });
 
       // Resolver config do Orthanc — MESMA funcao que o GET usa (Sub-plano 5,
       // Task 7): antes cada handler tinha sua propria copia desta leitura, e

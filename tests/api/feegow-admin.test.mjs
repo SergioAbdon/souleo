@@ -74,19 +74,23 @@ describe('gravarImportacao', () => {
 });
 
 // Sub-plano 5, Task 7 — furo 1 (token do header) + item A (procMap dual-owner) + furo 3 (gate dos GETs).
-describe('resolverTokenFeegow (furo 1 — token SEMPRE da gaveta)', () => {
+// Re-revisao (Critical): fallback pro FEEGOW_API_TOKEN do .env removido —
+// a migracao roda ANTES do deploy, entao nao ha mais "durante a virada" pra
+// cobrir, e o fallback vazava o token real da MedCardio pro dono de
+// qualquer workspace sem token proprio na gaveta.
+describe('resolverTokenFeegow (furo 1 — token SEMPRE da gaveta, SEM fallback de ambiente)', () => {
   test('privado/feegow.token existe -> usa o da gaveta (nao ha parametro de header: estruturalmente impossivel um x-feegow-token de cliente vencer)', async () => {
     await db.doc(`workspaces/${WS}/privado/feegow`).set({ token: 'token-da-gaveta-123' });
-    const tok = await resolverTokenFeegow(db, WS, 'token-fallback-env');
+    const tok = await resolverTokenFeegow(db, WS);
     assert.equal(tok, 'token-da-gaveta-123');
   });
-  test('sem privado/feegow (ou sem token) -> cai no fallback do .env', async () => {
-    const tok = await resolverTokenFeegow(db, 'wsSemGaveta', 'token-fallback-env');
-    assert.equal(tok, 'token-fallback-env');
+  test('sem privado/feegow (ou sem token) -> string vazia (sem fallback nenhum)', async () => {
+    const tok = await resolverTokenFeegow(db, 'wsSemGaveta');
+    assert.equal(tok, '');
   });
-  test('sem wsId -> cai direto no fallback', async () => {
-    const tok = await resolverTokenFeegow(db, null, 'token-fallback-env');
-    assert.equal(tok, 'token-fallback-env');
+  test('sem wsId -> string vazia', async () => {
+    const tok = await resolverTokenFeegow(db, null);
+    assert.equal(tok, '');
   });
 });
 

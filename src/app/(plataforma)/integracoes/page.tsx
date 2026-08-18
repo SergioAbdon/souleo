@@ -103,10 +103,13 @@ export default function IntegracoesPage() {
       // o dono esteja digitando no meio de outra edicao.
       setFeegowProcMap(idx.feegow?.procMap ?? {});
       // Ate a migracao da Task 6 rodar, `integracoes/orthanc` pode nao existir
-      // ainda enquanto workspaces/{id}.ortancAtivo/ortancUrl (campo antigo, lido
-      // por api/orthanc/route.ts e SidebarLaudo.tsx) segue valendo em producao —
-      // sem este fallback o form mente (toggle desligado, endereco vazio) e
-      // "Salvar" gravaria ativo:false por cima do que esta ligado de verdade.
+      // ainda enquanto workspaces/{id}.ortancAtivo/ortancUrl (campo antigo)
+      // segue valendo em producao — api/orthanc/route.ts ja le so de
+      // integracoes/orthanc+privado/orthanc (Sub-plano 5 Task 7), mas
+      // SidebarLaudo.tsx:187 ainda le workspaces/{id}.ortancAtivo direto pra
+      // decidir se mostra "Importar DICOM". Sem este fallback aqui o form
+      // mente (toggle desligado, endereco vazio) e "Salvar" gravaria
+      // ativo:false por cima do que esta ligado de verdade.
       // Pode sair depois que os campos antigos forem limpos (Task 6/8).
       setOrthancUrl(idx.orthanc?.url ?? (workspace?.ortancUrl as string) ?? '');
       setOrthancAtivo(idx.orthanc?.ativo ?? !!workspace?.ortancAtivo);
