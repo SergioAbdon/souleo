@@ -169,7 +169,10 @@ export async function preCadastrarConvite(
   } catch (e) { console.error('preCadastrarConvite:', e); return { ok: false, motivo: 'erro' }; }
 }
 
-export async function listarMembros(db: Firestore, contaId: string) {
+// `agora` injetavel como no resto do modulo: sem isso o teste cria convite com data
+// de fixture e a expiracao e conferida contra o relogio real — passa por 7 dias e
+// depois falha sozinho (aconteceu em 18/08 com o fixture de 11/08).
+export async function listarMembros(db: Firestore, contaId: string, agora: Date = new Date()) {
   const vincSnap = await db.collection('vinculos').where('contaId', '==', contaId).get();
   const membros = await Promise.all(vincSnap.docs
     .filter(d => d.data().status === 'ativo')
@@ -179,7 +182,6 @@ export async function listarMembros(db: Firestore, contaId: string) {
       return { uid: v.medicoUid, nome: prof.data()?.nome ?? '(sem nome)', papel: v.papel, locais: v.locais ?? [], status: v.status };
     }));
   const convSnap = await db.collection('convites').where('contaId', '==', contaId).where('usado', '==', false).get();
-  const agora = new Date();
   const pendentes = convSnap.docs
     .filter(d => (d.data().expiraEm as Timestamp).toDate() >= agora)
     .map(d => ({ token: d.id, papel: d.data().papel, locais: d.data().locais ?? [], expiraEm: (d.data().expiraEm as Timestamp).toDate().toISOString() }));

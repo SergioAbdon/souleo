@@ -195,7 +195,7 @@ describe('gestão de membros', () => {
     await db.doc('profissionais/uidM1').set({ uid: 'uidM1', nome: 'Membro 1', tipoPerfil: 'medico' });
     await db.doc(`vinculos/${CONTA}_uidM1`).set({ contaId: CONTA, medicoUid: 'uidM1', papel: 'medico', locais: [], status: 'ativo' });
     const token = await novoConvite('recepcao', []);
-    const r = await listarMembros(db, CONTA);
+    const r = await listarMembros(db, CONTA, HOJE);
     const m1 = r.membros.find(m => m.uid === 'uidM1');
     assert.equal(m1.nome, 'Membro 1');
     assert.ok(r.pendentes.some(p => p.token === token));
