@@ -34,3 +34,9 @@ test('gate de /financeiro espelha podeVerFinanceiro para todos os papeis', async
     assert.equal(hrefs(papel).includes('/financeiro'), podeVerFinanceiro(papel), String(papel));
   }
 });
+test('SO o dono ve /integracoes', () => {
+  assert.ok(hrefs('dono').includes('/integracoes'));
+  for (const papel of ['medico', 'recepcao', null, undefined]) {
+    assert.ok(!hrefs(papel).includes('/integracoes'), String(papel));
+  }
+});
