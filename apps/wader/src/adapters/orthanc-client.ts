@@ -102,7 +102,8 @@ export class OrthancError extends Error {
 /**
  * Cliente HTTP REST pro Orthanc.
  *
- * Resolve URL/auth dinamicamente do Firestore (workspace.ortancUrl/User/Pass)
+ * Resolve URL/auth dinamicamente do Firestore
+ * (workspaces/{wsId}/integracoes/orthanc.url + privado/orthanc.user/pass)
  * via WorkspaceRepo. Cache 5 min por workspace.
  *
  * Se workspace não tem Orthanc ativo, qualquer chamada lança OrthancError.

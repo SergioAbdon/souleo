@@ -10,6 +10,8 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import { resolverConfigOrthanc, type OrtancConfig } from '@/lib/integracoes-admin';
+import { resolverPapel } from '@/lib/exame-admin';
+import { gateAcessoWs } from '@/lib/feegow-admin';
 
 // ── Firebase Admin ──
 if (!getApps().length) {
@@ -88,6 +90,13 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, error: 'exameId e pacienteNome obrigatorios' }, { status: 400 });
       }
 
+      // Minor 4 (Sub-plano 5, Task 7 revisao): /api/orthanc era a unica rota
+      // da area sem gate de papel — qualquer autenticado injetava entrada de
+      // worklist em OUTRA clinica via wsId alheio. Mesmo padrao do /api/feegow.
+      const papelMwl = wsId ? await resolverPapel(dbAdmin, wsId, uid) : null;
+      const gateMwl = gateAcessoWs(wsId ?? null, papelMwl);
+      if (!gateMwl.ok) return NextResponse.json({ ok: false, error: gateMwl.motivo }, { status: gateMwl.status });
+
       // Resolver config do Orthanc — MESMA funcao que o GET usa (Sub-plano 5,
       // Task 7): antes cada handler tinha sua propria copia desta leitura, e
       // so fechar o furo 2 no GET deixava este POST ainda aceitando o que
@@ -157,10 +166,17 @@ export async function GET(req: NextRequest) {
 
   const action = req.nextUrl.searchParams.get('action');
 
+  // Minor 4 (Sub-plano 5, Task 7 revisao): mesmo gate de papel do
+  // /api/feegow — sem isto qualquer autenticado listava estudos (nomes de
+  // paciente, accession numbers) de OUTRA clinica via wsId alheio.
+  const wsId = req.nextUrl.searchParams.get('wsId');
+  const papel = wsId ? await resolverPapel(dbAdmin, wsId, uid) : null;
+  const gate = gateAcessoWs(wsId, papel);
+  if (!gate.ok) return NextResponse.json({ ok: false, error: gate.motivo }, { status: gate.status });
+
   // Resolver config do Orthanc (URL + credenciais) — SEMPRE de
   // integracoes/orthanc + privado/orthanc, nunca de header (furo 2 fechado
   // na funcao compartilhada, Sub-plano 5 Task 7).
-  const wsId = req.nextUrl.searchParams.get('wsId');
   const config = await resolverConfigOrthanc(dbAdmin, wsId);
   if (!config) {
     return NextResponse.json({ ok: false, error: 'URL do Orthanc nao configurada.' }, { status: 400 });

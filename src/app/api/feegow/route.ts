@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { dataLocalHoje } from '@/lib/utils';
 import { adminDb, adminAuth } from '@/lib/auth-admin';
 import { resolverPapel, ehMedicoDeVerdade } from '@/lib/exame-admin';
-import { gravarImportacao, resolverTokenFeegow, resolverProcMap, gateAcessoWs, type Candidato } from '@/lib/feegow-admin';
+import { gravarImportacao, resolverTokenFeegow, resolverProcMap, gateAcessoWs, decidirGetFeegow, type Candidato } from '@/lib/feegow-admin';
 
 const fbAuth = adminAuth();
 const dbAdmin = adminDb();
@@ -157,31 +157,32 @@ async function montarCandidatos(token: string, wsId: string | null): Promise<Can
 }
 
 // ── Middleware: auth + rate limit ──
-async function proteger(req: NextRequest): Promise<NextResponse | null> {
+// Devolve o uid junto (Minor 7, Sub-plano 5 Task 7 revisao): antes GET e
+// POST 'importar' chamavam verificarAuth() de novo depois deste guard —
+// dois verifyIdToken por requisicao pro MESMO token. proteger() ja tem o
+// uid; os chamadores reusam em vez de reverificar.
+async function proteger(req: NextRequest): Promise<{ blocked: NextResponse } | { uid: string }> {
   // Rate limit por IP
   const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown';
   if (!checkRateLimit(ip)) {
-    return NextResponse.json({ ok: false, error: 'Rate limit excedido. Tente novamente em 1 minuto.' }, { status: 429 });
+    return { blocked: NextResponse.json({ ok: false, error: 'Rate limit excedido. Tente novamente em 1 minuto.' }, { status: 429 }) };
   }
 
   // Auth: verificar token Firebase
   const uid = await verificarAuth(req);
   if (!uid) {
-    return NextResponse.json({ ok: false, error: 'Nao autorizado. Token Firebase invalido ou ausente.' }, { status: 401 });
+    return { blocked: NextResponse.json({ ok: false, error: 'Nao autorizado. Token Firebase invalido ou ausente.' }, { status: 401 }) };
   }
 
-  return null; // passou
+  return { uid };
 }
 
 // POST /api/feegow — atualizar status no Feegow
 export async function POST(req: NextRequest) {
   // v3: protecao
-  const blocked = await proteger(req);
-  if (blocked) return blocked;
-
-  // v3: resolver token do workspace
-  const token = await resolverToken(req);
-  if (!token) return NextResponse.json({ error: 'Token Feegow nao configurado. Va em Local de Trabalho > Integracao Feegow.' }, { status: 400 });
+  const guarda = await proteger(req);
+  if ('blocked' in guarda) return guarda.blocked;
+  const { uid } = guarda;
 
   try {
     const body = await req.json();
@@ -191,6 +192,13 @@ export async function POST(req: NextRequest) {
       if (!agendamento_id || !status_id) {
         return NextResponse.json({ error: 'agendamento_id e status_id obrigatorios' }, { status: 400 });
       }
+
+      // Token resolvido aqui (Important 2, Sub-plano 5 Task 7 revisao): so
+      // depois de saber que a acao e valida, nao mais incondicional pra
+      // qualquer POST (o que faria a rota ler a gaveta de QUALQUER wsId da
+      // query mesmo pra acao invalida).
+      const token = await resolverToken(req);
+      if (!token) return NextResponse.json({ error: 'Token Feegow nao configurado. Va em Local de Trabalho > Integracao Feegow.' }, { status: 400 });
 
       const res = await fetch(`${FEEGOW_BASE}/appoints/statusUpdate`, {
         method: 'POST',
@@ -203,19 +211,28 @@ export async function POST(req: NextRequest) {
 
     if (body.action === 'importar') {
       const wsId = req.nextUrl.searchParams.get('wsId');
-      if (!wsId) return NextResponse.json({ ok: false, error: 'wsId obrigatorio' }, { status: 400 });
-      const uid = await verificarAuth(req);
-      if (!uid) return NextResponse.json({ ok: false, error: 'nao autenticado' }, { status: 401 });
       // AUTORIZACAO (Codex-1): Admin SDK ignora as regras — sem esta checagem
       // qualquer logado gravaria exames em QUALQUER clinica via wsId alheio.
-      const papel = await resolverPapel(dbAdmin, wsId, uid);
-      if (!papel) return NextResponse.json({ ok: false, error: 'sem_acesso_ao_local' }, { status: 403 });
+      // gateAcessoWs (Minor 6, Sub-plano 5 Task 7 revisao): mesma funcao que
+      // os GETs usam, em vez da versao inline que so este bloco tinha —
+      // duas grafias do mesmo gate no mesmo arquivo. uid reusado de
+      // proteger() (Minor 7): sem segundo verifyIdToken aqui.
+      const papel = wsId ? await resolverPapel(dbAdmin, wsId, uid) : null;
+      const gate = gateAcessoWs(wsId, papel);
+      if (!gate.ok) return NextResponse.json({ ok: false, error: gate.motivo }, { status: gate.status });
+
+      // Token so depois do gate (mesmo principio do Important 2 no GET):
+      // sem acesso ao wsId, a gaveta workspaces/{wsId}/privado/feegow nunca
+      // e lida.
+      const token = await resolverToken(req);
+      if (!token) return NextResponse.json({ ok: false, error: 'Token Feegow nao configurado. Va em Local de Trabalho > Integracao Feegow.' }, { status: 400 });
+
       // Autor so se perfil medico E papel que atende (MEDREC nao carimba) — Codex-2.
       const ehMed = (papel === 'dono' || papel === 'medico') && await ehMedicoDeVerdade(dbAdmin, uid);
       const perfilSnap = await dbAdmin.doc(`profissionais/${uid}`).get();
       const candidatos = await montarCandidatos(token, wsId);
       const { criados } = await gravarImportacao(dbAdmin, {
-        wsId, candidatos, uid, ehMed, nomeCriador: (perfilSnap.data()?.nome as string) || '',
+        wsId: wsId as string, candidatos, uid, ehMed, nomeCriador: (perfilSnap.data()?.nome as string) || '',
       });
       return NextResponse.json({ ok: true, total: candidatos.length, criados });
     }
@@ -230,55 +247,28 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   // v3: protecao
-  const blocked = await proteger(req);
-  if (blocked) return blocked;
+  const guarda = await proteger(req);
+  if ('blocked' in guarda) return guarda.blocked;
+  const { uid } = guarda;
 
-  // v3: resolver token do workspace
-  const token = await resolverToken(req);
-  if (!token) return NextResponse.json({ error: 'Token Feegow nao configurado. Va em Local de Trabalho > Integracao Feegow.' }, { status: 400 });
+  const wsId = req.nextUrl.searchParams.get('wsId');
+  const papel = wsId ? await resolverPapel(dbAdmin, wsId, uid) : null;
+
+  // Critical 1 + Important 2 (Sub-plano 5, Task 7 revisao): decidirGetFeegow
+  // roda pra QUALQUER acao, sem excecao (nao ha mais lista de acoes
+  // "gateadas" — 4 acoes bypassavam o gate anterior, uma delas devolvendo
+  // CRM de medico de outra clinica) e SEMPRE antes de tocar o token (o gate
+  // de papel decide 403 sem nunca ler workspaces/{wsId}/privado/feegow de
+  // quem nao tem acesso — o status HTTP nao vaza se a clinica tem Feegow
+  // configurado).
+  const veredito = await decidirGetFeegow(wsId, papel, () => resolverToken(req));
+  if (!veredito.ok) return NextResponse.json({ ok: false, error: veredito.motivo }, { status: veredito.status });
+  const token = veredito.token;
 
   const action = req.nextUrl.searchParams.get('action');
 
-  // Furo 3 (Sub-plano 5, Task 7): buscar_cpf/sala_espera/paciente/convenios
-  // devolviam dado de paciente sem checar se o usuario tem acesso ao wsId —
-  // mesmo gate que o POST 'importar' ja aplicava.
-  const ACOES_COM_GATE = new Set(['sala_espera', 'paciente', 'convenios', 'buscar_cpf']);
-  if (action && ACOES_COM_GATE.has(action)) {
-    const wsId = req.nextUrl.searchParams.get('wsId');
-    let papel: string | null = null;
-    if (wsId) {
-      const uid = await verificarAuth(req);
-      if (uid) papel = await resolverPapel(dbAdmin, wsId, uid);
-    }
-    const gate = gateAcessoWs(wsId, papel);
-    if (!gate.ok) return NextResponse.json({ ok: false, error: gate.motivo }, { status: gate.status });
-  }
-
   try {
     switch (action) {
-      case 'teste': {
-        const data = await feegowFetch('/professional/list', token);
-        return NextResponse.json({ ok: true, message: 'Conexao Feegow OK!', data });
-      }
-
-      case 'sala_espera': {
-        const hoje = dataLocalHoje();
-        const data = await feegowFetch(`/appoints/search?data_start=${hoje}&data_end=${hoje}&status_id=4`, token);
-        return NextResponse.json({ ok: true, data });
-      }
-
-      case 'paciente': {
-        const id = req.nextUrl.searchParams.get('id');
-        if (!id) return NextResponse.json({ error: 'id obrigatorio' }, { status: 400 });
-        const data = await feegowFetch(`/patient/search?paciente_id=${id}`, token);
-        return NextResponse.json({ ok: true, data });
-      }
-
-      case 'convenios': {
-        const data = await feegowFetch('/insurance/list', token);
-        return NextResponse.json({ ok: true, data });
-      }
-
       case 'buscar_cpf': {
         const cpf = req.nextUrl.searchParams.get('cpf');
         if (!cpf) return NextResponse.json({ error: 'cpf obrigatorio' }, { status: 400 });
@@ -322,27 +312,6 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ ok: true, total: filtrados.length, procedimentos: filtrados });
       }
 
-      // DEBUG: ver dados brutos do Feegow para diagnosticar mapeamento de procedimentos
-      case 'debug_sala': {
-        const hoje2 = dataLocalHoje();
-        const raw = await feegowFetch(`/appoints/search?data_start=${hoje2}&data_end=${hoje2}&status_id=4`, token);
-        const ags = raw?.content || [];
-        // Retornar só os campos relevantes de cada agendamento
-        const debug = ags.map((ag: Record<string, unknown>) => ({
-          agendamento_id: ag.agendamento_id,
-          paciente_id: ag.paciente_id,
-          procedimento_id: ag.procedimento_id,
-          procedimentos: ag.procedimentos,
-          compromisso: ag.compromisso,
-          compromisso_id: ag.compromisso_id,
-          tipo_compromisso: ag.tipo_compromisso,
-          horario: ag.horario,
-          // Mostrar TODAS as chaves do objeto para descobrir o campo correto
-          _todas_chaves: Object.keys(ag),
-        }));
-        return NextResponse.json({ ok: true, total: ags.length, agendamentos: debug });
-      }
-
       // Listar profissionais do Feegow (para mapeamento no LocalModal — análogo a 'procedimentos')
       case 'profissionais': {
         const profRes = await feegowFetch('/professional/list', token);
@@ -361,7 +330,7 @@ export async function GET(req: NextRequest) {
       }
 
       default:
-        return NextResponse.json({ error: 'action invalida. Use: teste, sala_espera, paciente, buscar_cpf, convenios, profissionais, procedimentos' }, { status: 400 });
+        return NextResponse.json({ error: 'action invalida. Use: buscar_cpf, procedimentos, profissionais' }, { status: 400 });
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Erro desconhecido';

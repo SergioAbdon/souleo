@@ -12,8 +12,8 @@
 
 /**
  * Tipos de procedimento conforme convenção do LEO.
- * Lista dinâmica vem de `workspace.feegowProcMap` — esses são os valores
- * possíveis que aparecem como VALOR (não chave) naquele mapa.
+ * Lista dinâmica vem de `workspaces/{wsId}/integracoes/feegow.procMap` —
+ * esses são os valores possíveis que aparecem como VALOR (não chave) naquele mapa.
  */
 export type TipoExame = 'eco_tt' | 'doppler_carotidas' | 'eco_te' | 'eco_stress';
 
@@ -110,7 +110,7 @@ export interface Exame {
   /** CPF do paciente (sem pontos/traços). 1ª escolha pra PatientID DICOM. */
   cpf?: string;
 
-  /** Tipo do procedimento. Valores conforme `workspace.feegowProcMap`. */
+  /** Tipo do procedimento. Valores conforme `workspaces/{wsId}/integracoes/feegow.procMap`. */
   tipoExame: TipoExame;
 
   /** Data do exame (ISO YYYY-MM-DD). */

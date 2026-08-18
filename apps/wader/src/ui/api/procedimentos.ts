@@ -10,8 +10,9 @@ const log = createLogger({ module: 'api-procedimentos' });
  *
  *   GET /api/procedimentos — retorna lista oferecida pela clínica
  *
- * Origem: workspace.feegowProcMap (LEO web salva lá quando integra Feegow)
- *         OU defaults (todos os tipos suportados) se workspace não tiver mapa
+ * Origem: workspaces/{wsId}/integracoes/feegow.procMap (LEO web salva lá
+ *         quando integra Feegow) OU defaults (todos os tipos suportados)
+ *         se o workspace não tiver mapa
  */
 export function registerProcedimentosRoutes(app: FastifyInstance, config: WaderConfig): void {
   const workspaceRepo = new WorkspaceRepo(config.wsId);
@@ -26,7 +27,7 @@ export function registerProcedimentosRoutes(app: FastifyInstance, config: WaderC
     }
   });
 
-  // Endpoint para invalidar cache (útil quando admin atualiza feegowProcMap no LEO)
+  // Endpoint para invalidar cache (útil quando admin atualiza integracoes/feegow.procMap no LEO)
   app.post('/api/procedimentos/refresh', async (_req, reply) => {
     workspaceRepo.invalidate();
     const procedimentos = await workspaceRepo.getProcedimentos();

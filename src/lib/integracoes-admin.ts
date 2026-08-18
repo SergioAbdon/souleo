@@ -53,6 +53,11 @@ export async function testarFeegow(conn: ConexaoFeegow, fetchImpl: typeof fetch 
 
 export async function testarOrthanc(conn: ConexaoOrthanc, fetchImpl: typeof fetch = fetch): Promise<void> {
   if (!conn.url) throw new Error('Endereço do Orthanc ausente.');
+  // Minor 5 (Sub-plano 5, Task 7 revisao): mesma checagem de esquema que
+  // resolverConfigOrthanc ja aplica (SSRF) — "testar antes de salvar" nao
+  // passava por ali, entao os dois caminhos discordavam sobre a mesma regra.
+  // O guard tem que valer ONDE a URL e usada, sempre.
+  if (!/^https?:\/\//i.test(conn.url)) throw new Error('Endereço do Orthanc precisa começar com http:// ou https://.');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {

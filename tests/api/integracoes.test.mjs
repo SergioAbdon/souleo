@@ -175,6 +175,17 @@ describe('testarFeegow / testarOrthanc (bater no alvo)', () => {
     await assert.rejects(testarOrthanc({ url: 'http://x', pass: 'y'.repeat(10) }, fetchImpl), /Orthanc 500/);
     await assert.rejects(testarOrthanc({ url: 'http://x', pass: 'y'.repeat(10) }, fetchImpl), (e) => !e.message.includes('falhou'));
   });
+  // Minor 5 (Sub-plano 5, Task 7 revisao): "testar antes de salvar" tem que
+  // recusar esquema nao-http(s) igual resolverConfigOrthanc (SSRF) — os dois
+  // caminhos nao podem discordar sobre a mesma regra.
+  test('testarOrthanc recusa esquema file:// mesmo com credencial valida (SSRF no caminho de teste)', async () => {
+    const fetchImpl = async () => { throw new Error('NUNCA deveria chegar a rede'); };
+    await assert.rejects(testarOrthanc({ url: 'file:///etc/passwd' }, fetchImpl), /http/i);
+  });
+  test('testarOrthanc recusa esquema gopher:// mesmo com credencial valida', async () => {
+    const fetchImpl = async () => { throw new Error('NUNCA deveria chegar a rede'); };
+    await assert.rejects(testarOrthanc({ url: 'gopher://interno.local:70/' }, fetchImpl), /http/i);
+  });
 });
 
 describe('salvarIntegracao / removerCredencial (contrato write-only + espelho — Task 4)', () => {

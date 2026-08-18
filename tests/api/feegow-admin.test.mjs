@@ -3,7 +3,7 @@ import { test, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
-import { gravarImportacao, resolverTokenFeegow, resolverProcMap, gateAcessoWs } from '../../src/lib/feegow-admin.ts';
+import { gravarImportacao, resolverTokenFeegow, resolverProcMap, gateAcessoWs, decidirGetFeegow } from '../../src/lib/feegow-admin.ts';
 
 let db;
 const WS = 'wsFeegow';
@@ -128,5 +128,45 @@ describe('gateAcessoWs (furo 3 — GETs sensiveis exigem wsId + papel)', () => {
   test('wsId + papel resolvido -> ok', () => {
     const r = gateAcessoWs(WS, 'recepcao');
     assert.equal(r.ok, true);
+  });
+});
+
+// Correcao pos-revisao da Task 7 — Critical 1 (gate incondicional, sem lista
+// de acoes) + Important 2 (gate de papel roda ANTES de tocar o token).
+describe('decidirGetFeegow (Critical 1 + Important 2 — gate roda pra QUALQUER acao, antes do token)', () => {
+  test('Critical 1: sem papel -> 403 e resolverToken NUNCA e chamado (a gaveta nao e lida por quem nao tem acesso, seja qual for a acao que viria depois — ex.: "profissionais", que antes escapava da lista ACOES_COM_GATE)', async () => {
+    let chamou = false;
+    const resolverToken = async () => { chamou = true; return 'tok-nao-deveria-ser-lido'; };
+    const r = await decidirGetFeegow(WS, null, resolverToken);
+    assert.equal(r.ok, false);
+    assert.equal(r.status, 403);
+    assert.equal(chamou, false, 'resolverToken (leitura de privado/feegow) nao pode rodar sem papel');
+  });
+
+  test('Important 2: sem papel -> 403 tanto pra clinica QUE TEM token quanto pra clinica SEM token (o status nao vaza se a clinica tem Feegow configurado)', async () => {
+    const comToken = await decidirGetFeegow(WS, null, async () => 'token-existe-nesta-clinica');
+    const semToken = await decidirGetFeegow('wsFeegowSemToken', null, async () => '');
+    assert.equal(comToken.status, 403);
+    assert.equal(semToken.status, 403);
+  });
+
+  test('sem wsId -> 400 (validacao antes do papel), resolverToken tambem nao roda', async () => {
+    let chamou = false;
+    const r = await decidirGetFeegow(null, null, async () => { chamou = true; return 'x'; });
+    assert.equal(r.ok, false);
+    assert.equal(r.status, 400);
+    assert.equal(chamou, false);
+  });
+
+  test('com papel mas sem token cadastrado -> 400 (so agora, com acesso ja confirmado, o token entra em jogo)', async () => {
+    const r = await decidirGetFeegow(WS, 'recepcao', async () => '');
+    assert.equal(r.ok, false);
+    assert.equal(r.status, 400);
+  });
+
+  test('com papel e token -> ok, devolve o token pro chamador despachar a acao', async () => {
+    const r = await decidirGetFeegow(WS, 'dono', async () => 'tok-valido-123');
+    assert.equal(r.ok, true);
+    assert.equal(r.ok && r.token, 'tok-valido-123');
   });
 });

@@ -18,13 +18,14 @@ export interface OrthancConnection {
 /**
  * Configuração de procedimentos disponíveis no workspace.
  *
- * Estratégia (alinhada com LEO web):
- *   1. LEO web tem `workspaces/{wsId}.feegowProcMap` = `Record<procedimento_id_feegow, tipo_leo>`
+ * Estratégia (alinhada com LEO web, canônico pós Sub-plano 5):
+ *   1. LEO web tem `workspaces/{wsId}/integracoes/feegow.procMap` =
+ *      `Record<procedimento_id_feegow, tipo_leo>`
  *      Ex: `{ 6: "eco_tt", 67: "doppler_carotidas" }`
  *   2. O Wader extrai os VALORES únicos desse mapa pra montar a lista
  *      de procedimentos oferecidos pela clínica.
- *   3. Se o workspace não tiver feegowProcMap (cliente sem Feegow),
- *      Wader usa todos os tipos suportados como default.
+ *   3. Se o workspace não tiver `integracoes/feegow.procMap` (cliente sem
+ *      Feegow), Wader usa todos os tipos suportados como default.
  *
  * Cache em memória pra evitar leitura constante do Firestore.
  */

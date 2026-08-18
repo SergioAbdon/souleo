@@ -110,6 +110,36 @@ export function gateAcessoWs(
   return { ok: true };
 }
 
+/**
+ * Veredito do GET /api/feegow inteiro — chamado UMA vez por requisicao,
+ * antes do switch de `action` e SEM saber qual acao e (correcao pos-revisao
+ * da Task 7, achados Critical 1 + Important 2):
+ *
+ * - Critical 1: antes havia uma lista (`ACOES_COM_GATE`) de quais acoes
+ *   passavam pelo gate — 4 das 7 acoes do switch nao apareciam nela e
+ *   vazavam dado (CRM de outra clinica, sala de espera, oraculo de token
+ *   valido) pra qualquer autenticado. Esta funcao nao recebe `action`: ela
+ *   roda pra QUALQUER despacho subsequente, entao uma acao nova no switch
+ *   fica gateada por construcao — nao ha lista pra esquecer de atualizar.
+ * - Important 2: o gate de papel (`gateAcessoWs`) roda ANTES de
+ *   `resolverToken` — `resolverToken` (o parametro, injetado) so e chamado
+ *   se o papel resolveu. Quem nao tem acesso ao wsId nunca aciona a leitura
+ *   de `workspaces/{wsId}/privado/feegow`, e sempre recebe 403 (nunca 400
+ *   por token ausente) — o status HTTP nao vaza se a clinica tem Feegow
+ *   configurado ou nao.
+ */
+export async function decidirGetFeegow(
+  wsId: string | null, papel: string | null, resolverToken: () => Promise<string>,
+): Promise<{ ok: true; token: string } | { ok: false; status: number; motivo: string }> {
+  const gate = gateAcessoWs(wsId, papel);
+  if (!gate.ok) return gate;
+  const token = await resolverToken();
+  if (!token) {
+    return { ok: false, status: 400, motivo: 'Token Feegow nao configurado. Va em Local de Trabalho > Integracao Feegow.' };
+  }
+  return { ok: true, token };
+}
+
 export async function gravarImportacao(dbAdmin: Firestore, args: {
   wsId: string; candidatos: Candidato[]; uid: string; ehMed: boolean; nomeCriador: string;
 }): Promise<{ criados: Array<{ exameId: string; pac: Candidato }> }> {

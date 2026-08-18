@@ -92,7 +92,13 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
         headers: { 'Authorization': `Bearer ${idToken || ''}` },
       });
       const data = await res.json();
-      if (data.ok && data.profissionais?.length) {
+      // Minor 9 (Sub-plano 5, Task 7 revisao): `data.ok === false` (token
+      // ausente/invalido) e "lista vazia com token valido" caiam no MESMO
+      // `else` antes — clinica com token OK e zero profissionais ativos
+      // via "token não cadastrado ou inválido", mentira no caso feliz.
+      if (!data.ok) {
+        setErro('Token do Feegow não cadastrado ou inválido — cadastre em Integrações antes de carregar profissionais.');
+      } else if (data.profissionais?.length) {
         setFeegowProfs(data.profissionais);
         // Smart defaults: "Dr. Sergio Roberto Abdon Rodrigues"
         if (Object.keys(feegowProfMap).length === 0) {
@@ -104,7 +110,7 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
           setFeegowProfMap(defaults);
         }
       } else {
-        setErro('Token do Feegow não cadastrado ou inválido — cadastre em Integrações antes de carregar profissionais.');
+        setErro('Feegow conectado, mas nenhum profissional ativo foi encontrado.');
       }
     } catch {
       setErro('Erro ao carregar profissionais do Feegow.');
