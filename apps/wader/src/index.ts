@@ -21,6 +21,7 @@ import { startUiServer } from './ui/server';
 import { initFirebase } from './adapters/firebase';
 import { OrthancClient } from './adapters/orthanc-client';
 import { WorkspaceRepo } from './adapters/workspace-repo';
+import { iniciarBatimento } from './adapters/heartbeat';
 import { validarWorklistPath } from './workers/worklist-path-validator';
 import { WorklistSyncWorker } from './workers/worklist-sync-worker';
 import { DicomIngestWorker } from './workers/dicom-ingest-worker';
@@ -62,6 +63,7 @@ async function main(): Promise<void> {
   let worklistWorker: WorklistSyncWorker | null = null;
   let dicomWorker: DicomIngestWorker | null = null;
   let accWorker: AccRecoveryWorker | null = null;
+  let pararBatimento: (() => void) | null = null;
 
   if (uiOnly) {
     log.warn('WADER_UI_ONLY ativo — workers DESLIGADOS (modo dev/console; não processa exames)');
@@ -100,11 +102,15 @@ async function main(): Promise<void> {
       intervalSec: config.polling.accRecoverySec ?? 20,
     });
     accWorker.start();
+
+    // Batimento (Sub-plano 5, D4) — diz "estou aqui" pro cartão de Integrações
+    // distinguir "Wader parado" de "sem exame hoje". Não derruba nada se falhar.
+    pararBatimento = iniciarBatimento(config.wsId, config.version);
   }
 
   const app = await startUiServer(config, { worklistWorker, dicomWorker, orthancClient });
 
-  registerShutdownHandlers(app, { worklistWorker, dicomWorker, accWorker });
+  registerShutdownHandlers(app, { worklistWorker, dicomWorker, accWorker, pararBatimento });
 
   log.info('Wader rodando. Acesse http://localhost:%d', config.ui.port);
 }
@@ -115,10 +121,12 @@ function registerShutdownHandlers(
     worklistWorker: WorklistSyncWorker | null;
     dicomWorker: DicomIngestWorker | null;
     accWorker: AccRecoveryWorker | null;
+    pararBatimento: (() => void) | null;
   } = {
     worklistWorker: null,
     dicomWorker: null,
     accWorker: null,
+    pararBatimento: null,
   },
 ): void {
   const shutdown = async (signal: string) => {
@@ -127,6 +135,7 @@ function registerShutdownHandlers(
       workers.worklistWorker?.stop();
       workers.dicomWorker?.stop();
       workers.accWorker?.stop();
+      workers.pararBatimento?.();
       await app.close();
       log.info('Servidor encerrado com sucesso.');
       process.exit(0);

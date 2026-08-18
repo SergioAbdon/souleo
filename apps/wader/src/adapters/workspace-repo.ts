@@ -59,24 +59,27 @@ export class WorkspaceRepo {
       return this.orthancCache;
     }
 
-    const snap = await getDb().collection('workspaces').doc(this.wsId).get();
-    if (!snap.exists) {
-      log.warn({ wsId: this.wsId }, 'Workspace não existe — sem Orthanc config');
-      return null;
-    }
+    const integracaoSnap = await getDb()
+      .doc(`workspaces/${this.wsId}/integracoes/orthanc`)
+      .get();
 
-    const data = snap.data() ?? {};
-    if (!data.ortancAtivo || !data.ortancUrl) {
+    const integracaoData = integracaoSnap.data() ?? {};
+    if (!integracaoSnap.exists || !integracaoData.ativo || !integracaoData.url) {
       log.info({ wsId: this.wsId }, 'Orthanc não ativo neste workspace');
       this.orthancCache = null;
       this.orthancCacheExpireAt = Date.now() + this.CACHE_TTL_MS;
       return null;
     }
 
+    const privadoSnap = await getDb()
+      .doc(`workspaces/${this.wsId}/privado/orthanc`)
+      .get();
+    const privadoData = privadoSnap.data() ?? {};
+
     const conn: OrthancConnection = {
-      url: String(data.ortancUrl).replace(/\/+$/, ''),
-      user: String(data.ortancUser ?? ''),
-      pass: String(data.ortancPass ?? ''),
+      url: String(integracaoData.url).replace(/\/+$/, ''),
+      user: String(privadoData.user ?? ''),
+      pass: String(privadoData.pass ?? ''),
       ativo: true,
     };
 
