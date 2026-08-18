@@ -198,6 +198,21 @@ describe('salvarIntegracao / removerCredencial (contrato write-only + espelho â€
     const priv = (await db.doc(`workspaces/${WS}/privado/feegow`).get()).data();
     assert.equal(priv.token, 'tokenNovo999');
   });
+  test('orthanc: so a senha veio -> so a senha troca, usuario existente continua intacto (Minor 1)', async () => {
+    await db.doc(`workspaces/${WS}/privado/orthanc`).set({ user: 'u1', pass: 'p1' });
+    const r = await salvarIntegracao(db, { wsId: WS, tipo: 'orthanc', credencial: { pass: 'p2' } });
+    assert.equal(r.httpStatus, 200);
+    const priv = (await db.doc(`workspaces/${WS}/privado/orthanc`).get()).data();
+    assert.equal(priv.user, 'u1', 'usuario existente nao pode ser apagado quando so a senha e enviada');
+    assert.equal(priv.pass, 'p2');
+  });
+  test('salvar orthanc com url vazia ("") NAO apaga o endereco salvo (Minor 3)', async () => {
+    await salvarIntegracao(db, { wsId: WS, tipo: 'orthanc', config: { url: 'http://orthanc.enderecoOriginal.local' } });
+    const r = await salvarIntegracao(db, { wsId: WS, tipo: 'orthanc', config: { url: '' } });
+    assert.equal(r.httpStatus, 200);
+    const pub = (await db.doc(`workspaces/${WS}/integracoes/orthanc`).get()).data();
+    assert.equal(pub.url, 'http://orthanc.enderecoOriginal.local', 'endereco em branco nao pode apagar o endereco salvo');
+  });
   test('remover apaga o documento de privado/{tipo}', async () => {
     await db.doc(`workspaces/${WS}/privado/feegow`).set({ token: 'paraRemover123' });
     const r = await removerCredencial(db, { wsId: WS, tipo: 'feegow' });

@@ -102,10 +102,19 @@ export default function IntegracoesPage() {
       // inicial — recarregar() depois de salvar nao pode sobrescrever o que
       // o dono esteja digitando no meio de outra edicao.
       setFeegowProcMap(idx.feegow?.procMap ?? {});
-      setOrthancUrl(idx.orthanc?.url ?? '');
-      setOrthancAtivo(!!idx.orthanc?.ativo);
+      // Ate a migracao da Task 6 rodar, `integracoes/orthanc` pode nao existir
+      // ainda enquanto workspaces/{id}.ortancAtivo/ortancUrl (campo antigo, lido
+      // por api/orthanc/route.ts e SidebarLaudo.tsx) segue valendo em producao —
+      // sem este fallback o form mente (toggle desligado, endereco vazio) e
+      // "Salvar" gravaria ativo:false por cima do que esta ligado de verdade.
+      // Pode sair depois que os campos antigos forem limpos (Task 6/8).
+      setOrthancUrl(idx.orthanc?.url ?? (workspace?.ortancUrl as string) ?? '');
+      setOrthancAtivo(idx.orthanc?.ativo ?? !!workspace?.ortancAtivo);
       setLoading(false);
     });
+    // Fallback de workspace?.ortanc* de proposito fora das deps — so na carga
+    // inicial (ver comentario acima); reagir a eles reintroduziria o mesmo problema.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wsId, podeVer, authLoading]);
 
   // Recarrega SÓ o doc testado (mesma normalizacao do carregamento inicial —
@@ -290,7 +299,7 @@ export default function IntegracoesPage() {
                     </div>
 
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs text-ink-3">{Object.keys(feegowProcMap).length} procedimento(s) mapeado(s)</p>
+                      <p className="text-xs text-ink-3">{Object.values(feegowProcMap).filter(v => v && v !== 'ignorar').length} procedimento(s) mapeado(s)</p>
                       <button type="button" onClick={carregarProcedimentos} disabled={procsLoading || !feegowToken.trim()}
                         className={botaoRemover}>
                         {procsLoading ? 'carregando…' : 'Carregar procedimentos'}

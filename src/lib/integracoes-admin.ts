@@ -182,7 +182,10 @@ function limparConfig(tipo: TipoComForm, config: unknown): Record<string, unknow
     } else if (campo === 'ativo' && typeof v === 'boolean') {
       out.ativo = v;
     } else if (campo === 'url' && typeof v === 'string') {
-      out.url = v.trim();
+      // String vazia = "nao mexe" (mesma regra da credencial em limparCredencial)
+      // — quem desliga o Orthanc e o toggle `ativo`, nao o endereco em branco.
+      const url = v.trim();
+      if (url !== '') out.url = url;
     }
   }
   return out;
