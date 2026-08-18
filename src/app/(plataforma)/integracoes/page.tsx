@@ -43,6 +43,7 @@ export default function IntegracoesPage() {
   const [porTipo, setPorTipo] = useState<Record<string, Integracao>>({});
   const [loading, setLoading] = useState(true);
   const [testando, setTestando] = useState<TipoIntegracao | null>(null);
+  const [erroTeste, setErroTeste] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (authLoading) return;
@@ -66,14 +67,22 @@ export default function IntegracoesPage() {
   async function testarConexao(tipo: TipoIntegracao) {
     if (!user || testando) return;
     setTestando(tipo);
+    setErroTeste(prev => ({ ...prev, [tipo]: '' }));
     try {
       const idToken = await user.getIdToken();
-      await fetch('/api/integracoes', {
+      const res = await fetch('/api/integracoes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({ acao: 'testar', wsId, tipo }),
       });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setErroTeste(prev => ({ ...prev, [tipo]: data?.mensagem || 'Falha ao testar conexão.' }));
+        return;
+      }
       await recarregar(tipo);
+    } catch {
+      setErroTeste(prev => ({ ...prev, [tipo]: 'Falha de rede ao testar conexão.' }));
     } finally {
       setTestando(null);
     }
@@ -120,6 +129,7 @@ export default function IntegracoesPage() {
                 {t.id === 'wader' && (
                   <p className="text-xs text-ink-3">{i.versao ? `v${i.versao}` : 'Versão desconhecida'} · {i.maquina || 'máquina desconhecida'}</p>
                 )}
+                {erroTeste[t.id] && <p className="text-xs text-red-600">{erroTeste[t.id]}</p>}
               </CartaoIntegracao>
             );
           })}

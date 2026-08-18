@@ -29,7 +29,9 @@ export function sanitizar(msg: string, segredos: (string | undefined)[]): string
 }
 
 type ConexaoFeegow = { token?: string };
-type ConexaoOrthanc = { url?: string; usuario?: string; senha?: string };
+// user/pass é o nome canônico em todo o sistema (spec §3.2, workspace-repo.ts,
+// api/orthanc/route.ts) — não aceitar apelido nenhum aqui.
+type ConexaoOrthanc = { url?: string; user?: string; pass?: string };
 
 export async function testarFeegow(conn: ConexaoFeegow, fetchImpl: typeof fetch = fetch): Promise<void> {
   if (!conn.token) throw new Error('Token do Feegow ausente.');
@@ -40,7 +42,10 @@ export async function testarFeegow(conn: ConexaoFeegow, fetchImpl: typeof fetch 
       headers: { 'x-access-token': conn.token, 'Content-Type': 'application/json' },
       signal: controller.signal,
     });
-    if (!res.ok) throw new Error(`Feegow ${res.status}: ${await res.text()}`);
+    // Nunca embutir o corpo da resposta do alvo na mensagem: pode ecoar a
+    // própria credencial tentada (sanitizar() é cinto-e-suspensório, não a
+    // única defesa — ver Sub-plano 5 Task 3, achado Important 1).
+    if (!res.ok) throw new Error(`Feegow ${res.status}`);
   } finally {
     clearTimeout(timeout);
   }
@@ -52,9 +57,9 @@ export async function testarOrthanc(conn: ConexaoOrthanc, fetchImpl: typeof fetc
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const headers: Record<string, string> = {};
-    if (conn.senha) headers.Authorization = `Basic ${Buffer.from(`${conn.usuario ?? ''}:${conn.senha}`).toString('base64')}`;
+    if (conn.pass) headers.Authorization = `Basic ${Buffer.from(`${conn.user ?? ''}:${conn.pass}`).toString('base64')}`;
     const res = await fetchImpl(`${conn.url.replace(/\/+$/, '')}/system`, { headers, signal: controller.signal });
-    if (!res.ok) throw new Error(`Orthanc ${res.status}: ${await res.text()}`);
+    if (!res.ok) throw new Error(`Orthanc ${res.status}`);
   } finally {
     clearTimeout(timeout);
   }
@@ -81,19 +86,25 @@ export async function executarTeste(dbAdmin: Firestore, args: {
     return { httpStatus: 400, ok: false, mensagem: 'Wader não tem teste de conexão — ele avisa sozinho por batimento.' };
   }
 
+  // Documento público (endereço/flags) nunca carrega segredo — pode ser lido
+  // em qualquer um dos dois ramos abaixo sem tocar na gaveta.
+  const docPublico = (await dbAdmin.doc(`workspaces/${wsId}/integracoes/${tipo}`).get()).data() ?? {};
+
   let conn: Record<string, unknown>;
+  let gravar: boolean;
   if (credencialBody) {
-    // "Testar antes de salvar": usa só o que veio no corpo, NADA é gravado em privado/{tipo}.
-    conn = credencialBody;
+    // "Testar antes de salvar": combina com o que já está público (ex.: só a
+    // senha veio, o endereço já está salvo) — NADA é gravado em privado/{tipo}
+    // nem em integracoes/{tipo}: o resultado só volta na resposta HTTP.
+    conn = { ...docPublico, ...credencialBody };
+    gravar = false;
   } else {
-    const [pubSnap, privSnap] = await Promise.all([
-      dbAdmin.doc(`workspaces/${wsId}/integracoes/${tipo}`).get(),
-      dbAdmin.doc(`workspaces/${wsId}/privado/${tipo}`).get(),
-    ]);
+    const privSnap = await dbAdmin.doc(`workspaces/${wsId}/privado/${tipo}`).get();
     if (!privSnap.exists) {
       return { httpStatus: 400, ok: false, mensagem: `Nenhuma credencial cadastrada para ${tipo}. Cadastre antes de testar.` };
     }
-    conn = { ...(pubSnap.data() ?? {}), ...(privSnap.data() ?? {}) };
+    conn = { ...docPublico, ...(privSnap.data() ?? {}) };
+    gravar = true;
   }
 
   // Qualquer valor-texto da conexao pode ser o segredo (token/senha/usuario) —
@@ -113,11 +124,16 @@ export async function executarTeste(dbAdmin: Firestore, args: {
     mensagem = sanitizar(bruta, segredos);
   }
 
-  await dbAdmin.doc(`workspaces/${wsId}/integracoes/${tipo}`).set({
-    status,
-    ultimoTeste: FieldValue.serverTimestamp(),
-    ultimoErro: status === 'erro' ? mensagem : null,
-  }, { merge: true });
+  // Só grava quando a credencial testada é a que está de fato salva (gaveta).
+  // Testar com credencial do corpo não pode fazer o cartão mentir sobre um
+  // segredo que nunca foi persistido (spec §5.2 "estado sem mentira").
+  if (gravar) {
+    await dbAdmin.doc(`workspaces/${wsId}/integracoes/${tipo}`).set({
+      status,
+      ultimoTeste: FieldValue.serverTimestamp(),
+      ultimoErro: status === 'erro' ? mensagem : null,
+    }, { merge: true });
+  }
 
   return { httpStatus: 200, ok: status === 'ok', status, mensagem };
 }

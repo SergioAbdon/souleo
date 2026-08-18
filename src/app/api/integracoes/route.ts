@@ -35,11 +35,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, mensagem: 'Apenas o responsável pela conta acessa Integrações.' }, { status: 403 });
     }
 
+    // credencial precisa ser objeto de verdade — não-nulo, não-array, com pelo
+    // menos uma chave — senão {} ou [] entram no ramo do corpo com conn vazio.
+    const credencialValida = credencial !== null && typeof credencial === 'object' && !Array.isArray(credencial)
+      && Object.keys(credencial as Record<string, unknown>).length > 0;
+
     // 3-6: ler segredo/corpo, bater no alvo, gravar resultado, sanitizar.
     const r = await executarTeste(dbAdmin, {
       wsId,
       tipo: typeof tipo === 'string' ? tipo : '',
-      credencialBody: (credencial && typeof credencial === 'object') ? credencial as Record<string, unknown> : undefined,
+      credencialBody: credencialValida ? credencial as Record<string, unknown> : undefined,
     });
     return NextResponse.json({ ok: r.ok, status: r.status, mensagem: r.mensagem }, { status: r.httpStatus });
   } catch {

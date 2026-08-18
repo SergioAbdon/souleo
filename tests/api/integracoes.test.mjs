@@ -75,31 +75,65 @@ describe('executarTeste (contrato pontos 3-6 — dono ja resolvido pela rota)', 
     assert.equal((await db.doc(`workspaces/${WS}/privado/feegow`).get()).exists, false,
       'testar antes de salvar nao grava privado/{tipo}');
   });
-  test('conexao OK grava status ok em integracoes/{tipo} e devolve 200', async () => {
+  test('credencial no corpo com sucesso tambem NAO grava em integracoes/{tipo} (Important 3 — cartao nao pode mentir)', async () => {
     const fetchOk = async () => new Response('{}', { status: 200 });
+    const antes = (await db.doc(`workspaces/${WS}/integracoes/orthanc`).get()).data();
     const r = await executarTeste(db, {
       wsId: WS, tipo: 'orthanc',
-      credencialBody: { url: 'http://orthanc.local', senha: 'segredoOrthanc123' },
+      credencialBody: { url: 'http://orthanc.corpo.local', pass: 'segredoOrthanc123' },
       fetchImpl: fetchOk,
     });
     assert.equal(r.httpStatus, 200);
     assert.equal(r.ok, true);
     assert.equal(r.status, 'ok');
+    const depois = (await db.doc(`workspaces/${WS}/integracoes/orthanc`).get()).data();
+    assert.deepEqual(depois, antes, 'testar com credencial do corpo nao grava em integracoes/{tipo}, mesmo com sucesso');
+  });
+  test('gaveta privado/orthanc {user,pass} monta Basic Auth correto e grava status ok (Critical 1 + Important 2)', async () => {
+    await db.doc(`workspaces/${WS}/privado/orthanc`).set({ user: 'leo', pass: 'senhaLonga123' });
+    await db.doc(`workspaces/${WS}/integracoes/orthanc`).set({ url: 'http://orthanc.gaveta.local' }, { merge: true });
+    let headersRecebidos;
+    const fetchCaptura = async (_url, opts) => { headersRecebidos = opts.headers; return new Response('{}', { status: 200 }); };
+    const r = await executarTeste(db, { wsId: WS, tipo: 'orthanc', fetchImpl: fetchCaptura });
+    assert.equal(r.httpStatus, 200);
+    assert.equal(r.ok, true);
+    const esperado = 'Basic ' + Buffer.from('leo:senhaLonga123').toString('base64');
+    assert.equal(headersRecebidos.Authorization, esperado, 'nomes de campo user/pass da gaveta (Critical 1) chegam ao Basic Auth');
     const doc = (await db.doc(`workspaces/${WS}/integracoes/orthanc`).get()).data();
     assert.equal(doc.status, 'ok');
     assert.equal(doc.ultimoErro, null);
   });
-  test('erro do alvo contendo a credencial -> ultimoErro gravado NAO contem a credencial', async () => {
+  test('credencial no corpo so com senha combina com o endereco publico ja salvo (Minor 2)', async () => {
+    await db.doc(`workspaces/${WS}/integracoes/orthanc`).set({ url: 'http://orthanc.publico.local' }, { merge: true });
+    const fetchOk = async () => new Response('{}', { status: 200 });
+    const r = await executarTeste(db, {
+      wsId: WS, tipo: 'orthanc', credencialBody: { pass: 'somenteSenha123' }, fetchImpl: fetchOk,
+    });
+    assert.equal(r.ok, true, 'endereco publico + senha do corpo devem se combinar sem "Endereço do Orthanc ausente"');
+  });
+  test('erro do alvo contendo a credencial do corpo -> mensagem devolvida nao contem a credencial e nada e gravado (Important 1 + 3)', async () => {
     const SEGREDO = 'tokenSuperSecreto999';
     const fetchVazando = async () => new Response(`acesso negado para o token ${SEGREDO}`, { status: 401 });
+    const antes = (await db.doc(`workspaces/${WS}/integracoes/feegow`).get()).data();
     const r = await executarTeste(db, {
       wsId: WS, tipo: 'feegow', credencialBody: { token: SEGREDO }, fetchImpl: fetchVazando,
     });
     assert.equal(r.status, 'erro');
     assert.equal(r.mensagem.includes(SEGREDO), false, 'resposta da rota nao pode conter a credencial');
-    const doc = (await db.doc(`workspaces/${WS}/integracoes/feegow`).get()).data();
-    assert.equal(doc.ultimoErro.includes(SEGREDO), false, 'ultimoErro gravado nao pode conter a credencial');
-    assert.match(doc.ultimoErro, /\*\*\*/);
+    assert.equal(r.mensagem, 'Feegow 401', 'mensagem nao embute o corpo da resposta do alvo');
+    const depois = (await db.doc(`workspaces/${WS}/integracoes/feegow`).get()).data();
+    assert.deepEqual(depois, antes, 'testar com credencial do corpo nao grava em integracoes/{tipo}');
+  });
+  test('gaveta com senha curta (abaixo do piso de 6 do sanitizar) — corpo do erro do alvo nao vaza (Important 1, raiz)', async () => {
+    await db.doc(`workspaces/${WS}/privado/orthanc`).set({ user: 'leo', pass: 'ad123' });
+    await db.doc(`workspaces/${WS}/integracoes/orthanc`).set({ url: 'http://orthanc.curta.local' }, { merge: true });
+    const fetchVazando = async () => new Response('acesso negado, senha usada: ad123', { status: 401 });
+    const r = await executarTeste(db, { wsId: WS, tipo: 'orthanc', fetchImpl: fetchVazando });
+    assert.equal(r.status, 'erro');
+    assert.equal(r.mensagem.includes('ad123'), false);
+    const doc = (await db.doc(`workspaces/${WS}/integracoes/orthanc`).get()).data();
+    assert.equal(doc.ultimoErro.includes('ad123'), false, 'senha curta nao pode vazar mesmo abaixo do piso do sanitizar');
+    assert.equal(doc.ultimoErro, 'Orthanc 401', 'mensagem gravada nao embute o corpo da resposta do alvo');
   });
 });
 
@@ -115,12 +149,14 @@ describe('sanitizar', () => {
 });
 
 describe('testarFeegow / testarOrthanc (bater no alvo)', () => {
-  test('testarFeegow lanca com o texto do alvo quando a resposta nao e ok', async () => {
+  test('testarFeegow lanca so com status quando a resposta nao e ok (nao embute o corpo do alvo)', async () => {
     const fetchImpl = async () => new Response('falhou', { status: 500 });
     await assert.rejects(testarFeegow({ token: 'x'.repeat(10) }, fetchImpl), /Feegow 500/);
+    await assert.rejects(testarFeegow({ token: 'x'.repeat(10) }, fetchImpl), (e) => !e.message.includes('falhou'));
   });
-  test('testarOrthanc lanca quando a resposta nao e ok', async () => {
+  test('testarOrthanc lanca so com status quando a resposta nao e ok (nao embute o corpo do alvo)', async () => {
     const fetchImpl = async () => new Response('falhou', { status: 500 });
-    await assert.rejects(testarOrthanc({ url: 'http://x', senha: 'y'.repeat(10) }, fetchImpl), /Orthanc 500/);
+    await assert.rejects(testarOrthanc({ url: 'http://x', pass: 'y'.repeat(10) }, fetchImpl), /Orthanc 500/);
+    await assert.rejects(testarOrthanc({ url: 'http://x', pass: 'y'.repeat(10) }, fetchImpl), (e) => !e.message.includes('falhou'));
   });
 });
