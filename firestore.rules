@@ -115,6 +115,14 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
+      // Integracoes (Sub-plano 5): configuracao e estado de Feegow/Orthanc/Wader.
+      // So o dono. O SEGREDO nao mora aqui — vai na gaveta privado/ acima, que
+      // nenhum cliente le. Batimento do Wader e resultado de teste entram por
+      // Admin SDK, que passa por cima desta regra.
+      match /integracoes/{tipo} {
+        allow read, write: if ehDonoDoLocal(wsId);
+      }
+
       match /pacientes/{pacId} {
         allow read: if superadmin() || alcancaLocal(wsId);
         allow create, update: if alcancaLocal(wsId);
