@@ -40,13 +40,15 @@ async function main() {
 
   const wsRef = db.collection('workspaces').doc('wader-dev');
   const lote = db.batch();
+  // merge: nao apagar status/ultimoTeste/ultimoErro que a tela ou a migracao
+  // ja tenham gravado neste documento.
   lote.set(wsRef.collection('integracoes').doc('orthanc'), {
     tipo: 'orthanc',
     ativo: true,
     status: 'nunca_testado',
     url,
-  });
-  lote.set(wsRef.collection('privado').doc('orthanc'), { user, pass });
+  }, { merge: true });
+  lote.set(wsRef.collection('privado').doc('orthanc'), { user, pass }, { merge: true });
   await lote.commit();
 
   console.log(`✓ wader-dev apontado pro Orthanc real da MedCardio (${url})`);

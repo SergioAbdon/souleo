@@ -34,28 +34,31 @@ if (CAMPOS_APAGAVEIS.includes('ortancAtivo')) throw new Error('ortancAtivo NUNCA
 // outro caminho, ex. alguém salvou a tela /integracoes antes da migração
 // rodar, com conteúdo diferente do que a migração ia gravar; nesse caso o
 // 01 recusa sobrescrever e o valor real nunca chega no destino). Cada campo
-// declara `copiaConfirmada(integData, privData)` — segredo confere
-// privado/{tipo}, dado público confere o próprio valor em integracoes/{tipo}.
+// declara `copiaConfirmada(integData, privData, valorLegado)` e confere por
+// IGUALDADE com o valor legado — presença no destino não basta: a tela pode
+// ter gravado um valor DIFERENTE do que está aqui, e aí apagar a origem
+// destrói o valor real. Divergência = recusa (lado seguro): o operador vê a
+// linha e decide.
 const DESTINO = {
   feegowToken: {
     tipo: 'feegow',
     onde: 'privado/feegow',
-    copiaConfirmada: (_integ, priv) => typeof priv?.token === 'string' && priv.token !== '',
+    copiaConfirmada: (_integ, priv, legado) => priv?.token === legado,
   },
   ortancUrl: {
     tipo: 'orthanc',
     onde: 'integracoes/orthanc',
-    copiaConfirmada: (integ) => typeof integ?.url === 'string' && integ.url !== '',
+    copiaConfirmada: (integ, _priv, legado) => integ?.url === legado,
   },
   ortancUser: {
     tipo: 'orthanc',
     onde: 'privado/orthanc',
-    copiaConfirmada: (_integ, priv) => typeof priv?.user === 'string' && priv.user !== '',
+    copiaConfirmada: (_integ, priv, legado) => priv?.user === legado,
   },
   ortancPass: {
     tipo: 'orthanc',
     onde: 'privado/orthanc',
-    copiaConfirmada: (_integ, priv) => typeof priv?.pass === 'string' && priv.pass !== '',
+    copiaConfirmada: (_integ, priv, legado) => priv?.pass === legado,
   },
 };
 
@@ -64,7 +67,7 @@ const DESTINO = {
 // campo novo entra na lista sem ninguém saber como conferir o valor real —
 // e o script se recusa a rodar em vez de arriscar apagar sem checar.
 for (const campo of CAMPOS_APAGAVEIS) {
-  if (!DESTINO[campo]) throw new Error(`Campo apagável '${campo}' sem entrada em DESTINO — declare tipo e copiaConfirmada antes de rodar.`);
+  if (typeof DESTINO[campo]?.copiaConfirmada !== 'function') throw new Error(`Campo apagável '${campo}' sem copiaConfirmada em DESTINO — declare tipo, onde e copiaConfirmada antes de rodar.`);
 }
 
 async function planoParaWorkspace(ws) {
@@ -92,8 +95,8 @@ async function planoParaWorkspace(ws) {
       linhas.push(`    ${campo}: integracoes/${tipo} ainda não existe — RECUSANDO apagar (migração não rodou pra este tipo)`);
       continue;
     }
-    if (!copiaConfirmada(integSnaps[tipo].data(), privSnaps[tipo].data())) {
-      linhas.push(`    ${campo}: valor real não confirmado em ${onde} — RECUSANDO apagar (perda de dado)`);
+    if (!copiaConfirmada(integSnaps[tipo].data(), privSnaps[tipo].data(), w[campo])) {
+      linhas.push(`    ${campo}: valor em ${onde} NÃO é igual ao daqui — RECUSANDO apagar (perda de dado)`);
       continue;
     }
     paraApagar.push(campo);
