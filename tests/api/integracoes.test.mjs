@@ -135,6 +135,19 @@ describe('executarTeste (contrato pontos 3-6 — dono ja resolvido pela rota)', 
     assert.equal(doc.ultimoErro.includes('ad123'), false, 'senha curta nao pode vazar mesmo abaixo do piso do sanitizar');
     assert.equal(doc.ultimoErro, 'Orthanc 401', 'mensagem gravada nao embute o corpo da resposta do alvo');
   });
+  test('a MESMA falha duas vezes seguidas nao se auto-mascara', async () => {
+    // O ultimoErro da tentativa anterior fica no documento publico. Se os segredos
+    // fossem derivados de `conn` (publico + gaveta), a 2a falha identica viraria
+    // "***" e apagaria o diagnostico justo quando o dono tenta entender a falha.
+    await db.doc(`workspaces/${WS}/privado/orthanc`).set({ user: 'leo', pass: 'senhaLonga123' });
+    await db.doc(`workspaces/${WS}/integracoes/orthanc`).set({ url: 'http://orthanc.repetido.local' }, { merge: true });
+    const fetch401 = async () => new Response('nao autorizado', { status: 401 });
+    await executarTeste(db, { wsId: WS, tipo: 'orthanc', fetchImpl: fetch401 });
+    const r2 = await executarTeste(db, { wsId: WS, tipo: 'orthanc', fetchImpl: fetch401 });
+    assert.equal(r2.mensagem, 'Orthanc 401', 'a 2a falha identica tem de continuar legivel');
+    const doc = (await db.doc(`workspaces/${WS}/integracoes/orthanc`).get()).data();
+    assert.equal(doc.ultimoErro, 'Orthanc 401');
+  });
 });
 
 describe('sanitizar', () => {

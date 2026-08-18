@@ -91,25 +91,30 @@ export async function executarTeste(dbAdmin: Firestore, args: {
   const docPublico = (await dbAdmin.doc(`workspaces/${wsId}/integracoes/${tipo}`).get()).data() ?? {};
 
   let conn: Record<string, unknown>;
+  let fonteSegredo: Record<string, unknown>;
   let gravar: boolean;
   if (credencialBody) {
     // "Testar antes de salvar": combina com o que já está público (ex.: só a
     // senha veio, o endereço já está salvo) — NADA é gravado em privado/{tipo}
     // nem em integracoes/{tipo}: o resultado só volta na resposta HTTP.
     conn = { ...docPublico, ...credencialBody };
+    fonteSegredo = credencialBody;
     gravar = false;
   } else {
     const privSnap = await dbAdmin.doc(`workspaces/${wsId}/privado/${tipo}`).get();
     if (!privSnap.exists) {
       return { httpStatus: 400, ok: false, mensagem: `Nenhuma credencial cadastrada para ${tipo}. Cadastre antes de testar.` };
     }
-    conn = { ...docPublico, ...(privSnap.data() ?? {}) };
+    fonteSegredo = privSnap.data() ?? {};
+    conn = { ...docPublico, ...fonteSegredo };
     gravar = true;
   }
 
-  // Qualquer valor-texto da conexao pode ser o segredo (token/senha/usuario) —
-  // sanitizar tira TODOS antes de a mensagem sair daqui.
-  const segredos = Object.values(conn).filter((v): v is string => typeof v === 'string');
+  // Qualquer valor-texto da FONTE DO SEGREDO pode ser o segredo (token/senha/usuario) —
+  // sanitizar tira TODOS antes de a mensagem sair daqui. Varrer `conn` inteiro seria
+  // pior que inutil: ele carrega o `ultimoErro` da tentativa anterior, entao a segunda
+  // falha identica seguida se auto-mascararia ("Erro: ***") e apagaria o diagnostico.
+  const segredos = Object.values(fonteSegredo).filter((v): v is string => typeof v === 'string');
 
   let status: 'ok' | 'erro';
   let mensagem: string;
