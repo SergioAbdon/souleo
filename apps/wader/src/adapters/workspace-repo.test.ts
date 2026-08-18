@@ -83,3 +83,43 @@ describe('WorkspaceRepo.getOrthancConnection', () => {
     expect(conn).toBeNull();
   });
 });
+
+// Sub-plano 5, Task 7 (item A) — feegowProcMap tinha DOIS donos: a tela nova
+// (Task 4) grava em integracoes/feegow.procMap, mas este leitor ainda lia o
+// campo antigo workspaces/{wsId}.feegowProcMap (no-op silencioso pra tela nova).
+describe('WorkspaceRepo.getProcedimentos', () => {
+  const FEEGOW_INTEGRACAO_PATH = `workspaces/${WS}/integracoes/feegow`;
+  const WORKSPACE_PATH = `workspaces/${WS}`;
+
+  beforeEach(() => {
+    docs = {};
+  });
+
+  it('le o mapa do lugar NOVO (integracoes/feegow.procMap)', async () => {
+    docs[FEEGOW_INTEGRACAO_PATH] = { exists: true, data: { procMap: { '6': 'eco_tt', '67': 'doppler_carotidas' } } };
+
+    const repo = new WorkspaceRepo(WS);
+    const procs = await repo.getProcedimentos();
+
+    expect(procs.map(p => p.tipo).sort()).toEqual(['doppler_carotidas', 'eco_tt']);
+  });
+
+  it('campo antigo workspaces/{wsId}.feegowProcMap e IGNORADO (mesmo com dado la)', async () => {
+    docs[WORKSPACE_PATH] = { exists: true, data: { feegowProcMap: { '6': 'eco_tt' } } };
+    // integracoes/feegow nao existe -> tem que cair no default (todos os tipos), NAO no campo antigo.
+
+    const repo = new WorkspaceRepo(WS);
+    const procs = await repo.getProcedimentos();
+
+    expect(procs.length).toBeGreaterThan(1); // default = todos os tipos, nao so o 'eco_tt' do campo antigo
+  });
+
+  it('integracoes/feegow.procMap vazio -> default (todos os tipos)', async () => {
+    docs[FEEGOW_INTEGRACAO_PATH] = { exists: true, data: { procMap: {} } };
+
+    const repo = new WorkspaceRepo(WS);
+    const procs = await repo.getProcedimentos();
+
+    expect(procs.length).toBeGreaterThan(1);
+  });
+});

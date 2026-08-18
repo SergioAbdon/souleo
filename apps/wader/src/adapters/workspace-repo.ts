@@ -104,26 +104,29 @@ export class WorkspaceRepo {
 
   /**
    * Lista os procedimentos oferecidos pelo workspace.
-   * Lê de `workspace.feegowProcMap`, cai pra default se não houver.
+   * Lê de `integracoes/feegow.procMap` (Sub-plano 5) — SEM fallback pro campo
+   * antigo `workspace.feegowProcMap`: a tela nova (Task 4) grava só no lugar
+   * novo, e este leitor lendo o antigo era o resto do dual-owner (Task 7,
+   * item A) — editar o mapa na tela virava no-op silencioso pra este reader.
    */
   async getProcedimentos(): Promise<ProcedimentoOferecido[]> {
     if (this.procedimentosCache && Date.now() < this.procedimentosCacheExpireAt) {
       return this.procedimentosCache;
     }
 
-    const snap = await getDb().collection('workspaces').doc(this.wsId).get();
+    const snap = await getDb().doc(`workspaces/${this.wsId}/integracoes/feegow`).get();
 
     if (!snap.exists) {
-      log.warn({ wsId: this.wsId }, 'Workspace não encontrado, usando defaults');
+      log.warn({ wsId: this.wsId }, 'integracoes/feegow não encontrado, usando defaults');
       return this.cacheAndReturn(getAllAsDefault());
     }
 
     const data = snap.data() ?? {};
-    const procMap = (data.feegowProcMap as Record<string, string> | undefined) ?? {};
+    const procMap = (data.procMap as Record<string, string> | undefined) ?? {};
     const tiposUnicos = new Set(Object.values(procMap).filter(isTipoExame));
 
     if (tiposUnicos.size === 0) {
-      log.info({ wsId: this.wsId }, 'workspace.feegowProcMap vazio, usando todos os tipos como default');
+      log.info({ wsId: this.wsId }, 'integracoes/feegow.procMap vazio, usando todos os tipos como default');
       return this.cacheAndReturn(getAllAsDefault());
     }
 

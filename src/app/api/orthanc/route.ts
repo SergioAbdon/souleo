@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import { resolverConfigOrthanc, type OrtancConfig } from '@/lib/integracoes-admin';
 
 // ── Firebase Admin ──
 if (!getApps().length) {
@@ -44,37 +45,6 @@ async function verificarAuth(req: NextRequest): Promise<string | null> {
   } catch {
     return null;
   }
-}
-
-// ── Resolver URL + credenciais do Orthanc (header ou workspace) ──
-type OrtancConfig = { url: string; user?: string; pass?: string };
-
-async function resolverConfig(req: NextRequest): Promise<OrtancConfig | null> {
-  // 1. Headers (usado no teste de conexao do LocalModal)
-  const headerUrl = req.headers.get('x-orthanc-url');
-  if (headerUrl) {
-    return {
-      url: headerUrl.replace(/\/+$/, ''),
-      user: req.headers.get('x-orthanc-user') || undefined,
-      pass: req.headers.get('x-orthanc-pass') || undefined,
-    };
-  }
-
-  // 2. Buscar do workspace via query param wsId
-  const wsId = req.nextUrl.searchParams.get('wsId');
-  if (wsId) {
-    const wsDoc = await dbAdmin.doc(`workspaces/${wsId}`).get();
-    const data = wsDoc.data();
-    if (data?.ortancAtivo && data?.ortancUrl) {
-      return {
-        url: (data.ortancUrl as string).replace(/\/+$/, ''),
-        user: (data.ortancUser as string) || undefined,
-        pass: (data.ortancPass as string) || undefined,
-      };
-    }
-  }
-
-  return null;
 }
 
 // ── Fetch genérico ao Orthanc (com auth opcional) ──
@@ -118,19 +88,11 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, error: 'exameId e pacienteNome obrigatorios' }, { status: 400 });
       }
 
-      // Resolver config do Orthanc via wsId
-      let ortancConfig: OrtancConfig | null = null;
-      if (wsId) {
-        const wsDoc = await dbAdmin.doc(`workspaces/${wsId}`).get();
-        const data = wsDoc.data();
-        if (data?.ortancAtivo && data?.ortancUrl) {
-          ortancConfig = {
-            url: (data.ortancUrl as string).replace(/\/+$/, ''),
-            user: (data.ortancUser as string) || undefined,
-            pass: (data.ortancPass as string) || undefined,
-          };
-        }
-      }
+      // Resolver config do Orthanc — MESMA funcao que o GET usa (Sub-plano 5,
+      // Task 7): antes cada handler tinha sua propria copia desta leitura, e
+      // so fechar o furo 2 no GET deixava este POST ainda aceitando o que
+      // estivesse no documento do local (inclusive sem o filtro de esquema).
+      const ortancConfig: OrtancConfig | null = await resolverConfigOrthanc(dbAdmin, wsId ?? null);
 
       if (!ortancConfig) {
         return NextResponse.json({ ok: false, error: 'orthanc_offline', message: 'Orthanc nao configurado ou desativado.' });
@@ -195,8 +157,11 @@ export async function GET(req: NextRequest) {
 
   const action = req.nextUrl.searchParams.get('action');
 
-  // Resolver config do Orthanc (URL + credenciais)
-  const config = await resolverConfig(req);
+  // Resolver config do Orthanc (URL + credenciais) — SEMPRE de
+  // integracoes/orthanc + privado/orthanc, nunca de header (furo 2 fechado
+  // na funcao compartilhada, Sub-plano 5 Task 7).
+  const wsId = req.nextUrl.searchParams.get('wsId');
+  const config = await resolverConfigOrthanc(dbAdmin, wsId);
   if (!config) {
     return NextResponse.json({ ok: false, error: 'URL do Orthanc nao configurada.' }, { status: 400 });
   }

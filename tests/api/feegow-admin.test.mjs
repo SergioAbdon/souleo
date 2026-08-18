@@ -3,7 +3,7 @@ import { test, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
-import { gravarImportacao } from '../../src/lib/feegow-admin.ts';
+import { gravarImportacao, resolverTokenFeegow, resolverProcMap, gateAcessoWs } from '../../src/lib/feegow-admin.ts';
 
 let db;
 const WS = 'wsFeegow';
@@ -70,5 +70,63 @@ describe('gravarImportacao', () => {
     const ex5 = (await db.doc(`workspaces/${WS}/exames/fg-5`).get()).data();
     assert.equal(ex4.medicoUid, 'uidDrA');
     assert.notEqual(ex4.acc, ex5.acc);
+  });
+});
+
+// Sub-plano 5, Task 7 — furo 1 (token do header) + item A (procMap dual-owner) + furo 3 (gate dos GETs).
+describe('resolverTokenFeegow (furo 1 — token SEMPRE da gaveta)', () => {
+  test('privado/feegow.token existe -> usa o da gaveta (nao ha parametro de header: estruturalmente impossivel um x-feegow-token de cliente vencer)', async () => {
+    await db.doc(`workspaces/${WS}/privado/feegow`).set({ token: 'token-da-gaveta-123' });
+    const tok = await resolverTokenFeegow(db, WS, 'token-fallback-env');
+    assert.equal(tok, 'token-da-gaveta-123');
+  });
+  test('sem privado/feegow (ou sem token) -> cai no fallback do .env', async () => {
+    const tok = await resolverTokenFeegow(db, 'wsSemGaveta', 'token-fallback-env');
+    assert.equal(tok, 'token-fallback-env');
+  });
+  test('sem wsId -> cai direto no fallback', async () => {
+    const tok = await resolverTokenFeegow(db, null, 'token-fallback-env');
+    assert.equal(tok, 'token-fallback-env');
+  });
+});
+
+describe('resolverProcMap (item A — dual-owner: SO integracoes/feegow.procMap, sem fallback pro campo antigo)', () => {
+  test('le o mapa do lugar NOVO (integracoes/feegow.procMap)', async () => {
+    await db.doc(`workspaces/${WS}/integracoes/feegow`).set({ procMap: { '10': 'eco_tt', '20': 'doppler_carotidas' } });
+    const mapa = await resolverProcMap(db, WS, { 999: 'nao_deveria_aparecer' });
+    assert.deepEqual(mapa, { 10: 'eco_tt', 20: 'doppler_carotidas' });
+  });
+  test('campo antigo workspaces/{wsId}.feegowProcMap e IGNORADO (mesmo com dado la)', async () => {
+    const wsAntigo = 'wsComCampoAntigo';
+    await db.doc(`workspaces/${wsAntigo}`).set({ feegowProcMap: { '77': 'eco_te' } });
+    // integracoes/feegow nao existe pra este ws -> tem que cair no default, NAO no campo antigo.
+    const mapa = await resolverProcMap(db, wsAntigo, { 1: 'default_esperado' });
+    assert.deepEqual(mapa, { 1: 'default_esperado' });
+  });
+  test('integracoes/feegow.procMap vazio ({}) -> usa o default', async () => {
+    await db.doc(`workspaces/${WS}/integracoes/feegow`).set({ procMap: {} });
+    const mapa = await resolverProcMap(db, WS, { 5: 'default' });
+    assert.deepEqual(mapa, { 5: 'default' });
+  });
+  test('sem wsId -> usa o default', async () => {
+    const mapa = await resolverProcMap(db, null, { 5: 'default' });
+    assert.deepEqual(mapa, { 5: 'default' });
+  });
+});
+
+describe('gateAcessoWs (furo 3 — GETs sensiveis exigem wsId + papel)', () => {
+  test('sem wsId -> 400', () => {
+    const r = gateAcessoWs(null, 'dono');
+    assert.equal(r.ok, false);
+    assert.equal(r.status, 400);
+  });
+  test('com wsId mas sem papel (usuario sem acesso ao local) -> 403', () => {
+    const r = gateAcessoWs(WS, null);
+    assert.equal(r.ok, false);
+    assert.equal(r.status, 403);
+  });
+  test('wsId + papel resolvido -> ok', () => {
+    const r = gateAcessoWs(WS, 'recepcao');
+    assert.equal(r.ok, true);
   });
 });

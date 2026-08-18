@@ -148,14 +148,17 @@ export default function IntegracoesPage() {
     }
   }
 
+  // Le do token JA SALVO na gaveta (via wsId) -- Sub-plano 5, Task 7: a rota
+  // parou de aceitar X-Feegow-Token de header (furo 1), entao "Carregar
+  // procedimentos" so funciona depois de Salvar o token pelo menos uma vez.
   async function carregarProcedimentos() {
-    if (!feegowToken.trim() || !user) return;
+    if (!user || !wsId) return;
     setProcsLoading(true);
     setFeegowErro('');
     try {
       const idToken = await user.getIdToken();
-      const res = await fetch('/api/feegow?action=procedimentos', {
-        headers: { Authorization: `Bearer ${idToken}`, 'X-Feegow-Token': feegowToken.trim() },
+      const res = await fetch(`/api/feegow?action=procedimentos&wsId=${wsId}`, {
+        headers: { Authorization: `Bearer ${idToken}` },
       });
       const data = await res.json();
       if (data.ok && data.procedimentos?.length) {
@@ -167,7 +170,7 @@ export default function IntegracoesPage() {
           setFeegowProcMap(defaults);
         }
       } else {
-        setFeegowErro('Token não reconhecido pelo Feegow — confira antes de carregar procedimentos.');
+        setFeegowErro('Token não reconhecido pelo Feegow — salve o token (botão Salvar) antes de carregar procedimentos.');
       }
     } catch {
       setFeegowErro('Erro ao carregar procedimentos do Feegow.');
@@ -300,7 +303,8 @@ export default function IntegracoesPage() {
 
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-xs text-ink-3">{Object.values(feegowProcMap).filter(v => v && v !== 'ignorar').length} procedimento(s) mapeado(s)</p>
-                      <button type="button" onClick={carregarProcedimentos} disabled={procsLoading || !feegowToken.trim()}
+                      <button type="button" onClick={carregarProcedimentos} disabled={procsLoading || i.credencialCadastradaEm == null}
+                        title={i.credencialCadastradaEm == null ? 'Salve o token primeiro' : undefined}
                         className={botaoRemover}>
                         {procsLoading ? 'carregando…' : 'Carregar procedimentos'}
                       </button>

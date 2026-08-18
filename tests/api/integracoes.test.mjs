@@ -14,7 +14,7 @@ import { resolverPapel } from '../../src/lib/exame-admin.ts';
 import { requireUid } from '../../src/lib/auth-admin.ts';
 import {
   executarTeste, sanitizar, testarFeegow, testarOrthanc,
-  salvarIntegracao, removerCredencial,
+  salvarIntegracao, removerCredencial, resolverConfigOrthanc,
 } from '../../src/lib/integracoes-admin.ts';
 
 let db;
@@ -275,5 +275,37 @@ describe('salvarIntegracao / removerCredencial (contrato write-only + espelho �
     const serializado2 = JSON.stringify(r2);
     assert.equal(serializado2.includes('usuarioSecreto999'), false);
     assert.equal(serializado2.includes('senhaSuperSecreta123'), false);
+  });
+});
+
+// Sub-plano 5, Task 7 — furo 2 (config vinha de header, endereco arbitrario) + item D (SSRF).
+describe('resolverConfigOrthanc (furo 2 — config SEMPRE de integracoes/orthanc + privado/orthanc, nunca de header)', () => {
+  const WSO = 'wsOrthancConfig';
+  test('ativo + url + credencial na gaveta -> monta config', async () => {
+    await db.doc(`workspaces/${WSO}/integracoes/orthanc`).set({ url: 'http://192.168.1.50:8042/', ativo: true });
+    await db.doc(`workspaces/${WSO}/privado/orthanc`).set({ user: 'leo', pass: 'senhaLonga123' });
+    const cfg = await resolverConfigOrthanc(db, WSO);
+    assert.deepEqual(cfg, { url: 'http://192.168.1.50:8042', user: 'leo', pass: 'senhaLonga123' });
+  });
+  test('ativo:false -> null (mesmo com url e credencial validas)', async () => {
+    await db.doc(`workspaces/${WSO}/integracoes/orthanc`).set({ url: 'http://192.168.1.50:8042', ativo: false });
+    const cfg = await resolverConfigOrthanc(db, WSO);
+    assert.equal(cfg, null);
+  });
+  test('sem wsId -> null (sem header pra cair de volta)', async () => {
+    const cfg = await resolverConfigOrthanc(db, null);
+    assert.equal(cfg, null);
+  });
+  test('SSRF (item D): esquema file:// e recusado mesmo com ativo:true', async () => {
+    const ws2 = 'wsSsrfFile';
+    await db.doc(`workspaces/${ws2}/integracoes/orthanc`).set({ url: 'file:///etc/passwd', ativo: true });
+    const cfg = await resolverConfigOrthanc(db, ws2);
+    assert.equal(cfg, null);
+  });
+  test('SSRF (item D): esquema gopher:// e recusado', async () => {
+    const ws3 = 'wsSsrfGopher';
+    await db.doc(`workspaces/${ws3}/integracoes/orthanc`).set({ url: 'gopher://interno.local:70/', ativo: true });
+    const cfg = await resolverConfigOrthanc(db, ws3);
+    assert.equal(cfg, null);
   });
 });

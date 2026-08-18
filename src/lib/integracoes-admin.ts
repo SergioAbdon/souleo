@@ -65,6 +65,32 @@ export async function testarOrthanc(conn: ConexaoOrthanc, fetchImpl: typeof fetc
   }
 }
 
+// ══════════════════════════════════════════════════════════════════
+// Sub-plano 5, Task 7 — resolverConfigOrthanc: fonte UNICA de config pros
+// dois consumidores server-side de api/orthanc/route.ts (GET e POST
+// criar_mwl, que antes tinham cada um sua propria copia da leitura —
+// furo 2 do brief inteiro so fechava se os dois usassem esta funcao).
+// So http/https (SSRF — endereco vem do dono via /api/integracoes, nunca
+// mais do cliente: aceitar x-orthanc-url arbitrario era o resto do furo 2).
+// ══════════════════════════════════════════════════════════════════
+export type OrtancConfig = { url: string; user?: string; pass?: string };
+
+export async function resolverConfigOrthanc(db: Firestore, wsId: string | null): Promise<OrtancConfig | null> {
+  if (!wsId) return null;
+  const integSnap = await db.doc(`workspaces/${wsId}/integracoes/orthanc`).get();
+  const integData = integSnap.data();
+  if (!integData?.ativo || !integData?.url) return null;
+  const url = (integData.url as string).replace(/\/+$/, '');
+  if (!/^https?:\/\//i.test(url)) return null; // SSRF: esquema tem que ser http/https
+  const privSnap = await db.doc(`workspaces/${wsId}/privado/orthanc`).get();
+  const priv = privSnap.data() ?? {};
+  return {
+    url,
+    user: (priv.user as string) || undefined,
+    pass: (priv.pass as string) || undefined,
+  };
+}
+
 export type ResultadoTeste = { httpStatus: number; ok: boolean; status?: 'ok' | 'erro'; mensagem: string };
 
 /**

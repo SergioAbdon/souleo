@@ -48,6 +48,68 @@ export type Candidato = {
 const jaExiste = (e: unknown) =>
   (e as { code?: number })?.code === 6 || String(e).includes('ALREADY_EXISTS');
 
+// ══════════════════════════════════════════════════════════════════
+// Sub-plano 5, Task 7 — funcoes puras que a rota (route.ts, nao testavel
+// direto por node --test por causa do import '@/...') delega. Cada uma
+// so faz UMA coisa, sem cross-import de outro lib .ts (mesma restricao
+// do topo do arquivo).
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * Token do Feegow: SEMPRE da gaveta (workspaces/{wsId}/privado/feegow.token).
+ * Sem parametro de header nenhum — por construcao nao ha como um
+ * x-feegow-token de cliente influenciar o resultado (furo 1 fechado aqui,
+ * na funcao compartilhada; route.ts vira wrapper fino que so extrai wsId).
+ * `fallback` e o FEEGOW_API_TOKEN do .env, ultimo recurso durante a virada.
+ */
+export async function resolverTokenFeegow(db: Firestore, wsId: string | null, fallback: string): Promise<string> {
+  if (wsId) {
+    const priv = await db.doc(`workspaces/${wsId}/privado/feegow`).get();
+    const tok = priv.data()?.token as string | undefined;
+    if (tok) return tok;
+  }
+  return fallback;
+}
+
+/**
+ * Mapa procedimento->tipoExame: SO de integracoes/feegow.procMap (Task 4).
+ * Sem fallback pro campo antigo workspaces/{wsId}.feegowProcMap (decisao D3
+ * da spec) — antes desta task, montarCandidatos() e o Wader liam o campo
+ * antigo e a tela nova (Task 4) gravava no lugar novo: editar o mapa era
+ * no-op silencioso pra importacao. `defaultMap` so entra quando o doc novo
+ * nao existe ou esta vazio (locais que nunca configuraram).
+ */
+export async function resolverProcMap(
+  db: Firestore, wsId: string | null, defaultMap: Record<number, string>,
+): Promise<Record<number, string>> {
+  if (wsId) {
+    const snap = await db.doc(`workspaces/${wsId}/integracoes/feegow`).get();
+    const cfg = snap.data()?.procMap as Record<string, string> | undefined;
+    if (cfg && Object.keys(cfg).length > 0) {
+      const out: Record<number, string> = {};
+      for (const [k, v] of Object.entries(cfg)) out[Number(k)] = v;
+      return out;
+    }
+  }
+  return defaultMap;
+}
+
+/**
+ * Veredito HTTP dos GETs sensiveis (buscar_cpf, sala_espera, paciente,
+ * convenios) — mesmo padrao que o POST 'importar' ja aplicava. NAO resolve
+ * papel (isso e resolverPapel de exame-admin.ts, ja testado em
+ * exame.test.mjs/corrigir-laudo.test.mjs — este arquivo nao pode importar
+ * de la, ver comentario do topo); so decide o codigo a partir do que a
+ * rota ja tem em maos.
+ */
+export function gateAcessoWs(
+  wsId: string | null, papel: string | null,
+): { ok: true } | { ok: false; status: number; motivo: string } {
+  if (!wsId) return { ok: false, status: 400, motivo: 'wsId obrigatorio' };
+  if (!papel) return { ok: false, status: 403, motivo: 'sem_acesso_ao_local' };
+  return { ok: true };
+}
+
 export async function gravarImportacao(dbAdmin: Firestore, args: {
   wsId: string; candidatos: Candidato[]; uid: string; ehMed: boolean; nomeCriador: string;
 }): Promise<{ criados: Array<{ exameId: string; pac: Candidato }> }> {

@@ -43,20 +43,9 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
   const [p1, setP1] = useState('#1E3A5F');
   const [p2, setP2] = useState('#2563EB');
   const [logoB64, setLogoB64] = useState('');
-  const [feegowToken, setFeegowToken] = useState('');
-  const [feegowStatus, setFeegowStatus] = useState<'none' | 'testing' | 'ok' | 'error'>('none');
-  const [feegowProcs, setFeegowProcs] = useState<Array<{ procedimento_id: number; nome: string }>>([]);
-  const [feegowProcMap, setFeegowProcMap] = useState<Record<number, string>>({});
-  const [procsLoading, setProcsLoading] = useState(false);
   const [feegowProfs, setFeegowProfs] = useState<Array<{ profissional_id: number; nome: string; tratamento?: string; conselho?: string; documento_conselho?: string; uf_conselho?: string }>>([]);
   const [feegowProfMap, setFeegowProfMap] = useState<Record<number, string>>({});
   const [profsLoading, setProfsLoading] = useState(false);
-  const [ortancAtivo, setOrtancAtivo] = useState(false);
-  const [ortancUrl, setOrtancUrl] = useState('');
-  const [ortancUser, setOrtancUser] = useState('');
-  const [ortancPass, setOrtancPass] = useState('');
-  const [ortancStatus, setOrtancStatus] = useState<'none' | 'testing' | 'ok' | 'error'>('none');
-  const [ortancVersion, setOrtancVersion] = useState('');
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
 
@@ -77,17 +66,6 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
       setP1(workspace.corPrimaria as string || '#1E3A5F');
       setP2(workspace.corSecundaria as string || '#2563EB');
       setLogoB64(workspace.logoB64 as string || '');
-      setFeegowToken(workspace.feegowToken as string || '');
-      setFeegowStatus(workspace.feegowToken ? 'ok' : 'none');
-      const savedMap = workspace.feegowProcMap as Record<string, string> | undefined;
-      if (savedMap && Object.keys(savedMap).length > 0) {
-        const parsed: Record<number, string> = {};
-        for (const [k, v] of Object.entries(savedMap)) parsed[Number(k)] = v;
-        setFeegowProcMap(parsed);
-      } else {
-        setFeegowProcMap({});
-      }
-      setFeegowProcs([]);
       const savedProfMap = workspace.feegowProfMap as Record<string, string> | undefined;
       if (savedProfMap && Object.keys(savedProfMap).length > 0) {
         const parsed: Record<number, string> = {};
@@ -97,58 +75,21 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
         setFeegowProfMap({});
       }
       setFeegowProfs([]);
-      setOrtancAtivo(!!workspace.ortancAtivo);
-      setOrtancUrl(workspace.ortancUrl as string || '');
-      setOrtancUser(workspace.ortancUser as string || '');
-      setOrtancPass(workspace.ortancPass as string || '');
-      setOrtancStatus(workspace.ortancUrl ? 'ok' : 'none');
-      setOrtancVersion('');
     }
   }, [workspace, open]);
 
-  function detectarTipo(nome: string): string {
-    const n = nome.toLowerCase();
-    if (n.includes('transesof')) return 'eco_te';
-    if (n.includes('estresse') || n.includes('stress')) return 'eco_stress';
-    if (n.includes('car\u00f3tida') || n.includes('carotida') || n.includes('cervicais')) return 'doppler_carotidas';
-    if (n.includes('transtor') || n.includes('trastor')) return 'eco_tt';
-    if (n.includes('ecocardiograma') && !n.includes('sincronismo') && !n.includes('marcapasso')) return 'eco_tt';
-    return 'ignorar';
-  }
-
-  async function carregarProcedimentos() {
-    if (!feegowToken.trim()) return;
-    setProcsLoading(true);
-    try {
-      const idToken = await auth.currentUser?.getIdToken();
-      const res = await fetch('/api/feegow?action=procedimentos', {
-        headers: { 'Authorization': `Bearer ${idToken || ''}`, 'X-Feegow-Token': feegowToken.trim() },
-      });
-      const data = await res.json();
-      if (data.ok && data.procedimentos?.length) {
-        setFeegowProcs(data.procedimentos);
-        // Só aplicar smart defaults se não tem mapa salvo
-        if (Object.keys(feegowProcMap).length === 0) {
-          const defaults: Record<number, string> = {};
-          for (const p of data.procedimentos) {
-            defaults[p.procedimento_id] = detectarTipo(p.nome);
-          }
-          setFeegowProcMap(defaults);
-        }
-      }
-    } catch {
-      setErro('Erro ao carregar procedimentos do Feegow.');
-    }
-    setProcsLoading(false);
-  }
-
+  // Token/URL/senha do Feegow e do Orthanc sairam daqui (Sub-plano 5, Task 7)
+  // -- moram em workspaces/{wsId}/privado/{tipo}, editados so na tela
+  // Integracoes. "Carregar profissionais" continua aqui (nao e credencial,
+  // ver decisao da task): usa wsId, nao um token digitado no modal -- a rota
+  // resolve o token salvo na gaveta.
   async function carregarProfissionais() {
-    if (!feegowToken.trim()) return;
+    if (!workspace?.id) return;
     setProfsLoading(true);
     try {
       const idToken = await auth.currentUser?.getIdToken();
-      const res = await fetch('/api/feegow?action=profissionais', {
-        headers: { 'Authorization': `Bearer ${idToken || ''}`, 'X-Feegow-Token': feegowToken.trim() },
+      const res = await fetch(`/api/feegow?action=profissionais&wsId=${workspace.id}`, {
+        headers: { 'Authorization': `Bearer ${idToken || ''}` },
       });
       const data = await res.json();
       if (data.ok && data.profissionais?.length) {
@@ -162,6 +103,8 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
           }
           setFeegowProfMap(defaults);
         }
+      } else {
+        setErro('Token do Feegow não cadastrado ou inválido — cadastre em Integrações antes de carregar profissionais.');
       }
     } catch {
       setErro('Erro ao carregar profissionais do Feegow.');
@@ -184,15 +127,7 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
       telefone: tel, telefone2: tel2,
       corPrimaria: p1, corSecundaria: p2,
       logoB64,
-      feegowToken: feegowToken.trim() || null,
-      feegowProcMap: Object.fromEntries(
-        Object.entries(feegowProcMap).filter(([, v]) => v !== 'ignorar')
-      ),
       feegowProfMap: feegowProfMap,
-      ortancAtivo,
-      ortancUrl: ortancUrl.trim() || null,
-      ortancUser: ortancUser.trim() || null,
-      ortancPass: ortancPass.trim() || null,
     });
 
     if (ok) {
@@ -315,206 +250,46 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
             )}
           </div>
 
-          {/* Integracao Feegow */}
-          <div className="border rounded-lg p-3 bg-gray-50">
-            <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Integracao Feegow</label>
-            <div className="flex gap-2 items-end">
-              <div className="flex-1">
-                <input type="text" value={feegowToken} onChange={e => { setFeegowToken(e.target.value); setFeegowStatus('none'); }}
-                  placeholder="Cole seu token da API Feegow aqui"
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] font-mono text-xs" />
-              </div>
-              <button
-                onClick={async () => {
-                  if (!feegowToken.trim()) { setErro('Cole o token Feegow primeiro.'); return; }
-                  setFeegowStatus('testing');
-                  try {
-                    const idToken = await auth.currentUser?.getIdToken();
-                    const res = await fetch('/api/feegow?action=teste', {
-                      headers: { 'Authorization': `Bearer ${idToken || ''}`, 'X-Feegow-Token': feegowToken.trim() },
-                    });
-                    const data = await res.json();
-                    setFeegowStatus(data.ok ? 'ok' : 'error');
-                    if (!data.ok) setErro('Token Feegow invalido ou sem permissao.');
-                  } catch { setFeegowStatus('error'); setErro('Erro ao testar conexao Feegow.'); }
-                }}
-                disabled={feegowStatus === 'testing'}
-                className="px-3 py-2 text-xs font-semibold rounded-lg border border-[#1E3A5F] text-[#1E3A5F] hover:bg-[#1E3A5F] hover:text-white transition disabled:opacity-50">
-                {feegowStatus === 'testing' ? 'Testando...' : 'Testar conexao'}
-              </button>
-            </div>
-            <div className="mt-2 text-xs">
-              {feegowStatus === 'ok' && <span className="text-green-600 font-semibold">Conectado ao Feegow</span>}
-              {feegowStatus === 'error' && <span className="text-red-600 font-semibold">Falha na conexao</span>}
-              {feegowStatus === 'none' && !feegowToken && <span className="text-gray-400">Sem integracao configurada</span>}
-              {feegowStatus === 'none' && feegowToken && <span className="text-gray-400">Token salvo — clique em testar pra verificar</span>}
-            </div>
-
-            {/* Mapeamento de procedimentos */}
-            {feegowStatus === 'ok' && (
-              <div className="mt-3 pt-3 border-t border-gray-200">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-semibold text-gray-500 uppercase">Procedimentos</label>
-                  <button onClick={carregarProcedimentos} disabled={procsLoading}
-                    className="px-3 py-1 text-xs font-semibold rounded-lg border border-purple-500 text-purple-600 hover:bg-purple-50 transition disabled:opacity-50">
-                    {procsLoading ? 'Carregando...' : feegowProcs.length > 0 ? 'Recarregar' : 'Carregar procedimentos'}
-                  </button>
-                </div>
-
-                {feegowProcs.length > 0 && (
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                    {feegowProcs.map(p => (
-                      <div key={p.procedimento_id} className="flex items-center gap-2 text-xs">
-                        <span className="flex-1 text-gray-600 truncate" title={p.nome}>
-                          {p.nome.replace('Exame - ', '')}
-                        </span>
-                        <select
-                          value={feegowProcMap[p.procedimento_id] || 'ignorar'}
-                          onChange={e => setFeegowProcMap(prev => ({ ...prev, [p.procedimento_id]: e.target.value }))}
-                          className={`w-32 border rounded px-2 py-1 text-xs focus:outline-none focus:border-[#1E3A5F] ${
-                            (feegowProcMap[p.procedimento_id] || 'ignorar') === 'ignorar'
-                              ? 'text-gray-400 bg-gray-50'
-                              : 'text-[#1E3A5F] bg-blue-50 font-semibold'
-                          }`}>
-                          <option value="ignorar">Ignorar</option>
-                          <option value="eco_tt">Eco TT</option>
-                          <option value="doppler_carotidas">Carotidas</option>
-                          <option value="eco_te">Eco TE</option>
-                          <option value="eco_stress">Eco Stress</option>
-                        </select>
-                      </div>
-                    ))}
-                    <p className="text-[10px] text-gray-400 mt-2 pt-2 border-t">
-                      Selecione o tipo de exame LEO para cada procedimento. &quot;Ignorar&quot; = nao importar para a worklist.
-                    </p>
-                  </div>
-                )}
-
-                {feegowProcs.length === 0 && Object.keys(feegowProcMap).length > 0 && (
-                  <p className="text-xs text-green-600">
-                    {Object.keys(feegowProcMap).length} procedimento(s) mapeado(s). Clique em &quot;Carregar&quot; para editar.
-                  </p>
-                )}
-              </div>
-            )}
-
-            {feegowStatus === 'ok' && (
-              <div className="mt-3 pt-3 border-t border-gray-200">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-semibold text-gray-500 uppercase">Profissionais</label>
-                  <button onClick={carregarProfissionais} disabled={profsLoading}
-                    className="px-3 py-1 text-xs font-semibold rounded-lg border border-purple-500 text-purple-600 hover:bg-purple-50 transition disabled:opacity-50">
-                    {profsLoading ? 'Carregando...' : feegowProfs.length > 0 ? 'Recarregar' : 'Carregar profissionais'}
-                  </button>
-                </div>
-
-                {feegowProfs.length > 0 && (
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                    {feegowProfs.map(p => (
-                      <div key={p.profissional_id} className="flex items-center gap-2 text-xs">
-                        <span className="w-32 text-gray-500 truncate" title={`${p.conselho || ''} ${p.documento_conselho || ''}/${p.uf_conselho || ''}`}>
-                          {p.tratamento || ''} {p.nome.split(' ').slice(0, 2).join(' ')}
-                        </span>
-                        <input
-                          type="text"
-                          value={feegowProfMap[p.profissional_id] || ''}
-                          onChange={e => setFeegowProfMap(prev => ({ ...prev, [p.profissional_id]: e.target.value }))}
-                          className="flex-1 border rounded px-2 py-1 text-xs focus:outline-none focus:border-[#1E3A5F] text-[#1E3A5F]"
-                          placeholder="Nome a aparecer no laudo / DICOM" />
-                      </div>
-                    ))}
-                    <p className="text-[10px] text-gray-400 mt-2 pt-2 border-t">
-                      Como o nome do médico vai aparecer no DICOM (tag #19) e no laudo. Edite se quiser encurtar.
-                    </p>
-                  </div>
-                )}
-
-                {feegowProfs.length === 0 && Object.keys(feegowProfMap).length > 0 && (
-                  <p className="text-xs text-green-600">
-                    {Object.keys(feegowProfMap).length} profissional(is) mapeado(s). Clique em &quot;Carregar&quot; para editar.
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Integracao DICOM (Orthanc) */}
+          {/* Profissionais (Feegow) — token/URL/senha de integracao saíram
+              pra tela Integrações (Sub-plano 5, Task 7); isto fica porque
+              não é credencial. */}
           <div className="border rounded-lg p-3 bg-gray-50">
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-xs font-semibold text-gray-500 uppercase">Integracao DICOM (Orthanc)</label>
-              <button
-                onClick={() => setOrtancAtivo(!ortancAtivo)}
-                className={`relative w-10 h-5 rounded-full transition ${ortancAtivo ? 'bg-[#2563EB]' : 'bg-gray-300'}`}>
-                <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition ${ortancAtivo ? 'left-5' : 'left-0.5'}`} />
+              <label className="text-xs font-semibold text-gray-500 uppercase">Profissionais (Feegow)</label>
+              <button onClick={carregarProfissionais} disabled={profsLoading}
+                className="px-3 py-1 text-xs font-semibold rounded-lg border border-purple-500 text-purple-600 hover:bg-purple-50 transition disabled:opacity-50">
+                {profsLoading ? 'Carregando...' : feegowProfs.length > 0 ? 'Recarregar' : 'Carregar profissionais'}
               </button>
             </div>
 
-            {ortancAtivo && (
-              <>
-                <div className="flex gap-2 items-end">
-                  <div className="flex-1">
-                    <input type="text" value={ortancUrl}
-                      onChange={e => { setOrtancUrl(e.target.value); setOrtancStatus('none'); }}
-                      placeholder="http://192.168.1.100:8042"
-                      className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] font-mono text-xs" />
-                  </div>
-                  <div className="w-24">
-                    <input type="text" value={ortancUser}
-                      onChange={e => setOrtancUser(e.target.value)}
-                      placeholder="Usuario"
-                      className="w-full border rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] text-xs" />
-                  </div>
-                  <div className="w-24">
-                    <input type="password" value={ortancPass}
-                      onChange={e => setOrtancPass(e.target.value)}
-                      placeholder="Senha"
-                      className="w-full border rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] text-xs" />
-                  </div>
-                  <button
-                    onClick={async () => {
-                      if (!ortancUrl.trim()) { setErro('Informe a URL do Orthanc.'); return; }
-                      setOrtancStatus('testing');
-                      try {
-                        const idToken = await auth.currentUser?.getIdToken();
-                        const headers: Record<string, string> = { 'Authorization': `Bearer ${idToken || ''}`, 'X-Orthanc-Url': ortancUrl.trim() };
-                        if (ortancUser.trim()) headers['X-Orthanc-User'] = ortancUser.trim();
-                        if (ortancPass.trim()) headers['X-Orthanc-Pass'] = ortancPass.trim();
-                        const res = await fetch('/api/orthanc?action=teste', { headers });
-                        const data = await res.json();
-                        if (data.ok) {
-                          setOrtancStatus('ok');
-                          setOrtancVersion(data.version || '');
-                        } else {
-                          setOrtancStatus('error');
-                          setErro(data.error || 'Falha ao conectar ao Orthanc.');
-                        }
-                      } catch { setOrtancStatus('error'); setErro('Erro ao testar conexao Orthanc.'); }
-                    }}
-                    disabled={ortancStatus === 'testing'}
-                    className="px-3 py-2 text-xs font-semibold rounded-lg border border-[#1E3A5F] text-[#1E3A5F] hover:bg-[#1E3A5F] hover:text-white transition disabled:opacity-50">
-                    {ortancStatus === 'testing' ? 'Testando...' : 'Testar conexao'}
-                  </button>
-                </div>
-                <div className="mt-2 text-xs">
-                  {ortancStatus === 'ok' && (
-                    <span className="text-green-600 font-semibold">
-                      Orthanc conectado{ortancVersion ? ` (v${ortancVersion})` : ''}
+            {feegowProfs.length > 0 && (
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {feegowProfs.map(p => (
+                  <div key={p.profissional_id} className="flex items-center gap-2 text-xs">
+                    <span className="w-32 text-gray-500 truncate" title={`${p.conselho || ''} ${p.documento_conselho || ''}/${p.uf_conselho || ''}`}>
+                      {p.tratamento || ''} {p.nome.split(' ').slice(0, 2).join(' ')}
                     </span>
-                  )}
-                  {ortancStatus === 'error' && <span className="text-red-600 font-semibold">Falha na conexao</span>}
-                  {ortancStatus === 'none' && !ortancUrl && <span className="text-gray-400">Informe o IP do servidor Orthanc da clinica</span>}
-                  {ortancStatus === 'none' && ortancUrl && <span className="text-gray-400">URL salva — clique em testar pra verificar</span>}
-                </div>
-                <div className="mt-2 p-2 bg-blue-50 rounded text-[10px] text-blue-700 space-y-0.5">
-                  <p><strong>Configure o Vivid T8 com:</strong></p>
-                  <p>AE Title: <span className="font-mono font-bold">ORTHANC</span> &middot; Porta DICOM: <span className="font-mono font-bold">4242</span></p>
-                  <p>IP: o mesmo endereco acima (sem a porta 8042)</p>
-                </div>
-              </>
+                    <input
+                      type="text"
+                      value={feegowProfMap[p.profissional_id] || ''}
+                      onChange={e => setFeegowProfMap(prev => ({ ...prev, [p.profissional_id]: e.target.value }))}
+                      className="flex-1 border rounded px-2 py-1 text-xs focus:outline-none focus:border-[#1E3A5F] text-[#1E3A5F]"
+                      placeholder="Nome a aparecer no laudo / DICOM" />
+                  </div>
+                ))}
+                <p className="text-[10px] text-gray-400 mt-2 pt-2 border-t">
+                  Como o nome do médico vai aparecer no DICOM (tag #19) e no laudo. Edite se quiser encurtar.
+                </p>
+              </div>
             )}
 
-            {!ortancAtivo && (
-              <p className="text-xs text-gray-400">Ative para conectar ao servidor DICOM e receber medidas do Vivid T8 automaticamente.</p>
+            {feegowProfs.length === 0 && Object.keys(feegowProfMap).length > 0 && (
+              <p className="text-xs text-green-600">
+                {Object.keys(feegowProfMap).length} profissional(is) mapeado(s). Clique em &quot;Carregar&quot; para editar.
+              </p>
+            )}
+            {feegowProfs.length === 0 && Object.keys(feegowProfMap).length === 0 && (
+              <p className="text-xs text-gray-400">Cadastre o token do Feegow em Integrações, depois clique em &quot;Carregar profissionais&quot;.</p>
             )}
           </div>
 

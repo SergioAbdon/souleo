@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { dataLocalHoje } from '@/lib/utils';
 import { adminDb, adminAuth } from '@/lib/auth-admin';
 import { resolverPapel, ehMedicoDeVerdade } from '@/lib/exame-admin';
-import { gravarImportacao, type Candidato } from '@/lib/feegow-admin';
+import { gravarImportacao, resolverTokenFeegow, resolverProcMap, gateAcessoWs, type Candidato } from '@/lib/feegow-admin';
 
 const fbAuth = adminAuth();
 const dbAdmin = adminDb();
@@ -47,23 +47,13 @@ async function verificarAuth(req: NextRequest): Promise<string | null> {
   }
 }
 
-// ── Resolver token Feegow (por workspace ou fallback) ──
+// ── Resolver token Feegow: SEMPRE da gaveta (privado/feegow.token), com
+// fallback do .env durante a virada — Sub-plano 5, Task 7, furo 1. O header
+// X-Feegow-Token NAO e mais aceito: resolverTokenFeegow nem tem parametro
+// pra ele, entao nao ha como um cliente forjar o proprio token aqui.
 async function resolverToken(req: NextRequest): Promise<string> {
-  // 1. Header X-Feegow-Token (usado no teste de conexao do LocalModal)
-  const headerToken = req.headers.get('x-feegow-token');
-  if (headerToken) return headerToken;
-
-  // 2. Buscar do workspace via query param wsId
   const wsId = req.nextUrl.searchParams.get('wsId');
-  if (wsId) {
-    const wsDoc = await dbAdmin.doc(`workspaces/${wsId}`).get();
-    if (wsDoc.exists && wsDoc.data()?.feegowToken) {
-      return wsDoc.data()!.feegowToken as string;
-    }
-  }
-
-  // 3. Fallback: token do .env (migracao, vai ser removido depois)
-  return FALLBACK_TOKEN;
+  return resolverTokenFeegow(dbAdmin, wsId, FALLBACK_TOKEN);
 }
 
 // Procedimentos Feegow → tipo de exame LEO
@@ -103,20 +93,14 @@ async function feegowFetch(endpoint: string, token: string) {
 async function montarCandidatos(token: string, wsId: string | null): Promise<Candidato[]> {
   const hoje = dataLocalHoje();
 
-  // Resolver mapas (procedimentos e profissionais): workspace ou fallback hardcoded
-  let procMap: Record<number, string> = PROC_MAP;
+  // procMap: SO de integracoes/feegow.procMap (Task 4) — dual-owner fechado
+  // aqui, Sub-plano 5 Task 7 item A. profMap continua no documento do local
+  // (nao e credencial nem tem dono duplicado — decisao Task 7 item C).
+  const procMap = await resolverProcMap(dbAdmin, wsId, PROC_MAP);
   const profMap: Record<number, string> = {};
   if (wsId) {
     const wsDoc = await dbAdmin.doc(`workspaces/${wsId}`).get();
-    const wsData = wsDoc.data() || {};
-    const wsProcMap = wsData.feegowProcMap as Record<string, string> | undefined;
-    if (wsProcMap && Object.keys(wsProcMap).length > 0) {
-      procMap = {};
-      for (const [k, v] of Object.entries(wsProcMap)) {
-        procMap[Number(k)] = v;
-      }
-    }
-    const wsProfMap = wsData.feegowProfMap as Record<string, string> | undefined;
+    const wsProfMap = wsDoc.data()?.feegowProfMap as Record<string, string> | undefined;
     if (wsProfMap) {
       for (const [k, v] of Object.entries(wsProfMap)) {
         profMap[Number(k)] = v;
@@ -254,6 +238,21 @@ export async function GET(req: NextRequest) {
   if (!token) return NextResponse.json({ error: 'Token Feegow nao configurado. Va em Local de Trabalho > Integracao Feegow.' }, { status: 400 });
 
   const action = req.nextUrl.searchParams.get('action');
+
+  // Furo 3 (Sub-plano 5, Task 7): buscar_cpf/sala_espera/paciente/convenios
+  // devolviam dado de paciente sem checar se o usuario tem acesso ao wsId —
+  // mesmo gate que o POST 'importar' ja aplicava.
+  const ACOES_COM_GATE = new Set(['sala_espera', 'paciente', 'convenios', 'buscar_cpf']);
+  if (action && ACOES_COM_GATE.has(action)) {
+    const wsId = req.nextUrl.searchParams.get('wsId');
+    let papel: string | null = null;
+    if (wsId) {
+      const uid = await verificarAuth(req);
+      if (uid) papel = await resolverPapel(dbAdmin, wsId, uid);
+    }
+    const gate = gateAcessoWs(wsId, papel);
+    if (!gate.ok) return NextResponse.json({ ok: false, error: gate.motivo }, { status: gate.status });
+  }
 
   try {
     switch (action) {
