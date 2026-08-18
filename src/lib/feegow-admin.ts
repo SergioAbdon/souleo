@@ -120,7 +120,7 @@ export function gateAcessoWs(
 }
 
 /**
- * Veredito do GET /api/feegow inteiro — chamado UMA vez por requisicao,
+ * Veredito de acesso do /api/feegow inteiro (GET e POST) — chamado UMA vez por requisicao,
  * antes do switch de `action` e SEM saber qual acao e (correcao pos-revisao
  * da Task 7, achados Critical 1 + Important 2):
  *
