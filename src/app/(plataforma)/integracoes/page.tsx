@@ -10,7 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import { podeVerIntegracoes } from '@/lib/permissoes';
-import { TIPOS_INTEGRACAO, rotuloEstado, type Integracao, type TipoIntegracao } from '@/lib/integracoes';
+import { TIPOS_INTEGRACAO, rotuloEstado, tomEstado, type Integracao, type TipoIntegracao } from '@/lib/integracoes';
 import PageHeader from '@/components/shell/PageHeader';
 import CartaoIntegracao from '@/components/integracoes/CartaoIntegracao';
 
@@ -32,14 +32,17 @@ function normalizar(tipo: TipoIntegracao, data: Record<string, unknown>): Integr
 }
 
 export default function IntegracoesPage() {
-  const { workspace, papel } = useAuth();
+  const { workspace, papel, loading: authLoading } = useAuth();
   const wsId = workspace?.id || '';
+  // papel so resolve depois do membership carregar (useAuth().loading) — sem
+  // isso o dono via "Esta secao e do responsavel" piscar antes do conteudo.
   const podeVer = podeVerIntegracoes(papel);
 
   const [porTipo, setPorTipo] = useState<Record<string, Integracao>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (authLoading) return;
     if (!wsId || !podeVer) { setLoading(false); return; }
     setLoading(true);
     getDocs(collection(db, 'workspaces', wsId, 'integracoes')).then(snap => {
@@ -48,36 +51,39 @@ export default function IntegracoesPage() {
       setPorTipo(idx);
       setLoading(false);
     });
-  }, [wsId, podeVer]);
+  }, [wsId, podeVer, authLoading]);
+
+  // Uma unica leitura do relogio por render: rotuloEstado e tomEstado usam o
+  // mesmo `agora`, senao cor e texto podem divergir num render raro.
+  const agora = Date.now();
 
   return (
     <>
       <PageHeader titulo="Integrações" />
-      {!podeVer ? (
-        <div className="bg-card border border-borda rounded-xl p-4 text-sm text-ink-3">
-          Esta seção é do responsável pela conta.
-        </div>
-      ) : loading ? (
+      {authLoading || loading ? (
         <div className="text-center py-12 text-ink-3">
           <span className="text-3xl animate-pulse">🔌</span>
           <p className="text-sm mt-2">Carregando integrações...</p>
         </div>
+      ) : !podeVer ? (
+        <div className="bg-card border border-borda rounded-xl p-4 text-sm text-ink-3">
+          Esta seção é do responsável pela conta.
+        </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {TIPOS_INTEGRACAO.map(t => {
+            const configurado = !!porTipo[t.id];
             const i = porTipo[t.id] ?? { tipo: t.id };
-            const estado = rotuloEstado(i, Date.now());
-            const noAr = t.id === 'wader' && !!i.visto && Date.now() - i.visto <= (15 * 60 * 1000);
-            const semSinal = t.id === 'wader' && !!i.visto && Date.now() - i.visto > (15 * 60 * 1000);
-            const tomEstado = i.status === 'ok' || noAr ? 'ok' : i.status === 'erro' || semSinal ? 'erro' : 'neutro';
+            const estado = rotuloEstado(i, agora);
+            const tom = tomEstado(i, agora);
             return (
               <CartaoIntegracao key={t.id} icone={t.icone} titulo={t.rotulo} descricao={t.descricao}
-                estado={estado} tomEstado={tomEstado}>
+                estado={estado} tomEstado={tom}>
                 {t.id === 'feegow' && (
                   <p className="text-xs text-ink-3">{Object.keys(i.procMap ?? {}).length} procedimento(s) mapeado(s)</p>
                 )}
                 {t.id === 'orthanc' && (
-                  <p className="text-xs text-ink-3">{i.url || 'Sem endereço cadastrado'} · {i.ativo ? 'ativo' : 'inativo'}</p>
+                  <p className="text-xs text-ink-3">{i.url || 'Sem endereço cadastrado'} · {configurado ? (i.ativo ? 'ativo' : 'inativo') : 'Não configurado'}</p>
                 )}
                 {t.id === 'wader' && (
                   <p className="text-xs text-ink-3">{i.versao ? `v${i.versao}` : 'Versão desconhecida'} · {i.maquina || 'máquina desconhecida'}</p>

@@ -51,3 +51,17 @@ export function rotuloEstado(i: Integracao, agoraMs: number): string {
   if (i.status === 'erro') return i.ultimoErro ? `Erro: ${i.ultimoErro}` : 'Erro na última tentativa';
   return 'Nunca testado';
 }
+
+/**
+ * Cor da pilula. Mesma fonte de verdade que rotuloEstado — mesmo `i` e
+ * `agoraMs` — pra cor e texto nunca divergirem (spec §5.2).
+ */
+export function tomEstado(i: Integracao, agoraMs: number): 'ok' | 'erro' | 'neutro' {
+  if (i.tipo === 'wader') {
+    if (!i.visto) return 'neutro';
+    return agoraMs - i.visto <= SEM_SINAL_MS ? 'ok' : 'erro';
+  }
+  if (i.status === 'ok') return 'ok';
+  if (i.status === 'erro') return 'erro';
+  return 'neutro';
+}
