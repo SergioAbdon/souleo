@@ -14,24 +14,65 @@ import { FieldValue } from 'firebase-admin/firestore';
 const db = getDb();
 
 // Lista fechada. NÃO adicionar 'ortancAtivo' aqui.
-const CAMPOS_APAGAVEIS = Object.freeze(['feegowToken', 'feegowProcMap', 'ortancUrl', 'ortancUser', 'ortancPass']);
+//
+// 'feegowProcMap' FICA DE FORA DE PROPÓSITO (achado Critical da revisão da
+// Task 6): dois leitores ainda leem o campo antigo direto do documento do
+// local — src/app/api/feegow/route.ts (montarCandidatos: se o mapa novo vier
+// vazio, cai num PROC_MAP hardcoded de só 3 entradas, a clínica tem 17) e
+// apps/wader/src/adapters/workspace-repo.ts (getProcedimentos). Apagar o
+// campo antigo faria sumir, sem erro nenhum, os pacientes de todo
+// procedimento fora dessas 3 entradas. procMap NÃO é credencial — o objetivo
+// desta fase é tirar segredo do documento do local, e o mapa de
+// procedimentos não é segredo. Ele volta pra esta lista quando os dois
+// leitores acima migrarem pra ler integracoes/feegow.procMap (Task 7).
+const CAMPOS_APAGAVEIS = Object.freeze(['feegowToken', 'ortancUrl', 'ortancUser', 'ortancPass']);
 if (CAMPOS_APAGAVEIS.includes('ortancAtivo')) throw new Error('ortancAtivo NUNCA pode entrar em CAMPOS_APAGAVEIS.');
 
-// Campo legado -> onde a migração deveria ter guardado a cópia, e se é
-// segredo (privado/*, precisa ter chegado lá antes de apagar a origem —
-// senão é perda de dado irreversível) ou dado público (basta o doc
-// integracoes/{tipo} existir).
+// Campo legado -> onde a migração deveria ter guardado a cópia, e como
+// conferir que o VALOR REAL chegou lá (não só que o documento existe —
+// achado Critical da revisão: um doc `integracoes/{tipo}` pode existir por
+// outro caminho, ex. alguém salvou a tela /integracoes antes da migração
+// rodar, com conteúdo diferente do que a migração ia gravar; nesse caso o
+// 01 recusa sobrescrever e o valor real nunca chega no destino). Cada campo
+// declara `copiaConfirmada(integData, privData)` — segredo confere
+// privado/{tipo}, dado público confere o próprio valor em integracoes/{tipo}.
 const DESTINO = {
-  feegowToken:    { tipo: 'feegow',  segredo: (priv) => typeof priv?.token === 'string' && priv.token !== '' },
-  feegowProcMap:  { tipo: 'feegow',  segredo: null },
-  ortancUrl:      { tipo: 'orthanc', segredo: null },
-  ortancUser:     { tipo: 'orthanc', segredo: (priv) => typeof priv?.user === 'string' && priv.user !== '' },
-  ortancPass:     { tipo: 'orthanc', segredo: (priv) => typeof priv?.pass === 'string' && priv.pass !== '' },
+  feegowToken: {
+    tipo: 'feegow',
+    onde: 'privado/feegow',
+    copiaConfirmada: (_integ, priv) => typeof priv?.token === 'string' && priv.token !== '',
+  },
+  ortancUrl: {
+    tipo: 'orthanc',
+    onde: 'integracoes/orthanc',
+    copiaConfirmada: (integ) => typeof integ?.url === 'string' && integ.url !== '',
+  },
+  ortancUser: {
+    tipo: 'orthanc',
+    onde: 'privado/orthanc',
+    copiaConfirmada: (_integ, priv) => typeof priv?.user === 'string' && priv.user !== '',
+  },
+  ortancPass: {
+    tipo: 'orthanc',
+    onde: 'privado/orthanc',
+    copiaConfirmada: (_integ, priv) => typeof priv?.pass === 'string' && priv.pass !== '',
+  },
 };
+
+// Tripwire (junto do de ortancAtivo acima, roda no carregamento do módulo):
+// toda entrada da lista de apagáveis tem que ter destino declarado, senão um
+// campo novo entra na lista sem ninguém saber como conferir o valor real —
+// e o script se recusa a rodar em vez de arriscar apagar sem checar.
+for (const campo of CAMPOS_APAGAVEIS) {
+  if (!DESTINO[campo]) throw new Error(`Campo apagável '${campo}' sem entrada em DESTINO — declare tipo e copiaConfirmada antes de rodar.`);
+}
 
 async function planoParaWorkspace(ws) {
   const w = ws.data();
-  const presentes = CAMPOS_APAGAVEIS.filter((c) => w[c] !== undefined);
+  // null e undefined contam igual: LocalModal.tsx grava `null` pra campo
+  // vazio (achado Minor da revisão) — um local que salvou o modal com
+  // Orthanc em branco não tem nada pra proteger nesse campo.
+  const presentes = CAMPOS_APAGAVEIS.filter((c) => w[c] !== undefined && w[c] !== null);
   if (presentes.length === 0) return { qualifica: false, linhas: [] };
 
   const tiposEnvolvidos = [...new Set(presentes.map((c) => DESTINO[c].tipo))];
@@ -46,17 +87,17 @@ async function planoParaWorkspace(ws) {
   const paraApagar = [];
 
   for (const campo of presentes) {
-    const { tipo, segredo } = DESTINO[campo];
+    const { tipo, onde, copiaConfirmada } = DESTINO[campo];
     if (!integSnaps[tipo].exists) {
       linhas.push(`    ${campo}: integracoes/${tipo} ainda não existe — RECUSANDO apagar (migração não rodou pra este tipo)`);
       continue;
     }
-    if (segredo && !segredo(privSnaps[tipo].data())) {
-      linhas.push(`    ${campo}: privado/${tipo} não tem a cópia do segredo — RECUSANDO apagar (perda de dado)`);
+    if (!copiaConfirmada(integSnaps[tipo].data(), privSnaps[tipo].data())) {
+      linhas.push(`    ${campo}: valor real não confirmado em ${onde} — RECUSANDO apagar (perda de dado)`);
       continue;
     }
     paraApagar.push(campo);
-    linhas.push(`    ${campo}: cópia confirmada em ${segredo ? `privado/${tipo}` : `integracoes/${tipo}`}, apagar`);
+    linhas.push(`    ${campo}: cópia confirmada em ${onde}, apagar`);
   }
 
   return { qualifica: true, linhas, paraApagar };
@@ -85,7 +126,9 @@ async function main() {
 
   console.log(`\n=== ${totalCampos} campos elegíveis para apagar ===`);
   if (!COMMIT) {
-    console.log('ENSAIO. Nada foi gravado. Rode de novo com --commit para valer.');
+    console.log('\nENSAIO. Nada foi gravado.');
+    console.log('>>> Pra gravar de valer, rode (o "--" é obrigatório, senão o npm engole a flag):');
+    console.log('>>>   npm run integracoes:limpar -- --commit');
   }
 }
 

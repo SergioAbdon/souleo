@@ -126,7 +126,9 @@ async function main() {
 
   console.log(`\n=== ${totalOps} operações de criação identificadas ===`);
   if (!COMMIT) {
-    console.log('ENSAIO. Nada foi gravado. Rode de novo com --commit para valer.');
+    console.log('\nENSAIO. Nada foi gravado.');
+    console.log('>>> Pra gravar de valer, rode (o "--" é obrigatório, senão o npm engole a flag):');
+    console.log('>>>   npm run integracoes:migrar -- --commit');
   }
 }
 
