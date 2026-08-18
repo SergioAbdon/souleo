@@ -16,6 +16,7 @@ export type Integracao = {
   visto?: number | null;             // wader
   versao?: string;                   // wader
   maquina?: string;                  // wader
+  credencialCadastradaEm?: number | null; // feegow/orthanc — Task 4, nunca o segredo em si
 };
 
 export const TIPOS_INTEGRACAO: { id: TipoIntegracao; rotulo: string; icone: string; descricao: string }[] = [

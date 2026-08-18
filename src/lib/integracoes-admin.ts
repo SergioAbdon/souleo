@@ -142,3 +142,145 @@ export async function executarTeste(dbAdmin: Firestore, args: {
 
   return { httpStatus: 200, ok: status === 'ok', status, mensagem };
 }
+
+// ══════════════════════════════════════════════════════════════════
+// Gravar (Sub-plano 5, Task 4) — salvarIntegracao / removerCredencial.
+// Só feegow/orthanc têm formulário (wader só recebe batimento do proprio
+// programa). Config publico (procMap/url/ativo) e credencial (token ou
+// user/pass) são tratados por campo, com whitelist por tipo — nenhum
+// campo fora dela cruza pra o doc publico ou pra gaveta.
+// ══════════════════════════════════════════════════════════════════
+type TipoComForm = 'feegow' | 'orthanc';
+const TIPOS_COM_FORM: TipoComForm[] = ['feegow', 'orthanc'];
+
+const CAMPOS_CONFIG: Record<TipoComForm, string[]> = {
+  feegow: ['procMap'],
+  orthanc: ['url', 'ativo'],
+};
+const CAMPOS_CREDENCIAL: Record<TipoComForm, string[]> = {
+  feegow: ['token'],
+  orthanc: ['user', 'pass'],
+};
+const TODOS_CAMPOS_CREDENCIAL = new Set(Object.values(CAMPOS_CREDENCIAL).flat());
+
+// Whitelist de config: só os campos do tipo, com o formato esperado —
+// qualquer coisa fora disso (inclusive um token/pass que tentasse entrar
+// por aqui) é ignorada antes de chegar perto do doc publico.
+function limparConfig(tipo: TipoComForm, config: unknown): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return out;
+  const c = config as Record<string, unknown>;
+  for (const campo of CAMPOS_CONFIG[tipo]) {
+    const v = c[campo];
+    if (v === undefined) continue;
+    if (campo === 'procMap' && v && typeof v === 'object' && !Array.isArray(v)) {
+      const mapa: Record<string, string> = {};
+      for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+        if (typeof val === 'string') mapa[k] = val;
+      }
+      out.procMap = mapa;
+    } else if (campo === 'ativo' && typeof v === 'boolean') {
+      out.ativo = v;
+    } else if (campo === 'url' && typeof v === 'string') {
+      out.url = v.trim();
+    }
+  }
+  return out;
+}
+
+/**
+ * Defesa #7c (write-only): campo ausente, `null` ou string vazia = NÃO MEXE
+ * no segredo já gravado. Filtra por campo — se só a senha veio, só a senha
+ * troca; o usuário existente na gaveta continua intacto. Devolve `null`
+ * quando não sobrou nenhum campo pra gravar (não toca a gaveta nem o
+ * carimbo de data).
+ */
+function limparCredencial(tipo: TipoComForm, credencial: unknown): Record<string, string> | null {
+  if (credencial === null || credencial === undefined) return null;
+  if (typeof credencial !== 'object' || Array.isArray(credencial)) return null;
+  const c = credencial as Record<string, unknown>;
+  const out: Record<string, string> = {};
+  for (const campo of CAMPOS_CREDENCIAL[tipo]) {
+    const v = c[campo];
+    if (typeof v === 'string' && v.trim() !== '') out[campo] = v;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+function paraMs(v: unknown): unknown {
+  const t = v as { toMillis?: () => number } | undefined;
+  return t && typeof t === 'object' && typeof t.toMillis === 'function' ? t.toMillis() : v;
+}
+
+// Le o doc publico pos-escrita e monta a resposta: converte Timestamp -> ms
+// e varre (defesa em profundidade) qualquer chave de credencial que por
+// engano tenha ido parar ali — o doc publico nao deveria ter nenhuma, mas
+// a resposta nunca confia nisso sozinha.
+async function respostaIntegracao(dbAdmin: Firestore, wsId: string, tipo: TipoComForm): Promise<Record<string, unknown>> {
+  const snap = await dbAdmin.doc(`workspaces/${wsId}/integracoes/${tipo}`).get();
+  const raw = snap.data() ?? {};
+  const limpo: Record<string, unknown> = { tipo };
+  for (const [k, v] of Object.entries(raw)) {
+    if (TODOS_CAMPOS_CREDENCIAL.has(k)) continue;
+    limpo[k] = paraMs(v);
+  }
+  if (!('credencialCadastradaEm' in limpo)) limpo.credencialCadastradaEm = null;
+  return limpo;
+}
+
+export type ResultadoGravar = { httpStatus: number; ok: boolean; mensagem: string; integracao?: Record<string, unknown> };
+
+/**
+ * Grava config publico + (se veio) credencial na gaveta — no MESMO
+ * writeBatch. Para o Orthanc, `config.ativo` também espelha em
+ * `workspaces/{wsId}.ortancAtivo` (SidebarLaudo.tsx:187 lê esse campo pra
+ * mostrar "Importar DICOM" a qualquer médico — a entidade nova só o dono lê,
+ * então o campo tem de continuar existindo, e ligado/desligado junto).
+ */
+export async function salvarIntegracao(dbAdmin: Firestore, args: {
+  wsId: string; tipo: string; config?: unknown; credencial?: unknown;
+}): Promise<ResultadoGravar> {
+  const { wsId, tipo } = args;
+  if (!TIPOS_COM_FORM.includes(tipo as TipoComForm)) {
+    return { httpStatus: 400, ok: false, mensagem: 'Tipo de integração inválido para salvar.' };
+  }
+  const t = tipo as TipoComForm;
+
+  const configLimpo = limparConfig(t, args.config);
+  const credLimpa = limparCredencial(t, args.credencial);
+
+  const batch = dbAdmin.batch();
+  const pubRef = dbAdmin.doc(`workspaces/${wsId}/integracoes/${t}`);
+  const pubUpdate: Record<string, unknown> = { tipo: t, ...configLimpo };
+  if (credLimpa) {
+    pubUpdate.credencialCadastradaEm = FieldValue.serverTimestamp();
+    batch.set(dbAdmin.doc(`workspaces/${wsId}/privado/${t}`), credLimpa, { merge: true });
+  }
+  // mergeFields (não `{merge:true}`): procMap é um mapa inteiro por save —
+  // `{merge:true}` faz merge RECURSIVO em campos aninhados (a chave antiga
+  // nunca sai, só acumula). mergeFields com nome de campo no topo troca o
+  // campo por inteiro, sem tocar em `status`/`ultimoTeste` que ficam de fora.
+  batch.set(pubRef, pubUpdate, { mergeFields: Object.keys(pubUpdate) });
+
+  if (t === 'orthanc' && typeof configLimpo.ativo === 'boolean') {
+    batch.set(dbAdmin.doc(`workspaces/${wsId}`), { ortancAtivo: configLimpo.ativo }, { merge: true });
+  }
+
+  await batch.commit();
+  return { httpStatus: 200, ok: true, mensagem: 'Integração salva.', integracao: await respostaIntegracao(dbAdmin, wsId, t) };
+}
+
+/** Apaga a gaveta inteira — explícito, só isto apaga (nunca `salvar` com campo vazio). */
+export async function removerCredencial(dbAdmin: Firestore, args: { wsId: string; tipo: string }): Promise<ResultadoGravar> {
+  const { wsId, tipo } = args;
+  if (!TIPOS_COM_FORM.includes(tipo as TipoComForm)) {
+    return { httpStatus: 400, ok: false, mensagem: 'Tipo de integração inválido para remover.' };
+  }
+  const t = tipo as TipoComForm;
+
+  const batch = dbAdmin.batch();
+  batch.delete(dbAdmin.doc(`workspaces/${wsId}/privado/${t}`));
+  batch.set(dbAdmin.doc(`workspaces/${wsId}/integracoes/${t}`), { credencialCadastradaEm: null }, { merge: true });
+  await batch.commit();
+  return { httpStatus: 200, ok: true, mensagem: 'Credencial removida.', integracao: await respostaIntegracao(dbAdmin, wsId, t) };
+}

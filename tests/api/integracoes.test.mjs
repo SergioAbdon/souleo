@@ -12,7 +12,10 @@ import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { resolverPapel } from '../../src/lib/exame-admin.ts';
 import { requireUid } from '../../src/lib/auth-admin.ts';
-import { executarTeste, sanitizar, testarFeegow, testarOrthanc } from '../../src/lib/integracoes-admin.ts';
+import {
+  executarTeste, sanitizar, testarFeegow, testarOrthanc,
+  salvarIntegracao, removerCredencial,
+} from '../../src/lib/integracoes-admin.ts';
 
 let db;
 const CONTA = 'contaInt', WS = 'wsInt';
@@ -171,5 +174,91 @@ describe('testarFeegow / testarOrthanc (bater no alvo)', () => {
     const fetchImpl = async () => new Response('falhou', { status: 500 });
     await assert.rejects(testarOrthanc({ url: 'http://x', pass: 'y'.repeat(10) }, fetchImpl), /Orthanc 500/);
     await assert.rejects(testarOrthanc({ url: 'http://x', pass: 'y'.repeat(10) }, fetchImpl), (e) => !e.message.includes('falhou'));
+  });
+});
+
+describe('salvarIntegracao / removerCredencial (contrato write-only + espelho — Task 4)', () => {
+  test('salvar com credencial vazia (string "") NAO apaga o segredo existente', async () => {
+    await db.doc(`workspaces/${WS}/privado/feegow`).set({ token: 'tokenOriginal123' });
+    const r = await salvarIntegracao(db, { wsId: WS, tipo: 'feegow', config: {}, credencial: { token: '' } });
+    assert.equal(r.httpStatus, 200);
+    const priv = (await db.doc(`workspaces/${WS}/privado/feegow`).get()).data();
+    assert.equal(priv.token, 'tokenOriginal123', 'credencial vazia nao pode apagar o segredo existente');
+  });
+  test('salvar com credencial ausente (undefined) NAO apaga o segredo existente', async () => {
+    await db.doc(`workspaces/${WS}/privado/feegow`).set({ token: 'tokenOriginal456' });
+    await salvarIntegracao(db, { wsId: WS, tipo: 'feegow', config: { procMap: { '1': 'eco_tt' } } });
+    const priv = (await db.doc(`workspaces/${WS}/privado/feegow`).get()).data();
+    assert.equal(priv.token, 'tokenOriginal456', 'credencial ausente nao pode apagar o segredo existente');
+  });
+  test('salvar com credencial nova SUBSTITUI o segredo', async () => {
+    await db.doc(`workspaces/${WS}/privado/feegow`).set({ token: 'tokenAntigo789' });
+    const r = await salvarIntegracao(db, { wsId: WS, tipo: 'feegow', credencial: { token: 'tokenNovo999' } });
+    assert.equal(r.httpStatus, 200);
+    const priv = (await db.doc(`workspaces/${WS}/privado/feegow`).get()).data();
+    assert.equal(priv.token, 'tokenNovo999');
+  });
+  test('remover apaga o documento de privado/{tipo}', async () => {
+    await db.doc(`workspaces/${WS}/privado/feegow`).set({ token: 'paraRemover123' });
+    const r = await removerCredencial(db, { wsId: WS, tipo: 'feegow' });
+    assert.equal(r.httpStatus, 200);
+    assert.equal((await db.doc(`workspaces/${WS}/privado/feegow`).get()).exists, false);
+    assert.equal(r.integracao.credencialCadastradaEm, null);
+  });
+  test('salvar orthanc com ativo=true grava ativo nos DOIS lugares (tripwire do espelho)', async () => {
+    const r = await salvarIntegracao(db, { wsId: WS, tipo: 'orthanc', config: { url: 'http://orthanc.espelho.local', ativo: true } });
+    assert.equal(r.httpStatus, 200);
+    const pub = (await db.doc(`workspaces/${WS}/integracoes/orthanc`).get()).data();
+    const ws = (await db.doc(`workspaces/${WS}`).get()).data();
+    assert.equal(pub.ativo, true);
+    assert.equal(ws.ortancAtivo, true, 'workspaces/{wsId}.ortancAtivo tem que ligar junto (SidebarLaudo le esse campo)');
+  });
+  test('salvar orthanc com ativo=false desliga nos DOIS lugares', async () => {
+    await salvarIntegracao(db, { wsId: WS, tipo: 'orthanc', config: { ativo: true } }); // liga primeiro
+    const r = await salvarIntegracao(db, { wsId: WS, tipo: 'orthanc', config: { ativo: false } });
+    assert.equal(r.httpStatus, 200);
+    const pub = (await db.doc(`workspaces/${WS}/integracoes/orthanc`).get()).data();
+    const ws = (await db.doc(`workspaces/${WS}`).get()).data();
+    assert.equal(pub.ativo, false);
+    assert.equal(ws.ortancAtivo, false, 'espelho tem que desligar junto');
+  });
+  test('salvar feegow com procMap grava o mapa em integracoes/feegow', async () => {
+    const mapa = { '101': 'eco_tt', '202': 'doppler_carotidas' };
+    const r = await salvarIntegracao(db, { wsId: WS, tipo: 'feegow', config: { procMap: mapa } });
+    assert.equal(r.httpStatus, 200);
+    const pub = (await db.doc(`workspaces/${WS}/integracoes/feegow`).get()).data();
+    assert.deepEqual(pub.procMap, mapa);
+  });
+  test('salvar feegow com procMap SUBSTITUI o mapa inteiro (tripwire: nao pode so acumular chave antiga)', async () => {
+    await salvarIntegracao(db, { wsId: WS, tipo: 'feegow', config: { procMap: { '999': 'eco_tt', '888': 'eco_te' } } });
+    const r = await salvarIntegracao(db, { wsId: WS, tipo: 'feegow', config: { procMap: { '101': 'doppler_carotidas' } } });
+    assert.equal(r.httpStatus, 200);
+    const pub = (await db.doc(`workspaces/${WS}/integracoes/feegow`).get()).data();
+    assert.deepEqual(pub.procMap, { '101': 'doppler_carotidas' },
+      'o mapa novo tem que substituir o antigo por inteiro — {merge:true} faria deep-merge e as chaves 999/888 vazariam');
+  });
+  test('tipo invalido em salvar/remover -> 400', async () => {
+    const r1 = await salvarIntegracao(db, { wsId: WS, tipo: 'wader', config: {} });
+    assert.equal(r1.httpStatus, 400);
+    const r2 = await removerCredencial(db, { wsId: WS, tipo: 'qualquer' });
+    assert.equal(r2.httpStatus, 400);
+  });
+  test('nenhuma resposta (salvar/remover) contem token/user/pass — nem campo, nem valor', async () => {
+    const r = await salvarIntegracao(db, {
+      wsId: WS, tipo: 'orthanc',
+      config: { url: 'http://naovazar.local' },
+      credencial: { user: 'usuarioSecreto999', pass: 'senhaSuperSecreta123' },
+    });
+    const serializado = JSON.stringify(r);
+    assert.equal(serializado.includes('usuarioSecreto999'), false, 'valor do usuario nao pode vazar');
+    assert.equal(serializado.includes('senhaSuperSecreta123'), false, 'valor da senha nao pode vazar');
+    assert.equal(Object.prototype.hasOwnProperty.call(r.integracao, 'user'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(r.integracao, 'pass'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(r.integracao, 'token'), false);
+
+    const r2 = await removerCredencial(db, { wsId: WS, tipo: 'orthanc' });
+    const serializado2 = JSON.stringify(r2);
+    assert.equal(serializado2.includes('usuarioSecreto999'), false);
+    assert.equal(serializado2.includes('senhaSuperSecreta123'), false);
   });
 });
