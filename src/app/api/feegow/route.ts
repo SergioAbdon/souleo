@@ -193,10 +193,15 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'agendamento_id e status_id obrigatorios' }, { status: 400 });
       }
 
-      // Token resolvido aqui (Important 2, Sub-plano 5 Task 7 revisao): so
-      // depois de saber que a acao e valida, nao mais incondicional pra
-      // qualquer POST (o que faria a rota ler a gaveta de QUALQUER wsId da
-      // query mesmo pra acao invalida).
+      // MESMO gate do 'importar': sem ele, qualquer autenticado muda o status
+      // de agendamento de QUALQUER clinica passando um wsId alheio na query —
+      // era a ultima acao da rota sem gate depois do Critical 1 da revisao.
+      const wsIdAtu = req.nextUrl.searchParams.get('wsId');
+      const papelAtu = wsIdAtu ? await resolverPapel(dbAdmin, wsIdAtu, uid) : null;
+      const gateAtu = gateAcessoWs(wsIdAtu, papelAtu);
+      if (!gateAtu.ok) return NextResponse.json({ ok: false, error: gateAtu.motivo }, { status: gateAtu.status });
+
+      // Token so depois do gate: sem acesso ao wsId, a gaveta nunca e lida.
       const token = await resolverToken(req);
       if (!token) return NextResponse.json({ error: 'Token Feegow nao configurado. Va em Local de Trabalho > Integracao Feegow.' }, { status: 400 });
 
