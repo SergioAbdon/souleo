@@ -75,11 +75,24 @@ export class WorkspaceRepo {
       .doc(`workspaces/${this.wsId}/privado/orthanc`)
       .get();
     const privadoData = privadoSnap.data() ?? {};
+    const user = String(privadoData.user ?? '');
+    const pass = String(privadoData.pass ?? '');
+
+    // Orthanc ativo mas sem credencial cadastrada (ex: migração em andamento
+    // gravou integracoes/orthanc antes de privado/orthanc): trata como
+    // "não ativo" em vez de devolver conexão com Basic Auth vazio, que geraria
+    // 401 repetido nos workers pelos próximos 5 min de cache. NUNCA logar `pass`.
+    if (!privadoSnap.exists || !user || !pass) {
+      log.warn({ wsId: this.wsId }, 'Orthanc ativo mas credencial (privado/orthanc) não cadastrada');
+      this.orthancCache = null;
+      this.orthancCacheExpireAt = Date.now() + this.CACHE_TTL_MS;
+      return null;
+    }
 
     const conn: OrthancConnection = {
       url: String(integracaoData.url).replace(/\/+$/, ''),
-      user: String(privadoData.user ?? ''),
-      pass: String(privadoData.pass ?? ''),
+      user,
+      pass,
       ativo: true,
     };
 

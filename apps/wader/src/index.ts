@@ -15,6 +15,8 @@
  *   - Heartbeat pro LEO (badge online/offline)
  */
 
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { loadConfig, ConfigError } from './config/load';
 import { logger, createLogger } from './logger';
 import { startUiServer } from './ui/server';
@@ -29,6 +31,30 @@ import { AccRecoveryWorker } from './workers/acc-recovery-worker';
 import type { FastifyInstance } from 'fastify';
 
 const log = createLogger({ module: 'main' });
+
+/**
+ * Lê a versão real do código empacotado (apps/wader/package.json), não um
+ * campo de config por-máquina que ninguém mantém (WaderConfig.version).
+ *
+ * package.json.json fica um nível acima de __dirname tanto rodando via
+ * `tsx src/index.ts` (__dirname = src/) quanto compilado (__dirname =
+ * dist/index.js, rootDir src → outDir dist espelham a mesma estrutura).
+ * Sem "type": "module" no package.json do Wader (CommonJS), __dirname é
+ * nativo — não precisa de import.meta.url.
+ *
+ * Não importamos o JSON direto (resolveJsonModule) porque package.json está
+ * fora de rootDir ("./src") e isso quebra o build com TS6059.
+ */
+function lerVersaoPackage(): string {
+  try {
+    const pkgPath = join(__dirname, '..', 'package.json');
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { version?: string };
+    return pkg.version ?? '0.0.0';
+  } catch (err) {
+    log.warn({ err }, 'Não foi possível ler versão do package.json, usando fallback');
+    return '0.0.0';
+  }
+}
 
 async function main(): Promise<void> {
   log.info('Wader iniciando…');
@@ -105,7 +131,7 @@ async function main(): Promise<void> {
 
     // Batimento (Sub-plano 5, D4) — diz "estou aqui" pro cartão de Integrações
     // distinguir "Wader parado" de "sem exame hoje". Não derruba nada se falhar.
-    pararBatimento = iniciarBatimento(config.wsId, config.version);
+    pararBatimento = iniciarBatimento(config.wsId, lerVersaoPackage());
   }
 
   const app = await startUiServer(config, { worklistWorker, dicomWorker, orthancClient });
