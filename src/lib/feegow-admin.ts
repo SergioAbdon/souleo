@@ -188,7 +188,7 @@ export async function gravarImportacao(dbAdmin: Firestore, args: {
     // (remarcacao — o Feegow PRESERVA o id, provado 19/08 com o 66890) sao dois
     // exames de verdade; a trava so precisa impedir o mesmo exame do MESMO dia.
     const exameRef = dbAdmin.doc(`workspaces/${wsId}/exames/fg-${fgId}-${dataEx}`);
-    const cpfOk = c.cpf && cpfValido(c.cpf) ? c.cpf : ''; // achado 11
+    const cpfOk = c.cpf && cpfValido(c.cpf) ? c.cpf.replace(/\D/g, '') : ''; // achado 11
     try {
       // Transacao por candidato: exame + reserva de ACC nascem JUNTOS.
       // tx.create falha com ALREADY_EXISTS se o exame ja existe (re-import,
@@ -198,13 +198,16 @@ export async function gravarImportacao(dbAdmin: Firestore, args: {
         let pacRef = fgPacId
           ? dbAdmin.doc(`workspaces/${wsId}/pacientes/fg-${fgPacId}`)
           : dbAdmin.collection(`workspaces/${wsId}/pacientes`).doc();
+        let porCpf = false;
+        let pacSnap;
         if (cpfOk) {
           // Dedup por CPF (achado 10): ficha manual da mesma pessoa e reusada.
           const q = await tx.get(dbAdmin.collection(`workspaces/${wsId}/pacientes`)
             .where('cpf', '==', cpfOk).limit(1));
-          if (!q.empty) pacRef = q.docs[0].ref;
+          if (!q.empty) { pacRef = q.docs[0].ref; porCpf = true; pacSnap = q.docs[0]; }
         }
-        const pacSnap = await tx.get(pacRef);
+        // achado 4 (dedup): sem reler via tx.get o doc que a query ja devolveu.
+        if (!pacSnap) pacSnap = await tx.get(pacRef);
 
         let acc = '';
         for (let t = 0; t < 5; t++) {
@@ -217,15 +220,22 @@ export async function gravarImportacao(dbAdmin: Firestore, args: {
         // ── escritas ──
         // #7c (achado 1): vazio significa "nao mexe" — merge:true NAO protege de
         // string vazia, que e valor e sobrescreve o que a secretaria corrigiu na mao.
+        // porCpf (achado dedup): pacRef veio da busca por CPF, e pode ser a ficha
+        // de OUTRA pessoa se o CPF estiver digitado errado no Feegow — os campos
+        // de IDENTIDADE da ficha encontrada nao sao regravados, so o vinculo
+        // (feegowPacienteId). cpf nao precisa condicionar: se veio da query, ja e igual.
         tx.set(pacRef, {
           id: pacRef.id,
-          ...(c.pacienteNome ? { nome: c.pacienteNome } : {}),
+          // ficha nova sem nome fica invisivel em getPacientes (orderBy('nome')
+          // exclui docs sem o campo) — semeia os vazios so na criacao, ANTES dos
+          // spreads condicionais abaixo (que sobrescrevem com o que veio preenchido).
+          ...(pacSnap.exists ? {} : { nome: '', cpf: '', dtnasc: '', sexo: '', telefone: '', criadoEm: FieldValue.serverTimestamp() }), // achado 12
+          ...(!porCpf && c.pacienteNome ? { nome: c.pacienteNome } : {}),
           ...(cpfOk ? { cpf: cpfOk } : {}),
-          ...(c.pacienteDtnasc ? { dtnasc: c.pacienteDtnasc } : {}),
-          ...(c.sexo ? { sexo: c.sexo } : {}),
-          ...(c.telefone ? { telefone: c.telefone } : {}),
+          ...(!porCpf && c.pacienteDtnasc ? { dtnasc: c.pacienteDtnasc } : {}),
+          ...(!porCpf && c.sexo ? { sexo: c.sexo } : {}),
+          ...(!porCpf && c.telefone ? { telefone: c.telefone } : {}),
           ...(fgPacId ? { feegowPacienteId: fgPacId } : {}),
-          ...(pacSnap.exists ? {} : { criadoEm: FieldValue.serverTimestamp() }), // achado 12
           atualizadoEm: FieldValue.serverTimestamp(),
         }, { merge: true });
         tx.create(exameRef, {

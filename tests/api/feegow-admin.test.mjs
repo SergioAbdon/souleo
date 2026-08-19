@@ -137,6 +137,29 @@ describe('gravarImportacao — Task 1 (identidade fg-{id}-{data}, #7c, CPF, dedu
     assert.equal((await db.doc(`workspaces/${WS}/pacientes/fg-600`).get()).exists, false);
     const ex = (await db.doc(`workspaces/${WS}/exames/fg-81-2026-08-12`).get()).data();
     assert.equal(ex.pacienteId, pacManual.id);
+    // achado MAJOR: dedup por CPF nao pode reescrever a identidade da ficha
+    // encontrada (CPF trocado no Feegow apontaria pra pessoa errada).
+    const pacDepois = (await pacManual.get()).data();
+    assert.equal(pacDepois.nome, 'JOAO MANUAL');
+  });
+
+  test('MINOR 1: candidato sem nome cria ficha com nome (campo presente, vazio) — getPacientes usa orderBy(nome)', async () => {
+    await gravarImportacao(db, {
+      wsId: WS, candidatos: [candidato(83, { pacienteNome: '' })],
+      uid: 'uidRita', ehMed: false, nomeCriador: 'Rita',
+    });
+    const pac = (await db.doc(`workspaces/${WS}/pacientes/fg-983`).get()).data();
+    assert.equal(pac.nome, '');
+    assert.ok('nome' in pac);
+  });
+
+  test('MINOR 2: cpf formatado com pontuacao grava so os digitos', async () => {
+    await gravarImportacao(db, {
+      wsId: WS, candidatos: [candidato(84, { cpf: '111.444.777-35' })],
+      uid: 'uidRita', ehMed: false, nomeCriador: 'Rita',
+    });
+    const ex = (await db.doc(`workspaces/${WS}/exames/fg-84-2026-08-12`).get()).data();
+    assert.equal(ex.cpf, '11144477735');
   });
 
   test('criadoEm preservado: reimportar nao reescreve a data de criacao original da ficha (achado 12)', async () => {
