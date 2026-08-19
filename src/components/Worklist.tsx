@@ -14,6 +14,7 @@ import { dataLocalHoje } from '@/lib/utils';
 import { gerarAccessionNumber } from '@/lib/gerarAccessionNumber';
 import { db, auth } from '@/lib/firebase';
 import { doc, writeBatch, serverTimestamp, updateDoc, getDocs, collection, query, orderBy } from 'firebase/firestore';
+import { soAdministrativos } from '@/lib/campos-exame';
 import { useRouter } from 'next/navigation';
 import { checkEmissao } from '@/lib/billing';
 import DicomGallery from '@/components/laudo/DicomGallery';
@@ -303,7 +304,7 @@ export default function Worklist() {
         if (editPacId) {
           batch.update(doc(db, 'workspaces', workspace.id, 'pacientes', editPacId), dadosFicha);
         }
-        batch.update(doc(db, 'workspaces', workspace.id, 'exames', editExameId), {
+        batch.update(doc(db, 'workspaces', workspace.id, 'exames', editExameId), soAdministrativos({
           pacienteNome: pacNome.trim().toUpperCase(),
           pacienteDtnasc: pacDtnasc,
           convenio: pacConvenio,
@@ -315,7 +316,7 @@ export default function Worklist() {
           // campo NAO apaga o CPF gravado.
           ...(cpfLimpo ? { cpf: cpfLimpo } : {}),
           atualizadoEm: serverTimestamp(),
-        });
+        }));
         await batch.commit();
       } catch (e) {
         console.error('editar paciente:', e);
@@ -330,7 +331,7 @@ export default function Worklist() {
 
       const agora2 = new Date();
       const horaChegada = agora2.toTimeString().slice(0, 5);
-      const novoExameId = await saveExame(workspace.id, {
+      const novoExameId = await saveExame(workspace.id, soAdministrativos({
         acc: gerarAccessionNumber(agora2),
         pacienteId: pacId,
         pacienteNome: pacNome.trim().toUpperCase(),
@@ -345,7 +346,7 @@ export default function Worklist() {
         medicoExecutor: assinaComoAutor ? (profile?.nome as string || '') : '',
         sexo: pacSexo,
         origem: 'MANUAL',
-      }, assinaComoAutor ? (profile?.id as string || '') : '');
+      }), assinaComoAutor ? (profile?.id as string || '') : '');
 
       if (!novoExameId) {
         setPacErro('A ficha do paciente foi salva, mas o exame NÃO entrou na fila. Tente salvar de novo. (Detalhe no Console — F12.)');

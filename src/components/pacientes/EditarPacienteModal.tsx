@@ -20,6 +20,7 @@
 
 import { useEffect, useState } from 'react';
 import { db } from '@/lib/firebase';
+import { soAdministrativos } from '@/lib/campos-exame';
 import { doc, writeBatch, serverTimestamp } from 'firebase/firestore';
 
 type Paciente = Record<string, unknown> & {
@@ -90,6 +91,7 @@ export default function EditarPacienteModal({ open, onClose, wsId, paciente, exa
       atualizadoEm: serverTimestamp(),
     };
     if (cpfLimpo) dadosExame.cpf = cpfLimpo;
+    soAdministrativos(dadosExame);  // achado 16: campo fora da whitelist a regra nega em silencio
     const abertos = exames.filter(e => e.status !== 'emitido' && e.status !== 'cancelado');
 
     // ponytail: writeBatch aceita até 500 writes; aqui é `abertos.length + 1`
