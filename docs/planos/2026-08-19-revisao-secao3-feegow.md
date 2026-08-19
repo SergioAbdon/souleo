@@ -318,13 +318,67 @@ isso, para ninguém "melhorar" depois.
 - **Dois exames do mesmo paciente no mesmo dia** (eco + carótidas): dois exames, dois ACCs, uma ficha. Correto.
 - **Segurança (endurecida em 18-19/08):** gate por construção, segredo na gaveta, sem fallback para o lugar antigo, guard de esquema onde a URL é usada.
 
-## Premissas a confirmar antes de implementar
+## Premissas — RESOLVIDAS em 19/08 (consulta à API real + confirmação do Sergio)
 
-1. O Feegow **preserva o `agendamento_id` ao remarcar**? (base do achado 7b)
-2. `integracoes/orthanc` está **ativo** em produção na MedCardio? (define qual metade do achado 6 acontece)
-3. `appoints/statusUpdate` aceita `AgendamentoID` como **string**? (o código passou a gravar string; exames antigos guardavam número — relacionado ao 5)
-4. Formato real de `nascimento` devolvido pela API (relacionado ao 9).
-5. Há plano de um **liga/desliga do Feegow** na tela? (define o achado 21)
+### 1. O Feegow preserva o `agendamento_id` ao remarcar? **SIM — provado.**
+Agendamento **66890** estava em 03/08 quando o LEO o importou; hoje o Feegow diz 17/08,
+**mesmo número**. O achado 7b é real.
+
+**Por que ainda não deu sintoma:** dos 205 exames Feegow da MedCardio, só **23** usam a
+identidade `fg-{id}` (entrou em 15/08, Sub-plano 2); **182** têm id antigo aleatório e
+não travam nada. O 66890 apareceu normal na fila em 17/08 porque o registro antigo dele
+não bloqueou. **A partir de agora morde.**
+
+**SOLUÇÃO ESCOLHIDA (Sergio, 19/08):** a identidade passa a ser
+**`fg-{agendamento_id}-{dataExame}`**.
+
+| Situação | Hoje | Com a mudança |
+|---|---|---|
+| Importar duas vezes no mesmo dia | não duplica ✅ | não duplica ✅ |
+| Dois computadores importando juntos | não duplica ✅ | não duplica ✅ |
+| Paciente remarca para outro dia | **sumido da fila** ❌ | entra normal ✅ |
+
+A trava sempre serviu para impedir o mesmo exame **do mesmo dia** entrar duas vezes —
+nunca precisou impedir o mesmo agendamento em **dias diferentes**, que são dois exames de
+verdade. Os dados confirmam: o paciente do 66890 aparece corretamente como uma falta
+(03/08, `nao-realizado`) e um exame emitido (17/08). Sem migração — vale só para
+importações novas.
+
+*Descartado:* reaproveitar o exame antigo mudando a data — apagaria a falta do histórico
+e criaria o caso "e se já foi laudado".
+
+### 2. `integracoes/orthanc` está ativo na MedCardio? **SIM — verificado.**
+Logo, é a metade do **estudo fantasma** do achado 6 que acontece hoje: o exame vira
+`andamento` no instante da importação e o cronômetro de espera nunca aparece na fila.
+
+### 3. O filtro de data da API é honrado? **SIM — testado.**
+Pedir um dia devolve só aquele dia (`data_start`/`data_end` respeitados). O achado 13
+permanece como **defesa**, não como bug ativo.
+
+### 4. Há plano de liga/desliga do Feegow na tela? **SIM (Sergio).**
+Logo o achado 21 se inverte: `integracoes/feegow.ativo` **não** é apagado — ganha o
+liga/desliga no cartão Feegow, igual ao do Orthanc, e passa a ser lido.
+
+### 5. Pendente: o endereço `localhost` do Orthanc
+`integracoes/orthanc.url` do Grupo MedCardio é `http://localhost:8042`; o `wader-dev` é
+que tem o IP da rede (`192.168.15.27:8042`). Copiado verbatim do campo antigo pela
+migração. Correto se o Wader roda na mesma máquina do Orthanc — **confirmar com o
+Sergio**.
+
+---
+
+## Achado extra, aparecido durante a investigação (resolvido)
+
+Treze exames de maio têm `dataExame` = 16/05 mas foram criados no LEO em 11-12/05, e o
+Feegow confirma 11-12/05. **Explicação do Sergio, confirmada no código:** foram laudados
+em data posterior à realização. O motor carrega o campo como
+`exame.dataExame || dataLocalHoje()` (`src/app/laudo/[id]/page.tsx:424`) — em maio a
+importação ainda não gravava data, então abrir para laudar dias depois trazia o dia do
+laudo, e salvar gravava aquilo.
+
+Hoje a importação sempre grava a data, então o caminho só sobra para exame que chegue
+**sem** data. Não é bug ativo; é o histórico desses treze exames que ficou com a data do
+laudo em vez da data da realização.
 
 ## Zumbis 291 e 303 — efeito real, menor que o esperado
 
