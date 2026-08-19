@@ -48,6 +48,25 @@ export type Candidato = {
 const jaExiste = (e: unknown) =>
   (e as { code?: number })?.code === 6 || String(e).includes('ALREADY_EXISTS');
 
+/**
+ * Digitos verificadores de CPF. Duplicado de apps/wader/src/ui/api/agendamentos.ts
+ * (isValidCpf, ~linha 118) — mesma restricao de nao-import local do topo do
+ * arquivo (node --test nao resolve .ts local).
+ */
+export function cpfValido(cpf: string): boolean {
+  const digits = cpf.replace(/\D/g, '');
+  if (digits.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(digits)) return false;
+  for (let t = 9; t < 11; t++) {
+    let sum = 0;
+    for (let i = 0; i < t; i++) sum += parseInt(digits[i], 10) * (t + 1 - i);
+    let check = (sum * 10) % 11;
+    if (check === 10) check = 0;
+    if (check !== parseInt(digits[t], 10)) return false;
+  }
+  return true;
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Sub-plano 5, Task 7 — funcoes puras que a rota (route.ts, nao testavel
 // direto por node --test por causa do import '@/...') delega. Cada uma
@@ -162,13 +181,31 @@ export async function gravarImportacao(dbAdmin: Firestore, args: {
     const fgId = String(c.feegowAppointId ?? '');
     if (!/^\d+$/.test(fgId)) continue;
     const fgPacId = /^\d+$/.test(String(c.feegowPacienteId ?? '')) ? String(c.feegowPacienteId) : null;
+    const dataEx = String(c.dataExame ?? '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataEx)) continue; // sem data valida nao ha identidade
 
-    const exameRef = dbAdmin.doc(`workspaces/${wsId}/exames/fg-${fgId}`);
+    // D2: identidade = agendamento + data. Mesmo agendamento em dias diferentes
+    // (remarcacao — o Feegow PRESERVA o id, provado 19/08 com o 66890) sao dois
+    // exames de verdade; a trava so precisa impedir o mesmo exame do MESMO dia.
+    const exameRef = dbAdmin.doc(`workspaces/${wsId}/exames/fg-${fgId}-${dataEx}`);
+    const cpfOk = c.cpf && cpfValido(c.cpf) ? c.cpf : ''; // achado 11
     try {
       // Transacao por candidato: exame + reserva de ACC nascem JUNTOS.
       // tx.create falha com ALREADY_EXISTS se o exame ja existe (re-import,
       // 2 POSTs concorrentes) — idempotencia real, nao check-then-write.
       await dbAdmin.runTransaction(async (tx: Transaction) => {
+        // ── leituras primeiro (regra do Firestore: tudo antes de qualquer escrita) ──
+        let pacRef = fgPacId
+          ? dbAdmin.doc(`workspaces/${wsId}/pacientes/fg-${fgPacId}`)
+          : dbAdmin.collection(`workspaces/${wsId}/pacientes`).doc();
+        if (cpfOk) {
+          // Dedup por CPF (achado 10): ficha manual da mesma pessoa e reusada.
+          const q = await tx.get(dbAdmin.collection(`workspaces/${wsId}/pacientes`)
+            .where('cpf', '==', cpfOk).limit(1));
+          if (!q.empty) pacRef = q.docs[0].ref;
+        }
+        const pacSnap = await tx.get(pacRef);
+
         let acc = '';
         for (let t = 0; t < 5; t++) {
           const tent = gerarAccessionNumber(base, seq * 10 + t * 100);
@@ -177,22 +214,26 @@ export async function gravarImportacao(dbAdmin: Firestore, args: {
         }
         if (!acc) throw new Error('ACC: 5 colisoes seguidas na importacao');
 
-        const pacRef = fgPacId
-          ? dbAdmin.doc(`workspaces/${wsId}/pacientes/fg-${fgPacId}`)
-          : dbAdmin.collection(`workspaces/${wsId}/pacientes`).doc();
-        // `?? ''` em todo opcional: um unico undefined derruba a escrita (A10).
+        // ── escritas ──
+        // #7c (achado 1): vazio significa "nao mexe" — merge:true NAO protege de
+        // string vazia, que e valor e sobrescreve o que a secretaria corrigiu na mao.
         tx.set(pacRef, {
-          id: pacRef.id, nome: c.pacienteNome ?? '', cpf: c.cpf ?? '',
-          dtnasc: c.pacienteDtnasc ?? '', sexo: c.sexo ?? '',
-          telefone: c.telefone ?? '', feegowPacienteId: fgPacId,
-          criadoEm: FieldValue.serverTimestamp(),
+          id: pacRef.id,
+          ...(c.pacienteNome ? { nome: c.pacienteNome } : {}),
+          ...(cpfOk ? { cpf: cpfOk } : {}),
+          ...(c.pacienteDtnasc ? { dtnasc: c.pacienteDtnasc } : {}),
+          ...(c.sexo ? { sexo: c.sexo } : {}),
+          ...(c.telefone ? { telefone: c.telefone } : {}),
+          ...(fgPacId ? { feegowPacienteId: fgPacId } : {}),
+          ...(pacSnap.exists ? {} : { criadoEm: FieldValue.serverTimestamp() }), // achado 12
+          atualizadoEm: FieldValue.serverTimestamp(),
         }, { merge: true });
         tx.create(exameRef, {
           id: exameRef.id, acc,
           pacienteId: pacRef.id,
           pacienteNome: c.pacienteNome ?? '', pacienteDtnasc: c.pacienteDtnasc ?? '',
-          cpf: c.cpf ?? '', feegowPacienteId: fgPacId,
-          tipoExame: c.tipoExame ?? '', dataExame: c.dataExame ?? '',
+          cpf: cpfOk, feegowPacienteId: fgPacId,
+          tipoExame: c.tipoExame ?? '', dataExame: dataEx,
           horarioChegada: c.horarioChegada ?? '', status: 'aguardando',
           convenio: c.convenio ?? '',
           solicitante: ehMed ? nomeCriador : '',

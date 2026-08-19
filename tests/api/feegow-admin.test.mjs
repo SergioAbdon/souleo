@@ -2,8 +2,8 @@
 import { test, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeApp, getApps } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
-import { gravarImportacao, resolverTokenFeegow, resolverProcMap, gateAcessoWs, decidirGetFeegow } from '../../src/lib/feegow-admin.ts';
+import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+import { gravarImportacao, resolverTokenFeegow, resolverProcMap, gateAcessoWs, decidirGetFeegow, cpfValido } from '../../src/lib/feegow-admin.ts';
 
 let db;
 const WS = 'wsFeegow';
@@ -27,7 +27,7 @@ describe('gravarImportacao', () => {
       wsId: WS, candidatos: [candidato(1), candidato(2)], uid: 'uidRita', ehMed: false, nomeCriador: 'Rita',
     });
     assert.equal(criados.length, 2);
-    const ex1 = (await db.doc(`workspaces/${WS}/exames/fg-1`).get()).data();
+    const ex1 = (await db.doc(`workspaces/${WS}/exames/fg-1-2026-08-12`).get()).data();
     assert.equal(ex1.status, 'aguardando');
     assert.equal(ex1.medicoUid, undefined); // quem nao assina NAO carimba autor
     assert.equal(ex1.medicoExecutor, '');
@@ -53,7 +53,7 @@ describe('gravarImportacao', () => {
       uid: 'uidRita', ehMed: false, nomeCriador: 'Rita',
     });
     assert.equal(criados.length, 1);
-    assert.equal((await db.doc(`workspaces/${WS}/exames/fg-3`).get()).data().sexo, '');
+    assert.equal((await db.doc(`workspaces/${WS}/exames/fg-3-2026-08-12`).get()).data().sexo, '');
   });
   test('appointId nao-numerico e descartado (path safety)', async () => {
     const { criados } = await gravarImportacao(db, {
@@ -66,10 +66,103 @@ describe('gravarImportacao', () => {
       wsId: WS, candidatos: [candidato(4), candidato(5)], uid: 'uidDrA', ehMed: true, nomeCriador: 'Dr A',
     });
     assert.equal(criados.length, 2);
-    const ex4 = (await db.doc(`workspaces/${WS}/exames/fg-4`).get()).data();
-    const ex5 = (await db.doc(`workspaces/${WS}/exames/fg-5`).get()).data();
+    const ex4 = (await db.doc(`workspaces/${WS}/exames/fg-4-2026-08-12`).get()).data();
+    const ex5 = (await db.doc(`workspaces/${WS}/exames/fg-5-2026-08-12`).get()).data();
     assert.equal(ex4.medicoUid, 'uidDrA');
     assert.notEqual(ex4.acc, ex5.acc);
+  });
+});
+
+// Correcao da Task 1 (revisao da triade): identidade fg-{id}-{data} (D2) +
+// #7c na ficha (achado 1) + CPF validado (achado 11) + dedup por CPF
+// (achado 10) + criadoEm preservado (achado 12).
+describe('gravarImportacao — Task 1 (identidade fg-{id}-{data}, #7c, CPF, dedup)', () => {
+  test('remarcado ENTRA: agendamento preserva o id no Feegow, mas dia diferente e um exame novo (achado 7b)', async () => {
+    await db.doc(`workspaces/${WS}/exames/fg-77-2026-08-19`).set({ status: 'nao-realizado' });
+    const { criados } = await gravarImportacao(db, {
+      wsId: WS, candidatos: [candidato(77, { dataExame: '2026-08-26' })],
+      uid: 'uidRita', ehMed: false, nomeCriador: 'Rita',
+    });
+    assert.equal(criados.length, 1);
+    assert.ok((await db.doc(`workspaces/${WS}/exames/fg-77-2026-08-26`).get()).exists);
+    // o exame antigo (remarcado) nao foi tocado
+    assert.equal((await db.doc(`workspaces/${WS}/exames/fg-77-2026-08-19`).get()).data().status, 'nao-realizado');
+  });
+
+  test('mesmo dia NAO duplica: reimportar o mesmo candidato cria 1 doc so (identidade nova)', async () => {
+    const primeira = await gravarImportacao(db, {
+      wsId: WS, candidatos: [candidato(78)], uid: 'uidRita', ehMed: false, nomeCriador: 'Rita',
+    });
+    const segunda = await gravarImportacao(db, {
+      wsId: WS, candidatos: [candidato(78)], uid: 'uidRita', ehMed: false, nomeCriador: 'Rita',
+    });
+    assert.equal(primeira.criados.length, 1);
+    assert.equal(segunda.criados.length, 0);
+  });
+
+  test('#7c: candidato com cpf/nome vazio NAO apaga o que a secretaria corrigiu na ficha (achado 1)', async () => {
+    await db.doc(`workspaces/${WS}/pacientes/fg-500`).set({
+      id: 'fg-500', cpf: '11144477735', nome: 'MARIA CORRIGIDA',
+    });
+    const { criados } = await gravarImportacao(db, {
+      wsId: WS, candidatos: [candidato(79, { feegowPacienteId: 500, cpf: '', pacienteNome: '' })],
+      uid: 'uidRita', ehMed: false, nomeCriador: 'Rita',
+    });
+    assert.equal(criados.length, 1);
+    const pac = (await db.doc(`workspaces/${WS}/pacientes/fg-500`).get()).data();
+    assert.equal(pac.cpf, '11144477735');
+    assert.equal(pac.nome, 'MARIA CORRIGIDA');
+  });
+
+  test('cpf invalido vira vazio, nunca grava lixo (achado 11)', async () => {
+    const { criados } = await gravarImportacao(db, {
+      wsId: WS, candidatos: [candidato(80, { cpf: '11111111111' })],
+      uid: 'uidRita', ehMed: false, nomeCriador: 'Rita',
+    });
+    assert.equal(criados.length, 1);
+    const ex = (await db.doc(`workspaces/${WS}/exames/fg-80-2026-08-12`).get()).data();
+    assert.equal(ex.cpf, '');
+  });
+
+  test('dedup por CPF: ficha manual com o mesmo CPF e reusada, nao nasce ficha fg-<id> duplicada (achado 10)', async () => {
+    const cpfDaPessoa = '52998224725';
+    const pacManual = db.collection(`workspaces/${WS}/pacientes`).doc();
+    await pacManual.set({ id: pacManual.id, cpf: cpfDaPessoa, nome: 'JOAO MANUAL' });
+
+    const { criados } = await gravarImportacao(db, {
+      wsId: WS, candidatos: [candidato(81, { feegowPacienteId: 600, cpf: cpfDaPessoa })],
+      uid: 'uidRita', ehMed: false, nomeCriador: 'Rita',
+    });
+    assert.equal(criados.length, 1);
+    assert.equal((await db.doc(`workspaces/${WS}/pacientes/fg-600`).get()).exists, false);
+    const ex = (await db.doc(`workspaces/${WS}/exames/fg-81-2026-08-12`).get()).data();
+    assert.equal(ex.pacienteId, pacManual.id);
+  });
+
+  test('criadoEm preservado: reimportar nao reescreve a data de criacao original da ficha (achado 12)', async () => {
+    const antigo = Timestamp.fromDate(new Date('2020-01-01T00:00:00Z'));
+    await db.doc(`workspaces/${WS}/pacientes/fg-501`).set({ id: 'fg-501', criadoEm: antigo });
+    await gravarImportacao(db, {
+      wsId: WS, candidatos: [candidato(82, { feegowPacienteId: 501 })],
+      uid: 'uidRita', ehMed: false, nomeCriador: 'Rita',
+    });
+    const pac = (await db.doc(`workspaces/${WS}/pacientes/fg-501`).get()).data();
+    assert.equal(pac.criadoEm.toMillis(), antigo.toMillis());
+  });
+});
+
+describe('cpfValido', () => {
+  test('CPF valido (digitos verificadores corretos)', () => {
+    assert.equal(cpfValido('11144477735'), true);
+  });
+  test('todos os digitos iguais e invalido mesmo com "checksum por acaso"', () => {
+    assert.equal(cpfValido('11111111111'), false);
+  });
+  test('tamanho errado e invalido', () => {
+    assert.equal(cpfValido('123'), false);
+  });
+  test('digito verificador errado e invalido', () => {
+    assert.equal(cpfValido('11144477736'), false);
   });
 });
 
