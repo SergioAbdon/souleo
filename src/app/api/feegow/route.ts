@@ -224,7 +224,7 @@ export async function GET(req: NextRequest) {
             dtnasc: normalizarNascimento(pac.nascimento),
             sexo: pac.sexo === 'Masculino' ? 'M' : pac.sexo === 'Feminino' ? 'F' : '',
             cpf: (pac.documentos?.cpf || '').replace(/\D/g, '') || cpfLimpo,
-            telefone: pac.telefones?.[0] || '',
+            telefone: typeof pac.telefones?.[0] === 'string' ? pac.telefones[0] : '', // mesmo guard de montarCandidatos (achado 16-baixo / re-revisao achado 3)
             feegowPacienteId: pac.id || null,
           },
         });

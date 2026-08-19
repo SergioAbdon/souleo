@@ -206,7 +206,12 @@ export function normalizarNascimento(s: string | undefined | null): string {
   const p = String(s).split('-');
   if (p.length !== 3) return '';
   const iso = p[0].length === 4 ? String(s) : `${p[2]}-${p[1]}-${p[0]}`;
-  return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return '';
+  // achado 5 (barato e real): a regex so checa formato, nao valores — '32-13-1980'
+  // virava '1980-13-32' e passava. Date.parse + volta pra ISO detecta overflow
+  // (dia/mes que nao existe rola pro mes seguinte); se nao bate com o iso pedido, e lixo.
+  const t = Date.parse(iso);
+  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === iso ? iso : '';
 }
 // mesma inversao usada pro campo `data` do agendamento (achado 13) — nome
 // separado so pra deixar claro que nao e nascimento de paciente.
@@ -265,9 +270,14 @@ export async function montarCandidatos(args: {
       continue;
     }
     if (Number(ag.status_id) !== 4) continue; // {2,3,5}: nao mexer
-    if (ag.data && normalizarData(ag.data) !== hoje) continue; // defesa achado 13
+    // defesa achado 13: so pula quando SABE que e outro dia. Formato de data
+    // que normalizarData nao reconhece vira '' (falsy) — nao derruba a
+    // importacao inteira (achado 5-critico da re-revisao: um formato
+    // desconhecido do Feegow zerava a sala inteira em silencio).
+    const dataAg = ag.data ? normalizarData(ag.data) : '';
+    if (dataAg && dataAg !== hoje) continue;
 
-    const procId = Number(ag.procedimento_id);
+    const procId = Number(ag.procedimento_id ?? 0); // achado 5: ausente vira 0, nunca NaN em ignorados
     if (!procMap[procId]) {
       ignoradosMap.set(procId, (ignoradosMap.get(procId) || 0) + 1);
       continue;

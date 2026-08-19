@@ -309,6 +309,12 @@ describe('normalizarNascimento (achado 9 — dtnasc sem checar formato)', () => 
   test('lixo -> vazio', () => {
     assert.equal(normalizarNascimento('nao-e-uma-data-9999'), '');
   });
+  test('dia impossivel em mes valido (30-02-1980, Fev so tem 28/29) -> vazio, nao rola pro mes seguinte (achado 5)', () => {
+    assert.equal(normalizarNascimento('30-02-1980'), '');
+  });
+  test('mes impossivel (32-13-1980) -> vazio (achado 5 — exemplo original do relato)', () => {
+    assert.equal(normalizarNascimento('32-13-1980'), '');
+  });
   test('vazio/undefined/null -> vazio', () => {
     assert.equal(normalizarNascimento(''), '');
     assert.equal(normalizarNascimento(undefined), '');
@@ -332,9 +338,13 @@ function pacienteFeegow(extra = {}) {
 }
 
 // fetchImpl stub: sem rede, roteia pela URL como os stubs de integracoes.test.mjs.
-function fetchStubFeegow({ agendamentos = [], pacientesPorId = {}, convenios = [] } = {}) {
+// `chamadas` (opcional) recebe cada URL completa chamada — usado pra prender
+// a query string de verdade (achado 2 da revisao: o roteamento por includes()
+// ignorava a query, entao um &status_id=4 de volta na URL passaria em silencio).
+function fetchStubFeegow({ agendamentos = [], pacientesPorId = {}, convenios = [], chamadas } = {}) {
   return async (url) => {
     const u = String(url);
+    chamadas?.push(u);
     if (u.includes('/appoints/search')) {
       return { ok: true, status: 200, json: async () => ({ content: agendamentos }) };
     }
@@ -371,6 +381,42 @@ describe('montarCandidatos (achados 3, 4, 13, 20 — particiona no laco, sem fil
       fetchImpl: fetchStubFeegow({ agendamentos: [agendamentoFeegow(302, { data: '11-08-2026' })] }),
     });
     assert.deepEqual(r.candidatos, []);
+  });
+
+  test('formato de data desconhecido no agendamento NAO derruba o candidato (achado 5-critico: normalizarData vira "" e nao e comparado como dia diferente)', async () => {
+    const r = await montarCandidatos({
+      token: 'tok', wsId: WS, hoje: '2026-08-12',
+      procMap: { 6: 'eco_tt' }, profMap: {},
+      fetchImpl: fetchStubFeegow({
+        agendamentos: [agendamentoFeegow(314, { paciente_id: 509, data: '2026-08-12 10:30:00' })],
+        pacientesPorId: { 509: pacienteFeegow({ nome: 'G' }) },
+      }),
+    });
+    assert.equal(r.candidatos.length, 1, 'formato desconhecido nao pode zerar a importacao');
+  });
+
+  test('URL de /appoints/search NAO inclui status_id (a API nao filtra mais por status; o laco particiona — achado 2 da revisao)', async () => {
+    const chamadas = [];
+    await montarCandidatos({
+      token: 'tok', wsId: WS, hoje: '2026-08-12',
+      procMap: { 6: 'eco_tt' }, profMap: {},
+      fetchImpl: fetchStubFeegow({ agendamentos: [], chamadas }),
+    });
+    const urlSala = chamadas.find((u) => u.includes('/appoints/search'));
+    assert.ok(urlSala, 'deveria ter chamado /appoints/search');
+    assert.ok(!urlSala.includes('status_id'), `URL nao deveria filtrar por status_id: ${urlSala}`);
+  });
+
+  test('procedimento_id ausente no agendamento vai pra ignorados como 0, nunca NaN (achado 5)', async () => {
+    const r = await montarCandidatos({
+      token: 'tok', wsId: WS, hoje: '2026-08-12',
+      procMap: { 6: 'eco_tt' }, profMap: {},
+      fetchImpl: fetchStubFeegow({
+        agendamentos: [agendamentoFeegow(315, { procedimento_id: undefined })],
+      }),
+    });
+    assert.deepEqual(r.candidatos, []);
+    assert.deepEqual(r.ignorados, [{ procedimentoId: 0, qtd: 1 }]);
   });
 
   test('procedimento fora do procMap vai pra ignorados com contagem (achado 3)', async () => {
