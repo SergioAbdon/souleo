@@ -290,6 +290,16 @@ export async function salvarIntegracao(dbAdmin: Firestore, args: {
     pubUpdate.credencialCadastradaEm = FieldValue.serverTimestamp();
     batch.set(dbAdmin.doc(`workspaces/${wsId}/privado/${t}`), credLimpa, { merge: true });
   }
+  // Regra §5.2 ("estado sem mentira"): o cartao mostra o resultado do ultimo
+  // teste DA CREDENCIAL/ALVO que esta gravado agora. Trocar a credencial (a
+  // gaveta muda) ou o endereco (Orthanc) invalida qualquer teste anterior —
+  // volta pra 'nunca_testado'. Salvar so procMap ou so o liga/desliga NAO
+  // mexe no alvo nem na credencial, entao nao pode zerar um status:'ok'.
+  if (credLimpa || 'url' in configLimpo) {
+    pubUpdate.status = 'nunca_testado';
+    pubUpdate.ultimoTeste = null;
+    pubUpdate.ultimoErro = null;
+  }
   // mergeFields (não `{merge:true}`): procMap é um mapa inteiro por save —
   // `{merge:true}` faz merge RECURSIVO em campos aninhados (a chave antiga
   // nunca sai, só acumula). mergeFields com nome de campo no topo troca o

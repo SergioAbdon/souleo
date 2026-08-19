@@ -269,6 +269,36 @@ describe('salvarIntegracao / removerCredencial (contrato write-only + espelho â€
     const r2 = await removerCredencial(db, { wsId: WS, tipo: 'qualquer' });
     assert.equal(r2.httpStatus, 400);
   });
+  test('salvar credencial nova zera status/ultimoTeste/ultimoErro (cartao nao pode mentir sobre credencial trocada)', async () => {
+    await db.doc(`workspaces/${WS}/integracoes/feegow`).set({ tipo: 'feegow', status: 'ok', ultimoTeste: new Date(), ultimoErro: null });
+    const r = await salvarIntegracao(db, { wsId: WS, tipo: 'feegow', credencial: { token: 'tokenTrocado' } });
+    assert.equal(r.httpStatus, 200);
+    assert.equal(r.integracao.status, 'nunca_testado');
+    const pub = (await db.doc(`workspaces/${WS}/integracoes/feegow`).get()).data();
+    assert.equal(pub.status, 'nunca_testado');
+    assert.equal(pub.ultimoTeste, null);
+    assert.equal(pub.ultimoErro, null);
+  });
+  test('salvar orthanc com url nova tambem zera status/ultimoTeste/ultimoErro (trocar o alvo invalida o teste)', async () => {
+    await db.doc(`workspaces/${WS}/integracoes/orthanc`).set({ tipo: 'orthanc', status: 'ok', ultimoTeste: new Date(), ultimoErro: null });
+    const r = await salvarIntegracao(db, { wsId: WS, tipo: 'orthanc', config: { url: 'http://orthanc.enderecoNovo.local' } });
+    assert.equal(r.httpStatus, 200);
+    assert.equal(r.integracao.status, 'nunca_testado');
+  });
+  test('salvar so procMap NAO zera um status:"ok" existente (nao muda credencial nem alvo)', async () => {
+    await db.doc(`workspaces/${WS}/integracoes/feegow`).set({ tipo: 'feegow', status: 'ok', ultimoTeste: new Date(), ultimoErro: null });
+    const r = await salvarIntegracao(db, { wsId: WS, tipo: 'feegow', config: { procMap: { '1': 'eco_tt' } } });
+    assert.equal(r.httpStatus, 200);
+    assert.equal(r.integracao.status, 'ok', 'salvar procMap nao mexe na credencial nem no alvo, nao pode zerar o teste');
+    const pub = (await db.doc(`workspaces/${WS}/integracoes/feegow`).get()).data();
+    assert.equal(pub.status, 'ok');
+  });
+  test('salvar so ativo (liga/desliga) NAO zera um status:"ok" existente', async () => {
+    await db.doc(`workspaces/${WS}/integracoes/orthanc`).set({ tipo: 'orthanc', status: 'ok', ultimoTeste: new Date(), ultimoErro: null });
+    const r = await salvarIntegracao(db, { wsId: WS, tipo: 'orthanc', config: { ativo: true } });
+    assert.equal(r.httpStatus, 200);
+    assert.equal(r.integracao.status, 'ok', 'so ligar/desligar nao muda o alvo, nao pode zerar o teste');
+  });
   test('nenhuma resposta (salvar/remover) contem token/user/pass â€” nem campo, nem valor', async () => {
     const r = await salvarIntegracao(db, {
       wsId: WS, tipo: 'orthanc',

@@ -15,16 +15,15 @@ const db = getDb();
 
 // Lista fechada. NÃO adicionar 'ortancAtivo' aqui.
 //
-// 'feegowProcMap' FICA DE FORA DE PROPÓSITO (achado Critical da revisão da
-// Task 6): dois leitores ainda leem o campo antigo direto do documento do
-// local — src/app/api/feegow/route.ts (montarCandidatos: se o mapa novo vier
-// vazio, cai num PROC_MAP hardcoded de só 3 entradas, a clínica tem 17) e
-// apps/wader/src/adapters/workspace-repo.ts (getProcedimentos). Apagar o
-// campo antigo faria sumir, sem erro nenhum, os pacientes de todo
-// procedimento fora dessas 3 entradas. procMap NÃO é credencial — o objetivo
-// desta fase é tirar segredo do documento do local, e o mapa de
-// procedimentos não é segredo. Ele volta pra esta lista quando os dois
-// leitores acima migrarem pra ler integracoes/feegow.procMap (Task 7).
+// 'feegowProcMap' FICA DE FORA DESTA RODADA (nao por achado pendente: os dois
+// leitores ja migraram — resolverProcMap em src/lib/feegow-admin.ts e
+// getProcedimentos em apps/wader/src/adapters/workspace-repo.ts leem
+// integracoes/feegow.procMap, nenhum dos dois olha mais o campo antigo do
+// documento do local (Task 7)). procMap NÃO é credencial — o objetivo desta
+// fase é so tirar segredo do documento do local — mas apagar o campo antigo
+// ainda é decisão do Dr. Sérgio, por prudência, até ele confirmar em produção
+// que a importação do Feegow continua trazendo os 17 procedimentos de sempre.
+// Só depois dessa verificação 'feegowProcMap' entra nesta lista.
 const CAMPOS_APAGAVEIS = Object.freeze(['feegowToken', 'ortancUrl', 'ortancUser', 'ortancPass']);
 if (CAMPOS_APAGAVEIS.includes('ortancAtivo')) throw new Error('ortancAtivo NUNCA pode entrar em CAMPOS_APAGAVEIS.');
 

@@ -663,8 +663,14 @@ describe('16. Integracoes (Sub-plano 5)', () => {
   test('dono LE a integracao', async () => {
     await assertSucceeds(getDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/integracoes`, 'feegow')));
   });
-  test('dono ESCREVE a integracao', async () => {
-    await assertSucceeds(setDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/integracoes`, 'feegow'), { tipo: 'feegow', ativo: true, status: 'nunca_testado' }));
+  test('nem o dono escreve a integracao pelo cliente', async () => {
+    // Escrita fechada de proposito (allow write: if false): quem grava e
+    // sempre Admin SDK (salvarIntegracao, /api/integracoes). Se o cliente
+    // pudesse escrever aqui, daria pra mudar integracoes/orthanc.ativo sem o
+    // espelho workspaces/{wsId}.ortancAtivo acompanhar (os dois so andam
+    // juntos porque salvarIntegracao grava ambos no mesmo writeBatch) — e o
+    // botao "Importar DICOM" sumiria da tela do laudo sem erro nenhum.
+    await assertFails(setDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/integracoes`, 'feegow'), { tipo: 'feegow', ativo: true, status: 'nunca_testado' }));
   });
   test('medico do local NAO le a integracao', async () => {
     await assertFails(getDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/integracoes`, 'feegow')));
