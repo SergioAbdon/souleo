@@ -9,6 +9,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import { resolverConfigOrthanc, type OrtancConfig } from '@/lib/integracoes-admin';
+import { resolverPapel } from '@/lib/exame-admin';
+import { gateAcessoWs } from '@/lib/feegow-admin';
 
 // ── Firebase Admin ──
 if (!getApps().length) {
@@ -46,37 +49,6 @@ async function verificarAuth(req: NextRequest): Promise<string | null> {
   }
 }
 
-// ── Resolver URL + credenciais do Orthanc (header ou workspace) ──
-type OrtancConfig = { url: string; user?: string; pass?: string };
-
-async function resolverConfig(req: NextRequest): Promise<OrtancConfig | null> {
-  // 1. Headers (usado no teste de conexao do LocalModal)
-  const headerUrl = req.headers.get('x-orthanc-url');
-  if (headerUrl) {
-    return {
-      url: headerUrl.replace(/\/+$/, ''),
-      user: req.headers.get('x-orthanc-user') || undefined,
-      pass: req.headers.get('x-orthanc-pass') || undefined,
-    };
-  }
-
-  // 2. Buscar do workspace via query param wsId
-  const wsId = req.nextUrl.searchParams.get('wsId');
-  if (wsId) {
-    const wsDoc = await dbAdmin.doc(`workspaces/${wsId}`).get();
-    const data = wsDoc.data();
-    if (data?.ortancAtivo && data?.ortancUrl) {
-      return {
-        url: (data.ortancUrl as string).replace(/\/+$/, ''),
-        user: (data.ortancUser as string) || undefined,
-        pass: (data.ortancPass as string) || undefined,
-      };
-    }
-  }
-
-  return null;
-}
-
 // ── Fetch genérico ao Orthanc (com auth opcional) ──
 async function orthancFetch(config: OrtancConfig, endpoint: string, options?: RequestInit) {
   const controller = new AbortController();
@@ -109,28 +81,32 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { action } = body;
+    const { action, wsId } = body;
+
+    // Gate icado pra logo depois do req.json() (re-revisao da Task 7,
+    // Important — mesma ideia do POST /api/feegow): wsId vem do corpo aqui
+    // (nao da query), entao so da pra gatear depois de ler o corpo, mas
+    // AINDA ANTES de saber qual `action` foi pedida. Minor 4 original:
+    // /api/orthanc era a unica rota da area sem gate de papel — qualquer
+    // autenticado injetava entrada de worklist em OUTRA clinica via wsId
+    // alheio. Rodar antes do `if (action === ...)` fecha isso por
+    // construcao pra qualquer acao futura, nao so 'criar_mwl'.
+    const papel = wsId ? await resolverPapel(dbAdmin, wsId, uid) : null;
+    const gate = gateAcessoWs(wsId ?? null, papel);
+    if (!gate.ok) return NextResponse.json({ ok: false, error: gate.motivo }, { status: gate.status });
 
     if (action === 'criar_mwl') {
-      const { wsId, exameId, pacienteNome, pacienteId, pacienteDtnasc, sexo, tipoExame, dataExame, horarioChegada, medicoNome } = body;
+      const { exameId, pacienteNome, pacienteId, pacienteDtnasc, sexo, tipoExame, dataExame, horarioChegada, medicoNome } = body;
 
       if (!exameId || !pacienteNome) {
         return NextResponse.json({ ok: false, error: 'exameId e pacienteNome obrigatorios' }, { status: 400 });
       }
 
-      // Resolver config do Orthanc via wsId
-      let ortancConfig: OrtancConfig | null = null;
-      if (wsId) {
-        const wsDoc = await dbAdmin.doc(`workspaces/${wsId}`).get();
-        const data = wsDoc.data();
-        if (data?.ortancAtivo && data?.ortancUrl) {
-          ortancConfig = {
-            url: (data.ortancUrl as string).replace(/\/+$/, ''),
-            user: (data.ortancUser as string) || undefined,
-            pass: (data.ortancPass as string) || undefined,
-          };
-        }
-      }
+      // Resolver config do Orthanc — MESMA funcao que o GET usa (Sub-plano 5,
+      // Task 7): antes cada handler tinha sua propria copia desta leitura, e
+      // so fechar o furo 2 no GET deixava este POST ainda aceitando o que
+      // estivesse no documento do local (inclusive sem o filtro de esquema).
+      const ortancConfig: OrtancConfig | null = await resolverConfigOrthanc(dbAdmin, wsId ?? null);
 
       if (!ortancConfig) {
         return NextResponse.json({ ok: false, error: 'orthanc_offline', message: 'Orthanc nao configurado ou desativado.' });
@@ -195,8 +171,18 @@ export async function GET(req: NextRequest) {
 
   const action = req.nextUrl.searchParams.get('action');
 
-  // Resolver config do Orthanc (URL + credenciais)
-  const config = await resolverConfig(req);
+  // Minor 4 (Sub-plano 5, Task 7 revisao): mesmo gate de papel do
+  // /api/feegow — sem isto qualquer autenticado listava estudos (nomes de
+  // paciente, accession numbers) de OUTRA clinica via wsId alheio.
+  const wsId = req.nextUrl.searchParams.get('wsId');
+  const papel = wsId ? await resolverPapel(dbAdmin, wsId, uid) : null;
+  const gate = gateAcessoWs(wsId, papel);
+  if (!gate.ok) return NextResponse.json({ ok: false, error: gate.motivo }, { status: gate.status });
+
+  // Resolver config do Orthanc (URL + credenciais) — SEMPRE de
+  // integracoes/orthanc + privado/orthanc, nunca de header (furo 2 fechado
+  // na funcao compartilhada, Sub-plano 5 Task 7).
+  const config = await resolverConfigOrthanc(dbAdmin, wsId);
   if (!config) {
     return NextResponse.json({ ok: false, error: 'URL do Orthanc nao configurada.' }, { status: 400 });
   }

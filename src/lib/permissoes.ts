@@ -48,6 +48,10 @@ export function podeGerenciarMembros(papel: Papel | null | undefined): boolean {
 export function podeRemoverDaFila(papel: Papel | null | undefined): boolean {
   return papel === 'dono' || papel === 'medico';
 }
+// Integracoes guardam credencial de sistema: so o dono (D5 da spec do Sub-plano 5).
+export function podeVerIntegracoes(papel: Papel | null | undefined): boolean {
+  return papel === 'dono';
+}
 
 // Fluxo de entrada por quantidade de locais acessiveis (A2 do spec).
 export function modoEntrada(qtdLocais: number): 'sem-local' | 'entrar' | 'escolher' {

@@ -9,13 +9,14 @@
  *   ┌─────────────────────────────────────────────────────────────┐
  *   │ Por MÁQUINA (este arquivo)        │ Por CLÍNICA (Firestore) │
  *   ├───────────────────────────────────┼─────────────────────────┤
- *   │ wsId, agentId                     │ ortancUrl/User/Pass     │
- *   │ firebase.serviceAccountPath       │ feegowToken/ProcMap     │
- *   │ orthanc.worklistPath (filesystem) │ nomeClinica, logoB64    │
- *   │ backup.path (filesystem)          │ corPrimaria, etc.       │
- *   │ ui.port, polling.intervals        │ — qualquer coisa que    │
- *   │                                    │   admin edita via       │
- *   │                                    │   LocalModal do LEO     │
+ *   │ wsId, agentId                     │ integracoes/orthanc.url │
+ *   │ firebase.serviceAccountPath       │ privado/orthanc.user/   │
+ *   │ orthanc.worklistPath (filesystem) │ pass; integracoes/      │
+ *   │ backup.path (filesystem)          │ feegow.procMap          │
+ *   │ ui.port, polling.intervals        │ nomeClinica, logoB64,   │
+ *   │                                    │ corPrimaria — qualquer  │
+ *   │                                    │ coisa que admin edita   │
+ *   │                                    │ via LocalModal do LEO   │
  *   └─────────────────────────────────────────────────────────────┘
  *
  * Wader usa WorkspaceRepo pra ler config por-clínica do Firestore.
@@ -43,7 +44,8 @@ export interface FirebaseConfig {
 /**
  * Config local do Orthanc (apenas o que depende da máquina).
  *
- * URL/User/Pass NÃO ficam aqui — vêm do Firestore (workspace.ortancUrl/User/Pass)
+ * URL/User/Pass NÃO ficam aqui — vêm do Firestore (integracoes/orthanc.url +
+ * privado/orthanc.user/pass)
  * via WorkspaceRepo.getOrthancConnection(). Isso permite que admin edite no
  * LocalModal do LEO web e Wader pegue automaticamente.
  *

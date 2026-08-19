@@ -15,12 +15,15 @@
  *   - Heartbeat pro LEO (badge online/offline)
  */
 
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { loadConfig, ConfigError } from './config/load';
 import { logger, createLogger } from './logger';
 import { startUiServer } from './ui/server';
 import { initFirebase } from './adapters/firebase';
 import { OrthancClient } from './adapters/orthanc-client';
 import { WorkspaceRepo } from './adapters/workspace-repo';
+import { iniciarBatimento } from './adapters/heartbeat';
 import { validarWorklistPath } from './workers/worklist-path-validator';
 import { WorklistSyncWorker } from './workers/worklist-sync-worker';
 import { DicomIngestWorker } from './workers/dicom-ingest-worker';
@@ -28,6 +31,30 @@ import { AccRecoveryWorker } from './workers/acc-recovery-worker';
 import type { FastifyInstance } from 'fastify';
 
 const log = createLogger({ module: 'main' });
+
+/**
+ * Lê a versão real do código empacotado (apps/wader/package.json), não um
+ * campo de config por-máquina que ninguém mantém (WaderConfig.version).
+ *
+ * package.json.json fica um nível acima de __dirname tanto rodando via
+ * `tsx src/index.ts` (__dirname = src/) quanto compilado (__dirname =
+ * dist/index.js, rootDir src → outDir dist espelham a mesma estrutura).
+ * Sem "type": "module" no package.json do Wader (CommonJS), __dirname é
+ * nativo — não precisa de import.meta.url.
+ *
+ * Não importamos o JSON direto (resolveJsonModule) porque package.json está
+ * fora de rootDir ("./src") e isso quebra o build com TS6059.
+ */
+function lerVersaoPackage(): string {
+  try {
+    const pkgPath = join(__dirname, '..', 'package.json');
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { version?: string };
+    return pkg.version ?? '0.0.0';
+  } catch (err) {
+    log.warn({ err }, 'Não foi possível ler versão do package.json, usando fallback');
+    return '0.0.0';
+  }
+}
 
 async function main(): Promise<void> {
   log.info('Wader iniciando…');
@@ -62,6 +89,7 @@ async function main(): Promise<void> {
   let worklistWorker: WorklistSyncWorker | null = null;
   let dicomWorker: DicomIngestWorker | null = null;
   let accWorker: AccRecoveryWorker | null = null;
+  let pararBatimento: (() => void) | null = null;
 
   if (uiOnly) {
     log.warn('WADER_UI_ONLY ativo — workers DESLIGADOS (modo dev/console; não processa exames)');
@@ -100,11 +128,15 @@ async function main(): Promise<void> {
       intervalSec: config.polling.accRecoverySec ?? 20,
     });
     accWorker.start();
+
+    // Batimento (Sub-plano 5, D4) — diz "estou aqui" pro cartão de Integrações
+    // distinguir "Wader parado" de "sem exame hoje". Não derruba nada se falhar.
+    pararBatimento = iniciarBatimento(config.wsId, lerVersaoPackage());
   }
 
   const app = await startUiServer(config, { worklistWorker, dicomWorker, orthancClient });
 
-  registerShutdownHandlers(app, { worklistWorker, dicomWorker, accWorker });
+  registerShutdownHandlers(app, { worklistWorker, dicomWorker, accWorker, pararBatimento });
 
   log.info('Wader rodando. Acesse http://localhost:%d', config.ui.port);
 }
@@ -115,10 +147,12 @@ function registerShutdownHandlers(
     worklistWorker: WorklistSyncWorker | null;
     dicomWorker: DicomIngestWorker | null;
     accWorker: AccRecoveryWorker | null;
+    pararBatimento: (() => void) | null;
   } = {
     worklistWorker: null,
     dicomWorker: null,
     accWorker: null,
+    pararBatimento: null,
   },
 ): void {
   const shutdown = async (signal: string) => {
@@ -127,6 +161,7 @@ function registerShutdownHandlers(
       workers.worklistWorker?.stop();
       workers.dicomWorker?.stop();
       workers.accWorker?.stop();
+      workers.pararBatimento?.();
       await app.close();
       log.info('Servidor encerrado com sucesso.');
       process.exit(0);

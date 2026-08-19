@@ -582,7 +582,7 @@ git commit -am "fix(integracoes): rotas leem segredo da gaveta, GETs com gate de
 - [ ] Onda de fix dos achados Critical/Important, com re-revisão.
 - [ ] **Confirmação do Sergio** e publicação da regra; conferir o ruleset publicado contra o repo.
 - [ ] Merge na master + deploy + verificar `/integracoes` em produção.
-- [ ] **A virada, no mesmo dia e fora do horário de exame (D3):** `integracoes:migrar --commit` → atualizar o Wader na máquina da clínica → conferir cartões, testar conexão dando verde e **uma imagem entrando de verdade** → só então `integracoes:limpar --commit`.
+- [ ] **A virada, no mesmo dia e fora do horário de exame (D3):** `npm run integracoes:migrar -- --commit` (o `--` é obrigatório — sem ele o npm engole a flag, `COMMIT` fica `false` e nada é gravado, sem aviso) → atualizar o Wader na máquina da clínica → conferir cartões, testar conexão dando verde e **uma imagem entrando de verdade** → só então `npm run integracoes:limpar -- --commit`.
 - [ ] Documentar: ADR em `docs/decisoes/`, roadmap (Sub-plano 5 ✅), ledger, nota no Obsidian (`Leo/Decisões/`, direto no disco — o MCP trava), memória local, push.
 
 **Estimativa: ~6h de esteira (T1 45min · T2 1h · T3 1h · T4 1h15 · T5 45min · T6 45min · T7 45min · T8 1h) + a janela da virada com o Sergio.**

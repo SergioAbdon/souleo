@@ -15,10 +15,14 @@ export const NAV_PLATAFORMA: ItemNav[] = [
   { href: '/laudos', rotulo: 'Laudos', icone: '🗂️' },
   { href: '/financeiro', rotulo: 'Financeiro', icone: '💰' },
   { href: '/clinica', rotulo: 'Clínica', icone: '🏥' },
+  { href: '/integracoes', rotulo: 'Integrações', icone: '🔌' },
 ];
 
 export function itensVisiveis(papel: Papel | null | undefined): ItemNav[] {
   // /clinica: todos entram (dados básicos); subseções de gestão gateiam lá dentro.
-  return NAV_PLATAFORMA.filter(i =>
-    i.href !== '/financeiro' || papel === 'dono' || papel === 'medico');
+  return NAV_PLATAFORMA.filter(i => {
+    if (i.href === '/financeiro') return papel === 'dono' || papel === 'medico';
+    if (i.href === '/integracoes') return papel === 'dono'; // espelha podeVerIntegracoes
+    return true;
+  });
 }

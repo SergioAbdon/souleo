@@ -18,13 +18,14 @@ export interface OrthancConnection {
 /**
  * Configuração de procedimentos disponíveis no workspace.
  *
- * Estratégia (alinhada com LEO web):
- *   1. LEO web tem `workspaces/{wsId}.feegowProcMap` = `Record<procedimento_id_feegow, tipo_leo>`
+ * Estratégia (alinhada com LEO web, canônico pós Sub-plano 5):
+ *   1. LEO web tem `workspaces/{wsId}/integracoes/feegow.procMap` =
+ *      `Record<procedimento_id_feegow, tipo_leo>`
  *      Ex: `{ 6: "eco_tt", 67: "doppler_carotidas" }`
  *   2. O Wader extrai os VALORES únicos desse mapa pra montar a lista
  *      de procedimentos oferecidos pela clínica.
- *   3. Se o workspace não tiver feegowProcMap (cliente sem Feegow),
- *      Wader usa todos os tipos suportados como default.
+ *   3. Se o workspace não tiver `integracoes/feegow.procMap` (cliente sem
+ *      Feegow), Wader usa todos os tipos suportados como default.
  *
  * Cache em memória pra evitar leitura constante do Firestore.
  */
@@ -59,24 +60,40 @@ export class WorkspaceRepo {
       return this.orthancCache;
     }
 
-    const snap = await getDb().collection('workspaces').doc(this.wsId).get();
-    if (!snap.exists) {
-      log.warn({ wsId: this.wsId }, 'Workspace não existe — sem Orthanc config');
-      return null;
-    }
+    const integracaoSnap = await getDb()
+      .doc(`workspaces/${this.wsId}/integracoes/orthanc`)
+      .get();
 
-    const data = snap.data() ?? {};
-    if (!data.ortancAtivo || !data.ortancUrl) {
+    const integracaoData = integracaoSnap.data() ?? {};
+    if (!integracaoSnap.exists || !integracaoData.ativo || !integracaoData.url) {
       log.info({ wsId: this.wsId }, 'Orthanc não ativo neste workspace');
       this.orthancCache = null;
       this.orthancCacheExpireAt = Date.now() + this.CACHE_TTL_MS;
       return null;
     }
 
+    const privadoSnap = await getDb()
+      .doc(`workspaces/${this.wsId}/privado/orthanc`)
+      .get();
+    const privadoData = privadoSnap.data() ?? {};
+    const user = String(privadoData.user ?? '');
+    const pass = String(privadoData.pass ?? '');
+
+    // Orthanc ativo mas sem credencial cadastrada (ex: migração em andamento
+    // gravou integracoes/orthanc antes de privado/orthanc): trata como
+    // "não ativo" em vez de devolver conexão com Basic Auth vazio, que geraria
+    // 401 repetido nos workers pelos próximos 5 min de cache. NUNCA logar `pass`.
+    if (!privadoSnap.exists || !user || !pass) {
+      log.warn({ wsId: this.wsId }, 'Orthanc ativo mas credencial (privado/orthanc) não cadastrada');
+      this.orthancCache = null;
+      this.orthancCacheExpireAt = Date.now() + this.CACHE_TTL_MS;
+      return null;
+    }
+
     const conn: OrthancConnection = {
-      url: String(data.ortancUrl).replace(/\/+$/, ''),
-      user: String(data.ortancUser ?? ''),
-      pass: String(data.ortancPass ?? ''),
+      url: String(integracaoData.url).replace(/\/+$/, ''),
+      user,
+      pass,
       ativo: true,
     };
 
@@ -88,26 +105,29 @@ export class WorkspaceRepo {
 
   /**
    * Lista os procedimentos oferecidos pelo workspace.
-   * Lê de `workspace.feegowProcMap`, cai pra default se não houver.
+   * Lê de `integracoes/feegow.procMap` (Sub-plano 5) — SEM fallback pro campo
+   * antigo `workspace.feegowProcMap`: a tela nova (Task 4) grava só no lugar
+   * novo, e este leitor lendo o antigo era o resto do dual-owner (Task 7,
+   * item A) — editar o mapa na tela virava no-op silencioso pra este reader.
    */
   async getProcedimentos(): Promise<ProcedimentoOferecido[]> {
     if (this.procedimentosCache && Date.now() < this.procedimentosCacheExpireAt) {
       return this.procedimentosCache;
     }
 
-    const snap = await getDb().collection('workspaces').doc(this.wsId).get();
+    const snap = await getDb().doc(`workspaces/${this.wsId}/integracoes/feegow`).get();
 
     if (!snap.exists) {
-      log.warn({ wsId: this.wsId }, 'Workspace não encontrado, usando defaults');
+      log.warn({ wsId: this.wsId }, 'integracoes/feegow não encontrado, usando defaults');
       return this.cacheAndReturn(getAllAsDefault());
     }
 
     const data = snap.data() ?? {};
-    const procMap = (data.feegowProcMap as Record<string, string> | undefined) ?? {};
+    const procMap = (data.procMap as Record<string, string> | undefined) ?? {};
     const tiposUnicos = new Set(Object.values(procMap).filter(isTipoExame));
 
     if (tiposUnicos.size === 0) {
-      log.info({ wsId: this.wsId }, 'workspace.feegowProcMap vazio, usando todos os tipos como default');
+      log.info({ wsId: this.wsId }, 'integracoes/feegow.procMap vazio, usando todos os tipos como default');
       return this.cacheAndReturn(getAllAsDefault());
     }
 

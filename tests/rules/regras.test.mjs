@@ -658,3 +658,40 @@ describe('15. catalogo de tipos de laudo (Secao 2/Sub-plano 3)', () => {
     await assertFails(getDoc(doc(como(DR_B), `workspaces/${LOCAL_A1}/tiposLaudo`, 'eco_tt')));
   });
 });
+
+describe('16. Integracoes (Sub-plano 5)', () => {
+  test('dono LE a integracao', async () => {
+    await assertSucceeds(getDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/integracoes`, 'feegow')));
+  });
+  test('nem o dono escreve a integracao pelo cliente', async () => {
+    // Escrita fechada de proposito (allow write: if false): quem grava e
+    // sempre Admin SDK (salvarIntegracao, /api/integracoes). Se o cliente
+    // pudesse escrever aqui, daria pra mudar integracoes/orthanc.ativo sem o
+    // espelho workspaces/{wsId}.ortancAtivo acompanhar (os dois so andam
+    // juntos porque salvarIntegracao grava ambos no mesmo writeBatch) — e o
+    // botao "Importar DICOM" sumiria da tela do laudo sem erro nenhum.
+    await assertFails(setDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/integracoes`, 'feegow'), { tipo: 'feegow', ativo: true, status: 'nunca_testado' }));
+  });
+  test('medico do local NAO le a integracao', async () => {
+    await assertFails(getDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/integracoes`, 'feegow')));
+  });
+  test('recepcao NAO le a integracao', async () => {
+    await assertFails(getDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/integracoes`, 'feegow')));
+  });
+  test('medico NAO escreve a integracao', async () => {
+    await assertFails(setDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/integracoes`, 'feegow'), { ativo: false }));
+  });
+  test('membro de OUTRA conta NAO le a integracao', async () => {
+    await assertFails(getDoc(doc(como(DR_B), `workspaces/${LOCAL_A1}/integracoes`, 'feegow')));
+  });
+  test('anonimo NAO le a integracao', async () => {
+    const anon = env.unauthenticatedContext().firestore();
+    await assertFails(getDoc(doc(anon, `workspaces/${LOCAL_A1}/integracoes`, 'feegow')));
+  });
+  test('nem o dono le a gaveta de segredo pelo cliente', async () => {
+    await assertFails(getDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/privado`, 'feegow')));
+  });
+  test('nem o dono escreve na gaveta de segredo pelo cliente', async () => {
+    await assertFails(setDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/privado`, 'feegow'), { token: 'x' }));
+  });
+});
