@@ -168,6 +168,139 @@ export async function decidirGetFeegow(
   return { ok: true, token };
 }
 
+// ══════════════════════════════════════════════════════════════════
+// Sub-plano 5, Task 2 (D6, achados 3/4/9/13/14/20/22) — montarCandidatos
+// desce de route.ts pra ca: era a unica traducao Feegow->LEO e vivia fora
+// da camada testavel, com ZERO cobertura. fetchImpl injetavel (mesmo padrao
+// de testarFeegow/testarOrthanc em integracoes-admin.ts) pra testar sem rede.
+// ══════════════════════════════════════════════════════════════════
+const FEEGOW_BASE = 'https://api.feegow.com/v1/api';
+const FEEGOW_TIMEOUT_MS = 10000;
+// {6,11,22,15} = desmarcado/faltou no Feegow (ADR 16/05 #6). D3: quem
+// chama (Task 4) usa a lista `cancelados` pra fechar exames abertos no LEO
+// que o Feegow ja cancelou.
+const CANCELADOS_FEEGOW = [6, 11, 22, 15];
+
+async function feegowFetchAdmin(endpoint: string, token: string, fetchImpl: typeof fetch) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FEEGOW_TIMEOUT_MS);
+  try {
+    const res = await fetchImpl(`${FEEGOW_BASE}${endpoint}`, {
+      headers: { 'x-access-token': token, 'Content-Type': 'application/json' },
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`Feegow ${res.status}: ${res.statusText}`);
+    return res.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * Data do Feegow (DD-MM-YYYY) -> ISO (YYYY-MM-DD). '' se nao reconhecer o
+ * formato (achado 9 — antes montava a string sem checar nada). Guard ISO:
+ * se ja vier em YYYY-MM-DD (4 digitos no primeiro pedaco), passa direto.
+ */
+export function normalizarNascimento(s: string | undefined | null): string {
+  if (!s) return '';
+  const p = String(s).split('-');
+  if (p.length !== 3) return '';
+  const iso = p[0].length === 4 ? String(s) : `${p[2]}-${p[1]}-${p[0]}`;
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : '';
+}
+// mesma inversao usada pro campo `data` do agendamento (achado 13) — nome
+// separado so pra deixar claro que nao e nascimento de paciente.
+const normalizarData = normalizarNascimento;
+
+/**
+ * Monta a lista de candidatos da sala de espera Feegow do dia. NAO grava
+ * nada (gravarImportacao faz isso). Movida de route.ts (era so ~65 linhas
+ * dentro da rota, sem cobertura nenhuma) com 3 mudancas de comportamento:
+ *
+ * - achado 13: a busca NAO filtra mais status_id=4 na query — traz tudo no
+ *   intervalo de data e o laco particiona. {6,11,22,15} vira `cancelados`
+ *   (D3, Task 4 consome); != 4 e pulado ({2,3,5} nao mexer); so status 4
+ *   segue pro resto do fluxo. A data do agendamento tambem e reconferida
+ *   contra `hoje` (defesa extra, o filtro de data do Feegow ja e honrado
+ *   mas nao custa nao confiar cegamente de novo).
+ * - achado 3: procedimento fora do procMap nao e mais silenciosamente
+ *   ignorado — entra em `ignorados` com a contagem por procedimentoId.
+ * - achado 4: erro buscando UM paciente (rede, /patient/search estourando,
+ *   paciente sem nome) nao derruba a importacao inteira — o agendamento_id
+ *   entra em `falhas` e o laco continua pros demais.
+ *
+ * achado 20: convenioId/procedimentoId/profissionalId/origem NAO viajam no
+ * candidato — eram calculados e jogados fora (Candidato nao declara esses
+ * campos; gravarImportacao grava o proprio `origem` fixo).
+ */
+export async function montarCandidatos(args: {
+  token: string; wsId: string; hoje: string;
+  procMap: Record<string, string>; profMap: Record<number, string>;
+  fetchImpl?: typeof fetch;
+}): Promise<{
+  candidatos: Candidato[];
+  ignorados: Array<{ procedimentoId: number; qtd: number }>;
+  falhas: string[];
+  cancelados: string[];
+}> {
+  const { token, hoje, procMap, profMap, fetchImpl = fetch } = args;
+
+  const salaRes = await feegowFetchAdmin(`/appoints/search?data_start=${hoje}&data_end=${hoje}`, token, fetchImpl);
+  const agendamentos = salaRes?.content || [];
+
+  const convRes = await feegowFetchAdmin('/insurance/list', token, fetchImpl);
+  const convMap: Record<number, string> = {};
+  for (const c of convRes?.content || []) {
+    convMap[c.convenio_id] = c.nome;
+  }
+
+  const candidatos: Candidato[] = [];
+  const falhas: string[] = [];
+  const cancelados: string[] = [];
+  const ignoradosMap = new Map<number, number>();
+
+  for (const ag of agendamentos) {
+    if (CANCELADOS_FEEGOW.includes(Number(ag.status_id))) {
+      cancelados.push(String(ag.agendamento_id));
+      continue;
+    }
+    if (Number(ag.status_id) !== 4) continue; // {2,3,5}: nao mexer
+    if (ag.data && normalizarData(ag.data) !== hoje) continue; // defesa achado 13
+
+    const procId = Number(ag.procedimento_id);
+    if (!procMap[procId]) {
+      ignoradosMap.set(procId, (ignoradosMap.get(procId) || 0) + 1);
+      continue;
+    }
+
+    try {
+      const pacRes = await feegowFetchAdmin(`/patient/search?paciente_id=${ag.paciente_id}`, token, fetchImpl);
+      const pac = pacRes?.content;
+      if (!pac?.nome) { falhas.push(String(ag.agendamento_id)); continue; }
+
+      candidatos.push({
+        feegowAppointId: ag.agendamento_id,
+        feegowPacienteId: ag.paciente_id,
+        pacienteNome: (pac.nome || '').toUpperCase(),
+        pacienteDtnasc: normalizarNascimento(pac.nascimento),
+        sexo: pac.sexo === 'Masculino' ? 'M' : pac.sexo === 'Feminino' ? 'F' : '',
+        cpf: (pac.documentos?.cpf || '').replace(/\D/g, ''),
+        telefone: typeof pac.telefones?.[0] === 'string' ? pac.telefones[0] : '', // achado 16-baixo
+        convenio: convMap[ag.convenio_id] || '',
+        tipoExame: procMap[procId],
+        medicoExecutor: profMap[ag.profissional_id] || '',
+        horarioChegada: ag.horario ? ag.horario.slice(0, 5) : '',
+        dataExame: hoje, // sempre valido — gravarImportacao (Task 1) descarta sem isso
+      });
+    } catch {
+      falhas.push(String(ag.agendamento_id)); // achado 4: nao derruba os demais
+    }
+  }
+
+  const ignorados = Array.from(ignoradosMap, ([procedimentoId, qtd]) => ({ procedimentoId, qtd }));
+  return { candidatos, ignorados, falhas, cancelados };
+}
+
 export async function gravarImportacao(dbAdmin: Firestore, args: {
   wsId: string; candidatos: Candidato[]; uid: string; ehMed: boolean; nomeCriador: string;
 }): Promise<{ criados: Array<{ exameId: string; pac: Candidato }> }> {

@@ -3,7 +3,7 @@ import { test, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
-import { gravarImportacao, resolverTokenFeegow, resolverProcMap, gateAcessoWs, decidirGetFeegow, cpfValido } from '../../src/lib/feegow-admin.ts';
+import { gravarImportacao, resolverTokenFeegow, resolverProcMap, gateAcessoWs, decidirGetFeegow, cpfValido, montarCandidatos, normalizarNascimento } from '../../src/lib/feegow-admin.ts';
 
 let db;
 const WS = 'wsFeegow';
@@ -288,5 +288,195 @@ describe('decidirGetFeegow (Critical 1 + Important 2 — gate roda pra QUALQUER 
     const r = await decidirGetFeegow(WS, 'dono', async () => 'tok-valido-123');
     assert.equal(r.ok, true);
     assert.equal(r.ok && r.token, 'tok-valido-123');
+  });
+});
+
+// Sub-plano 5, Task 2 (D6) — montarCandidatos desce pra camada testavel.
+// Achados fechados aqui: 3 (procedimento fora do mapa descartado sem aviso),
+// 4 (erro em UM paciente derrubava o import inteiro em silencio), 9 (dtnasc
+// remontada as cegas, sem checar formato), 13 (status/data nunca reconferidos
+// — a query confiava cegamente no filtro status_id=4 do Feegow).
+describe('normalizarNascimento (achado 9 — dtnasc sem checar formato)', () => {
+  test("Feegow manda DD-MM-YYYY -> vira ISO YYYY-MM-DD", () => {
+    assert.equal(normalizarNascimento('02-01-1980'), '1980-01-02');
+  });
+  test('ja em ISO (YYYY-MM-DD) passa direto (guard)', () => {
+    assert.equal(normalizarNascimento('1980-01-02'), '1980-01-02');
+  });
+  test('formato com barra (02/01/1980) nao e reconhecido -> vazio', () => {
+    assert.equal(normalizarNascimento('02/01/1980'), '');
+  });
+  test('lixo -> vazio', () => {
+    assert.equal(normalizarNascimento('nao-e-uma-data-9999'), '');
+  });
+  test('vazio/undefined/null -> vazio', () => {
+    assert.equal(normalizarNascimento(''), '');
+    assert.equal(normalizarNascimento(undefined), '');
+    assert.equal(normalizarNascimento(null), '');
+  });
+});
+
+function agendamentoFeegow(id, extra = {}) {
+  return {
+    agendamento_id: id, paciente_id: 100 + id, procedimento_id: 6,
+    convenio_id: 1, profissional_id: 50, horario: '10:30:00',
+    status_id: 4, ...extra,
+  };
+}
+
+function pacienteFeegow(extra = {}) {
+  return {
+    nome: 'Paciente Teste', nascimento: '02-01-1980', sexo: 'Feminino',
+    documentos: { cpf: '111.444.777-35' }, telefones: ['91999990000'], ...extra,
+  };
+}
+
+// fetchImpl stub: sem rede, roteia pela URL como os stubs de integracoes.test.mjs.
+function fetchStubFeegow({ agendamentos = [], pacientesPorId = {}, convenios = [] } = {}) {
+  return async (url) => {
+    const u = String(url);
+    if (u.includes('/appoints/search')) {
+      return { ok: true, status: 200, json: async () => ({ content: agendamentos }) };
+    }
+    if (u.includes('/insurance/list')) {
+      return { ok: true, status: 200, json: async () => ({ content: convenios }) };
+    }
+    if (u.includes('/patient/search')) {
+      const m = u.match(/paciente_id=(\d+)/);
+      const id = m ? Number(m[1]) : null;
+      const entry = pacientesPorId[id];
+      if (entry === 'THROW') throw new Error('rede caiu');
+      return { ok: true, status: 200, json: async () => ({ content: entry ?? null }) };
+    }
+    throw new Error(`endpoint inesperado no stub: ${u}`);
+  };
+}
+
+describe('montarCandidatos (achados 3, 4, 13, 20 — particiona no laco, sem filtro de status na query)', () => {
+  test('status_id 6 (cancelado/desmarcado) NAO vira candidato, entra em cancelados (D3, Task 4 usa)', async () => {
+    const r = await montarCandidatos({
+      token: 'tok', wsId: WS, hoje: '2026-08-12',
+      procMap: { 6: 'eco_tt' }, profMap: {},
+      fetchImpl: fetchStubFeegow({ agendamentos: [agendamentoFeegow(301, { status_id: 6 })] }),
+    });
+    assert.deepEqual(r.candidatos, []);
+    assert.deepEqual(r.cancelados, ['301']);
+    assert.deepEqual(r.falhas, []);
+  });
+
+  test('agendamento com data diferente de hoje NAO vira candidato (defesa achado 13)', async () => {
+    const r = await montarCandidatos({
+      token: 'tok', wsId: WS, hoje: '2026-08-12',
+      procMap: { 6: 'eco_tt' }, profMap: {},
+      fetchImpl: fetchStubFeegow({ agendamentos: [agendamentoFeegow(302, { data: '11-08-2026' })] }),
+    });
+    assert.deepEqual(r.candidatos, []);
+  });
+
+  test('procedimento fora do procMap vai pra ignorados com contagem (achado 3)', async () => {
+    const r = await montarCandidatos({
+      token: 'tok', wsId: WS, hoje: '2026-08-12',
+      procMap: { 6: 'eco_tt' }, profMap: {},
+      fetchImpl: fetchStubFeegow({
+        agendamentos: [
+          agendamentoFeegow(303, { procedimento_id: 999 }),
+          agendamentoFeegow(304, { procedimento_id: 999 }),
+        ],
+      }),
+    });
+    assert.deepEqual(r.candidatos, []);
+    assert.deepEqual(r.ignorados, [{ procedimentoId: 999, qtd: 2 }]);
+  });
+
+  test('patient/search estourando para UM paciente nao derruba os demais — vai pra falhas (achado 4)', async () => {
+    const r = await montarCandidatos({
+      token: 'tok', wsId: WS, hoje: '2026-08-12',
+      procMap: { 6: 'eco_tt' }, profMap: {},
+      fetchImpl: fetchStubFeegow({
+        agendamentos: [
+          agendamentoFeegow(305, { paciente_id: 500 }),
+          agendamentoFeegow(306, { paciente_id: 501 }),
+        ],
+        pacientesPorId: { 500: 'THROW', 501: pacienteFeegow({ nome: 'Maria' }) },
+      }),
+    });
+    assert.deepEqual(r.falhas, ['305']);
+    assert.equal(r.candidatos.length, 1);
+    assert.equal(r.candidatos[0].pacienteNome, 'MARIA');
+  });
+
+  test('paciente sem nome (pac.nome ausente) vira falha, nunca candidato sem nome (achado 4)', async () => {
+    const r = await montarCandidatos({
+      token: 'tok', wsId: WS, hoje: '2026-08-12',
+      procMap: { 6: 'eco_tt' }, profMap: {},
+      fetchImpl: fetchStubFeegow({
+        agendamentos: [agendamentoFeegow(307, { paciente_id: 502 })],
+        pacientesPorId: { 502: pacienteFeegow({ nome: '' }) },
+      }),
+    });
+    assert.deepEqual(r.falhas, ['307']);
+    assert.deepEqual(r.candidatos, []);
+  });
+
+  test("sexo 'Masculino'->'M', 'Feminino'->'F', outro->''", async () => {
+    const r = await montarCandidatos({
+      token: 'tok', wsId: WS, hoje: '2026-08-12',
+      procMap: { 6: 'eco_tt' }, profMap: {},
+      fetchImpl: fetchStubFeegow({
+        agendamentos: [
+          agendamentoFeegow(308, { paciente_id: 503 }),
+          agendamentoFeegow(309, { paciente_id: 504 }),
+          agendamentoFeegow(310, { paciente_id: 505 }),
+        ],
+        pacientesPorId: {
+          503: pacienteFeegow({ nome: 'A', sexo: 'Masculino' }),
+          504: pacienteFeegow({ nome: 'B', sexo: 'Feminino' }),
+          505: pacienteFeegow({ nome: 'C', sexo: 'Indefinido' }),
+        },
+      }),
+    });
+    assert.equal(r.candidatos.find((c) => c.pacienteNome === 'A').sexo, 'M');
+    assert.equal(r.candidatos.find((c) => c.pacienteNome === 'B').sexo, 'F');
+    assert.equal(r.candidatos.find((c) => c.pacienteNome === 'C').sexo, '');
+  });
+
+  test('telefone objeto (nao string) e descartado, nao propaga lixo (achado 16-baixo)', async () => {
+    const r = await montarCandidatos({
+      token: 'tok', wsId: WS, hoje: '2026-08-12',
+      procMap: { 6: 'eco_tt' }, profMap: {},
+      fetchImpl: fetchStubFeegow({
+        agendamentos: [agendamentoFeegow(311, { paciente_id: 506 })],
+        pacientesPorId: { 506: pacienteFeegow({ nome: 'D', telefones: [{ numero: '123' }] }) },
+      }),
+    });
+    assert.equal(r.candidatos[0].telefone, '');
+  });
+
+  test('candidato NAO carrega convenioId/procedimentoId/profissionalId/origem (achado 20 — 4 campos mortos)', async () => {
+    const r = await montarCandidatos({
+      token: 'tok', wsId: WS, hoje: '2026-08-12',
+      procMap: { 6: 'eco_tt' }, profMap: {},
+      fetchImpl: fetchStubFeegow({
+        agendamentos: [agendamentoFeegow(312, { paciente_id: 507 })],
+        pacientesPorId: { 507: pacienteFeegow({ nome: 'E' }) },
+      }),
+    });
+    const c = r.candidatos[0];
+    assert.equal('convenioId' in c, false);
+    assert.equal('procedimentoId' in c, false);
+    assert.equal('profissionalId' in c, false);
+    assert.equal('origem' in c, false);
+  });
+
+  test('candidato sempre sai com dataExame = hoje (nota do controller: gravarImportacao descarta sem isso)', async () => {
+    const r = await montarCandidatos({
+      token: 'tok', wsId: WS, hoje: '2026-08-12',
+      procMap: { 6: 'eco_tt' }, profMap: {},
+      fetchImpl: fetchStubFeegow({
+        agendamentos: [agendamentoFeegow(313, { paciente_id: 508 })],
+        pacientesPorId: { 508: pacienteFeegow({ nome: 'F' }) },
+      }),
+    });
+    assert.equal(r.candidatos[0].dataExame, '2026-08-12');
   });
 });

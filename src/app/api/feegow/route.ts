@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { dataLocalHoje } from '@/lib/utils';
 import { adminDb, adminAuth } from '@/lib/auth-admin';
 import { resolverPapel, ehMedicoDeVerdade } from '@/lib/exame-admin';
-import { gravarImportacao, resolverTokenFeegow, resolverProcMap, decidirGetFeegow, type Candidato } from '@/lib/feegow-admin';
+import { gravarImportacao, resolverTokenFeegow, resolverProcMap, decidirGetFeegow, montarCandidatos, normalizarNascimento } from '@/lib/feegow-admin';
 
 const fbAuth = adminAuth();
 const dbAdmin = adminDb();
@@ -92,74 +92,6 @@ async function feegowFetch(endpoint: string, token: string) {
 // dia errado, sumindo da worklist (que filtra pela data local). Fixar no fuso
 // da clinica resolve os dois sintomas — feito em utils.ts (dataLocalBRT/Hoje).
 
-// Monta a lista de candidatos da sala de espera Feegow (era o case 'importar'
-// do GET — corpo movido sem alteracao). NAO grava nada.
-async function montarCandidatos(token: string, wsId: string | null): Promise<Candidato[]> {
-  const hoje = dataLocalHoje();
-
-  // procMap: SO de integracoes/feegow.procMap (Task 4) — dual-owner fechado
-  // aqui, Sub-plano 5 Task 7 item A. profMap continua no documento do local
-  // (nao e credencial nem tem dono duplicado — decisao Task 7 item C).
-  const procMap = await resolverProcMap(dbAdmin, wsId, PROC_MAP);
-  const profMap: Record<number, string> = {};
-  if (wsId) {
-    const wsDoc = await dbAdmin.doc(`workspaces/${wsId}`).get();
-    const wsProfMap = wsDoc.data()?.feegowProfMap as Record<string, string> | undefined;
-    if (wsProfMap) {
-      for (const [k, v] of Object.entries(wsProfMap)) {
-        profMap[Number(k)] = v;
-      }
-    }
-  }
-
-  const salaRes = await feegowFetch(`/appoints/search?data_start=${hoje}&data_end=${hoje}&status_id=4`, token);
-  const agendamentos = salaRes?.content || [];
-
-  const convRes = await feegowFetch('/insurance/list', token);
-  const convMap: Record<number, string> = {};
-  for (const c of convRes?.content || []) {
-    convMap[c.convenio_id] = c.nome;
-  }
-
-  const pacientes = [];
-  for (const ag of agendamentos) {
-    // Pular procedimentos que não são exames do LEO
-    if (!procMap[ag.procedimento_id]) continue;
-
-    try {
-      const pacRes = await feegowFetch(`/patient/search?paciente_id=${ag.paciente_id}`, token);
-      const pac = pacRes?.content;
-      if (pac) {
-        let dtnasc = '';
-        if (pac.nascimento) {
-          const p = pac.nascimento.split('-');
-          if (p.length === 3) dtnasc = `${p[2]}-${p[1]}-${p[0]}`;
-        }
-        pacientes.push({
-          feegowAppointId: ag.agendamento_id,
-          feegowPacienteId: ag.paciente_id,
-          pacienteNome: (pac.nome || '').toUpperCase(),
-          pacienteDtnasc: dtnasc,
-          sexo: pac.sexo === 'Masculino' ? 'M' : pac.sexo === 'Feminino' ? 'F' : '',
-          cpf: (pac.documentos?.cpf || '').replace(/\D/g, ''),
-          telefone: pac.telefones?.[0] || '',
-          convenio: convMap[ag.convenio_id] || '',
-          convenioId: ag.convenio_id,
-          tipoExame: procMap[ag.procedimento_id],
-          procedimentoId: ag.procedimento_id,
-          profissionalId: ag.profissional_id,
-          medicoExecutor: profMap[ag.profissional_id] || '',
-          horarioChegada: ag.horario ? ag.horario.slice(0, 5) : '',
-          dataExame: hoje,
-          origem: 'FEEGOW',
-        });
-      }
-    } catch { /* pular paciente com erro */ }
-  }
-
-  return pacientes;
-}
-
 // ── Middleware: auth + rate limit ──
 // Devolve o uid junto (Minor 7, Sub-plano 5 Task 7 revisao): antes GET e
 // POST 'importar' chamavam verificarAuth() de novo depois deste guard —
@@ -223,7 +155,22 @@ export async function POST(req: NextRequest) {
       // Autor so se perfil medico E papel que atende (MEDREC nao carimba) — Codex-2.
       const ehMed = (papel === 'dono' || papel === 'medico') && await ehMedicoDeVerdade(dbAdmin, uid);
       const perfilSnap = await dbAdmin.doc(`profissionais/${uid}`).get();
-      const candidatos = await montarCandidatos(token, wsId);
+      const hoje = dataLocalHoje();
+      // procMap: SO de integracoes/feegow.procMap (Task 4) — dual-owner fechado
+      // aqui, Sub-plano 5 Task 7 item A. profMap continua no documento do local
+      // (nao e credencial nem tem dono duplicado — decisao Task 7 item C).
+      const procMap = await resolverProcMap(dbAdmin, wsId, PROC_MAP);
+      const profMap: Record<number, string> = {};
+      if (wsId) {
+        const wsDoc = await dbAdmin.doc(`workspaces/${wsId}`).get();
+        const wsProfMap = wsDoc.data()?.feegowProfMap as Record<string, string> | undefined;
+        if (wsProfMap) {
+          for (const [k, v] of Object.entries(wsProfMap)) {
+            profMap[Number(k)] = v;
+          }
+        }
+      }
+      const { candidatos } = await montarCandidatos({ token, wsId: wsId as string, hoje, procMap, profMap });
       const { criados } = await gravarImportacao(dbAdmin, {
         wsId: wsId as string, candidatos, uid, ehMed, nomeCriador: (perfilSnap.data()?.nome as string) || '',
       });
@@ -270,16 +217,11 @@ export async function GET(req: NextRequest) {
         const data = await feegowFetch(`/patient/search?paciente_cpf=${cpfLimpo}`, token);
         const pac = data?.content;
         if (!pac) return NextResponse.json({ ok: true, encontrado: false });
-        let dtnasc = '';
-        if (pac.nascimento) {
-          const p = pac.nascimento.split('-');
-          if (p.length === 3) dtnasc = `${p[2]}-${p[1]}-${p[0]}`;
-        }
         return NextResponse.json({
           ok: true, encontrado: true,
           paciente: {
             nome: (pac.nome || '').toUpperCase(),
-            dtnasc,
+            dtnasc: normalizarNascimento(pac.nascimento),
             sexo: pac.sexo === 'Masculino' ? 'M' : pac.sexo === 'Feminino' ? 'F' : '',
             cpf: (pac.documentos?.cpf || '').replace(/\D/g, '') || cpfLimpo,
             telefone: pac.telefones?.[0] || '',
