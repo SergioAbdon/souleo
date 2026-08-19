@@ -1,6 +1,12 @@
 # Revisão da Seção 2 — Worklist (agenda do dia)
 
-**Data:** 12/08/2026 · **Status:** REVISÃO CONCLUÍDA — implementação pendente (aguardando priorização do Sergio)
+**Data:** 12/08/2026 · **Status:** ✅ **FECHADA** — 22 de 22 achados corrigidos.
+
+Achados 1-15 e 17-22 saíram no plano de correção (`2026-08-12-plano-correcao-secao2-worklist.md`,
+12 tarefas), executado no Sub-plano 2 da reestruturação (regras 8a2d6730, merge e2804a5, 15/08).
+O achado 16 não entrou em tarefa nenhuma na época e ficou aberto até 19/08 — fechado no commit
+`7d67796` (whitelist espelhada em `src/lib/campos-exame.ts` + teste que lê `firestore.rules` e
+falha se divergir + `soAdministrativos()` nas escritas do cliente).
 **Método:** leitura do fluxo de ponta a ponta (Worklist.tsx → firestore.ts → firestore.rules → /api/exame → cron) + tríade (Codex = bugs/segurança com verificação adversarial · revisor de arquitetura/fronteiras · Ponytail = o que cortar). Codex confirmou os 8 candidatos levantados na leitura inicial e achou 6 bugs novos.
 
 **Contexto:** o código da Worklist é ANTERIOR à fechadura da Seção 1 (regras publicadas 10/08). Vários achados são exatamente esse desalinhamento: a tela ainda opera com premissas do modelo antigo.
@@ -84,7 +90,7 @@
 - `Worklist.tsx:30-49` — se o envio falha, o rastro é um console.warn. Exame fica na fila sem worklist no aparelho e ninguém sabe.
 - **Fix mínimo:** gravar `mwlStatus: 'enviado'|'falhou'` no exame (o dado já está em mãos) + indicador na linha da tabela.
 
-### 16. Whitelist `camposAdministrativos()` sem teste de sincronia
+### 16. Whitelist `camposAdministrativos()` sem teste de sincronia — ✅ FECHADO 19/08 (`7d67796`)
 - A lista na regra é mantida à mão vs o que o TS escreve. Campo novo só na Worklist = quebra silenciosa pra recepção.
 - **Fix mínimo:** exportar `CAMPOS_EXAME_ADMINISTRATIVOS` no TS + teste `node --test` que compara com a regra. Desalinhamento vira erro de CI, não incidente.
 
