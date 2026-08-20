@@ -432,6 +432,11 @@ export default function Worklist() {
         if (data.ignorados?.length) partes.push(`${data.ignorados.reduce((s: number, i: { qtd: number }) => s + i.qtd, 0)} ignorado(s) — procedimento não mapeado (ids: ${data.ignorados.map((i: { procedimentoId: number }) => i.procedimentoId).join(', ')}) — mapeie em Integrações > Feegow`);
         if (data.falhas?.length) partes.push(`${data.falhas.length} falha(s) de busca — tente de novo`);
         if (data.naoRealizados) partes.push(`${data.naoRealizados} marcado(s) não-realizado (desmarcou/faltou no Feegow)`);
+        // Reimportacao: quem ja esta na fila nao e criado nem falha — sem esta
+        // linha a diferenca entre total e criados ficaria muda (a msg antiga
+        // "ja estao na fila" dizia isso e foi preservada aqui em numero).
+        const jaNaFila = data.total - data.criados.length - (data.falhas?.length || 0) - (data.descartados || 0);
+        if (jaNaFila > 0) partes.push(`${jaNaFila} já estava(m) na fila`);
         alert(partes.join('\n'));
       }
     } catch (e) {
