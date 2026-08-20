@@ -186,6 +186,12 @@ describe('salvarIntegracao / removerCredencial (contrato write-only + espelho â€
     assert.equal(priv.user, 'u1', 'usuario existente nao pode ser apagado quando so a senha e enviada');
     assert.equal(priv.pass, 'p2');
   });
+  test('url com esquema proibido (file://) NAO e gravada â€” trava da revisao T7', async () => {
+    await salvarIntegracao(db, { wsId: WS, tipo: 'orthanc', config: { url: 'http://orthanc.legitimo.local' } });
+    await salvarIntegracao(db, { wsId: WS, tipo: 'orthanc', config: { url: 'file:///etc/passwd' } });
+    const pub = (await db.doc(`workspaces/${WS}/integracoes/orthanc`).get()).data();
+    assert.equal(pub.url, 'http://orthanc.legitimo.local', 'esquema fora de http/https significa "nao mexe"');
+  });
   test('salvar orthanc com url vazia ("") NAO apaga o endereco salvo (Minor 3)', async () => {
     await salvarIntegracao(db, { wsId: WS, tipo: 'orthanc', config: { url: 'http://orthanc.enderecoOriginal.local' } });
     const r = await salvarIntegracao(db, { wsId: WS, tipo: 'orthanc', config: { url: '' } });

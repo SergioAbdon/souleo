@@ -13,7 +13,7 @@ import AnexarPdfModal from '@/components/agenda/AnexarPdfModal';
 import { dataLocalHoje } from '@/lib/utils';
 import { gerarAccessionNumber } from '@/lib/gerarAccessionNumber';
 import { db, auth } from '@/lib/firebase';
-import { doc, writeBatch, serverTimestamp, updateDoc, getDocs, collection, query, orderBy } from 'firebase/firestore';
+import { doc, writeBatch, serverTimestamp, getDocs, collection, query, orderBy } from 'firebase/firestore';
 import { soAdministrativos } from '@/lib/campos-exame';
 import { useRouter } from 'next/navigation';
 import { checkEmissao } from '@/lib/billing';

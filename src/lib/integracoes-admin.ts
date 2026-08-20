@@ -53,7 +53,7 @@ export type ResultadoTeste = { httpStatus: number; ok: boolean; status?: 'ok' | 
 /**
  * Contrato de segurança pontos 3-6 (auth/papel já resolvidos pela rota):
  * 3. lê o segredo de privado/{tipo} — ou usa credencialBody sem gravar nada;
- * 4. bate no alvo (feegow/orthanc) com timeout de 10s;
+ * 4. bate no alvo (so feegow — o Orthanc e verificado pelo Wader) com timeout de 10s;
  * 5. grava status/ultimoTeste/ultimoErro em integracoes/{tipo};
  * 6. sanitiza a mensagem antes de gravar E antes de responder.
  */
@@ -174,7 +174,10 @@ function limparConfig(tipo: TipoComForm, config: unknown): Record<string, unknow
       // String vazia = "nao mexe" (mesma regra da credencial em limparCredencial)
       // — quem desliga o Orthanc e o toggle `ativo`, nao o endereco em branco.
       const url = v.trim();
-      if (url !== '') out.url = url;
+      // Trava de esquema (revisao T7): as duas validacoes antigas morreram com a
+      // rota /api/orthanc; esta e a substituta, na fronteira de ESCRITA — protege
+      // todo leitor (o Wader inclusive) de file:///, javascript: etc.
+      if (url !== '' && /^https?:\/\//i.test(url)) out.url = url;
     }
   }
   return out;
