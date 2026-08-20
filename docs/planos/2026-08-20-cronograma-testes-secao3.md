@@ -58,4 +58,14 @@ T19 (limpeza), reverter tudo é de graça — os dois mundos convivem.
 
 ## Registro de execução
 
-- Fase 0: ☐  ·  Fase 1: ☐  ·  Fase 2: ☐  ·  Fase 3: ☐  ·  Pós-barreira: ☐
+- **Fase 0: ✅ 20/08, executada pelo Claude** (Playwright na conta de teste + contraprova
+  no banco via Admin SDK). T1 ✅ · T2 ✅ · T3 ✅ · **T4-mecanismo ✅** (seed de mapa legado
+  → 1º Salvar → `integracoes/feegow.profMap` recebeu o mapa intacto) · **T5-mecanismo ✅**
+  (token fake da gaveta → "Feegow 401" na tela, token não vazou em campo nenhum) ·
+  **T8 ✅** (confirm fala "cancelado", linha some, doc vira `cancelado` — não apagado).
+  Conta de teste limpa depois (zero resíduo).
+  **1 bug achado e corrigido (`72c6eef`):** a mensagem de token ausente mandava para
+  "Local de Trabalho > Integração Feegow" — lugar que não existe mais; agora aponta
+  para Integrações > Feegow.
+- Fase 1 (conta real, Yahoo — do Sergio): ☐ T4 com dados reais · ☐ T5 · ☐ T6 · ☐ T7
+- Fase 2: ☐  ·  Fase 3: ☐  ·  Pós-barreira: ☐
