@@ -154,7 +154,15 @@ export async function apagarExame(db: Firestore, p: Params): Promise<Resultado> 
 
   if (emitido) await devolverConsumo(db, p, 'apagar');
   await limparPdf(exame, p);
-  await exameSnap.ref.delete();
+  // Achado 8: a reserva de ACC (accIndex/{acc}) nasce junto com o exame
+  // (gravarImportacao) — some junto tambem, senao fica orfa (ninguem mais
+  // aponta pra ela, mas ela trava aquele ACC pra sempre). Mesmo batch:
+  // ou os dois somem, ou nenhum.
+  const acc = exame.acc as string | undefined;
+  const lote = db.batch();
+  lote.delete(exameSnap.ref);
+  if (acc && idValido(acc)) lote.delete(db.doc(`workspaces/${p.wsId}/accIndex/${acc}`));
+  await lote.commit();
   await log(db, 'exclusao_exame', p, exame, { estavaEmitido: emitido });
   return { ok: true };
 }
@@ -163,21 +171,33 @@ export async function cancelarExame(db: Firestore, p: Params): Promise<Resultado
   const { papel, exameSnap } = await carregar(db, p);
   if (!exameSnap.exists) return { ok: false, motivo: 'nao_encontrado' };
   const exame = exameSnap.data()!;
-  if (exame.status !== 'emitido') return { ok: false, motivo: 'nao_emitido' };
-  const pode = papel === 'dono'
-    || (papel === 'medico' && exame.medicoUid === p.uid && await ehMedicoDeVerdade(db, p.uid));
+  const emitido = exame.status === 'emitido';
+  // Achado 8: sair da fila (Worklist, exame FEEGOW ainda nao emitido) tambem
+  // passa por aqui em vez de apagar — doc fica, so o status muda. Mesmos dois
+  // status que a tela oferece o botao de remover (grupo 'aguardando' do
+  // Worklist.tsx). Fora emitido/aguardando/rascunho — inclusive cancelado ou
+  // nao-realizado de novo — continua barrado (teste "cancelar duas vezes").
+  const aberto = exame.status === 'aguardando' || exame.status === 'rascunho';
+  if (!emitido && !aberto) return { ok: false, motivo: 'nao_emitido' };
+  const pode = emitido
+    ? papel === 'dono' || (papel === 'medico' && exame.medicoUid === p.uid && await ehMedicoDeVerdade(db, p.uid))
+    // nao emitido: mesma matriz do apagar nao-emitido (dono ou medico que alcanca) —
+    // e exatamente o que este braco substitui na tela pra origem FEEGOW.
+    : papel === 'dono' || (papel === 'medico' && medicoAlcanca(exame, p.uid));
   if (!pode) return { ok: false, motivo: 'sem_permissao' };
 
-  await devolverConsumo(db, p, 'cancelar');
-  await limparPdf(exame, p);
+  if (emitido) {
+    await devolverConsumo(db, p, 'cancelar');
+    await limparPdf(exame, p);
+  }
   await exameSnap.ref.update({
     status: 'cancelado',
     canceladoEm: FieldValue.serverTimestamp(),
     canceladoPor: p.uid,
     motivoCancelamento: p.motivo ?? '',
-    pdfUrl: FieldValue.delete(),
+    ...(emitido ? { pdfUrl: FieldValue.delete() } : {}),
   });
-  await log(db, 'cancelamento_laudo', p, exame, { motivo: p.motivo ?? '' });
+  await log(db, 'cancelamento_laudo', p, exame, { motivo: p.motivo ?? '', estavaEmitido: emitido });
   return { ok: true };
 }
 

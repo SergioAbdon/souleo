@@ -94,6 +94,18 @@ describe('apagar', () => {
     const canc = await db.collection('consumo').where('exameId', '==', 'em1').where('tipo', '==', 'cancelamento').get();
     assert.equal(canc.size, 1, 'devolucao registrada em consumo, append-only');
   });
+  test('apaga a reserva accIndex/{acc} junto — nao deixa reserva orfa (achado 8)', async () => {
+    await db.doc(`workspaces/${WS}/exames/filaAcc`).set({ pacienteNome: 'F', medicoUid: MED, status: 'aguardando', acc: 'EX01010000000001' });
+    await db.doc(`workspaces/${WS}/accIndex/EX01010000000001`).set({ exameId: 'filaAcc' });
+    const r = await apagarExame(db, { wsId: WS, exameId: 'filaAcc', uid: MED, subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, true);
+    assert.equal((await db.doc(`workspaces/${WS}/accIndex/EX01010000000001`).get()).exists, false, 'reserva de ACC some junto com o exame');
+  });
+  test('exame sem acc: apaga normalmente, sem tentar tocar accIndex', async () => {
+    await db.doc(`workspaces/${WS}/exames/filaSemAcc`).set({ pacienteNome: 'F', medicoUid: MED, status: 'aguardando' });
+    const r = await apagarExame(db, { wsId: WS, exameId: 'filaSemAcc', uid: MED, subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, true);
+  });
 });
 
 describe('cancelar', () => {
@@ -137,6 +149,43 @@ describe('cancelar', () => {
     const sub = (await subRef().get()).data();
     assert.equal(sub.creditosExtras, 4, 'credito devolvido');
     assert.equal(sub.franquiaUsada, 10, 'franquia intacta');
+  });
+
+  // Achado 8: sair da fila (FEEGOW, ainda nao emitido) tambem usa cancelar —
+  // doc fica (nao apaga), sem consumo/pdf pra devolver (nunca emitiu).
+  test('aguardando: dono cancela sem devolver consumo nem mexer em pdf; doc fica', async () => {
+    await db.doc(`workspaces/${WS}/exames/fg1`).set({ pacienteNome: 'F', origem: 'FEEGOW', status: 'aguardando' });
+    const r = await cancelarExame(db, { wsId: WS, exameId: 'fg1', uid: DONO, subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, true);
+    const ex = (await db.doc(`workspaces/${WS}/exames/fg1`).get()).data();
+    assert.equal(ex.status, 'cancelado');
+    assert.equal((await subRef().get()).data().franquiaUsada, 10, 'nao mexeu no consumo (nunca emitiu)');
+    assert.equal(pdfsApagados.length, 0);
+  });
+  test('aguardando: medico que alcanca (sem autor travado) cancela; recepcao nao', async () => {
+    await db.doc(`workspaces/${WS}/exames/fg2`).set({ pacienteNome: 'F', origem: 'FEEGOW', status: 'aguardando' });
+    const neg = await cancelarExame(db, { wsId: WS, exameId: 'fg2', uid: RITA, subRef: subRef(), apagarPdf });
+    assert.equal(neg.ok, false);
+    assert.equal(neg.motivo, 'sem_permissao');
+    const r = await cancelarExame(db, { wsId: WS, exameId: 'fg2', uid: MED, subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, true);
+  });
+  test('aguardando: medico NAO cancela exame de outro medico (autor travado)', async () => {
+    await db.doc(`workspaces/${WS}/exames/fg3`).set({ pacienteNome: 'F', origem: 'FEEGOW', status: 'aguardando', medicoUid: MED2 });
+    const neg = await cancelarExame(db, { wsId: WS, exameId: 'fg3', uid: MED, subRef: subRef(), apagarPdf });
+    assert.equal(neg.ok, false);
+    assert.equal(neg.motivo, 'sem_permissao');
+  });
+  test('rascunho tambem entra no braco aberto (mesmo grupo de acao da tela)', async () => {
+    await db.doc(`workspaces/${WS}/exames/fg4`).set({ pacienteNome: 'F', origem: 'FEEGOW', status: 'rascunho' });
+    const r = await cancelarExame(db, { wsId: WS, exameId: 'fg4', uid: DONO, subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, true);
+  });
+  test('cancelado nao cancela de novo (nem aberto nem emitido)', async () => {
+    await db.doc(`workspaces/${WS}/exames/fg5`).set({ pacienteNome: 'F', origem: 'FEEGOW', status: 'cancelado' });
+    const r = await cancelarExame(db, { wsId: WS, exameId: 'fg5', uid: DONO, subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'nao_emitido');
   });
 });
 

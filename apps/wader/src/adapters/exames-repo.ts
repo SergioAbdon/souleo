@@ -122,6 +122,25 @@ export class ExamesRepo {
   }
 
   /**
+   * Marca o resultado da última tentativa de escrita do `.wl` (Task 8, D1) —
+   * é isso que faz o indicador "SEM MWL" da fila do LEO dizer a verdade
+   * (a Task 7 matou o escritor antigo, que gravava sempre 'ok'). Silencioso
+   * em erro: um `mwlStatus` desatualizado não pode derrubar o sync.
+   */
+  async marcarMwl(exameId: string, status: 'ok' | 'falhou'): Promise<void> {
+    try {
+      await getDb()
+        .collection('workspaces')
+        .doc(this.wsId)
+        .collection(COLLECTION)
+        .doc(exameId)
+        .update({ mwlStatus: status });
+    } catch (err) {
+      log.warn({ err, exameId, status }, 'Falha ao gravar mwlStatus (segue o jogo)');
+    }
+  }
+
+  /**
    * Lista exames do dia para o workspace, ordenados por horário de chegada.
    * Usa o índice composto (dataExame + horarioChegada) já existente.
    */

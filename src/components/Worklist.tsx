@@ -13,7 +13,7 @@ import AnexarPdfModal from '@/components/agenda/AnexarPdfModal';
 import { dataLocalHoje } from '@/lib/utils';
 import { gerarAccessionNumber } from '@/lib/gerarAccessionNumber';
 import { db, auth } from '@/lib/firebase';
-import { doc, writeBatch, serverTimestamp, updateDoc, getDocs, collection, query, orderBy } from 'firebase/firestore';
+import { doc, writeBatch, serverTimestamp, getDocs, collection, query, orderBy } from 'firebase/firestore';
 import { soAdministrativos } from '@/lib/campos-exame';
 import { useRouter } from 'next/navigation';
 import { checkEmissao } from '@/lib/billing';
@@ -21,6 +21,7 @@ import DicomGallery from '@/components/laudo/DicomGallery';
 import { podeEditarLaudo, podeRemoverDaFila, ehMedico } from '@/lib/permissoes';
 import StatusPill from '@/components/shell/StatusPill';
 import { TIPOS_LAUDO_PADRAO, type TipoLaudo } from '@/lib/tipos-laudo';
+import type { AcaoFeegow } from '@/lib/feegow-admin';
 
 // v3: helper pra enviar token Firebase nas chamadas Feegow
 async function feegowAuthFetch(url: string, options?: RequestInit) {
@@ -29,34 +30,6 @@ async function feegowAuthFetch(url: string, options?: RequestInit) {
     ...options,
     headers: { ...options?.headers, 'Authorization': `Bearer ${token || ''}` },
   });
-}
-
-// Enviar worklist (MWL) ao Orthanc — persiste o status no exame (Achado 15)
-async function enviarMwlOrthanc(dados: {
-  wsId: string; exameId: string; pacienteNome: string; pacienteId?: string;
-  pacienteDtnasc?: string; sexo?: string; tipoExame?: string;
-  dataExame?: string; horarioChegada?: string; medicoNome?: string;
-}) {
-  try {
-    const token = await auth.currentUser?.getIdToken();
-    const res = await fetch('/api/orthanc', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token || ''}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'criar_mwl', ...dados }),
-    });
-    const result = await res.json();
-    // Achado 15: persistir o resultado — a fila mostra quando a worklist
-    // NAO chegou ao aparelho (antes era um console.warn que ninguem via).
-    await updateDoc(doc(db, 'workspaces', dados.wsId, 'exames', dados.exameId), {
-      mwlStatus: result.ok ? 'enviado' : 'falhou',
-    });
-    if (!result.ok) console.warn('Orthanc MWL falhou:', result.error);
-  } catch (e) {
-    console.error('Orthanc MWL:', e);
-    try {
-      await updateDoc(doc(db, 'workspaces', dados.wsId, 'exames', dados.exameId), { mwlStatus: 'falhou' });
-    } catch { /* offline total: fica sem status */ }
-  }
 }
 
 type ExameItem = Record<string, unknown> & {
@@ -221,7 +194,8 @@ export default function Worklist() {
     if (cpfLimpo.length < 11) return;
     setCpfBuscando(true);
     try {
-      const res = await feegowAuthFetch(`/api/feegow?action=buscar_cpf&cpf=${cpfLimpo}&wsId=${workspace?.id || ''}`);
+      const acao: AcaoFeegow = 'buscar_cpf';
+      const res = await feegowAuthFetch(`/api/feegow?action=${acao}&cpf=${cpfLimpo}&wsId=${workspace?.id || ''}`);
       const data = await res.json();
       if (pacCpfRef.current !== cpfLimpo) return; // campo ja tem OUTRO cpf
       if (data.ok && data.encontrado && data.paciente) {
@@ -353,20 +327,6 @@ export default function Worklist() {
         setPacLoading(false);
         return;
       }
-
-      // Enviar MWL ao Orthanc (fire-and-forget)
-      enviarMwlOrthanc({
-        wsId: workspace.id,
-        exameId: novoExameId,
-        pacienteNome: pacNome.trim().toUpperCase(),
-        pacienteId: cpfLimpo,
-        pacienteDtnasc: pacDtnasc,
-        sexo: pacSexo,
-        tipoExame: pacTipoExame,
-        dataExame: dataLocalHoje(),
-        horarioChegada: horaChegada,
-        medicoNome: assinaComoAutor ? (profile?.nome as string || '') : '',
-      });
     }
 
     setPacLoading(false);
@@ -374,13 +334,20 @@ export default function Worklist() {
   }
 
   async function removerDaFila(item: ExameItem) {
-    if (!confirm(`Remover ${item.pacienteNome} da fila?`)) return;
+    // Achado 8: exame FEEGOW sai da fila via cancelar (doc fica, .wl some
+    // pela elegibilidade — nunca apaga, senao a reimportacao destrava e o
+    // Feegow devolve o mesmo agendamento). Manual continua apagando de fato.
+    const feegow = item.origem === 'FEEGOW';
+    const msg = feegow
+      ? `Remover ${item.pacienteNome} da fila? Sai da fila e fica registrado como cancelado (visível na ficha do paciente).`
+      : `Remover ${item.pacienteNome} da fila?`;
+    if (!confirm(msg)) return;
     if (!workspace?.id) return;
     try {
       const res = await feegowAuthFetch('/api/exame', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ acao: 'apagar', wsId: workspace.id, exameId: item.id }),
+        body: JSON.stringify({ acao: feegow ? 'cancelar' : 'apagar', wsId: workspace.id, exameId: item.id }),
       });
       const data = await res.json();
       if (!data.ok) {
@@ -398,33 +365,40 @@ export default function Worklist() {
     if (!workspace?.id) return;
     setFeegowLoading(true);
     try {
+      const acao: AcaoFeegow = 'importar';
       const res = await feegowAuthFetch(`/api/feegow?wsId=${workspace.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'importar' }),
+        body: JSON.stringify({ action: acao }),
       });
       const data = await res.json();
       if (!data.ok) {
-        alert(data.error === 'sem_acesso_ao_local'
-          ? 'Seu usuário não tem acesso a este local.'
-          : (data.error || 'Erro ao importar do Feegow.'));
-      } else if (data.criados.length === 0) {
-        alert(data.total === 0 ? 'Nenhum paciente aguardando no Feegow.' : 'Todos os pacientes do Feegow já estão na fila.');
-      } else {
-        // ponytail: MWL continua saindo do cliente (o /api/orthanc ja autentica);
-        // fechar a aba no meio = MWL perdido, sem retry — o indicador SEM MWL
-        // (mwlStatus) da visibilidade. Mover pro servidor se virar dor real.
-        for (const { exameId, pac } of data.criados) {
-          await enviarMwlOrthanc({
-            wsId: workspace.id, exameId,
-            pacienteNome: pac.pacienteNome, pacienteId: pac.cpf,
-            pacienteDtnasc: pac.pacienteDtnasc, sexo: pac.sexo,
-            tipoExame: pac.tipoExame, dataExame: pac.dataExame,
-            horarioChegada: pac.horarioChegada,
-            medicoNome: assinaComoAutor ? (profile?.nome as string || '') : '',
-          });
+        if (data.error === 'sem_acesso_ao_local') {
+          alert('Seu usuário não tem acesso a este local.');
+        } else if (data.error === 'feegow_sem_procmap') {
+          alert('Nenhum procedimento mapeado. Vá em Integrações > Feegow e mapeie os procedimentos.');
+        } else if (data.error === 'feegow_desligado') {
+          alert('A integração Feegow está desligada. Ligue em Integrações > Feegow.');
+        } else {
+          alert(data.error || 'Erro ao importar do Feegow.');
         }
-        alert(`${data.criados.length} paciente(s) importado(s) do Feegow!`);
+      } else {
+        // D4: a tela conta a verdade — criados/ignorados/falhas/naoRealizados,
+        // nao mais um "Nenhum paciente aguardando" que escondia descarte.
+        const partes = [`${data.criados.length} importado(s)`];
+        if (data.ignorados?.length) partes.push(`${data.ignorados.reduce((s: number, i: { qtd: number }) => s + i.qtd, 0)} ignorado(s) — procedimento não mapeado (ids: ${data.ignorados.map((i: { procedimentoId: number }) => i.procedimentoId).join(', ')}) — mapeie em Integrações > Feegow`);
+        if (data.falhas?.length) partes.push(`${data.falhas.length} falha(s) de busca — tente de novo`);
+        if (data.naoRealizados) partes.push(`${data.naoRealizados} marcado(s) não-realizado (desmarcou/faltou no Feegow)`);
+        // Reimportacao: quem ja esta na fila nao e criado nem falha — sem esta
+        // linha a diferenca entre total e criados ficaria muda (a msg antiga
+        // "ja estao na fila" dizia isso e foi preservada aqui em numero).
+        // Nao subtrai falhas (achado herdado da Task 3): total = candidatos.length
+        // em montarCandidatos NUNCA inclui falhas — o `continue` do push em
+        // `falhas` vem antes do push em `candidatos`. Subtrair de novo aqui
+        // contava falha duas vezes e subcontava "ja estava(m) na fila".
+        const jaNaFila = data.total - data.criados.length - (data.descartados || 0);
+        if (jaNaFila > 0) partes.push(`${jaNaFila} já estava(m) na fila`);
+        alert(partes.join('\n'));
       }
     } catch (e) {
       console.error('importarFeegow:', e);
@@ -497,7 +471,12 @@ export default function Worklist() {
   }
 
   // Filtrar por status + busca texto
-  const fonteDados = statusSel === 'nao-realizado' ? naoRealizados : worklist;
+  // cancelado some da fila (revisão Task 4, item 2): o confirm() de remover
+  // avisa que sai da fila — sem este filtro a linha continuava aparecendo
+  // (só perdia os botões de ação) e o operador achava que nada aconteceu.
+  // nao-realizado CONTINUA visível (esmaecido) — é auditoria, não fila.
+  const worklistVisivel = worklist.filter(it => it.status !== 'cancelado');
+  const fonteDados = statusSel === 'nao-realizado' ? naoRealizados : worklistVisivel;
   const filtrada = fonteDados.filter(it => {
     if (statusSel !== 'todos' && statusSel !== 'nao-realizado' && it.status !== statusSel) return false;
     if (busca) {
@@ -536,7 +515,7 @@ export default function Worklist() {
       <div className="flex gap-2 mb-3 text-xs">
         <button onClick={() => setStatusSel('todos')}
           className={`px-3 py-1 rounded-full font-semibold transition ${statusSel === 'todos' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-          Todos ({worklist.length})
+          Todos ({worklistVisivel.length})
         </button>
         <button onClick={() => setStatusSel('aguardando')}
           className={`px-3 py-1 rounded-full font-semibold transition ${statusSel === 'aguardando' ? 'bg-yellow-500 text-white' : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'}`}>
@@ -664,6 +643,11 @@ export default function Worklist() {
                         // 3 grupos de ação. 'imagens-recebidas'/'erro-imagens'
                         // (legados do pipeline DICOM) → andamento.
                         const st = item.status as string;
+                        // cancelado/nao-realizado: terminal, sem acao (achado 8 — a
+                        // Task 4 passou a produzir os dois no MESMO dia — reconciliacao
+                        // via Feegow e remover-da-fila FEEGOW — e sem este corte eles
+                        // caiam no braco 'andamento' e ganhavam "▶ Continuar" enganoso).
+                        if (st === 'cancelado' || st === 'nao-realizado') return null;
                         let grupo: 'aguardando' | 'andamento' | 'emitido';
                         if (st === 'emitido') grupo = 'emitido';
                         else if (st === 'aguardando' || st === 'rascunho') grupo = 'aguardando';

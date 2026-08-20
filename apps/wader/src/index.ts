@@ -84,7 +84,8 @@ async function main(): Promise<void> {
   const uiOnly = process.env.WADER_UI_ONLY === '1' || process.env.WADER_UI_ONLY === 'true';
 
   // OrthancClient é sempre necessário (UI server + endpoint de reconciliação).
-  const orthancClient = new OrthancClient(new WorkspaceRepo(config.wsId));
+  const workspaceRepo = new WorkspaceRepo(config.wsId);
+  const orthancClient = new OrthancClient(workspaceRepo);
 
   let worklistWorker: WorklistSyncWorker | null = null;
   let dicomWorker: DicomIngestWorker | null = null;
@@ -131,7 +132,9 @@ async function main(): Promise<void> {
 
     // Batimento (Sub-plano 5, D4) — diz "estou aqui" pro cartão de Integrações
     // distinguir "Wader parado" de "sem exame hoje". Não derruba nada se falhar.
-    pararBatimento = iniciarBatimento(config.wsId, lerVersaoPackage());
+    // Task 8 (D1): também verifica o Orthanc daqui de dentro da rede da clínica
+    // (a nuvem não alcança mais ele — Task 7).
+    pararBatimento = iniciarBatimento(config.wsId, lerVersaoPackage(), workspaceRepo, orthancClient);
   }
 
   const app = await startUiServer(config, { worklistWorker, dicomWorker, orthancClient });

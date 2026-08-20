@@ -8,7 +8,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { updateWorkspace } from '@/lib/firestore';
-import { auth } from '@/lib/firebase';
 
 const PALETAS = [
   { name: 'Azul LEO', p1: '#1E3A5F', p2: '#2563EB' },
@@ -43,9 +42,6 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
   const [p1, setP1] = useState('#1E3A5F');
   const [p2, setP2] = useState('#2563EB');
   const [logoB64, setLogoB64] = useState('');
-  const [feegowProfs, setFeegowProfs] = useState<Array<{ profissional_id: number; nome: string; tratamento?: string; conselho?: string; documento_conselho?: string; uf_conselho?: string }>>([]);
-  const [feegowProfMap, setFeegowProfMap] = useState<Record<number, string>>({});
-  const [profsLoading, setProfsLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
 
@@ -66,58 +62,12 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
       setP1(workspace.corPrimaria as string || '#1E3A5F');
       setP2(workspace.corSecundaria as string || '#2563EB');
       setLogoB64(workspace.logoB64 as string || '');
-      const savedProfMap = workspace.feegowProfMap as Record<string, string> | undefined;
-      if (savedProfMap && Object.keys(savedProfMap).length > 0) {
-        const parsed: Record<number, string> = {};
-        for (const [k, v] of Object.entries(savedProfMap)) parsed[Number(k)] = v;
-        setFeegowProfMap(parsed);
-      } else {
-        setFeegowProfMap({});
-      }
-      setFeegowProfs([]);
     }
   }, [workspace, open]);
 
-  // Token/URL/senha do Feegow e do Orthanc sairam daqui (Sub-plano 5, Task 7)
-  // -- moram em workspaces/{wsId}/privado/{tipo}, editados so na tela
-  // Integracoes. "Carregar profissionais" continua aqui (nao e credencial,
-  // ver decisao da task): usa wsId, nao um token digitado no modal -- a rota
-  // resolve o token salvo na gaveta.
-  async function carregarProfissionais() {
-    if (!workspace?.id) return;
-    setProfsLoading(true);
-    try {
-      const idToken = await auth.currentUser?.getIdToken();
-      const res = await fetch(`/api/feegow?action=profissionais&wsId=${workspace.id}`, {
-        headers: { 'Authorization': `Bearer ${idToken || ''}` },
-      });
-      const data = await res.json();
-      // Minor 9 (Sub-plano 5, Task 7 revisao): `data.ok === false` (token
-      // ausente/invalido) e "lista vazia com token valido" caiam no MESMO
-      // `else` antes — clinica com token OK e zero profissionais ativos
-      // via "token não cadastrado ou inválido", mentira no caso feliz.
-      if (!data.ok) {
-        setErro('Token do Feegow não cadastrado ou inválido — cadastre em Integrações antes de carregar profissionais.');
-      } else if (data.profissionais?.length) {
-        setFeegowProfs(data.profissionais);
-        // Smart defaults: "Dr. Sergio Roberto Abdon Rodrigues"
-        if (Object.keys(feegowProfMap).length === 0) {
-          const defaults: Record<number, string> = {};
-          for (const p of data.profissionais) {
-            const tratamento = p.tratamento ? `${p.tratamento} ` : '';
-            defaults[p.profissional_id] = `${tratamento}${p.nome}`.trim();
-          }
-          setFeegowProfMap(defaults);
-        }
-      } else {
-        setErro('Feegow conectado, mas nenhum profissional ativo foi encontrado.');
-      }
-    } catch {
-      setErro('Erro ao carregar profissionais do Feegow.');
-    }
-    setProfsLoading(false);
-  }
-
+  // Token/URL/senha e profMap do Feegow e do Orthanc sairam daqui (Sub-plano
+  // 5, Task 7 + Task 6) — moram em workspaces/{wsId}/integracoes+privado/{tipo},
+  // editados so na tela Integrações. Este modal so cuida de dados do local e timbre.
   async function handleSalvar() {
     setErro('');
     if (!nome) { setErro('Nome do local é obrigatório.'); return; }
@@ -133,7 +83,6 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
       telefone: tel, telefone2: tel2,
       corPrimaria: p1, corSecundaria: p2,
       logoB64,
-      feegowProfMap: feegowProfMap,
     });
 
     if (ok) {
@@ -253,49 +202,6 @@ export default function LocalModal({ open, onClose, onSaved }: Props) {
             </div>
             {logoB64 && (
               <button onClick={() => setLogoB64('')} className="text-xs text-red-500 mt-1 hover:underline">Remover logo</button>
-            )}
-          </div>
-
-          {/* Profissionais (Feegow) — token/URL/senha de integracao saíram
-              pra tela Integrações (Sub-plano 5, Task 7); isto fica porque
-              não é credencial. */}
-          <div className="border rounded-lg p-3 bg-gray-50">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-semibold text-gray-500 uppercase">Profissionais (Feegow)</label>
-              <button onClick={carregarProfissionais} disabled={profsLoading}
-                className="px-3 py-1 text-xs font-semibold rounded-lg border border-purple-500 text-purple-600 hover:bg-purple-50 transition disabled:opacity-50">
-                {profsLoading ? 'Carregando...' : feegowProfs.length > 0 ? 'Recarregar' : 'Carregar profissionais'}
-              </button>
-            </div>
-
-            {feegowProfs.length > 0 && (
-              <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                {feegowProfs.map(p => (
-                  <div key={p.profissional_id} className="flex items-center gap-2 text-xs">
-                    <span className="w-32 text-gray-500 truncate" title={`${p.conselho || ''} ${p.documento_conselho || ''}/${p.uf_conselho || ''}`}>
-                      {p.tratamento || ''} {p.nome.split(' ').slice(0, 2).join(' ')}
-                    </span>
-                    <input
-                      type="text"
-                      value={feegowProfMap[p.profissional_id] || ''}
-                      onChange={e => setFeegowProfMap(prev => ({ ...prev, [p.profissional_id]: e.target.value }))}
-                      className="flex-1 border rounded px-2 py-1 text-xs focus:outline-none focus:border-[#1E3A5F] text-[#1E3A5F]"
-                      placeholder="Nome a aparecer no laudo / DICOM" />
-                  </div>
-                ))}
-                <p className="text-[10px] text-gray-400 mt-2 pt-2 border-t">
-                  Como o nome do médico vai aparecer no DICOM (tag #19) e no laudo. Edite se quiser encurtar.
-                </p>
-              </div>
-            )}
-
-            {feegowProfs.length === 0 && Object.keys(feegowProfMap).length > 0 && (
-              <p className="text-xs text-green-600">
-                {Object.keys(feegowProfMap).length} profissional(is) mapeado(s). Clique em &quot;Carregar&quot; para editar.
-              </p>
-            )}
-            {feegowProfs.length === 0 && Object.keys(feegowProfMap).length === 0 && (
-              <p className="text-xs text-gray-400">Cadastre o token do Feegow em Integrações, depois clique em &quot;Carregar profissionais&quot;.</p>
             )}
           </div>
 

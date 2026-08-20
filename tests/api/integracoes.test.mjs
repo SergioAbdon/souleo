@@ -13,8 +13,8 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { resolverPapel } from '../../src/lib/exame-admin.ts';
 import { requireUid } from '../../src/lib/auth-admin.ts';
 import {
-  executarTeste, sanitizar, testarFeegow, testarOrthanc,
-  salvarIntegracao, removerCredencial, resolverConfigOrthanc,
+  executarTeste, sanitizar, testarFeegow,
+  salvarIntegracao, removerCredencial,
 } from '../../src/lib/integracoes-admin.ts';
 
 let db;
@@ -63,6 +63,15 @@ describe('executarTeste (contrato pontos 3-6 — dono ja resolvido pela rota)', 
     assert.equal(r.httpStatus, 400);
     assert.equal(r.ok, false);
   });
+  // D1 (corte estrutural, Task 7): a nuvem nunca alcancava o Orthanc (rede
+  // interna da clinica) — 100% das chamadas falhavam em producao. Quem
+  // verifica e reporta agora e o Wader (Task 8); a rota so exibe o cartao.
+  test("tipo 'orthanc' -> 400 (D1 — quem verifica agora e o Wader)", async () => {
+    const r = await executarTeste(db, { wsId: WS, tipo: 'orthanc' });
+    assert.equal(r.httpStatus, 400);
+    assert.equal(r.ok, false);
+    assert.match(r.mensagem, /Wader/);
+  });
   test('feegow sem credencial cadastrada e sem credencial no corpo -> 400 com mensagem util', async () => {
     const r = await executarTeste(db, { wsId: WS, tipo: 'feegow' });
     assert.equal(r.httpStatus, 400);
@@ -80,40 +89,22 @@ describe('executarTeste (contrato pontos 3-6 — dono ja resolvido pela rota)', 
   });
   test('credencial no corpo com sucesso tambem NAO grava em integracoes/{tipo} (Important 3 — cartao nao pode mentir)', async () => {
     const fetchOk = async () => new Response('{}', { status: 200 });
-    const antes = (await db.doc(`workspaces/${WS}/integracoes/orthanc`).get()).data();
+    const antes = (await db.doc(`workspaces/${WS}/integracoes/feegow`).get()).data();
     const r = await executarTeste(db, {
-      wsId: WS, tipo: 'orthanc',
-      credencialBody: { url: 'http://orthanc.corpo.local', pass: 'segredoOrthanc123' },
+      wsId: WS, tipo: 'feegow',
+      credencialBody: { token: 'tok-corpo-important3' },
       fetchImpl: fetchOk,
     });
     assert.equal(r.httpStatus, 200);
     assert.equal(r.ok, true);
     assert.equal(r.status, 'ok');
-    const depois = (await db.doc(`workspaces/${WS}/integracoes/orthanc`).get()).data();
+    const depois = (await db.doc(`workspaces/${WS}/integracoes/feegow`).get()).data();
     assert.deepEqual(depois, antes, 'testar com credencial do corpo nao grava em integracoes/{tipo}, mesmo com sucesso');
   });
-  test('gaveta privado/orthanc {user,pass} monta Basic Auth correto e grava status ok (Critical 1 + Important 2)', async () => {
-    await db.doc(`workspaces/${WS}/privado/orthanc`).set({ user: 'leo', pass: 'senhaLonga123' });
-    await db.doc(`workspaces/${WS}/integracoes/orthanc`).set({ url: 'http://orthanc.gaveta.local' }, { merge: true });
-    let headersRecebidos;
-    const fetchCaptura = async (_url, opts) => { headersRecebidos = opts.headers; return new Response('{}', { status: 200 }); };
-    const r = await executarTeste(db, { wsId: WS, tipo: 'orthanc', fetchImpl: fetchCaptura });
-    assert.equal(r.httpStatus, 200);
-    assert.equal(r.ok, true);
-    const esperado = 'Basic ' + Buffer.from('leo:senhaLonga123').toString('base64');
-    assert.equal(headersRecebidos.Authorization, esperado, 'nomes de campo user/pass da gaveta (Critical 1) chegam ao Basic Auth');
-    const doc = (await db.doc(`workspaces/${WS}/integracoes/orthanc`).get()).data();
-    assert.equal(doc.status, 'ok');
-    assert.equal(doc.ultimoErro, null);
-  });
-  test('credencial no corpo so com senha combina com o endereco publico ja salvo (Minor 2)', async () => {
-    await db.doc(`workspaces/${WS}/integracoes/orthanc`).set({ url: 'http://orthanc.publico.local' }, { merge: true });
-    const fetchOk = async () => new Response('{}', { status: 200 });
-    const r = await executarTeste(db, {
-      wsId: WS, tipo: 'orthanc', credencialBody: { pass: 'somenteSenha123' }, fetchImpl: fetchOk,
-    });
-    assert.equal(r.ok, true, 'endereco publico + senha do corpo devem se combinar sem "Endereço do Orthanc ausente"');
-  });
+  // Basic Auth (Critical 1+Important 2) e a combinacao endereco+senha (Minor 2)
+  // eram mecanica de testarOrthanc — morreram junto com ela (D1, Task 7). A
+  // protecao equivalente vive nos testes do Wader (workspace-repo.test.ts,
+  // cobre user/pass) e no batimento da Task 8.
   test('erro do alvo contendo a credencial do corpo -> mensagem devolvida nao contem a credencial e nada e gravado (Important 1 + 3)', async () => {
     const SEGREDO = 'tokenSuperSecreto999';
     const fetchVazando = async () => new Response(`acesso negado para o token ${SEGREDO}`, { status: 401 });
@@ -127,29 +118,19 @@ describe('executarTeste (contrato pontos 3-6 — dono ja resolvido pela rota)', 
     const depois = (await db.doc(`workspaces/${WS}/integracoes/feegow`).get()).data();
     assert.deepEqual(depois, antes, 'testar com credencial do corpo nao grava em integracoes/{tipo}');
   });
-  test('gaveta com senha curta (abaixo do piso de 6 do sanitizar) — corpo do erro do alvo nao vaza (Important 1, raiz)', async () => {
-    await db.doc(`workspaces/${WS}/privado/orthanc`).set({ user: 'leo', pass: 'ad123' });
-    await db.doc(`workspaces/${WS}/integracoes/orthanc`).set({ url: 'http://orthanc.curta.local' }, { merge: true });
-    const fetchVazando = async () => new Response('acesso negado, senha usada: ad123', { status: 401 });
-    const r = await executarTeste(db, { wsId: WS, tipo: 'orthanc', fetchImpl: fetchVazando });
-    assert.equal(r.status, 'erro');
-    assert.equal(r.mensagem.includes('ad123'), false);
-    const doc = (await db.doc(`workspaces/${WS}/integracoes/orthanc`).get()).data();
-    assert.equal(doc.ultimoErro.includes('ad123'), false, 'senha curta nao pode vazar mesmo abaixo do piso do sanitizar');
-    assert.equal(doc.ultimoErro, 'Orthanc 401', 'mensagem gravada nao embute o corpo da resposta do alvo');
-  });
+  // Senha curta (Important 1, raiz) era mecanica de testarOrthanc — morreu
+  // junto com ela (D1, Task 7). Ver comentario acima.
   test('a MESMA falha duas vezes seguidas nao se auto-mascara', async () => {
     // O ultimoErro da tentativa anterior fica no documento publico. Se os segredos
     // fossem derivados de `conn` (publico + gaveta), a 2a falha identica viraria
     // "***" e apagaria o diagnostico justo quando o dono tenta entender a falha.
-    await db.doc(`workspaces/${WS}/privado/orthanc`).set({ user: 'leo', pass: 'senhaLonga123' });
-    await db.doc(`workspaces/${WS}/integracoes/orthanc`).set({ url: 'http://orthanc.repetido.local' }, { merge: true });
+    await db.doc(`workspaces/${WS}/privado/feegow`).set({ token: 'tokenRepetido123' });
     const fetch401 = async () => new Response('nao autorizado', { status: 401 });
-    await executarTeste(db, { wsId: WS, tipo: 'orthanc', fetchImpl: fetch401 });
-    const r2 = await executarTeste(db, { wsId: WS, tipo: 'orthanc', fetchImpl: fetch401 });
-    assert.equal(r2.mensagem, 'Orthanc 401', 'a 2a falha identica tem de continuar legivel');
-    const doc = (await db.doc(`workspaces/${WS}/integracoes/orthanc`).get()).data();
-    assert.equal(doc.ultimoErro, 'Orthanc 401');
+    await executarTeste(db, { wsId: WS, tipo: 'feegow', fetchImpl: fetch401 });
+    const r2 = await executarTeste(db, { wsId: WS, tipo: 'feegow', fetchImpl: fetch401 });
+    assert.equal(r2.mensagem, 'Feegow 401', 'a 2a falha identica tem de continuar legivel');
+    const doc = (await db.doc(`workspaces/${WS}/integracoes/feegow`).get()).data();
+    assert.equal(doc.ultimoErro, 'Feegow 401');
   });
 });
 
@@ -164,27 +145,15 @@ describe('sanitizar', () => {
   });
 });
 
-describe('testarFeegow / testarOrthanc (bater no alvo)', () => {
+// testarOrthanc (Basic Auth, senha curta, esquema/SSRF) morreu com o corte
+// estrutural (D1, Task 7) — a nuvem parou de bater no Orthanc. A protecao
+// equivalente vive nos testes do Wader (workspace-repo.test.ts) e no
+// batimento da Task 8.
+describe('testarFeegow (bater no alvo)', () => {
   test('testarFeegow lanca so com status quando a resposta nao e ok (nao embute o corpo do alvo)', async () => {
     const fetchImpl = async () => new Response('falhou', { status: 500 });
     await assert.rejects(testarFeegow({ token: 'x'.repeat(10) }, fetchImpl), /Feegow 500/);
     await assert.rejects(testarFeegow({ token: 'x'.repeat(10) }, fetchImpl), (e) => !e.message.includes('falhou'));
-  });
-  test('testarOrthanc lanca so com status quando a resposta nao e ok (nao embute o corpo do alvo)', async () => {
-    const fetchImpl = async () => new Response('falhou', { status: 500 });
-    await assert.rejects(testarOrthanc({ url: 'http://x', pass: 'y'.repeat(10) }, fetchImpl), /Orthanc 500/);
-    await assert.rejects(testarOrthanc({ url: 'http://x', pass: 'y'.repeat(10) }, fetchImpl), (e) => !e.message.includes('falhou'));
-  });
-  // Minor 5 (Sub-plano 5, Task 7 revisao): "testar antes de salvar" tem que
-  // recusar esquema nao-http(s) igual resolverConfigOrthanc (SSRF) — os dois
-  // caminhos nao podem discordar sobre a mesma regra.
-  test('testarOrthanc recusa esquema file:// mesmo com credencial valida (SSRF no caminho de teste)', async () => {
-    const fetchImpl = async () => { throw new Error('NUNCA deveria chegar a rede'); };
-    await assert.rejects(testarOrthanc({ url: 'file:///etc/passwd' }, fetchImpl), /http/i);
-  });
-  test('testarOrthanc recusa esquema gopher:// mesmo com credencial valida', async () => {
-    const fetchImpl = async () => { throw new Error('NUNCA deveria chegar a rede'); };
-    await assert.rejects(testarOrthanc({ url: 'gopher://interno.local:70/' }, fetchImpl), /http/i);
   });
 });
 
@@ -216,6 +185,12 @@ describe('salvarIntegracao / removerCredencial (contrato write-only + espelho �
     const priv = (await db.doc(`workspaces/${WS}/privado/orthanc`).get()).data();
     assert.equal(priv.user, 'u1', 'usuario existente nao pode ser apagado quando so a senha e enviada');
     assert.equal(priv.pass, 'p2');
+  });
+  test('url com esquema proibido (file://) NAO e gravada — trava da revisao T7', async () => {
+    await salvarIntegracao(db, { wsId: WS, tipo: 'orthanc', config: { url: 'http://orthanc.legitimo.local' } });
+    await salvarIntegracao(db, { wsId: WS, tipo: 'orthanc', config: { url: 'file:///etc/passwd' } });
+    const pub = (await db.doc(`workspaces/${WS}/integracoes/orthanc`).get()).data();
+    assert.equal(pub.url, 'http://orthanc.legitimo.local', 'esquema fora de http/https significa "nao mexe"');
   });
   test('salvar orthanc com url vazia ("") NAO apaga o endereco salvo (Minor 3)', async () => {
     await salvarIntegracao(db, { wsId: WS, tipo: 'orthanc', config: { url: 'http://orthanc.enderecoOriginal.local' } });
@@ -262,6 +237,37 @@ describe('salvarIntegracao / removerCredencial (contrato write-only + espelho �
     const pub = (await db.doc(`workspaces/${WS}/integracoes/feegow`).get()).data();
     assert.deepEqual(pub.procMap, { '101': 'doppler_carotidas' },
       'o mapa novo tem que substituir o antigo por inteiro — {merge:true} faria deep-merge e as chaves 999/888 vazariam');
+  });
+  // Task 6 (D5, achados 18/21): profMap migra do LocalModal pro cartao Feegow
+  // — mesmo padrao do procMap (substituicao integral via mergeFields).
+  test('salvar feegow com profMap grava o mapa em integracoes/feegow (substituicao integral)', async () => {
+    await salvarIntegracao(db, { wsId: WS, tipo: 'feegow', config: { profMap: { '999': 'Dr. Antigo' } } });
+    const r = await salvarIntegracao(db, { wsId: WS, tipo: 'feegow', config: { profMap: { '12': 'DR. FULANO' } } });
+    assert.equal(r.httpStatus, 200);
+    const pub = (await db.doc(`workspaces/${WS}/integracoes/feegow`).get()).data();
+    assert.deepEqual(pub.profMap, { '12': 'DR. FULANO' },
+      'profMap novo substitui o antigo por inteiro — mergeFields, mesmo padrao do procMap');
+  });
+  test('salvar feegow com ativo=false grava em integracoes/feegow', async () => {
+    const r = await salvarIntegracao(db, { wsId: WS, tipo: 'feegow', config: { ativo: false } });
+    assert.equal(r.httpStatus, 200);
+    const pub = (await db.doc(`workspaces/${WS}/integracoes/feegow`).get()).data();
+    assert.equal(pub.ativo, false);
+  });
+  test("salvar feegow com ativo:'true' (string) e descartado", async () => {
+    await db.doc(`workspaces/${WS}/integracoes/feegow`).set({ ativo: true }, { merge: true });
+    const r = await salvarIntegracao(db, { wsId: WS, tipo: 'feegow', config: { ativo: 'true' } });
+    assert.equal(r.httpStatus, 200);
+    const pub = (await db.doc(`workspaces/${WS}/integracoes/feegow`).get()).data();
+    assert.equal(pub.ativo, true, 'string nao e boolean estrito — valor anterior tem que continuar intacto');
+  });
+  test('salvar so profMap NAO zera um status:"ok" existente (nao muda credencial nem alvo)', async () => {
+    await db.doc(`workspaces/${WS}/integracoes/feegow`).set({ tipo: 'feegow', status: 'ok', ultimoTeste: new Date(), ultimoErro: null }, { merge: true });
+    const r = await salvarIntegracao(db, { wsId: WS, tipo: 'feegow', config: { profMap: { '1': 'DR. FULANO' } } });
+    assert.equal(r.httpStatus, 200);
+    assert.equal(r.integracao.status, 'ok', 'salvar profMap nao mexe na credencial nem no alvo, nao pode zerar o teste');
+    const pub = (await db.doc(`workspaces/${WS}/integracoes/feegow`).get()).data();
+    assert.equal(pub.status, 'ok');
   });
   test('tipo invalido em salvar/remover -> 400', async () => {
     const r1 = await salvarIntegracao(db, { wsId: WS, tipo: 'wader', config: {} });
@@ -319,34 +325,6 @@ describe('salvarIntegracao / removerCredencial (contrato write-only + espelho �
   });
 });
 
-// Sub-plano 5, Task 7 — furo 2 (config vinha de header, endereco arbitrario) + item D (SSRF).
-describe('resolverConfigOrthanc (furo 2 — config SEMPRE de integracoes/orthanc + privado/orthanc, nunca de header)', () => {
-  const WSO = 'wsOrthancConfig';
-  test('ativo + url + credencial na gaveta -> monta config', async () => {
-    await db.doc(`workspaces/${WSO}/integracoes/orthanc`).set({ url: 'http://192.168.1.50:8042/', ativo: true });
-    await db.doc(`workspaces/${WSO}/privado/orthanc`).set({ user: 'leo', pass: 'senhaLonga123' });
-    const cfg = await resolverConfigOrthanc(db, WSO);
-    assert.deepEqual(cfg, { url: 'http://192.168.1.50:8042', user: 'leo', pass: 'senhaLonga123' });
-  });
-  test('ativo:false -> null (mesmo com url e credencial validas)', async () => {
-    await db.doc(`workspaces/${WSO}/integracoes/orthanc`).set({ url: 'http://192.168.1.50:8042', ativo: false });
-    const cfg = await resolverConfigOrthanc(db, WSO);
-    assert.equal(cfg, null);
-  });
-  test('sem wsId -> null (sem header pra cair de volta)', async () => {
-    const cfg = await resolverConfigOrthanc(db, null);
-    assert.equal(cfg, null);
-  });
-  test('SSRF (item D): esquema file:// e recusado mesmo com ativo:true', async () => {
-    const ws2 = 'wsSsrfFile';
-    await db.doc(`workspaces/${ws2}/integracoes/orthanc`).set({ url: 'file:///etc/passwd', ativo: true });
-    const cfg = await resolverConfigOrthanc(db, ws2);
-    assert.equal(cfg, null);
-  });
-  test('SSRF (item D): esquema gopher:// e recusado', async () => {
-    const ws3 = 'wsSsrfGopher';
-    await db.doc(`workspaces/${ws3}/integracoes/orthanc`).set({ url: 'gopher://interno.local:70/', ativo: true });
-    const cfg = await resolverConfigOrthanc(db, ws3);
-    assert.equal(cfg, null);
-  });
-});
+// resolverConfigOrthanc (furo 2 + SSRF) morreu com o corte estrutural (D1,
+// Task 7) — a nuvem parou de resolver config pra bater no Orthanc. A
+// protecao equivalente vive nos testes do Wader (workspace-repo.test.ts).

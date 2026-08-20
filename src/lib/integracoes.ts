@@ -12,6 +12,7 @@ export type Integracao = {
   ultimoErro?: string | null;
   ultimaSync?: number | null;
   procMap?: Record<string, string>;  // feegow
+  profMap?: Record<string, string>;  // feegow
   url?: string;                      // orthanc
   visto?: number | null;             // wader
   versao?: string;                   // wader

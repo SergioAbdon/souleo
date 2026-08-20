@@ -695,3 +695,32 @@ describe('16. Integracoes (Sub-plano 5)', () => {
     await assertFails(setDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/privado`, 'feegow'), { token: 'x' }));
   });
 });
+
+describe('17. espelho ortancAtivo fecha do outro lado (achado 17)', () => {
+  // ortancAtivo so anda junto de integracoes/orthanc.ativo porque
+  // salvarIntegracao (Admin SDK) grava os dois no MESMO writeBatch. Pelo
+  // cliente ninguem escreve integracoes/{tipo} (regra 16), mas ate aqui o
+  // dono ainda podia mudar workspaces/{wsId}.ortancAtivo direto na regra
+  // generica de update — abrindo o espelho por um lado so.
+  test('dono NAO muda ortancAtivo direto no documento do local', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), 'workspaces', LOCAL_A1), { ortancAtivo: true }));
+  });
+  test('dono continua editando campo comum (nome) do local', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A), 'workspaces', LOCAL_A1), { nomeClinica: 'Sala 1 renomeada' }));
+  });
+
+  // Os testes acima semeiam LOCAL_A1 SEM ortancAtivo — exercitam so o ramo
+  // "ausente" de intacto(). Em producao o campo existe (espelhado por
+  // salvarIntegracao). LOCAL_A2 nunca teve o doc do local tocado por outro
+  // teste (so a subcolecao exames), entao serve pra semear a forma real.
+  test('dono edita campo comum no local com ortancAtivo ja espelhado (forma de producao)', async () => {
+    await assertSucceeds(updateDoc(doc(como(ADMIN), 'workspaces', LOCAL_A2), { ortancAtivo: true }));
+    await assertSucceeds(updateDoc(doc(como(DR_A), 'workspaces', LOCAL_A2), { nomeClinica: 'Sala 2 renomeada' }));
+  });
+  test('dono reenvia ortancAtivo com o MESMO valor (intacto aceita igual, campo presente)', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A), 'workspaces', LOCAL_A2), { nomeClinica: 'Sala 2', ortancAtivo: true }));
+  });
+  test('dono NAO muda ortancAtivo quando o campo ja existe (forma de producao)', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), 'workspaces', LOCAL_A2), { ortancAtivo: false }));
+  });
+});

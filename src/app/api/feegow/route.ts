@@ -2,19 +2,22 @@
 // SOULEO v3 · API Route — Feegow proxy seguro
 // Token fica no servidor (env), nunca exposto ao browser
 // v3: + rate limit + timeout + auth via Firebase token
+//
+// Por que despacho por `action` num unico handler, com gate ANTES do switch:
+// uma acao nova nasce protegida por construcao (decidirGetFeegow nao sabe
+// qual `action` e chamada, entao roda pra qualquer uma). Quebrar em rotas
+// separadas replicaria o gate em cada arquivo — foi exatamente uma lista
+// esquecida (`ACOES_COM_GATE`) que produziu o furo do `debug_sala` (Task 7).
 // ══════════════════════════════════════════════════════════════════
 
 import { NextRequest, NextResponse } from 'next/server';
 import { dataLocalHoje } from '@/lib/utils';
 import { adminDb, adminAuth } from '@/lib/auth-admin';
 import { resolverPapel, ehMedicoDeVerdade } from '@/lib/exame-admin';
-import { gravarImportacao, resolverTokenFeegow, resolverProcMap, decidirGetFeegow, type Candidato } from '@/lib/feegow-admin';
+import { gravarImportacao, resolverTokenFeegow, decidirGetFeegow, montarCandidatos, normalizarNascimento, reconciliarCancelados, marcarAtendido, feegowFetch, type AcaoFeegow } from '@/lib/feegow-admin';
 
 const fbAuth = adminAuth();
 const dbAdmin = adminDb();
-
-const FEEGOW_BASE = 'https://api.feegow.com/v1/api';
-const TIMEOUT_MS = 10000; // 10 segundos timeout por request Feegow
 
 // ── Rate Limiter (em memoria, por IP) ──
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -60,105 +63,12 @@ async function resolverToken(req: NextRequest): Promise<string> {
   return resolverTokenFeegow(dbAdmin, wsId);
 }
 
-// Procedimentos Feegow → tipo de exame LEO
-// IDs confirmados via /procedures/list em 14/04/2026
-const PROC_MAP: Record<number, string> = {
-  6: 'eco_tt',              // Ecocardiograma Transtorácico
-  67: 'doppler_carotidas',  // Doppler colorido de vasos cervicais (carótidas e vertebrais)
-  285: 'doppler_carotidas', // US Ecodoppler de carótidas (código alternativo)
-};
-// IDs que NÃO são exames do LEO (ignorar na importação):
-// 5=ECG, 8=MAPA 24h, 9=Holter 24h, 224=Consulta Cardio, 225=Consulta Infecto, 253=Cirurgia
-
-async function feegowFetch(endpoint: string, token: string) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    const res = await fetch(`${FEEGOW_BASE}${endpoint}`, {
-      headers: { 'x-access-token': token, 'Content-Type': 'application/json' },
-      signal: controller.signal,
-    });
-    if (!res.ok) throw new Error(`Feegow ${res.status}: ${res.statusText}`);
-    return res.json();
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 // BUG (22/06/2026): este endpoint roda no Vercel em UTC. Com `new Date()` do
 // servidor, depois das 21h de Brasilia (00h UTC) o "hoje" virava o dia seguinte,
 // e a query do Feegow (data_start/data_end=hoje) perdia os exames de hoje ainda
 // na sala de espera (ex.: carotida do Francisley). Tambem gravava dataExame no
 // dia errado, sumindo da worklist (que filtra pela data local). Fixar no fuso
 // da clinica resolve os dois sintomas — feito em utils.ts (dataLocalBRT/Hoje).
-
-// Monta a lista de candidatos da sala de espera Feegow (era o case 'importar'
-// do GET — corpo movido sem alteracao). NAO grava nada.
-async function montarCandidatos(token: string, wsId: string | null): Promise<Candidato[]> {
-  const hoje = dataLocalHoje();
-
-  // procMap: SO de integracoes/feegow.procMap (Task 4) — dual-owner fechado
-  // aqui, Sub-plano 5 Task 7 item A. profMap continua no documento do local
-  // (nao e credencial nem tem dono duplicado — decisao Task 7 item C).
-  const procMap = await resolverProcMap(dbAdmin, wsId, PROC_MAP);
-  const profMap: Record<number, string> = {};
-  if (wsId) {
-    const wsDoc = await dbAdmin.doc(`workspaces/${wsId}`).get();
-    const wsProfMap = wsDoc.data()?.feegowProfMap as Record<string, string> | undefined;
-    if (wsProfMap) {
-      for (const [k, v] of Object.entries(wsProfMap)) {
-        profMap[Number(k)] = v;
-      }
-    }
-  }
-
-  const salaRes = await feegowFetch(`/appoints/search?data_start=${hoje}&data_end=${hoje}&status_id=4`, token);
-  const agendamentos = salaRes?.content || [];
-
-  const convRes = await feegowFetch('/insurance/list', token);
-  const convMap: Record<number, string> = {};
-  for (const c of convRes?.content || []) {
-    convMap[c.convenio_id] = c.nome;
-  }
-
-  const pacientes = [];
-  for (const ag of agendamentos) {
-    // Pular procedimentos que não são exames do LEO
-    if (!procMap[ag.procedimento_id]) continue;
-
-    try {
-      const pacRes = await feegowFetch(`/patient/search?paciente_id=${ag.paciente_id}`, token);
-      const pac = pacRes?.content;
-      if (pac) {
-        let dtnasc = '';
-        if (pac.nascimento) {
-          const p = pac.nascimento.split('-');
-          if (p.length === 3) dtnasc = `${p[2]}-${p[1]}-${p[0]}`;
-        }
-        pacientes.push({
-          feegowAppointId: ag.agendamento_id,
-          feegowPacienteId: ag.paciente_id,
-          pacienteNome: (pac.nome || '').toUpperCase(),
-          pacienteDtnasc: dtnasc,
-          sexo: pac.sexo === 'Masculino' ? 'M' : pac.sexo === 'Feminino' ? 'F' : '',
-          cpf: (pac.documentos?.cpf || '').replace(/\D/g, ''),
-          telefone: pac.telefones?.[0] || '',
-          convenio: convMap[ag.convenio_id] || '',
-          convenioId: ag.convenio_id,
-          tipoExame: procMap[ag.procedimento_id],
-          procedimentoId: ag.procedimento_id,
-          profissionalId: ag.profissional_id,
-          medicoExecutor: profMap[ag.profissional_id] || '',
-          horarioChegada: ag.horario ? ag.horario.slice(0, 5) : '',
-          dataExame: hoje,
-          origem: 'FEEGOW',
-        });
-      }
-    } catch { /* pular paciente com erro */ }
-  }
-
-  return pacientes;
-}
 
 // ── Middleware: auth + rate limit ──
 // Devolve o uid junto (Minor 7, Sub-plano 5 Task 7 revisao): antes GET e
@@ -203,31 +113,80 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+    // Tipado (achado 19): se 'atualizar_status'/'importar' sumir do union
+    // AcaoFeegow, as comparacoes abaixo deixam de compilar (TS2367).
+    const acao = body.action as AcaoFeegow;
 
-    if (body.action === 'atualizar_status') {
-      const { agendamento_id, status_id } = body;
-      if (!agendamento_id || !status_id) {
-        return NextResponse.json({ error: 'agendamento_id e status_id obrigatorios' }, { status: 400 });
-      }
-
-      const res = await fetch(`${FEEGOW_BASE}/appoints/statusUpdate`, {
-        method: 'POST',
-        headers: { 'x-access-token': token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ AgendamentoID: agendamento_id, StatusID: status_id }),
+    if (acao === 'atualizar_status') {
+      // Task 5 (D4, achados 5/16): status_id do corpo (mandado pelo MOTOR,
+      // arquivo intocavel) e IGNORADO — marcarAtendido sempre manda 3 pro
+      // Feegow. agendamento_id e validado contra um exame DESTE wsId (antes
+      // qualquer membro carimbava qualquer agendamento da conta) e a
+      // resposta do Feegow deixa de virar {ok:true} silencioso em 401/500
+      // (registrado no exame como feegowStatusOk).
+      const resultado = await marcarAtendido(dbAdmin, {
+        wsId: wsId as string, agendamentoId: body.agendamento_id, token,
       });
-      const data = await res.json();
-      return NextResponse.json({ ok: true, data });
+      return NextResponse.json({ ok: resultado.ok, mensagem: resultado.mensagem }, { status: resultado.httpStatus });
     }
 
-    if (body.action === 'importar') {
+    if (acao === 'importar') {
       // Autor so se perfil medico E papel que atende (MEDREC nao carimba) — Codex-2.
       const ehMed = (papel === 'dono' || papel === 'medico') && await ehMedicoDeVerdade(dbAdmin, uid);
       const perfilSnap = await dbAdmin.doc(`profissionais/${uid}`).get();
-      const candidatos = await montarCandidatos(token, wsId);
-      const { criados } = await gravarImportacao(dbAdmin, {
+      const hoje = dataLocalHoje();
+      // Task 6 (D5, achados 18/21): uma unica leitura de integracoes/feegow
+      // serve ativo, procMap e profMap — nao ha por que ler o doc 3 vezes.
+      const integSnap = await dbAdmin.doc(`workspaces/${wsId}/integracoes/feegow`).get();
+      const integ = integSnap.data();
+      // Desligado e mais fundamental que mapa vazio -> gate ANTES do
+      // feegow_sem_procmap. Ausente = ligado (a migracao da Task 6 gravou
+      // ativo:!!token pra quem ja tinha token).
+      if (integ?.ativo === false) {
+        return NextResponse.json({ ok: false, error: 'feegow_desligado' }, { status: 400 });
+      }
+      // procMap: SO de integracoes/feegow.procMap (Task 4) — dual-owner fechado
+      // aqui, Sub-plano 5 Task 7 item A.
+      const procMapRaw = (integ?.procMap as Record<string, string> | undefined) ?? {};
+      const procMap: Record<number, string> = {};
+      for (const [k, v] of Object.entries(procMapRaw)) procMap[Number(k)] = v;
+      // D4/achado 15 (Task 3): sem mapa nao ha o que importar — 400 explicito
+      // ANTES de bater no Feegow, em vez do PROC_MAP chumbado da MedCardio
+      // que antes cobria (errado) qualquer local sem configuracao propria.
+      if (Object.keys(procMap).length === 0) {
+        return NextResponse.json({ ok: false, error: 'feegow_sem_procmap' }, { status: 400 });
+      }
+      // profMap: Task 6 migra do documento do local (workspaces/{wsId}.feegowProfMap)
+      // pro cartao Feegow (integracoes/feegow.profMap) — decisao Task 7 item C
+      // revertida pela Task 6 (D5). Fallback UMA VIA pro campo antigo enquanto
+      // o local nao salva de novo pelo cartao; sai na limpeza (Task 8).
+      const profMapRaw = (integ?.profMap as Record<string, string> | undefined)
+        ?? (wsId ? (await dbAdmin.doc(`workspaces/${wsId}`).get()).data()?.feegowProfMap as Record<string, string> | undefined : undefined)
+        ?? {};
+      const profMap: Record<number, string> = {};
+      for (const [k, v] of Object.entries(profMapRaw)) profMap[Number(k)] = v;
+      const { candidatos, ignorados, falhas, cancelados } = await montarCandidatos({ token, hoje, procMap, profMap });
+      const { criados, descartados } = await gravarImportacao(dbAdmin, {
         wsId: wsId as string, candidatos, uid, ehMed, nomeCriador: (perfilSnap.data()?.nome as string) || '',
       });
-      return NextResponse.json({ ok: true, total: candidatos.length, criados });
+      // Task 4 (D3, achado 7a): quem o Feegow ja deu como cancelado/faltou
+      // fecha 'nao-realizado' no LEO — nunca apaga (ADR 16/05 #6).
+      // Important (revisao Task 4): reconciliacao roda DEPOIS de gravarImportacao
+      // ja ter commitado — se ela lancar (ex.: indice do Firestore ainda em
+      // build no primeiro uso -> FAILED_PRECONDITION), nao pode virar 502 com
+      // os exames JA criados (secretaria ve "Erro", loop de MWL nunca roda,
+      // reimportar estoura de novo). E idempotente: proximo ciclo conserta.
+      const naoRealizados = await reconciliarCancelados(dbAdmin, { wsId: wsId as string, hoje, cancelados })
+        .catch((e) => { console.error('reconciliarCancelados:', e); return 0; });
+      return NextResponse.json({
+        ok: true, total: candidatos.length, criados, ignorados, falhas,
+        // descartados: guards de path-safety/data de gravarImportacao (Task 1)
+        // — nunca dispara no fluxo real (montarCandidatos sempre gera fgId
+        // numerico + data valida), campo proprio so pra fechar o invariante
+        // "nenhum descarte silencioso" sem inflar `falhas` (que e busca, nao gravacao).
+        descartados,
+        naoRealizados,
+      });
     }
 
     return NextResponse.json({ error: 'action invalida' }, { status: 400 });
@@ -258,7 +217,9 @@ export async function GET(req: NextRequest) {
   if (!veredito.ok) return NextResponse.json({ ok: false, error: veredito.motivo }, { status: veredito.status });
   const token = veredito.token;
 
-  const action = req.nextUrl.searchParams.get('action');
+  // Tipado (achado 19): se um `case` abaixo sair do union AcaoFeegow, o
+  // switch deixa de compilar (TS2678).
+  const action = req.nextUrl.searchParams.get('action') as AcaoFeegow | null;
 
   try {
     switch (action) {
@@ -270,19 +231,14 @@ export async function GET(req: NextRequest) {
         const data = await feegowFetch(`/patient/search?paciente_cpf=${cpfLimpo}`, token);
         const pac = data?.content;
         if (!pac) return NextResponse.json({ ok: true, encontrado: false });
-        let dtnasc = '';
-        if (pac.nascimento) {
-          const p = pac.nascimento.split('-');
-          if (p.length === 3) dtnasc = `${p[2]}-${p[1]}-${p[0]}`;
-        }
         return NextResponse.json({
           ok: true, encontrado: true,
           paciente: {
             nome: (pac.nome || '').toUpperCase(),
-            dtnasc,
+            dtnasc: normalizarNascimento(pac.nascimento),
             sexo: pac.sexo === 'Masculino' ? 'M' : pac.sexo === 'Feminino' ? 'F' : '',
             cpf: (pac.documentos?.cpf || '').replace(/\D/g, '') || cpfLimpo,
-            telefone: pac.telefones?.[0] || '',
+            telefone: typeof pac.telefones?.[0] === 'string' ? pac.telefones[0] : '', // mesmo guard de montarCandidatos (achado 16-baixo / re-revisao achado 3)
             feegowPacienteId: pac.id || null,
           },
         });

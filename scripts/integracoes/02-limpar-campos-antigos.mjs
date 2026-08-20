@@ -16,10 +16,12 @@ const db = getDb();
 // Lista fechada. NÃO adicionar 'ortancAtivo' aqui.
 //
 // 'feegowProcMap' FICA DE FORA DESTA RODADA (nao por achado pendente: os dois
-// leitores ja migraram — resolverProcMap em src/lib/feegow-admin.ts e
-// getProcedimentos em apps/wader/src/adapters/workspace-repo.ts leem
+// leitores ja migraram — o handler 'importar' de src/app/api/feegow/route.ts
+// e getProcedimentos em apps/wader/src/adapters/workspace-repo.ts leem
 // integracoes/feegow.procMap, nenhum dos dois olha mais o campo antigo do
-// documento do local (Task 7)). procMap NÃO é credencial — o objetivo desta
+// documento do local (Task 7); resolverProcMap, que fazia essa leitura antes
+// da Task 6 unificar num unico read na rota, foi removida na Task 9 por
+// ficar sem chamador). procMap NÃO é credencial — o objetivo desta
 // fase é so tirar segredo do documento do local — mas apagar o campo antigo
 // ainda é decisão do Dr. Sérgio, por prudência, até ele confirmar em produção
 // que a importação do Feegow continua trazendo os 17 procedimentos de sempre.
