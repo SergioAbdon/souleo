@@ -3,7 +3,7 @@ import { test, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
-import { gravarImportacao, resolverTokenFeegow, resolverProcMap, gateAcessoWs, decidirGetFeegow, cpfValido, montarCandidatos, normalizarNascimento, reconciliarCancelados, marcarAtendido } from '../../src/lib/feegow-admin.ts';
+import { gravarImportacao, resolverTokenFeegow, gateAcessoWs, decidirGetFeegow, cpfValido, montarCandidatos, normalizarNascimento, reconciliarCancelados, marcarAtendido } from '../../src/lib/feegow-admin.ts';
 
 let db;
 const WS = 'wsFeegow';
@@ -230,31 +230,10 @@ describe('resolverTokenFeegow (furo 1 — token SEMPRE da gaveta, SEM fallback d
 // usa pra devolver 400 'feegow_sem_procmap' ANTES de montarCandidatos (o
 // handler em si nao e importavel por node --test — sem rota Next real neste
 // runtime — entao a leitura de route.ts documenta esse contrato: `if
-// (Object.keys(procMap).length === 0) return 400 feegow_sem_procmap`; os
-// testes abaixo cobrem o lado testavel, resolverProcMap devolvendo {}).
-describe('resolverProcMap (Task 3 — sem fallback: mapa ausente/vazio -> {})', () => {
-  test('le o mapa do lugar NOVO (integracoes/feegow.procMap)', async () => {
-    await db.doc(`workspaces/${WS}/integracoes/feegow`).set({ procMap: { '10': 'eco_tt', '20': 'doppler_carotidas' } });
-    const mapa = await resolverProcMap(db, WS);
-    assert.deepEqual(mapa, { 10: 'eco_tt', 20: 'doppler_carotidas' });
-  });
-  test('campo antigo workspaces/{wsId}.feegowProcMap e IGNORADO (mesmo com dado la)', async () => {
-    const wsAntigo = 'wsComCampoAntigo';
-    await db.doc(`workspaces/${wsAntigo}`).set({ feegowProcMap: { '77': 'eco_te' } });
-    // integracoes/feegow nao existe pra este ws -> {} (nao o campo antigo).
-    const mapa = await resolverProcMap(db, wsAntigo);
-    assert.deepEqual(mapa, {});
-  });
-  test('integracoes/feegow.procMap vazio ({}) -> {}', async () => {
-    await db.doc(`workspaces/${WS}/integracoes/feegow`).set({ procMap: {} });
-    const mapa = await resolverProcMap(db, WS);
-    assert.deepEqual(mapa, {});
-  });
-  test('sem wsId -> {}', async () => {
-    const mapa = await resolverProcMap(db, null);
-    assert.deepEqual(mapa, {});
-  });
-});
+// (Object.keys(procMap).length === 0) return 400 feegow_sem_procmap`).
+// resolverProcMap fazia essa leitura isolada antes da Task 6 unificar num
+// unico read (ativo+procMap+profMap) direto na rota — sem chamador de
+// producao desde entao, removida na Task 9 (achado 19/orfaos acumulados).
 
 describe('gateAcessoWs (furo 3 — GETs sensiveis exigem wsId + papel)', () => {
   test('sem wsId -> 400', () => {

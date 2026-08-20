@@ -31,7 +31,9 @@ const DEFAULT_STEP_LOCATION = 'MEDCARDIO';
 
 /**
  * Mapeia tipoExame interno do LEO pra descrição DICOM legível pro médico no Vivid.
- * Mesma lógica usada por src/app/api/orthanc/route.ts:29-34 do LEO web.
+ * Fonte única: desde o corte estrutural D1 (Task 7 — "nuvem para de falar com
+ * Orthanc") a nuvem não gera mais .wl, então esta tabela só existe aqui.
+ * Chamada por gerarWlBuffer, acionado por apps/wader/src/workers/worklist-sync.ts.
  */
 const TIPO_EXAME_DICOM_DESC: Record<string, string> = {
   eco_tt: 'Ecocardiograma Transtoracico',

@@ -21,6 +21,7 @@ import DicomGallery from '@/components/laudo/DicomGallery';
 import { podeEditarLaudo, podeRemoverDaFila, ehMedico } from '@/lib/permissoes';
 import StatusPill from '@/components/shell/StatusPill';
 import { TIPOS_LAUDO_PADRAO, type TipoLaudo } from '@/lib/tipos-laudo';
+import type { AcaoFeegow } from '@/lib/feegow-admin';
 
 // v3: helper pra enviar token Firebase nas chamadas Feegow
 async function feegowAuthFetch(url: string, options?: RequestInit) {
@@ -193,7 +194,8 @@ export default function Worklist() {
     if (cpfLimpo.length < 11) return;
     setCpfBuscando(true);
     try {
-      const res = await feegowAuthFetch(`/api/feegow?action=buscar_cpf&cpf=${cpfLimpo}&wsId=${workspace?.id || ''}`);
+      const acao: AcaoFeegow = 'buscar_cpf';
+      const res = await feegowAuthFetch(`/api/feegow?action=${acao}&cpf=${cpfLimpo}&wsId=${workspace?.id || ''}`);
       const data = await res.json();
       if (pacCpfRef.current !== cpfLimpo) return; // campo ja tem OUTRO cpf
       if (data.ok && data.encontrado && data.paciente) {
@@ -363,10 +365,11 @@ export default function Worklist() {
     if (!workspace?.id) return;
     setFeegowLoading(true);
     try {
+      const acao: AcaoFeegow = 'importar';
       const res = await feegowAuthFetch(`/api/feegow?wsId=${workspace.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'importar' }),
+        body: JSON.stringify({ action: acao }),
       });
       const data = await res.json();
       if (!data.ok) {

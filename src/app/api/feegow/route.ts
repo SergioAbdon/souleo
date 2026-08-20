@@ -2,13 +2,19 @@
 // SOULEO v3 · API Route — Feegow proxy seguro
 // Token fica no servidor (env), nunca exposto ao browser
 // v3: + rate limit + timeout + auth via Firebase token
+//
+// Por que despacho por `action` num unico handler, com gate ANTES do switch:
+// uma acao nova nasce protegida por construcao (decidirGetFeegow nao sabe
+// qual `action` e chamada, entao roda pra qualquer uma). Quebrar em rotas
+// separadas replicaria o gate em cada arquivo — foi exatamente uma lista
+// esquecida (`ACOES_COM_GATE`) que produziu o furo do `debug_sala` (Task 7).
 // ══════════════════════════════════════════════════════════════════
 
 import { NextRequest, NextResponse } from 'next/server';
 import { dataLocalHoje } from '@/lib/utils';
 import { adminDb, adminAuth } from '@/lib/auth-admin';
 import { resolverPapel, ehMedicoDeVerdade } from '@/lib/exame-admin';
-import { gravarImportacao, resolverTokenFeegow, decidirGetFeegow, montarCandidatos, normalizarNascimento, reconciliarCancelados, marcarAtendido, feegowFetch } from '@/lib/feegow-admin';
+import { gravarImportacao, resolverTokenFeegow, decidirGetFeegow, montarCandidatos, normalizarNascimento, reconciliarCancelados, marcarAtendido, feegowFetch, type AcaoFeegow } from '@/lib/feegow-admin';
 
 const fbAuth = adminAuth();
 const dbAdmin = adminDb();
@@ -107,8 +113,11 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+    // Tipado (achado 19): se 'atualizar_status'/'importar' sumir do union
+    // AcaoFeegow, as comparacoes abaixo deixam de compilar (TS2367).
+    const acao = body.action as AcaoFeegow;
 
-    if (body.action === 'atualizar_status') {
+    if (acao === 'atualizar_status') {
       // Task 5 (D4, achados 5/16): status_id do corpo (mandado pelo MOTOR,
       // arquivo intocavel) e IGNORADO — marcarAtendido sempre manda 3 pro
       // Feegow. agendamento_id e validado contra um exame DESTE wsId (antes
@@ -121,7 +130,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: resultado.ok, mensagem: resultado.mensagem }, { status: resultado.httpStatus });
     }
 
-    if (body.action === 'importar') {
+    if (acao === 'importar') {
       // Autor so se perfil medico E papel que atende (MEDREC nao carimba) — Codex-2.
       const ehMed = (papel === 'dono' || papel === 'medico') && await ehMedicoDeVerdade(dbAdmin, uid);
       const perfilSnap = await dbAdmin.doc(`profissionais/${uid}`).get();
@@ -156,7 +165,7 @@ export async function POST(req: NextRequest) {
         ?? {};
       const profMap: Record<number, string> = {};
       for (const [k, v] of Object.entries(profMapRaw)) profMap[Number(k)] = v;
-      const { candidatos, ignorados, falhas, cancelados } = await montarCandidatos({ token, wsId: wsId as string, hoje, procMap, profMap });
+      const { candidatos, ignorados, falhas, cancelados } = await montarCandidatos({ token, hoje, procMap, profMap });
       const { criados, descartados } = await gravarImportacao(dbAdmin, {
         wsId: wsId as string, candidatos, uid, ehMed, nomeCriador: (perfilSnap.data()?.nome as string) || '',
       });
@@ -208,7 +217,9 @@ export async function GET(req: NextRequest) {
   if (!veredito.ok) return NextResponse.json({ ok: false, error: veredito.motivo }, { status: veredito.status });
   const token = veredito.token;
 
-  const action = req.nextUrl.searchParams.get('action');
+  // Tipado (achado 19): se um `case` abaixo sair do union AcaoFeegow, o
+  // switch deixa de compilar (TS2678).
+  const action = req.nextUrl.searchParams.get('action') as AcaoFeegow | null;
 
   try {
     switch (action) {

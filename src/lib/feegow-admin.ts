@@ -36,6 +36,12 @@ function gerarAccessionNumber(now: Date, offsetMs: number): string {
   return `EX${dd}${mm}${aa}${hh}${mi}${ss}${cc}`;
 }
 
+// Achado 19: contrato cliente<->rota era string sem tipo — uma cirurgia na
+// rota orfaou um chamador (SidebarLaudo.tsx) em silencio, sem tsc nem teste
+// acusarem. Nao muda runtime; so faz o tsc gritar se uma acao sumir do union
+// e algum chamador (rota ou componente) ainda apontar pra ela.
+export type AcaoFeegow = 'buscar_cpf' | 'procedimentos' | 'profissionais' | 'importar' | 'atualizar_status';
+
 export type Candidato = {
   feegowAppointId: number | string;
   feegowPacienteId?: number | string;
@@ -95,31 +101,6 @@ export async function resolverTokenFeegow(db: Firestore, wsId: string | null): P
   if (!wsId) return '';
   const priv = await db.doc(`workspaces/${wsId}/privado/feegow`).get();
   return (priv.data()?.token as string | undefined) || '';
-}
-
-/**
- * Mapa procedimento->tipoExame: SO de integracoes/feegow.procMap (Task 4).
- * Sem fallback pro campo antigo workspaces/{wsId}.feegowProcMap (decisao D3
- * da spec) — antes desta task, montarCandidatos() e o Wader liam o campo
- * antigo e a tela nova (Task 4) gravava no lugar novo: editar o mapa era
- * no-op silencioso pra importacao.
- *
- * Task 3 (D4, achado 15): SEM fallback nenhum — o `defaultMap` (PROC_MAP de
- * 3 entradas chumbadas na rota, IDs da MedCardio) morreu. Doc ausente ou
- * `procMap` vazio devolve `{}`; quem chama (route.ts) trata `{}` como "local
- * nao configurou Feegow" e devolve 400 ANTES de bater na API do Feegow, em
- * vez de silenciosamente usar o mapa de outra clinica.
- */
-export async function resolverProcMap(
-  db: Firestore, wsId: string | null,
-): Promise<Record<number, string>> {
-  if (!wsId) return {};
-  const snap = await db.doc(`workspaces/${wsId}/integracoes/feegow`).get();
-  const cfg = snap.data()?.procMap as Record<string, string> | undefined;
-  if (!cfg || Object.keys(cfg).length === 0) return {};
-  const out: Record<number, string> = {};
-  for (const [k, v] of Object.entries(cfg)) out[Number(k)] = v;
-  return out;
 }
 
 /**
@@ -246,7 +227,7 @@ const normalizarData = normalizarNascimento;
  * campos; gravarImportacao grava o proprio `origem` fixo).
  */
 export async function montarCandidatos(args: {
-  token: string; wsId: string; hoje: string;
+  token: string; hoje: string;
   procMap: Record<string, string>; profMap: Record<number, string>;
   fetchImpl?: typeof fetch;
 }): Promise<{

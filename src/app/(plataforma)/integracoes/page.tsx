@@ -18,6 +18,7 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { podeVerIntegracoes } from '@/lib/permissoes';
 import { TIPOS_INTEGRACAO, rotuloEstado, tomEstado, type Integracao, type TipoIntegracao } from '@/lib/integracoes';
+import type { AcaoFeegow } from '@/lib/feegow-admin';
 import PageHeader from '@/components/shell/PageHeader';
 import CartaoIntegracao from '@/components/integracoes/CartaoIntegracao';
 
@@ -169,7 +170,8 @@ export default function IntegracoesPage() {
     setFeegowErro('');
     try {
       const idToken = await user.getIdToken();
-      const res = await fetch(`/api/feegow?action=procedimentos&wsId=${wsId}`, {
+      const acao: AcaoFeegow = 'procedimentos';
+      const res = await fetch(`/api/feegow?action=${acao}&wsId=${wsId}`, {
         headers: { Authorization: `Bearer ${idToken}` },
       });
       const data = await res.json();
@@ -199,7 +201,8 @@ export default function IntegracoesPage() {
     setFeegowErro('');
     try {
       const idToken = await user.getIdToken();
-      const res = await fetch(`/api/feegow?action=profissionais&wsId=${wsId}`, {
+      const acao: AcaoFeegow = 'profissionais';
+      const res = await fetch(`/api/feegow?action=${acao}&wsId=${wsId}`, {
         headers: { Authorization: `Bearer ${idToken}` },
       });
       const data = await res.json();

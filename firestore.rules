@@ -106,8 +106,10 @@ service cloud.firestore {
     match /workspaces/{wsId} {
       allow get, list: if superadmin()
                        || (resource != null && alcancaConta(resource.data.contaId, wsId));
+      // ortancAtivo intacto: espelho de integracoes/orthanc.ativo, so salvarIntegracao
+      // (Admin SDK) escreve, sempre no mesmo batch de integracoes/orthanc.ativo (achado 17).
       allow update:    if superadmin()
-                       || (ehDonoDoLocal(wsId) && intacto('contaId'));
+                       || (ehDonoDoLocal(wsId) && intacto('contaId') && intacto('ortancAtivo'));
       allow create, delete: if false;
 
       // Gaveta de segredos: ninguem pelo navegador, nem o superadmin.
