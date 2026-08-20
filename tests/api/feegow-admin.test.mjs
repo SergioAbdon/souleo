@@ -601,6 +601,24 @@ describe('reconciliarCancelados', () => {
 // da rota — agendamento validado contra exame do local, status sempre 3,
 // falha do Feegow gravada (nao vira {ok:true} silencioso).
 describe('marcarAtendido', () => {
+  test('agendamento duplicado (falta antiga + remarcado): feegowStatusOk vai pro exame MAIS RECENTE', async () => {
+    // O caso 66890 real: mesmo feegowAppointId em dois exames de dias diferentes.
+    await db.doc(`workspaces/${WS}/exames/fg-66890-2026-05-10`).set({
+      feegowAppointId: '66890', dataExame: '2026-05-10', status: 'nao-realizado', origem: 'FEEGOW',
+    });
+    await db.doc(`workspaces/${WS}/exames/fg-66890-2026-08-19`).set({
+      feegowAppointId: '66890', dataExame: '2026-08-19', status: 'emitido', origem: 'FEEGOW',
+    });
+    const r = await marcarAtendido(db, {
+      wsId: WS, agendamentoId: '66890', token: 'tok',
+      fetchImpl: async () => ({ ok: true, status: 200 }),
+    });
+    assert.equal(r.httpStatus, 200);
+    const novo = (await db.doc(`workspaces/${WS}/exames/fg-66890-2026-08-19`).get()).data();
+    const velho = (await db.doc(`workspaces/${WS}/exames/fg-66890-2026-05-10`).get()).data();
+    assert.equal(novo.feegowStatusOk, true, 'o exame recente recebe o campo');
+    assert.equal(velho.feegowStatusOk, undefined, 'a falta antiga fica intocada');
+  });
   test('agendamento_id sem exame correspondente no wsId -> 404, fetchImpl nao chamado', async () => {
     let chamado = false;
     const r = await marcarAtendido(db, {

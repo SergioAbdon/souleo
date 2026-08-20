@@ -486,15 +486,22 @@ export async function marcarAtendido(dbAdmin: Firestore, args: {
   const f = args.fetchImpl ?? fetch;
   const agId = String(args.agendamentoId ?? '');
   if (!/^\d+$/.test(agId)) return { httpStatus: 400, ok: false, mensagem: 'agendamento_id invalido' };
+  // SEM limit(1): o Feegow preserva o id ao remarcar (66890), entao o mesmo
+  // agendamento pode ter DOIS exames (falta antiga + remarcado). O carimbo no
+  // Feegow e por agendamento (tanto faz), mas o feegowStatusOk tem de ir pro
+  // exame MAIS RECENTE — o que esta sendo emitido. Nao ancorar em "hoje":
+  // laudar dias depois do exame acontece (os 13 exames de maio).
   const q = await dbAdmin.collection(`workspaces/${args.wsId}/exames`)
-    .where('feegowAppointId', '==', agId).limit(1).get();
+    .where('feegowAppointId', '==', agId).get();
   if (q.empty) return { httpStatus: 404, ok: false, mensagem: 'agendamento nao pertence a este local' };
+  const alvo = q.docs.reduce((a, b) =>
+    String(a.data().dataExame ?? '') >= String(b.data().dataExame ?? '') ? a : b);
   const res = await f(`${FEEGOW_BASE}/appoints/statusUpdate`, {
     method: 'POST', headers: { 'x-access-token': args.token, 'Content-Type': 'application/json' },
     body: JSON.stringify({ AgendamentoID: agId, StatusID: 3 }), // sempre 3: o significado mora aqui
   });
   const ok = res.ok;
-  await q.docs[0].ref.set({ feegowStatusOk: ok, atualizadoEm: FieldValue.serverTimestamp() }, { merge: true });
+  await alvo.ref.set({ feegowStatusOk: ok, atualizadoEm: FieldValue.serverTimestamp() }, { merge: true });
   return ok ? { httpStatus: 200, ok: true, mensagem: 'Atendido marcado no Feegow.' }
             : { httpStatus: 502, ok: false, mensagem: `Feegow ${res.status} ao marcar Atendido — registrado no exame.` };
 }
