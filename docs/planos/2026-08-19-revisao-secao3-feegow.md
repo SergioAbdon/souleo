@@ -1,6 +1,12 @@
 # Revisão da Seção 3 — Integração Feegow
 
-**Data:** 19/08/2026 · **Status:** REVISÃO CONCLUÍDA — implementação pendente (aguardando priorização do Sergio)
+**Data:** 19/08/2026 · **Status:** ✅ **FECHADA em 20/08/2026 — 22 de 22 achados corrigidos e NO AR.**
+
+Plano executado: `docs/planos/2026-08-19-plano-correcao-secao3-feegow.md` (9 tasks + fechamento,
+branch `feat/secao3-feegow`, merge master `0fb2191`). Regra publicada (ruleset `9ebfc2fc`),
+índices deployados, deploy Vercel verificado (rota `/api/orthanc` respondendo 404 em produção).
+Pendente da visita à clínica: atualizar o Wader (acumula Sub-plano 5 + esta fase) e SÓ DEPOIS
+a limpeza dos campos antigos. ADR: `docs/decisoes/2026-08-20-correcao-secao3-feegow.md`.
 
 **Método:** tríade em três óticas independentes, cada uma instruída a não repetir as
 outras — corretude/casos de borda, arquitetura/fronteiras, e Ponytail (o que deletar).
