@@ -146,7 +146,7 @@ export async function decidirGetFeegow(
   if (!gate.ok) return gate;
   const token = await resolverToken();
   if (!token) {
-    return { ok: false, status: 400, motivo: 'Token Feegow nao configurado. Va em Local de Trabalho > Integracao Feegow.' };
+    return { ok: false, status: 400, motivo: 'Token Feegow nao configurado. Va em Integracoes > Feegow e salve o token.' };
   }
   return { ok: true, token };
 }
