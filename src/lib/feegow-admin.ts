@@ -176,14 +176,19 @@ export async function decidirGetFeegow(
 // da camada testavel, com ZERO cobertura. fetchImpl injetavel (mesmo padrao
 // de testarFeegow/testarOrthanc em integracoes-admin.ts) pra testar sem rede.
 // ══════════════════════════════════════════════════════════════════
-const FEEGOW_BASE = 'https://api.feegow.com/v1/api';
+export const FEEGOW_BASE = 'https://api.feegow.com/v1/api';
 const FEEGOW_TIMEOUT_MS = 10000;
 // {6,11,22,15} = desmarcado/faltou no Feegow (ADR 16/05 #6). D3: quem
 // chama (Task 4) usa a lista `cancelados` pra fechar exames abertos no LEO
 // que o Feegow ja cancelou.
 const CANCELADOS_FEEGOW = [6, 11, 22, 15];
 
-async function feegowFetchAdmin(endpoint: string, token: string, fetchImpl: typeof fetch) {
+// Task 5: unificado com o feegowFetch que vivia duplicado em route.ts (GET
+// buscar_cpf/procedimentos/profissionais) — mesma logica de timeout/abort,
+// so existia em dois lugares que podiam divergir. fetchImpl opcional (default
+// fetch de verdade) pra rota chamar com 2 args como antes, e os testes
+// (montarCandidatos) continuam passando o stub explicito.
+export async function feegowFetch(endpoint: string, token: string, fetchImpl: typeof fetch = fetch) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FEEGOW_TIMEOUT_MS);
   try {
@@ -252,10 +257,10 @@ export async function montarCandidatos(args: {
 }> {
   const { token, hoje, procMap, profMap, fetchImpl = fetch } = args;
 
-  const salaRes = await feegowFetchAdmin(`/appoints/search?data_start=${hoje}&data_end=${hoje}`, token, fetchImpl);
+  const salaRes = await feegowFetch(`/appoints/search?data_start=${hoje}&data_end=${hoje}`, token, fetchImpl);
   const agendamentos = salaRes?.content || [];
 
-  const convRes = await feegowFetchAdmin('/insurance/list', token, fetchImpl);
+  const convRes = await feegowFetch('/insurance/list', token, fetchImpl);
   const convMap: Record<number, string> = {};
   for (const c of convRes?.content || []) {
     convMap[c.convenio_id] = c.nome;
@@ -286,7 +291,7 @@ export async function montarCandidatos(args: {
     }
 
     try {
-      const pacRes = await feegowFetchAdmin(`/patient/search?paciente_id=${ag.paciente_id}`, token, fetchImpl);
+      const pacRes = await feegowFetch(`/patient/search?paciente_id=${ag.paciente_id}`, token, fetchImpl);
       const pac = pacRes?.content;
       if (!pac?.nome) { falhas.push(String(ag.agendamento_id)); continue; }
 
@@ -455,4 +460,41 @@ export async function reconciliarCancelados(dbAdmin: Firestore, args: {
   }
   if (n > 0) await lote.commit();
   return n;
+}
+
+/**
+ * Task 5 (D4, achados 5/16): endurece o case 'atualizar_status' da rota
+ * (motor emite laudo -> LEO carimba "Atendido" no Feegow). Duas falhas
+ * fechadas aqui:
+ *
+ * - achado 16: o `status_id` do corpo (mandado pelo MOTOR, arquivo
+ *   intocavel) NUNCA e usado — o StatusID enviado ao Feegow e sempre 3.
+ *   Antes qualquer valor do cliente ia direto pro Feegow.
+ * - achado 5: `res.ok` agora e conferido. 401/500 do Feegow deixam de virar
+ *   {ok:true} silencioso — o resultado fica gravado no proprio exame
+ *   (feegowStatusOk), e a rota devolve 502 pra quem quiser olhar (o motor
+ *   ja ignora a resposta, fire-and-forget — o 502 e so diagnostico).
+ *
+ * Validacao extra (achado 16): o agendamento_id tem que pertencer a um
+ * exame DESTE wsId — antes qualquer membro autenticado carimbava qualquer
+ * status em qualquer agendamento da conta Feegow (nao havia vinculo com o
+ * local). Sem exame correspondente -> 404, sem nunca chamar o Feegow.
+ */
+export async function marcarAtendido(dbAdmin: Firestore, args: {
+  wsId: string; agendamentoId: string; token: string; fetchImpl?: typeof fetch;
+}): Promise<{ httpStatus: number; ok: boolean; mensagem: string }> {
+  const f = args.fetchImpl ?? fetch;
+  const agId = String(args.agendamentoId ?? '');
+  if (!/^\d+$/.test(agId)) return { httpStatus: 400, ok: false, mensagem: 'agendamento_id invalido' };
+  const q = await dbAdmin.collection(`workspaces/${args.wsId}/exames`)
+    .where('feegowAppointId', '==', agId).limit(1).get();
+  if (q.empty) return { httpStatus: 404, ok: false, mensagem: 'agendamento nao pertence a este local' };
+  const res = await f(`${FEEGOW_BASE}/appoints/statusUpdate`, {
+    method: 'POST', headers: { 'x-access-token': args.token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ AgendamentoID: agId, StatusID: 3 }), // sempre 3: o significado mora aqui
+  });
+  const ok = res.ok;
+  await q.docs[0].ref.set({ feegowStatusOk: ok, atualizadoEm: FieldValue.serverTimestamp() }, { merge: true });
+  return ok ? { httpStatus: 200, ok: true, mensagem: 'Atendido marcado no Feegow.' }
+            : { httpStatus: 502, ok: false, mensagem: `Feegow ${res.status} ao marcar Atendido — registrado no exame.` };
 }

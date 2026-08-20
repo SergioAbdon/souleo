@@ -3,7 +3,7 @@ import { test, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
-import { gravarImportacao, resolverTokenFeegow, resolverProcMap, gateAcessoWs, decidirGetFeegow, cpfValido, montarCandidatos, normalizarNascimento, reconciliarCancelados } from '../../src/lib/feegow-admin.ts';
+import { gravarImportacao, resolverTokenFeegow, resolverProcMap, gateAcessoWs, decidirGetFeegow, cpfValido, montarCandidatos, normalizarNascimento, reconciliarCancelados, marcarAtendido } from '../../src/lib/feegow-admin.ts';
 
 let db;
 const WS = 'wsFeegow';
@@ -594,5 +594,54 @@ describe('reconciliarCancelados', () => {
   test('cancelados vazio: zero escritas', async () => {
     const n = await reconciliarCancelados(db, { wsId: WS, hoje: HOJE, cancelados: [] });
     assert.equal(n, 0);
+  });
+});
+
+// Task 5 (D4, achados 5/16): marcarAtendido endurece o case 'atualizar_status'
+// da rota — agendamento validado contra exame do local, status sempre 3,
+// falha do Feegow gravada (nao vira {ok:true} silencioso).
+describe('marcarAtendido', () => {
+  test('agendamento_id sem exame correspondente no wsId -> 404, fetchImpl nao chamado', async () => {
+    let chamado = false;
+    const r = await marcarAtendido(db, {
+      wsId: WS, agendamentoId: '777777', token: 'tok',
+      fetchImpl: async () => { chamado = true; return { ok: true, status: 200 }; },
+    });
+    assert.equal(r.httpStatus, 404);
+    assert.equal(r.ok, false);
+    assert.equal(chamado, false);
+  });
+
+  test('exame existe e Feegow responde 200 -> feegowStatusOk: true, httpStatus 200', async () => {
+    await db.doc(`workspaces/${WS}/exames/ma1`).set({ feegowAppointId: '1001' });
+    const r = await marcarAtendido(db, {
+      wsId: WS, agendamentoId: '1001', token: 'tok',
+      fetchImpl: async () => ({ ok: true, status: 200 }),
+    });
+    assert.equal(r.httpStatus, 200);
+    assert.equal(r.ok, true);
+    assert.equal((await db.doc(`workspaces/${WS}/exames/ma1`).get()).data().feegowStatusOk, true);
+  });
+
+  test('exame existe e Feegow responde 401 -> httpStatus 502, feegowStatusOk: false (emissao nao trava, so o registro)', async () => {
+    await db.doc(`workspaces/${WS}/exames/ma2`).set({ feegowAppointId: '1002' });
+    const r = await marcarAtendido(db, {
+      wsId: WS, agendamentoId: '1002', token: 'tok',
+      fetchImpl: async () => ({ ok: false, status: 401 }),
+    });
+    assert.equal(r.httpStatus, 502);
+    assert.equal(r.ok, false);
+    assert.equal((await db.doc(`workspaces/${WS}/exames/ma2`).get()).data().feegowStatusOk, false);
+  });
+
+  test('status enviado ao Feegow e sempre 3, mesmo que o cliente mande outro (achado 16)', async () => {
+    await db.doc(`workspaces/${WS}/exames/ma3`).set({ feegowAppointId: '1003' });
+    let corpoEnviado;
+    await marcarAtendido(db, {
+      wsId: WS, agendamentoId: '1003', token: 'tok',
+      fetchImpl: async (_url, opts) => { corpoEnviado = JSON.parse(opts.body); return { ok: true, status: 200 }; },
+    });
+    assert.equal(corpoEnviado.StatusID, 3);
+    assert.equal(corpoEnviado.AgendamentoID, '1003');
   });
 });

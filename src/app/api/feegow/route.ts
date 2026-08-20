@@ -8,13 +8,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { dataLocalHoje } from '@/lib/utils';
 import { adminDb, adminAuth } from '@/lib/auth-admin';
 import { resolverPapel, ehMedicoDeVerdade } from '@/lib/exame-admin';
-import { gravarImportacao, resolverTokenFeegow, resolverProcMap, decidirGetFeegow, montarCandidatos, normalizarNascimento, reconciliarCancelados } from '@/lib/feegow-admin';
+import { gravarImportacao, resolverTokenFeegow, resolverProcMap, decidirGetFeegow, montarCandidatos, normalizarNascimento, reconciliarCancelados, marcarAtendido, feegowFetch } from '@/lib/feegow-admin';
 
 const fbAuth = adminAuth();
 const dbAdmin = adminDb();
-
-const FEEGOW_BASE = 'https://api.feegow.com/v1/api';
-const TIMEOUT_MS = 10000; // 10 segundos timeout por request Feegow
 
 // ── Rate Limiter (em memoria, por IP) ──
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -58,21 +55,6 @@ async function verificarAuth(req: NextRequest): Promise<string | null> {
 async function resolverToken(req: NextRequest): Promise<string> {
   const wsId = req.nextUrl.searchParams.get('wsId');
   return resolverTokenFeegow(dbAdmin, wsId);
-}
-
-async function feegowFetch(endpoint: string, token: string) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    const res = await fetch(`${FEEGOW_BASE}${endpoint}`, {
-      headers: { 'x-access-token': token, 'Content-Type': 'application/json' },
-      signal: controller.signal,
-    });
-    if (!res.ok) throw new Error(`Feegow ${res.status}: ${res.statusText}`);
-    return res.json();
-  } finally {
-    clearTimeout(timeout);
-  }
 }
 
 // BUG (22/06/2026): este endpoint roda no Vercel em UTC. Com `new Date()` do
@@ -127,18 +109,16 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
 
     if (body.action === 'atualizar_status') {
-      const { agendamento_id, status_id } = body;
-      if (!agendamento_id || !status_id) {
-        return NextResponse.json({ error: 'agendamento_id e status_id obrigatorios' }, { status: 400 });
-      }
-
-      const res = await fetch(`${FEEGOW_BASE}/appoints/statusUpdate`, {
-        method: 'POST',
-        headers: { 'x-access-token': token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ AgendamentoID: agendamento_id, StatusID: status_id }),
+      // Task 5 (D4, achados 5/16): status_id do corpo (mandado pelo MOTOR,
+      // arquivo intocavel) e IGNORADO — marcarAtendido sempre manda 3 pro
+      // Feegow. agendamento_id e validado contra um exame DESTE wsId (antes
+      // qualquer membro carimbava qualquer agendamento da conta) e a
+      // resposta do Feegow deixa de virar {ok:true} silencioso em 401/500
+      // (registrado no exame como feegowStatusOk).
+      const resultado = await marcarAtendido(dbAdmin, {
+        wsId: wsId as string, agendamentoId: body.agendamento_id, token,
       });
-      const data = await res.json();
-      return NextResponse.json({ ok: true, data });
+      return NextResponse.json({ ok: resultado.ok, mensagem: resultado.mensagem }, { status: resultado.httpStatus });
     }
 
     if (body.action === 'importar') {
