@@ -5,6 +5,7 @@ import { digitos } from '../../lib/acc';
 import { processarEstudo } from '../../workers/dicom-ingest';
 import { createLogger } from '../../logger';
 import { WaderConfig } from '../../config/types';
+import { hojeClinica } from '../../lib/clinica-tempo';
 
 /** Campos do exame que a console pode editar (whitelist — nunca status/dicom*). */
 const CAMPOS_EDITAVEIS = [
@@ -13,18 +14,6 @@ const CAMPOS_EDITAVEIS = [
 ] as const;
 
 const log = createLogger({ module: 'api-reconciliacao' });
-
-const CLINIC_TZ = 'America/Belem'; // fuso da clínica (ver ADR 2026-06-22)
-
-/** Data de hoje no fuso da clínica (não do servidor). */
-function dataHojeClinica(): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: CLINIC_TZ,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());
-}
 
 interface ExameRecon {
   id: string;
@@ -64,7 +53,7 @@ export function registerReconciliacaoRoutes(
   client: OrthancClient | null,
 ): void {
   app.get<{ Querystring: { data?: string } }>('/api/reconciliacao', async (req, reply) => {
-    const data = req.query.data || dataHojeClinica();
+    const data = req.query.data || hojeClinica();
     try {
       const payload = await montarReconciliacao(config.wsId, client, data);
       return reply.send({ ok: true, data, ...payload });

@@ -106,20 +106,20 @@ describe('WorkspaceRepo.getProcedimentos', () => {
 
   it('campo antigo workspaces/{wsId}.feegowProcMap e IGNORADO (mesmo com dado la)', async () => {
     docs[WORKSPACE_PATH] = { exists: true, data: { feegowProcMap: { '6': 'eco_tt' } } };
-    // integracoes/feegow nao existe -> tem que cair no default (todos os tipos), NAO no campo antigo.
+    // integracoes/feegow nao existe -> lista vazia (Task 8, achado 15), NAO o campo antigo.
 
     const repo = new WorkspaceRepo(WS);
     const procs = await repo.getProcedimentos();
 
-    expect(procs.length).toBeGreaterThan(1); // default = todos os tipos, nao so o 'eco_tt' do campo antigo
+    expect(procs).toEqual([]);
   });
 
-  it('integracoes/feegow.procMap vazio -> default (todos os tipos)', async () => {
+  it('integracoes/feegow.procMap vazio -> lista vazia (procMap nao configurado)', async () => {
     docs[FEEGOW_INTEGRACAO_PATH] = { exists: true, data: { procMap: {} } };
 
     const repo = new WorkspaceRepo(WS);
     const procs = await repo.getProcedimentos();
 
-    expect(procs.length).toBeGreaterThan(1);
+    expect(procs).toEqual([]);
   });
 });

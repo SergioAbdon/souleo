@@ -4,6 +4,7 @@ import { WorkspaceRepo } from '../adapters/workspace-repo';
 import { StatusExame } from '../types/exame';
 import { salvarWl, deletarWl, listarWlExistentes } from './wl-writer';
 import { createLogger } from '../logger';
+import { hojeClinica } from '../lib/clinica-tempo';
 
 const log = createLogger({ module: 'worklist-sync' });
 
@@ -43,7 +44,7 @@ export async function syncWorklists(opts: {
   scheduledStationName?: string;
   data?: string; // YYYY-MM-DD; default = hoje
 }): Promise<SyncResult> {
-  const dataAlvo = opts.data ?? new Date().toISOString().slice(0, 10);
+  const dataAlvo = opts.data ?? hojeClinica();
   const result: SyncResult = {
     data: dataAlvo,
     examesElegiveis: 0,
@@ -97,10 +98,12 @@ export async function syncWorklists(opts: {
         scheduledProcedureStepLocation: nomeClinica,
       });
       result.wlsCriados++;
+      await repo.marcarMwl(exame.id, 'ok');
     } catch (err) {
       const msg = `Falha ao gerar .wl pra exame ${exame.id}: ${(err as Error).message}`;
       log.error({ err, exameId: exame.id }, msg);
       result.errors.push(msg);
+      await repo.marcarMwl(exame.id, 'falhou');
     }
   }
 

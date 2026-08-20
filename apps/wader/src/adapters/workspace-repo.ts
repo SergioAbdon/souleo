@@ -24,8 +24,9 @@ export interface OrthancConnection {
  *      Ex: `{ 6: "eco_tt", 67: "doppler_carotidas" }`
  *   2. O Wader extrai os VALORES únicos desse mapa pra montar a lista
  *      de procedimentos oferecidos pela clínica.
- *   3. Se o workspace não tiver `integracoes/feegow.procMap` (cliente sem
- *      Feegow), Wader usa todos os tipos suportados como default.
+ *   3. Se o workspace não tiver `integracoes/feegow.procMap` configurado
+ *      (ou vazio), Wader devolve lista vazia (Task 8, achado 15 — alinhado
+ *      com o erro explícito `feegow_sem_procmap` do lado LEO web).
  *
  * Cache em memória pra evitar leitura constante do Firestore.
  */
@@ -109,6 +110,11 @@ export class WorkspaceRepo {
    * antigo `workspace.feegowProcMap`: a tela nova (Task 4) grava só no lugar
    * novo, e este leitor lendo o antigo era o resto do dual-owner (Task 7,
    * item A) — editar o mapa na tela virava no-op silencioso pra este reader.
+   *
+   * Task 8 (achado 15): procMap ausente/vazio NÃO cai mais em "todos os
+   * tipos" — o lado LEO já virou erro explícito (`feegow_sem_procmap`) pra
+   * esse mesmo caso. Devolve lista vazia (dropdown vazio na UI é honesto —
+   * a clínica configura em Integrações > Feegow antes de agendar por aqui).
    */
   async getProcedimentos(): Promise<ProcedimentoOferecido[]> {
     if (this.procedimentosCache && Date.now() < this.procedimentosCacheExpireAt) {
@@ -116,19 +122,12 @@ export class WorkspaceRepo {
     }
 
     const snap = await getDb().doc(`workspaces/${this.wsId}/integracoes/feegow`).get();
-
-    if (!snap.exists) {
-      log.warn({ wsId: this.wsId }, 'integracoes/feegow não encontrado, usando defaults');
-      return this.cacheAndReturn(getAllAsDefault());
-    }
-
-    const data = snap.data() ?? {};
-    const procMap = (data.procMap as Record<string, string> | undefined) ?? {};
+    const procMap = (snap.exists ? snap.data()?.procMap as Record<string, string> | undefined : undefined) ?? {};
     const tiposUnicos = new Set(Object.values(procMap).filter(isTipoExame));
 
     if (tiposUnicos.size === 0) {
-      log.info({ wsId: this.wsId }, 'integracoes/feegow.procMap vazio, usando todos os tipos como default');
-      return this.cacheAndReturn(getAllAsDefault());
+      log.warn({ wsId: this.wsId }, 'procMap não configurado — configure em Integrações > Feegow');
+      return this.cacheAndReturn([]);
     }
 
     const procedimentos: ProcedimentoOferecido[] = Array.from(tiposUnicos).map((tipo) => ({
@@ -170,11 +169,4 @@ export class WorkspaceRepo {
 
 function isTipoExame(value: string): value is TipoExame {
   return value in TIPOS_EXAME_LABEL;
-}
-
-function getAllAsDefault(): ProcedimentoOferecido[] {
-  return Object.entries(TIPOS_EXAME_LABEL).map(([tipo, label]) => ({
-    tipo: tipo as TipoExame,
-    label,
-  }));
 }
