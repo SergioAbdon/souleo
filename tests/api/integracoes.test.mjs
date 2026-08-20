@@ -263,6 +263,37 @@ describe('salvarIntegracao / removerCredencial (contrato write-only + espelho �
     assert.deepEqual(pub.procMap, { '101': 'doppler_carotidas' },
       'o mapa novo tem que substituir o antigo por inteiro — {merge:true} faria deep-merge e as chaves 999/888 vazariam');
   });
+  // Task 6 (D5, achados 18/21): profMap migra do LocalModal pro cartao Feegow
+  // — mesmo padrao do procMap (substituicao integral via mergeFields).
+  test('salvar feegow com profMap grava o mapa em integracoes/feegow (substituicao integral)', async () => {
+    await salvarIntegracao(db, { wsId: WS, tipo: 'feegow', config: { profMap: { '999': 'Dr. Antigo' } } });
+    const r = await salvarIntegracao(db, { wsId: WS, tipo: 'feegow', config: { profMap: { '12': 'DR. FULANO' } } });
+    assert.equal(r.httpStatus, 200);
+    const pub = (await db.doc(`workspaces/${WS}/integracoes/feegow`).get()).data();
+    assert.deepEqual(pub.profMap, { '12': 'DR. FULANO' },
+      'profMap novo substitui o antigo por inteiro — mergeFields, mesmo padrao do procMap');
+  });
+  test('salvar feegow com ativo=false grava em integracoes/feegow', async () => {
+    const r = await salvarIntegracao(db, { wsId: WS, tipo: 'feegow', config: { ativo: false } });
+    assert.equal(r.httpStatus, 200);
+    const pub = (await db.doc(`workspaces/${WS}/integracoes/feegow`).get()).data();
+    assert.equal(pub.ativo, false);
+  });
+  test("salvar feegow com ativo:'true' (string) e descartado", async () => {
+    await db.doc(`workspaces/${WS}/integracoes/feegow`).set({ ativo: true }, { merge: true });
+    const r = await salvarIntegracao(db, { wsId: WS, tipo: 'feegow', config: { ativo: 'true' } });
+    assert.equal(r.httpStatus, 200);
+    const pub = (await db.doc(`workspaces/${WS}/integracoes/feegow`).get()).data();
+    assert.equal(pub.ativo, true, 'string nao e boolean estrito — valor anterior tem que continuar intacto');
+  });
+  test('salvar so profMap NAO zera um status:"ok" existente (nao muda credencial nem alvo)', async () => {
+    await db.doc(`workspaces/${WS}/integracoes/feegow`).set({ tipo: 'feegow', status: 'ok', ultimoTeste: new Date(), ultimoErro: null }, { merge: true });
+    const r = await salvarIntegracao(db, { wsId: WS, tipo: 'feegow', config: { profMap: { '1': 'DR. FULANO' } } });
+    assert.equal(r.httpStatus, 200);
+    assert.equal(r.integracao.status, 'ok', 'salvar profMap nao mexe na credencial nem no alvo, nao pode zerar o teste');
+    const pub = (await db.doc(`workspaces/${WS}/integracoes/feegow`).get()).data();
+    assert.equal(pub.status, 'ok');
+  });
   test('tipo invalido em salvar/remover -> 400', async () => {
     const r1 = await salvarIntegracao(db, { wsId: WS, tipo: 'wader', config: {} });
     assert.equal(r1.httpStatus, 400);

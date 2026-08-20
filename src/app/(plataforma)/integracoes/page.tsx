@@ -74,11 +74,17 @@ export default function IntegracoesPage() {
   const [erroTeste, setErroTeste] = useState<Record<string, string>>({});
   const [removendo, setRemovendo] = useState<TipoIntegracao | null>(null);
 
-  // Feegow: form write-only + editor do mapa de procedimentos.
+  // Feegow: form write-only + editor do mapa de procedimentos + profissionais + liga/desliga.
   const [feegowToken, setFeegowToken] = useState('');
   const [feegowProcMap, setFeegowProcMap] = useState<Record<string, string>>({});
   const [feegowProcs, setFeegowProcs] = useState<Array<{ procedimento_id: number; nome: string }>>([]);
   const [procsLoading, setProcsLoading] = useState(false);
+  // profMap migrado do LocalModal (Task 6, D5) — mesmo comportamento: carrega
+  // profissionais do Feegow, mapeia id -> nome a aparecer no laudo/DICOM.
+  const [feegowProfMap, setFeegowProfMap] = useState<Record<string, string>>({});
+  const [feegowProfs, setFeegowProfs] = useState<Array<{ profissional_id: number; nome: string; tratamento?: string; conselho?: string; documento_conselho?: string; uf_conselho?: string }>>([]);
+  const [profsLoading, setProfsLoading] = useState(false);
+  const [feegowAtivo, setFeegowAtivo] = useState(true);
   const [feegowSalvando, setFeegowSalvando] = useState(false);
   const [feegowErro, setFeegowErro] = useState('');
 
@@ -102,6 +108,10 @@ export default function IntegracoesPage() {
       // inicial — recarregar() depois de salvar nao pode sobrescrever o que
       // o dono esteja digitando no meio de outra edicao.
       setFeegowProcMap(idx.feegow?.procMap ?? {});
+      setFeegowProfMap((idx.feegow?.profMap as Record<string, string> | undefined) ?? {});
+      // Ausente = ligado — a migracao (Sub-plano 5, scripts/integracoes/01-migrar.mjs)
+      // gravou ativo:!!token pra quem ja tinha token cadastrado.
+      setFeegowAtivo((idx.feegow?.ativo as boolean | undefined) ?? true);
       // Ate a migracao da Task 6 rodar, `integracoes/orthanc` pode nao existir
       // ainda enquanto workspaces/{id}.ortancAtivo/ortancUrl (campo antigo)
       // segue valendo em producao — api/orthanc/route.ts ja le so de
@@ -181,6 +191,40 @@ export default function IntegracoesPage() {
     setProcsLoading(false);
   }
 
+  // Le do token JA SALVO na gaveta (via wsId), mesmo padrao de carregarProcedimentos
+  // — "Carregar profissionais" so funciona depois de Salvar o token pelo menos uma vez.
+  // Migrado do LocalModal (Task 6, D5): profMap deixa de ser config de local.
+  async function carregarProfissionais() {
+    if (!user || !wsId) return;
+    setProfsLoading(true);
+    setFeegowErro('');
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch(`/api/feegow?action=profissionais&wsId=${wsId}`, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setFeegowErro('Token não reconhecido pelo Feegow — salve o token (botão Salvar) antes de carregar profissionais.');
+      } else if (data.profissionais?.length) {
+        setFeegowProfs(data.profissionais);
+        if (Object.keys(feegowProfMap).length === 0) {
+          const defaults: Record<string, string> = {};
+          for (const p of data.profissionais) {
+            const tratamento = p.tratamento ? `${p.tratamento} ` : '';
+            defaults[String(p.profissional_id)] = `${tratamento}${p.nome}`.trim();
+          }
+          setFeegowProfMap(defaults);
+        }
+      } else {
+        setFeegowErro('Feegow conectado, mas nenhum profissional ativo foi encontrado.');
+      }
+    } catch {
+      setFeegowErro('Erro ao carregar profissionais do Feegow.');
+    }
+    setProfsLoading(false);
+  }
+
   async function salvarFeegow() {
     if (!user || !wsId || feegowSalvando) return;
     setFeegowSalvando(true);
@@ -193,7 +237,7 @@ export default function IntegracoesPage() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({
           acao: 'salvar', wsId, tipo: 'feegow',
-          config: { procMap: procMapLimpo },
+          config: { procMap: procMapLimpo, profMap: feegowProfMap, ativo: feegowAtivo },
           credencial: feegowToken.trim() ? { token: feegowToken.trim() } : undefined,
         }),
       });
@@ -297,6 +341,14 @@ export default function IntegracoesPage() {
 
                 {t.id === 'feegow' && (
                   <div className="space-y-2 border-t border-borda pt-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-ink-3 uppercase">Ativo</label>
+                      <button type="button" onClick={() => setFeegowAtivo(v => !v)}
+                        className={`relative w-10 h-5 rounded-full transition ${feegowAtivo ? 'bg-p2' : 'bg-borda'}`}>
+                        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition ${feegowAtivo ? 'left-5' : 'left-0.5'}`} />
+                      </button>
+                    </div>
+
                     <div>
                       <label className="block text-xs font-semibold text-ink-3 uppercase mb-1">Token da API</label>
                       <input type="password" value={feegowToken} onChange={e => setFeegowToken(e.target.value)}
@@ -327,6 +379,30 @@ export default function IntegracoesPage() {
                               <option value="eco_te">Eco TE</option>
                               <option value="eco_stress">Eco Stress</option>
                             </select>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <p className="text-xs text-ink-3">{Object.keys(feegowProfMap).length} profissional(is) mapeado(s)</p>
+                      <button type="button" onClick={carregarProfissionais} disabled={profsLoading || i.credencialCadastradaEm == null}
+                        title={i.credencialCadastradaEm == null ? 'Salve o token primeiro' : undefined}
+                        className={botaoRemover}>
+                        {profsLoading ? 'carregando…' : 'Carregar profissionais'}
+                      </button>
+                    </div>
+
+                    {feegowProfs.length > 0 && (
+                      <div className="space-y-1.5 max-h-44 overflow-y-auto">
+                        {feegowProfs.map(p => (
+                          <div key={p.profissional_id} className="flex items-center gap-2 text-xs">
+                            <span className="w-28 text-ink-3 truncate" title={`${p.conselho || ''} ${p.documento_conselho || ''}/${p.uf_conselho || ''}`}>
+                              {p.tratamento || ''} {p.nome.split(' ').slice(0, 2).join(' ')}
+                            </span>
+                            <input type="text" value={feegowProfMap[String(p.profissional_id)] || ''}
+                              onChange={e => setFeegowProfMap(prev => ({ ...prev, [String(p.profissional_id)]: e.target.value }))}
+                              placeholder="Nome a aparecer no laudo / DICOM" className={`${campoInput} flex-1`} />
                           </div>
                         ))}
                       </div>

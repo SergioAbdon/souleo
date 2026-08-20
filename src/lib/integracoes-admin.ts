@@ -185,7 +185,7 @@ type TipoComForm = 'feegow' | 'orthanc';
 const TIPOS_COM_FORM: TipoComForm[] = ['feegow', 'orthanc'];
 
 const CAMPOS_CONFIG: Record<TipoComForm, string[]> = {
-  feegow: ['procMap'],
+  feegow: ['procMap', 'profMap', 'ativo'],
   orthanc: ['url', 'ativo'],
 };
 const CAMPOS_CREDENCIAL: Record<TipoComForm, string[]> = {
@@ -204,12 +204,12 @@ function limparConfig(tipo: TipoComForm, config: unknown): Record<string, unknow
   for (const campo of CAMPOS_CONFIG[tipo]) {
     const v = c[campo];
     if (v === undefined) continue;
-    if (campo === 'procMap' && v && typeof v === 'object' && !Array.isArray(v)) {
+    if ((campo === 'procMap' || campo === 'profMap') && v && typeof v === 'object' && !Array.isArray(v)) {
       const mapa: Record<string, string> = {};
       for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
         if (typeof val === 'string') mapa[k] = val;
       }
-      out.procMap = mapa;
+      out[campo] = mapa;
     } else if (campo === 'ativo' && typeof v === 'boolean') {
       out.ativo = v;
     } else if (campo === 'url' && typeof v === 'string') {

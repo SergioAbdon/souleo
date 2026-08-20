@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { dataLocalHoje } from '@/lib/utils';
 import { adminDb, adminAuth } from '@/lib/auth-admin';
 import { resolverPapel, ehMedicoDeVerdade } from '@/lib/exame-admin';
-import { gravarImportacao, resolverTokenFeegow, resolverProcMap, decidirGetFeegow, montarCandidatos, normalizarNascimento, reconciliarCancelados, marcarAtendido, feegowFetch } from '@/lib/feegow-admin';
+import { gravarImportacao, resolverTokenFeegow, decidirGetFeegow, montarCandidatos, normalizarNascimento, reconciliarCancelados, marcarAtendido, feegowFetch } from '@/lib/feegow-admin';
 
 const fbAuth = adminAuth();
 const dbAdmin = adminDb();
@@ -126,26 +126,36 @@ export async function POST(req: NextRequest) {
       const ehMed = (papel === 'dono' || papel === 'medico') && await ehMedicoDeVerdade(dbAdmin, uid);
       const perfilSnap = await dbAdmin.doc(`profissionais/${uid}`).get();
       const hoje = dataLocalHoje();
+      // Task 6 (D5, achados 18/21): uma unica leitura de integracoes/feegow
+      // serve ativo, procMap e profMap — nao ha por que ler o doc 3 vezes.
+      const integSnap = await dbAdmin.doc(`workspaces/${wsId}/integracoes/feegow`).get();
+      const integ = integSnap.data();
+      // Desligado e mais fundamental que mapa vazio -> gate ANTES do
+      // feegow_sem_procmap. Ausente = ligado (a migracao da Task 6 gravou
+      // ativo:!!token pra quem ja tinha token).
+      if (integ?.ativo === false) {
+        return NextResponse.json({ ok: false, error: 'feegow_desligado' }, { status: 400 });
+      }
       // procMap: SO de integracoes/feegow.procMap (Task 4) — dual-owner fechado
-      // aqui, Sub-plano 5 Task 7 item A. profMap continua no documento do local
-      // (nao e credencial nem tem dono duplicado — decisao Task 7 item C).
-      const procMap = await resolverProcMap(dbAdmin, wsId);
+      // aqui, Sub-plano 5 Task 7 item A.
+      const procMapRaw = (integ?.procMap as Record<string, string> | undefined) ?? {};
+      const procMap: Record<number, string> = {};
+      for (const [k, v] of Object.entries(procMapRaw)) procMap[Number(k)] = v;
       // D4/achado 15 (Task 3): sem mapa nao ha o que importar — 400 explicito
       // ANTES de bater no Feegow, em vez do PROC_MAP chumbado da MedCardio
       // que antes cobria (errado) qualquer local sem configuracao propria.
       if (Object.keys(procMap).length === 0) {
         return NextResponse.json({ ok: false, error: 'feegow_sem_procmap' }, { status: 400 });
       }
+      // profMap: Task 6 migra do documento do local (workspaces/{wsId}.feegowProfMap)
+      // pro cartao Feegow (integracoes/feegow.profMap) — decisao Task 7 item C
+      // revertida pela Task 6 (D5). Fallback UMA VIA pro campo antigo enquanto
+      // o local nao salva de novo pelo cartao; sai na limpeza (Task 8).
+      const profMapRaw = (integ?.profMap as Record<string, string> | undefined)
+        ?? (wsId ? (await dbAdmin.doc(`workspaces/${wsId}`).get()).data()?.feegowProfMap as Record<string, string> | undefined : undefined)
+        ?? {};
       const profMap: Record<number, string> = {};
-      if (wsId) {
-        const wsDoc = await dbAdmin.doc(`workspaces/${wsId}`).get();
-        const wsProfMap = wsDoc.data()?.feegowProfMap as Record<string, string> | undefined;
-        if (wsProfMap) {
-          for (const [k, v] of Object.entries(wsProfMap)) {
-            profMap[Number(k)] = v;
-          }
-        }
-      }
+      for (const [k, v] of Object.entries(profMapRaw)) profMap[Number(k)] = v;
       const { candidatos, ignorados, falhas, cancelados } = await montarCandidatos({ token, wsId: wsId as string, hoje, procMap, profMap });
       const { criados, descartados } = await gravarImportacao(dbAdmin, {
         wsId: wsId as string, candidatos, uid, ehMed, nomeCriador: (perfilSnap.data()?.nome as string) || '',

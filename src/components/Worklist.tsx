@@ -416,6 +416,8 @@ export default function Worklist() {
           alert('Seu usuário não tem acesso a este local.');
         } else if (data.error === 'feegow_sem_procmap') {
           alert('Nenhum procedimento mapeado. Vá em Integrações > Feegow e mapeie os procedimentos.');
+        } else if (data.error === 'feegow_desligado') {
+          alert('A integração Feegow está desligada. Ligue em Integrações > Feegow.');
         } else {
           alert(data.error || 'Erro ao importar do Feegow.');
         }
