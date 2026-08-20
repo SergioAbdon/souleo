@@ -111,6 +111,40 @@ describe('iniciarBatimento', () => {
     vi.useRealTimers();
   });
 
+  it('F2: mensagem de erro que CONTÉM user e pass (URL com credencial) -> ultimoErro gravado não os contém', async () => {
+    const repo = { getOrthancConnection: async () => CONN_OK };
+    const client = {
+      system: async () => {
+        throw new Error(`Timeout (10000ms) chamando http://${CONN_OK.user}:${CONN_OK.pass}@orthanc:8042/system`);
+      },
+    };
+    const parar = iniciarBatimento('ws1', '1.2.3', repo, client);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const orthancCalls = callFor('workspaces/ws1/integracoes/orthanc');
+    expect(orthancCalls).toHaveLength(1);
+    const data = orthancCalls[0].data as Record<string, unknown>;
+    expect(data.status).toBe('erro');
+    expect(String(data.ultimoErro)).not.toContain(CONN_OK.user);
+    expect(String(data.ultimoErro)).not.toContain(CONN_OK.pass);
+    expect(String(data.ultimoErro)).toContain('***');
+
+    parar();
+    vi.useRealTimers();
+  });
+
+  it('F3: sem conexão resolvida (desligado/não-configurado/sem credencial) -> NADA é gravado em integracoes/orthanc', async () => {
+    const repo = { getOrthancConnection: async () => null };
+    const client = { system: async () => ({}) };
+    const parar = iniciarBatimento('ws1', '1.2.3', repo, client);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(callFor('workspaces/ws1/integracoes/orthanc')).toHaveLength(0);
+
+    parar();
+    vi.useRealTimers();
+  });
+
   it('falha na checagem do orthanc NAO derruba o batimento do wader (visto continua sendo gravado)', async () => {
     const repo = { getOrthancConnection: async () => { throw new Error('firestore indisponível na leitura da conexão'); } };
     const client = { system: async () => ({}) };

@@ -49,17 +49,23 @@ export function iniciarBatimento(
 
     try {
       const conn = await repo.getOrthancConnection();
+      // D1/F3: sem conexão resolvida (desligado, não-configurado ou sem credencial),
+      // o batimento não escreve nada — não vira cartão vermelho permanente para
+      // integração que o dono desligou, nem cria integracoes/orthanc do nada.
+      if (!conn) return;
+
       let status: 'ok' | 'erro' = 'erro';
-      let ultimoErro: string | null = 'Orthanc não configurado ou credencial ausente.';
-      if (conn) {
-        try {
-          await client.system();
-          status = 'ok';
-          ultimoErro = null;
-        } catch (e) {
-          // sem user/pass: a msg de erro do fetch não os carrega, e nunca interpolamos `conn` aqui
-          ultimoErro = `Orthanc inacessível: ${(e as Error).message}`.slice(0, 200);
-        }
+      let ultimoErro: string | null = null;
+      try {
+        await client.system();
+        status = 'ok';
+      } catch (e) {
+        // F2: a msg de erro pode carregar a URL (ex.: Timeout chamando ${url}),
+        // que pode carregar user:pass se o operador digitou credencial na URL.
+        ultimoErro = `Orthanc inacessível: ${(e as Error).message}`
+          .replaceAll(conn.user, '***')
+          .replaceAll(conn.pass, '***')
+          .slice(0, 200);
       }
       await getDb().doc(`workspaces/${wsId}/integracoes/orthanc`).set(
         { status, ultimoTeste: new Date(), ultimoErro },

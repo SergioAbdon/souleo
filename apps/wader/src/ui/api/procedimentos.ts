@@ -11,8 +11,8 @@ const log = createLogger({ module: 'api-procedimentos' });
  *   GET /api/procedimentos — retorna lista oferecida pela clínica
  *
  * Origem: workspaces/{wsId}/integracoes/feegow.procMap (LEO web salva lá
- *         quando integra Feegow) OU defaults (todos os tipos suportados)
- *         se o workspace não tiver mapa
+ *         quando integra Feegow). Mapa vazio ou ausente = lista vazia;
+ *         configure em Integrações > Feegow.
  */
 export function registerProcedimentosRoutes(app: FastifyInstance, config: WaderConfig): void {
   const workspaceRepo = new WorkspaceRepo(config.wsId);
