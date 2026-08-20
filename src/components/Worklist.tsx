@@ -405,11 +405,13 @@ export default function Worklist() {
       });
       const data = await res.json();
       if (!data.ok) {
-        alert(data.error === 'sem_acesso_ao_local'
-          ? 'Seu usuário não tem acesso a este local.'
-          : (data.error || 'Erro ao importar do Feegow.'));
-      } else if (data.criados.length === 0) {
-        alert(data.total === 0 ? 'Nenhum paciente aguardando no Feegow.' : 'Todos os pacientes do Feegow já estão na fila.');
+        if (data.error === 'sem_acesso_ao_local') {
+          alert('Seu usuário não tem acesso a este local.');
+        } else if (data.error === 'feegow_sem_procmap') {
+          alert('Nenhum procedimento mapeado. Vá em Integrações > Feegow e mapeie os procedimentos.');
+        } else {
+          alert(data.error || 'Erro ao importar do Feegow.');
+        }
       } else {
         // ponytail: MWL continua saindo do cliente (o /api/orthanc ja autentica);
         // fechar a aba no meio = MWL perdido, sem retry — o indicador SEM MWL
@@ -424,7 +426,13 @@ export default function Worklist() {
             medicoNome: assinaComoAutor ? (profile?.nome as string || '') : '',
           });
         }
-        alert(`${data.criados.length} paciente(s) importado(s) do Feegow!`);
+        // D4: a tela conta a verdade — criados/ignorados/falhas/naoRealizados,
+        // nao mais um "Nenhum paciente aguardando" que escondia descarte.
+        const partes = [`${data.criados.length} importado(s)`];
+        if (data.ignorados?.length) partes.push(`${data.ignorados.reduce((s: number, i: { qtd: number }) => s + i.qtd, 0)} ignorado(s) — procedimento não mapeado (ids: ${data.ignorados.map((i: { procedimentoId: number }) => i.procedimentoId).join(', ')}) — mapeie em Integrações > Feegow`);
+        if (data.falhas?.length) partes.push(`${data.falhas.length} falha(s) de busca — tente de novo`);
+        if (data.naoRealizados) partes.push(`${data.naoRealizados} marcado(s) não-realizado (desmarcou/faltou no Feegow)`);
+        alert(partes.join('\n'));
       }
     } catch (e) {
       console.error('importarFeegow:', e);

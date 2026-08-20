@@ -55,11 +55,26 @@ describe('gravarImportacao', () => {
     assert.equal(criados.length, 1);
     assert.equal((await db.doc(`workspaces/${WS}/exames/fg-3-2026-08-12`).get()).data().sexo, '');
   });
-  test('appointId nao-numerico e descartado (path safety)', async () => {
-    const { criados } = await gravarImportacao(db, {
+  test('appointId nao-numerico e descartado (path safety), e contado em descartados (Task 3)', async () => {
+    const { criados, descartados } = await gravarImportacao(db, {
       wsId: WS, candidatos: [candidato('7/../x')], uid: 'uidRita', ehMed: false, nomeCriador: 'Rita',
     });
     assert.equal(criados.length, 0);
+    assert.equal(descartados, 1);
+  });
+  test('dataExame invalida e descartada e contada em descartados (Task 3 — nunca dispara no fluxo real, montarCandidatos sempre gera data valida)', async () => {
+    const { criados, descartados } = await gravarImportacao(db, {
+      wsId: WS, candidatos: [candidato(85, { dataExame: 'lixo' })], uid: 'uidRita', ehMed: false, nomeCriador: 'Rita',
+    });
+    assert.equal(criados.length, 0);
+    assert.equal(descartados, 1);
+  });
+  test('candidatos validos -> descartados 0', async () => {
+    const { criados, descartados } = await gravarImportacao(db, {
+      wsId: WS, candidatos: [candidato(86)], uid: 'uidRita', ehMed: false, nomeCriador: 'Rita',
+    });
+    assert.equal(criados.length, 1);
+    assert.equal(descartados, 0);
   });
   test('medico importando carimba medicoUid e ACCs nao colidem', async () => {
     const { criados } = await gravarImportacao(db, {
@@ -210,27 +225,34 @@ describe('resolverTokenFeegow (furo 1 — token SEMPRE da gaveta, SEM fallback d
   });
 });
 
-describe('resolverProcMap (item A — dual-owner: SO integracoes/feegow.procMap, sem fallback pro campo antigo)', () => {
+// Task 3 (D4, achado 15): PROC_MAP default morreu — mapa ausente/vazio
+// devolve {} (nao mais um fallback chumbado). E {} e o gatilho que route.ts
+// usa pra devolver 400 'feegow_sem_procmap' ANTES de montarCandidatos (o
+// handler em si nao e importavel por node --test — sem rota Next real neste
+// runtime — entao a leitura de route.ts documenta esse contrato: `if
+// (Object.keys(procMap).length === 0) return 400 feegow_sem_procmap`; os
+// testes abaixo cobrem o lado testavel, resolverProcMap devolvendo {}).
+describe('resolverProcMap (Task 3 — sem fallback: mapa ausente/vazio -> {})', () => {
   test('le o mapa do lugar NOVO (integracoes/feegow.procMap)', async () => {
     await db.doc(`workspaces/${WS}/integracoes/feegow`).set({ procMap: { '10': 'eco_tt', '20': 'doppler_carotidas' } });
-    const mapa = await resolverProcMap(db, WS, { 999: 'nao_deveria_aparecer' });
+    const mapa = await resolverProcMap(db, WS);
     assert.deepEqual(mapa, { 10: 'eco_tt', 20: 'doppler_carotidas' });
   });
   test('campo antigo workspaces/{wsId}.feegowProcMap e IGNORADO (mesmo com dado la)', async () => {
     const wsAntigo = 'wsComCampoAntigo';
     await db.doc(`workspaces/${wsAntigo}`).set({ feegowProcMap: { '77': 'eco_te' } });
-    // integracoes/feegow nao existe pra este ws -> tem que cair no default, NAO no campo antigo.
-    const mapa = await resolverProcMap(db, wsAntigo, { 1: 'default_esperado' });
-    assert.deepEqual(mapa, { 1: 'default_esperado' });
+    // integracoes/feegow nao existe pra este ws -> {} (nao o campo antigo).
+    const mapa = await resolverProcMap(db, wsAntigo);
+    assert.deepEqual(mapa, {});
   });
-  test('integracoes/feegow.procMap vazio ({}) -> usa o default', async () => {
+  test('integracoes/feegow.procMap vazio ({}) -> {}', async () => {
     await db.doc(`workspaces/${WS}/integracoes/feegow`).set({ procMap: {} });
-    const mapa = await resolverProcMap(db, WS, { 5: 'default' });
-    assert.deepEqual(mapa, { 5: 'default' });
+    const mapa = await resolverProcMap(db, WS);
+    assert.deepEqual(mapa, {});
   });
-  test('sem wsId -> usa o default', async () => {
-    const mapa = await resolverProcMap(db, null, { 5: 'default' });
-    assert.deepEqual(mapa, { 5: 'default' });
+  test('sem wsId -> {}', async () => {
+    const mapa = await resolverProcMap(db, null);
+    assert.deepEqual(mapa, {});
   });
 });
 

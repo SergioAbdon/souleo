@@ -60,16 +60,6 @@ async function resolverToken(req: NextRequest): Promise<string> {
   return resolverTokenFeegow(dbAdmin, wsId);
 }
 
-// Procedimentos Feegow → tipo de exame LEO
-// IDs confirmados via /procedures/list em 14/04/2026
-const PROC_MAP: Record<number, string> = {
-  6: 'eco_tt',              // Ecocardiograma Transtorácico
-  67: 'doppler_carotidas',  // Doppler colorido de vasos cervicais (carótidas e vertebrais)
-  285: 'doppler_carotidas', // US Ecodoppler de carótidas (código alternativo)
-};
-// IDs que NÃO são exames do LEO (ignorar na importação):
-// 5=ECG, 8=MAPA 24h, 9=Holter 24h, 224=Consulta Cardio, 225=Consulta Infecto, 253=Cirurgia
-
 async function feegowFetch(endpoint: string, token: string) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -159,7 +149,13 @@ export async function POST(req: NextRequest) {
       // procMap: SO de integracoes/feegow.procMap (Task 4) — dual-owner fechado
       // aqui, Sub-plano 5 Task 7 item A. profMap continua no documento do local
       // (nao e credencial nem tem dono duplicado — decisao Task 7 item C).
-      const procMap = await resolverProcMap(dbAdmin, wsId, PROC_MAP);
+      const procMap = await resolverProcMap(dbAdmin, wsId);
+      // D4/achado 15 (Task 3): sem mapa nao ha o que importar — 400 explicito
+      // ANTES de bater no Feegow, em vez do PROC_MAP chumbado da MedCardio
+      // que antes cobria (errado) qualquer local sem configuracao propria.
+      if (Object.keys(procMap).length === 0) {
+        return NextResponse.json({ ok: false, error: 'feegow_sem_procmap' }, { status: 400 });
+      }
       const profMap: Record<number, string> = {};
       if (wsId) {
         const wsDoc = await dbAdmin.doc(`workspaces/${wsId}`).get();
@@ -170,11 +166,19 @@ export async function POST(req: NextRequest) {
           }
         }
       }
-      const { candidatos } = await montarCandidatos({ token, wsId: wsId as string, hoje, procMap, profMap });
-      const { criados } = await gravarImportacao(dbAdmin, {
+      const { candidatos, ignorados, falhas } = await montarCandidatos({ token, wsId: wsId as string, hoje, procMap, profMap });
+      const { criados, descartados } = await gravarImportacao(dbAdmin, {
         wsId: wsId as string, candidatos, uid, ehMed, nomeCriador: (perfilSnap.data()?.nome as string) || '',
       });
-      return NextResponse.json({ ok: true, total: candidatos.length, criados });
+      return NextResponse.json({
+        ok: true, total: candidatos.length, criados, ignorados, falhas,
+        // descartados: guards de path-safety/data de gravarImportacao (Task 1)
+        // — nunca dispara no fluxo real (montarCandidatos sempre gera fgId
+        // numerico + data valida), campo proprio so pra fechar o invariante
+        // "nenhum descarte silencioso" sem inflar `falhas` (que e busca, nao gravacao).
+        descartados,
+        naoRealizados: 0, // Task 4 pluga a reconciliacao real (D3: cancelados do Feegow fecham exame aberto no LEO)
+      });
     }
 
     return NextResponse.json({ error: 'action invalida' }, { status: 400 });

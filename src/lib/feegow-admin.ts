@@ -102,22 +102,24 @@ export async function resolverTokenFeegow(db: Firestore, wsId: string | null): P
  * Sem fallback pro campo antigo workspaces/{wsId}.feegowProcMap (decisao D3
  * da spec) — antes desta task, montarCandidatos() e o Wader liam o campo
  * antigo e a tela nova (Task 4) gravava no lugar novo: editar o mapa era
- * no-op silencioso pra importacao. `defaultMap` so entra quando o doc novo
- * nao existe ou esta vazio (locais que nunca configuraram).
+ * no-op silencioso pra importacao.
+ *
+ * Task 3 (D4, achado 15): SEM fallback nenhum — o `defaultMap` (PROC_MAP de
+ * 3 entradas chumbadas na rota, IDs da MedCardio) morreu. Doc ausente ou
+ * `procMap` vazio devolve `{}`; quem chama (route.ts) trata `{}` como "local
+ * nao configurou Feegow" e devolve 400 ANTES de bater na API do Feegow, em
+ * vez de silenciosamente usar o mapa de outra clinica.
  */
 export async function resolverProcMap(
-  db: Firestore, wsId: string | null, defaultMap: Record<number, string>,
+  db: Firestore, wsId: string | null,
 ): Promise<Record<number, string>> {
-  if (wsId) {
-    const snap = await db.doc(`workspaces/${wsId}/integracoes/feegow`).get();
-    const cfg = snap.data()?.procMap as Record<string, string> | undefined;
-    if (cfg && Object.keys(cfg).length > 0) {
-      const out: Record<number, string> = {};
-      for (const [k, v] of Object.entries(cfg)) out[Number(k)] = v;
-      return out;
-    }
-  }
-  return defaultMap;
+  if (!wsId) return {};
+  const snap = await db.doc(`workspaces/${wsId}/integracoes/feegow`).get();
+  const cfg = snap.data()?.procMap as Record<string, string> | undefined;
+  if (!cfg || Object.keys(cfg).length === 0) return {};
+  const out: Record<number, string> = {};
+  for (const [k, v] of Object.entries(cfg)) out[Number(k)] = v;
+  return out;
 }
 
 /**
@@ -313,19 +315,24 @@ export async function montarCandidatos(args: {
 
 export async function gravarImportacao(dbAdmin: Firestore, args: {
   wsId: string; candidatos: Candidato[]; uid: string; ehMed: boolean; nomeCriador: string;
-}): Promise<{ criados: Array<{ exameId: string; pac: Candidato }> }> {
+}): Promise<{ criados: Array<{ exameId: string; pac: Candidato }>; descartados: number }> {
   const { wsId, candidatos, uid, ehMed, nomeCriador } = args;
   const base = agoraBelem();
   const criados: Array<{ exameId: string; pac: Candidato }> = [];
+  // Task 3: contagem dos `continue` de path-safety/data abaixo — no fluxo
+  // real montarCandidatos sempre gera fgId numerico + dataExame valida, entao
+  // isso nunca dispara; existe so pra fechar o invariante "nenhum descarte
+  // silencioso" (route.ts soma isso na resposta do importar).
+  let descartados = 0;
 
   for (let seq = 0; seq < candidatos.length; seq++) {
     const c = candidatos[seq];
     // Path safety (Codex-11): id externo entra em path do Firestore.
     const fgId = String(c.feegowAppointId ?? '');
-    if (!/^\d+$/.test(fgId)) continue;
+    if (!/^\d+$/.test(fgId)) { descartados++; continue; }
     const fgPacId = /^\d+$/.test(String(c.feegowPacienteId ?? '')) ? String(c.feegowPacienteId) : null;
     const dataEx = String(c.dataExame ?? '');
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataEx)) continue; // sem data valida nao ha identidade
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataEx)) { descartados++; continue; } // sem data valida nao ha identidade
 
     // D2: identidade = agendamento + data. Mesmo agendamento em dias diferentes
     // (remarcacao — o Feegow PRESERVA o id, provado 19/08 com o 66890) sao dois
@@ -413,5 +420,5 @@ export async function gravarImportacao(dbAdmin: Firestore, args: {
       por: uid, ts: FieldValue.serverTimestamp(),
     });
   }
-  return { criados };
+  return { criados, descartados };
 }
