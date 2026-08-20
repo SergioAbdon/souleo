@@ -379,7 +379,7 @@ export default function Worklist() {
     // Feegow devolve o mesmo agendamento). Manual continua apagando de fato.
     const feegow = item.origem === 'FEEGOW';
     const msg = feegow
-      ? `Remover ${item.pacienteNome} da fila? Sai da fila e fica no histórico como cancelado.`
+      ? `Remover ${item.pacienteNome} da fila? Sai da fila e fica registrado como cancelado (visível na ficha do paciente).`
       : `Remover ${item.pacienteNome} da fila?`;
     if (!confirm(msg)) return;
     if (!workspace?.id) return;
@@ -442,7 +442,11 @@ export default function Worklist() {
         // Reimportacao: quem ja esta na fila nao e criado nem falha — sem esta
         // linha a diferenca entre total e criados ficaria muda (a msg antiga
         // "ja estao na fila" dizia isso e foi preservada aqui em numero).
-        const jaNaFila = data.total - data.criados.length - (data.falhas?.length || 0) - (data.descartados || 0);
+        // Nao subtrai falhas (achado herdado da Task 3): total = candidatos.length
+        // em montarCandidatos NUNCA inclui falhas — o `continue` do push em
+        // `falhas` vem antes do push em `candidatos`. Subtrair de novo aqui
+        // contava falha duas vezes e subcontava "ja estava(m) na fila".
+        const jaNaFila = data.total - data.criados.length - (data.descartados || 0);
         if (jaNaFila > 0) partes.push(`${jaNaFila} já estava(m) na fila`);
         alert(partes.join('\n'));
       }
@@ -517,7 +521,12 @@ export default function Worklist() {
   }
 
   // Filtrar por status + busca texto
-  const fonteDados = statusSel === 'nao-realizado' ? naoRealizados : worklist;
+  // cancelado some da fila (revisão Task 4, item 2): o confirm() de remover
+  // avisa que sai da fila — sem este filtro a linha continuava aparecendo
+  // (só perdia os botões de ação) e o operador achava que nada aconteceu.
+  // nao-realizado CONTINUA visível (esmaecido) — é auditoria, não fila.
+  const worklistVisivel = worklist.filter(it => it.status !== 'cancelado');
+  const fonteDados = statusSel === 'nao-realizado' ? naoRealizados : worklistVisivel;
   const filtrada = fonteDados.filter(it => {
     if (statusSel !== 'todos' && statusSel !== 'nao-realizado' && it.status !== statusSel) return false;
     if (busca) {
@@ -556,7 +565,7 @@ export default function Worklist() {
       <div className="flex gap-2 mb-3 text-xs">
         <button onClick={() => setStatusSel('todos')}
           className={`px-3 py-1 rounded-full font-semibold transition ${statusSel === 'todos' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-          Todos ({worklist.length})
+          Todos ({worklistVisivel.length})
         </button>
         <button onClick={() => setStatusSel('aguardando')}
           className={`px-3 py-1 rounded-full font-semibold transition ${statusSel === 'aguardando' ? 'bg-yellow-500 text-white' : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'}`}>

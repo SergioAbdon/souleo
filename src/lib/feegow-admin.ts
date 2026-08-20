@@ -444,6 +444,8 @@ export async function reconciliarCancelados(dbAdmin: Firestore, args: {
   const snap = await dbAdmin.collection(`workspaces/${args.wsId}/exames`)
     .where('origem', '==', 'FEEGOW').where('dataExame', '==', args.hoje)
     .where('status', '==', 'aguardando').get();
+  // ponytail: 1 batch = teto de 500 writes do Firestore; nunca visto (fila
+  // de um dia de uma clinica), upgrade se estourar e fatiar em chunks de 500.
   const lote = dbAdmin.batch();
   let n = 0;
   for (const d of snap.docs) {

@@ -172,7 +172,13 @@ export async function POST(req: NextRequest) {
       });
       // Task 4 (D3, achado 7a): quem o Feegow ja deu como cancelado/faltou
       // fecha 'nao-realizado' no LEO — nunca apaga (ADR 16/05 #6).
-      const naoRealizados = await reconciliarCancelados(dbAdmin, { wsId: wsId as string, hoje, cancelados });
+      // Important (revisao Task 4): reconciliacao roda DEPOIS de gravarImportacao
+      // ja ter commitado — se ela lancar (ex.: indice do Firestore ainda em
+      // build no primeiro uso -> FAILED_PRECONDITION), nao pode virar 502 com
+      // os exames JA criados (secretaria ve "Erro", loop de MWL nunca roda,
+      // reimportar estoura de novo). E idempotente: proximo ciclo conserta.
+      const naoRealizados = await reconciliarCancelados(dbAdmin, { wsId: wsId as string, hoje, cancelados })
+        .catch((e) => { console.error('reconciliarCancelados:', e); return 0; });
       return NextResponse.json({
         ok: true, total: candidatos.length, criados, ignorados, falhas,
         // descartados: guards de path-safety/data de gravarImportacao (Task 1)

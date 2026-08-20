@@ -108,9 +108,9 @@ export default function FichaPacientePage() {
     if (st === 'aguardando') {
       return <Link href="/agenda" className="text-xs text-p2 font-semibold hover:underline">Ver na Agenda</Link>;
     }
-    // Cancelado: franquia já foi devolvida (exame-admin.ts cancelarExame) e
-    // o pdfUrl foi apagado — não há laudo pra abrir nem sentido em mandar
-    // pra Agenda. Sem ação nenhuma, só a pill vermelha já conta a história.
+    // Cancelado: sem ação (emitido devolve franquia ao cancelar; não-emitido
+    // nunca consumiu). Também não há laudo pra abrir nem sentido em mandar
+    // pra Agenda — a pill vermelha já conta a história.
     if (st === 'cancelado') return null;
     // Modalidade 'pdf' (ECG/MAPA/Holter/Ergométrico) ainda sem pdfUrl: NÃO
     // oferecer "Abrir laudo" aqui — /laudo/[id] é o motor de ECHO e não tem
