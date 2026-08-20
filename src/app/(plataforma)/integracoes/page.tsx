@@ -114,9 +114,8 @@ export default function IntegracoesPage() {
       setFeegowAtivo((idx.feegow?.ativo as boolean | undefined) ?? true);
       // Ate a migracao da Task 6 rodar, `integracoes/orthanc` pode nao existir
       // ainda enquanto workspaces/{id}.ortancAtivo/ortancUrl (campo antigo)
-      // segue valendo em producao — api/orthanc/route.ts ja le so de
-      // integracoes/orthanc+privado/orthanc (Sub-plano 5 Task 7), mas
-      // SidebarLaudo.tsx:187 ainda le workspaces/{id}.ortancAtivo direto pra
+      // segue valendo em producao — SidebarLaudo.tsx:187 ainda le
+      // workspaces/{id}.ortancAtivo direto pra
       // decidir se mostra "Importar DICOM". Sem este fallback aqui o form
       // mente (toggle desligado, endereco vazio) e "Salvar" gravaria
       // ativo:false por cima do que esta ligado de verdade.
@@ -332,7 +331,7 @@ export default function IntegracoesPage() {
             return (
               <CartaoIntegracao key={t.id} icone={t.icone} titulo={t.rotulo} descricao={t.descricao}
                 estado={estado} tomEstado={tom}
-                acoes={t.id !== 'wader' ? (
+                acoes={t.id === 'feegow' ? (
                   <button type="button" onClick={() => testarConexao(t.id)} disabled={testando !== null}
                     className="text-xs font-medium px-3 py-1.5 rounded-lg border border-borda text-ink-2 hover:bg-surface transition disabled:opacity-50 disabled:cursor-not-allowed">
                     {testando === t.id ? 'testando…' : '🔌 Testar conexão'}
@@ -426,6 +425,10 @@ export default function IntegracoesPage() {
 
                 {t.id === 'orthanc' && (
                   <div className="space-y-2 border-t border-borda pt-3">
+                    {/* D1 (corte estrutural, Task 7): a nuvem parou de bater no
+                        Orthanc (rede interna da clinica, nunca alcancavel daqui).
+                        Quem verifica e reporta agora e o Wader. */}
+                    <p className="text-xs text-ink-3">Estado verificado pela máquina da clínica a cada 5 min.</p>
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-semibold text-ink-3 uppercase">Ativo</label>
                       <button type="button" onClick={() => setOrthancAtivo(v => !v)}

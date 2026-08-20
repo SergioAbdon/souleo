@@ -31,34 +31,6 @@ async function feegowAuthFetch(url: string, options?: RequestInit) {
   });
 }
 
-// Enviar worklist (MWL) ao Orthanc — persiste o status no exame (Achado 15)
-async function enviarMwlOrthanc(dados: {
-  wsId: string; exameId: string; pacienteNome: string; pacienteId?: string;
-  pacienteDtnasc?: string; sexo?: string; tipoExame?: string;
-  dataExame?: string; horarioChegada?: string; medicoNome?: string;
-}) {
-  try {
-    const token = await auth.currentUser?.getIdToken();
-    const res = await fetch('/api/orthanc', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token || ''}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'criar_mwl', ...dados }),
-    });
-    const result = await res.json();
-    // Achado 15: persistir o resultado — a fila mostra quando a worklist
-    // NAO chegou ao aparelho (antes era um console.warn que ninguem via).
-    await updateDoc(doc(db, 'workspaces', dados.wsId, 'exames', dados.exameId), {
-      mwlStatus: result.ok ? 'enviado' : 'falhou',
-    });
-    if (!result.ok) console.warn('Orthanc MWL falhou:', result.error);
-  } catch (e) {
-    console.error('Orthanc MWL:', e);
-    try {
-      await updateDoc(doc(db, 'workspaces', dados.wsId, 'exames', dados.exameId), { mwlStatus: 'falhou' });
-    } catch { /* offline total: fica sem status */ }
-  }
-}
-
 type ExameItem = Record<string, unknown> & {
   id: string; pacienteId?: string; pacienteNome?: string; pacienteDtnasc?: string;
   status?: string; tipoExame?: string; dataExame?: string; horarioChegada?: string;
@@ -353,20 +325,6 @@ export default function Worklist() {
         setPacLoading(false);
         return;
       }
-
-      // Enviar MWL ao Orthanc (fire-and-forget)
-      enviarMwlOrthanc({
-        wsId: workspace.id,
-        exameId: novoExameId,
-        pacienteNome: pacNome.trim().toUpperCase(),
-        pacienteId: cpfLimpo,
-        pacienteDtnasc: pacDtnasc,
-        sexo: pacSexo,
-        tipoExame: pacTipoExame,
-        dataExame: dataLocalHoje(),
-        horarioChegada: horaChegada,
-        medicoNome: assinaComoAutor ? (profile?.nome as string || '') : '',
-      });
     }
 
     setPacLoading(false);
@@ -422,19 +380,6 @@ export default function Worklist() {
           alert(data.error || 'Erro ao importar do Feegow.');
         }
       } else {
-        // ponytail: MWL continua saindo do cliente (o /api/orthanc ja autentica);
-        // fechar a aba no meio = MWL perdido, sem retry — o indicador SEM MWL
-        // (mwlStatus) da visibilidade. Mover pro servidor se virar dor real.
-        for (const { exameId, pac } of data.criados) {
-          await enviarMwlOrthanc({
-            wsId: workspace.id, exameId,
-            pacienteNome: pac.pacienteNome, pacienteId: pac.cpf,
-            pacienteDtnasc: pac.pacienteDtnasc, sexo: pac.sexo,
-            tipoExame: pac.tipoExame, dataExame: pac.dataExame,
-            horarioChegada: pac.horarioChegada,
-            medicoNome: assinaComoAutor ? (profile?.nome as string || '') : '',
-          });
-        }
         // D4: a tela conta a verdade — criados/ignorados/falhas/naoRealizados,
         // nao mais um "Nenhum paciente aguardando" que escondia descarte.
         const partes = [`${data.criados.length} importado(s)`];

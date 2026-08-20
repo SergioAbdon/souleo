@@ -124,9 +124,9 @@ export async function resolverProcMap(
 
 /**
  * Veredito HTTP de "wsId + papel resolvido -> pode prosseguir": usado pelos
- * GETs de /api/feegow (buscar_cpf, procedimentos, profissionais), pelos dois
- * POSTs de /api/feegow (importar, atualizar_status) e por /api/orthanc (GET
- * e POST criar_mwl) — mesmo gate, um unico lugar. NAO resolve papel (isso e
+ * GETs de /api/feegow (buscar_cpf, procedimentos, profissionais) e pelos
+ * dois POSTs de /api/feegow (importar, atualizar_status), via
+ * decidirGetFeegow — mesmo gate, um unico lugar. NAO resolve papel (isso e
  * resolverPapel de exame-admin.ts, ja testado em
  * exame.test.mjs/corrigir-laudo.test.mjs — este arquivo nao pode importar
  * de la, ver comentario do topo); so decide o codigo a partir do que a
@@ -174,7 +174,7 @@ export async function decidirGetFeegow(
 // Sub-plano 5, Task 2 (D6, achados 3/4/9/13/14/20/22) — montarCandidatos
 // desce de route.ts pra ca: era a unica traducao Feegow->LEO e vivia fora
 // da camada testavel, com ZERO cobertura. fetchImpl injetavel (mesmo padrao
-// de testarFeegow/testarOrthanc em integracoes-admin.ts) pra testar sem rede.
+// de testarFeegow em integracoes-admin.ts) pra testar sem rede.
 // ══════════════════════════════════════════════════════════════════
 export const FEEGOW_BASE = 'https://api.feegow.com/v1/api';
 const FEEGOW_TIMEOUT_MS = 10000;

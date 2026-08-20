@@ -29,9 +29,6 @@ export function sanitizar(msg: string, segredos: (string | undefined)[]): string
 }
 
 type ConexaoFeegow = { token?: string };
-// user/pass é o nome canônico em todo o sistema (spec §3.2, workspace-repo.ts,
-// api/orthanc/route.ts) — não aceitar apelido nenhum aqui.
-type ConexaoOrthanc = { url?: string; user?: string; pass?: string };
 
 export async function testarFeegow(conn: ConexaoFeegow, fetchImpl: typeof fetch = fetch): Promise<void> {
   if (!conn.token) throw new Error('Token do Feegow ausente.');
@@ -49,51 +46,6 @@ export async function testarFeegow(conn: ConexaoFeegow, fetchImpl: typeof fetch 
   } finally {
     clearTimeout(timeout);
   }
-}
-
-export async function testarOrthanc(conn: ConexaoOrthanc, fetchImpl: typeof fetch = fetch): Promise<void> {
-  if (!conn.url) throw new Error('Endereço do Orthanc ausente.');
-  // Minor 5 (Sub-plano 5, Task 7 revisao): mesma checagem de esquema que
-  // resolverConfigOrthanc ja aplica (SSRF) — "testar antes de salvar" nao
-  // passava por ali, entao os dois caminhos discordavam sobre a mesma regra.
-  // O guard tem que valer ONDE a URL e usada, sempre.
-  if (!/^https?:\/\//i.test(conn.url)) throw new Error('Endereço do Orthanc precisa começar com http:// ou https://.');
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    const headers: Record<string, string> = {};
-    if (conn.pass) headers.Authorization = `Basic ${Buffer.from(`${conn.user ?? ''}:${conn.pass}`).toString('base64')}`;
-    const res = await fetchImpl(`${conn.url.replace(/\/+$/, '')}/system`, { headers, signal: controller.signal });
-    if (!res.ok) throw new Error(`Orthanc ${res.status}`);
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-// ══════════════════════════════════════════════════════════════════
-// Sub-plano 5, Task 7 — resolverConfigOrthanc: fonte UNICA de config pros
-// dois consumidores server-side de api/orthanc/route.ts (GET e POST
-// criar_mwl, que antes tinham cada um sua propria copia da leitura —
-// furo 2 do brief inteiro so fechava se os dois usassem esta funcao).
-// So http/https (SSRF — endereco vem do dono via /api/integracoes, nunca
-// mais do cliente: aceitar x-orthanc-url arbitrario era o resto do furo 2).
-// ══════════════════════════════════════════════════════════════════
-export type OrtancConfig = { url: string; user?: string; pass?: string };
-
-export async function resolverConfigOrthanc(db: Firestore, wsId: string | null): Promise<OrtancConfig | null> {
-  if (!wsId) return null;
-  const integSnap = await db.doc(`workspaces/${wsId}/integracoes/orthanc`).get();
-  const integData = integSnap.data();
-  if (!integData?.ativo || !integData?.url) return null;
-  const url = (integData.url as string).replace(/\/+$/, '');
-  if (!/^https?:\/\//i.test(url)) return null; // SSRF: esquema tem que ser http/https
-  const privSnap = await db.doc(`workspaces/${wsId}/privado/orthanc`).get();
-  const priv = privSnap.data() ?? {};
-  return {
-    url,
-    user: (priv.user as string) || undefined,
-    pass: (priv.pass as string) || undefined,
-  };
 }
 
 export type ResultadoTeste = { httpStatus: number; ok: boolean; status?: 'ok' | 'erro'; mensagem: string };
@@ -115,6 +67,12 @@ export async function executarTeste(dbAdmin: Firestore, args: {
   }
   if (tipo === 'wader') {
     return { httpStatus: 400, ok: false, mensagem: 'Wader não tem teste de conexão — ele avisa sozinho por batimento.' };
+  }
+  // D1 (corte estrutural, Task 7): a nuvem nunca alcançou o Orthanc (rede
+  // interna da clínica) — 100% das chamadas falhavam. Quem verifica e
+  // reporta agora é o Wader, a cada 5 min (Task 8); o cartão só exibe.
+  if (tipo === 'orthanc') {
+    return { httpStatus: 400, ok: false, mensagem: 'O estado do Orthanc é verificado pela máquina da clínica (Wader) e aparece no cartão.' };
   }
 
   // Documento público (endereço/flags) nunca carrega segredo — pode ser lido
@@ -150,8 +108,8 @@ export async function executarTeste(dbAdmin: Firestore, args: {
   let status: 'ok' | 'erro';
   let mensagem: string;
   try {
-    if (tipo === 'feegow') await testarFeegow(conn as ConexaoFeegow, fetchImpl);
-    else await testarOrthanc(conn as ConexaoOrthanc, fetchImpl);
+    // Só 'feegow' chega aqui — 'wader' e 'orthanc' já retornaram acima.
+    await testarFeegow(conn as ConexaoFeegow, fetchImpl);
     status = 'ok';
     mensagem = 'Conexão OK.';
   } catch (e) {
