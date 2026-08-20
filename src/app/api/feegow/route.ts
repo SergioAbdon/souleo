@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { dataLocalHoje } from '@/lib/utils';
 import { adminDb, adminAuth } from '@/lib/auth-admin';
 import { resolverPapel, ehMedicoDeVerdade } from '@/lib/exame-admin';
-import { gravarImportacao, resolverTokenFeegow, resolverProcMap, decidirGetFeegow, montarCandidatos, normalizarNascimento } from '@/lib/feegow-admin';
+import { gravarImportacao, resolverTokenFeegow, resolverProcMap, decidirGetFeegow, montarCandidatos, normalizarNascimento, reconciliarCancelados } from '@/lib/feegow-admin';
 
 const fbAuth = adminAuth();
 const dbAdmin = adminDb();
@@ -166,10 +166,13 @@ export async function POST(req: NextRequest) {
           }
         }
       }
-      const { candidatos, ignorados, falhas } = await montarCandidatos({ token, wsId: wsId as string, hoje, procMap, profMap });
+      const { candidatos, ignorados, falhas, cancelados } = await montarCandidatos({ token, wsId: wsId as string, hoje, procMap, profMap });
       const { criados, descartados } = await gravarImportacao(dbAdmin, {
         wsId: wsId as string, candidatos, uid, ehMed, nomeCriador: (perfilSnap.data()?.nome as string) || '',
       });
+      // Task 4 (D3, achado 7a): quem o Feegow ja deu como cancelado/faltou
+      // fecha 'nao-realizado' no LEO — nunca apaga (ADR 16/05 #6).
+      const naoRealizados = await reconciliarCancelados(dbAdmin, { wsId: wsId as string, hoje, cancelados });
       return NextResponse.json({
         ok: true, total: candidatos.length, criados, ignorados, falhas,
         // descartados: guards de path-safety/data de gravarImportacao (Task 1)
@@ -177,7 +180,7 @@ export async function POST(req: NextRequest) {
         // numerico + data valida), campo proprio so pra fechar o invariante
         // "nenhum descarte silencioso" sem inflar `falhas` (que e busca, nao gravacao).
         descartados,
-        naoRealizados: 0, // Task 4 pluga a reconciliacao real (D3: cancelados do Feegow fecham exame aberto no LEO)
+        naoRealizados,
       });
     }
 

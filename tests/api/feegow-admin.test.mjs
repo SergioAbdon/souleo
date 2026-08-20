@@ -3,7 +3,7 @@ import { test, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
-import { gravarImportacao, resolverTokenFeegow, resolverProcMap, gateAcessoWs, decidirGetFeegow, cpfValido, montarCandidatos, normalizarNascimento } from '../../src/lib/feegow-admin.ts';
+import { gravarImportacao, resolverTokenFeegow, resolverProcMap, gateAcessoWs, decidirGetFeegow, cpfValido, montarCandidatos, normalizarNascimento, reconciliarCancelados } from '../../src/lib/feegow-admin.ts';
 
 let db;
 const WS = 'wsFeegow';
@@ -546,5 +546,53 @@ describe('montarCandidatos (achados 3, 4, 13, 20 — particiona no laco, sem fil
       }),
     });
     assert.equal(r.candidatos[0].dataExame, '2026-08-12');
+  });
+});
+
+// Task 4 (D3, achado 7a): reconciliacao na importacao — quem o Feegow ja deu
+// como cancelado/faltou fecha 'nao-realizado' no LEO, sem apagar (ADR 16/05 #6).
+describe('reconciliarCancelados', () => {
+  const HOJE = '2026-08-13';
+  const ONTEM = '2026-08-12';
+
+  test('exame FEEGOW aguardando de hoje com feegowAppointId em cancelados vira nao-realizado', async () => {
+    await db.doc(`workspaces/${WS}/exames/rc1`).set({
+      origem: 'FEEGOW', dataExame: HOJE, status: 'aguardando', feegowAppointId: '900',
+    });
+    const n = await reconciliarCancelados(db, { wsId: WS, hoje: HOJE, cancelados: ['900'] });
+    assert.equal(n, 1);
+    assert.equal((await db.doc(`workspaces/${WS}/exames/rc1`).get()).data().status, 'nao-realizado');
+  });
+
+  test("exame FEEGOW 'andamento' fica INTOCADO (so aguardando)", async () => {
+    await db.doc(`workspaces/${WS}/exames/rc2`).set({
+      origem: 'FEEGOW', dataExame: HOJE, status: 'andamento', feegowAppointId: '901',
+    });
+    const n = await reconciliarCancelados(db, { wsId: WS, hoje: HOJE, cancelados: ['901'] });
+    assert.equal(n, 0);
+    assert.equal((await db.doc(`workspaces/${WS}/exames/rc2`).get()).data().status, 'andamento');
+  });
+
+  test('exame MANUAL aguardando fica INTOCADO (so origem FEEGOW)', async () => {
+    await db.doc(`workspaces/${WS}/exames/rc3`).set({
+      origem: 'MANUAL', dataExame: HOJE, status: 'aguardando', feegowAppointId: '902',
+    });
+    const n = await reconciliarCancelados(db, { wsId: WS, hoje: HOJE, cancelados: ['902'] });
+    assert.equal(n, 0);
+    assert.equal((await db.doc(`workspaces/${WS}/exames/rc3`).get()).data().status, 'aguardando');
+  });
+
+  test('exame FEEGOW aguardando de ONTEM fica INTOCADO (so dataExame == hoje — Feegow preserva id na remarcacao)', async () => {
+    await db.doc(`workspaces/${WS}/exames/rc4`).set({
+      origem: 'FEEGOW', dataExame: ONTEM, status: 'aguardando', feegowAppointId: '903',
+    });
+    const n = await reconciliarCancelados(db, { wsId: WS, hoje: HOJE, cancelados: ['903'] });
+    assert.equal(n, 0);
+    assert.equal((await db.doc(`workspaces/${WS}/exames/rc4`).get()).data().status, 'aguardando');
+  });
+
+  test('cancelados vazio: zero escritas', async () => {
+    const n = await reconciliarCancelados(db, { wsId: WS, hoje: HOJE, cancelados: [] });
+    assert.equal(n, 0);
   });
 });

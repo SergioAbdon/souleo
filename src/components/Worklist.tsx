@@ -374,13 +374,20 @@ export default function Worklist() {
   }
 
   async function removerDaFila(item: ExameItem) {
-    if (!confirm(`Remover ${item.pacienteNome} da fila?`)) return;
+    // Achado 8: exame FEEGOW sai da fila via cancelar (doc fica, .wl some
+    // pela elegibilidade — nunca apaga, senao a reimportacao destrava e o
+    // Feegow devolve o mesmo agendamento). Manual continua apagando de fato.
+    const feegow = item.origem === 'FEEGOW';
+    const msg = feegow
+      ? `Remover ${item.pacienteNome} da fila? Sai da fila e fica no histórico como cancelado.`
+      : `Remover ${item.pacienteNome} da fila?`;
+    if (!confirm(msg)) return;
     if (!workspace?.id) return;
     try {
       const res = await feegowAuthFetch('/api/exame', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ acao: 'apagar', wsId: workspace.id, exameId: item.id }),
+        body: JSON.stringify({ acao: feegow ? 'cancelar' : 'apagar', wsId: workspace.id, exameId: item.id }),
       });
       const data = await res.json();
       if (!data.ok) {
@@ -677,6 +684,11 @@ export default function Worklist() {
                         // 3 grupos de ação. 'imagens-recebidas'/'erro-imagens'
                         // (legados do pipeline DICOM) → andamento.
                         const st = item.status as string;
+                        // cancelado/nao-realizado: terminal, sem acao (achado 8 — a
+                        // Task 4 passou a produzir os dois no MESMO dia — reconciliacao
+                        // via Feegow e remover-da-fila FEEGOW — e sem este corte eles
+                        // caiam no braco 'andamento' e ganhavam "▶ Continuar" enganoso).
+                        if (st === 'cancelado' || st === 'nao-realizado') return null;
                         let grupo: 'aguardando' | 'andamento' | 'emitido';
                         if (st === 'emitido') grupo = 'emitido';
                         else if (st === 'aguardando' || st === 'rascunho') grupo = 'aguardando';

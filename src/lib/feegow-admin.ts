@@ -422,3 +422,35 @@ export async function gravarImportacao(dbAdmin: Firestore, args: {
   }
   return { criados, descartados };
 }
+
+/**
+ * Task 4 (D3, achado 7a): reconcilia quem o Feegow ja deu como
+ * desmarcado/faltou ({6,11,22,15}, `cancelados` de montarCandidatos) contra
+ * a fila do LEO. ADR 16/05 #6: marca 'nao-realizado', NUNCA apaga — o
+ * historico do exame (e a reserva de ACC, ligada ao doc) fica intacto.
+ *
+ * Ancora obrigatoria: `cancelados` carrega so ids, sem data, e o Feegow
+ * PRESERVA o id do agendamento numa remarcacao (provado 19/08 com o 66890).
+ * A query trava em `dataExame == hoje` — sem isso, um agendamento remarcado
+ * pra OUTRO dia (mesmo id, novo doc fg-{id}-{novaData}) marcaria
+ * 'nao-realizado' o exame errado. So `aguardando` tambem: exame que ja
+ * entrou em andamento/emitido nao regride por reconciliacao tardia.
+ */
+export async function reconciliarCancelados(dbAdmin: Firestore, args: {
+  wsId: string; hoje: string; cancelados: string[];
+}): Promise<number> {
+  if (args.cancelados.length === 0) return 0;
+  const setC = new Set(args.cancelados);
+  const snap = await dbAdmin.collection(`workspaces/${args.wsId}/exames`)
+    .where('origem', '==', 'FEEGOW').where('dataExame', '==', args.hoje)
+    .where('status', '==', 'aguardando').get();
+  const lote = dbAdmin.batch();
+  let n = 0;
+  for (const d of snap.docs) {
+    if (!setC.has(String(d.data().feegowAppointId))) continue;
+    lote.update(d.ref, { status: 'nao-realizado', atualizadoEm: FieldValue.serverTimestamp() });
+    n++;
+  }
+  if (n > 0) await lote.commit();
+  return n;
+}

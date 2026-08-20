@@ -92,6 +92,15 @@
         { "fieldPath": "convenio", "order": "ASCENDING" },
         { "fieldPath": "emitidoEm", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "exames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "origem", "order": "ASCENDING" },
+        { "fieldPath": "dataExame", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [
