@@ -631,6 +631,19 @@ describe('marcarAtendido', () => {
     assert.equal((await db.doc(`workspaces/${WS}/exames/ma2`).get()).data().feegowStatusOk, false);
   });
 
+  test('feegowAppointId gravado como NUMERO (importador legado pre-15/08) tambem e achado', async () => {
+    // ID proprio (nao 66890, ja usado no teste do duplicado acima) pra evitar
+    // que o 'in' [string, numero] dessa consulta acerte o doc errado.
+    await db.doc(`workspaces/${WS}/exames/ma-legado`).set({ feegowAppointId: 66891 });
+    const r = await marcarAtendido(db, {
+      wsId: WS, agendamentoId: '66891', token: 'tok',
+      fetchImpl: async () => ({ ok: true, status: 200 }),
+    });
+    assert.equal(r.httpStatus, 200);
+    assert.equal(r.ok, true);
+    assert.equal((await db.doc(`workspaces/${WS}/exames/ma-legado`).get()).data().feegowStatusOk, true);
+  });
+
   test('status enviado ao Feegow e sempre 3, mesmo que o cliente mande outro (achado 16)', async () => {
     await db.doc(`workspaces/${WS}/exames/ma3`).set({ feegowAppointId: '1003' });
     let corpoEnviado;

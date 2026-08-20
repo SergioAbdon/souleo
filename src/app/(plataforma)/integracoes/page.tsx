@@ -109,7 +109,11 @@ export default function IntegracoesPage() {
       // inicial — recarregar() depois de salvar nao pode sobrescrever o que
       // o dono esteja digitando no meio de outra edicao.
       setFeegowProcMap(idx.feegow?.procMap ?? {});
-      setFeegowProfMap((idx.feegow?.profMap as Record<string, string> | undefined) ?? {});
+      // Fallback uma-via pre-limpeza, igual ao do Orthanc logo abaixo: sem migracao
+      // dedicada pro profMap (01-migrar.mjs nao o carrega), o legado workspace.feegowProfMap
+      // e a unica fonte ate o dono salvar de novo — sem isso o 1o "Salvar" grava {} por cima.
+      setFeegowProfMap((idx.feegow?.profMap as Record<string, string> | undefined)
+        ?? (workspace?.feegowProfMap as Record<string, string> | undefined) ?? {});
       // Ausente = ligado — a migracao (Sub-plano 5, scripts/integracoes/01-migrar.mjs)
       // gravou ativo:!!token pra quem ja tinha token cadastrado.
       setFeegowAtivo((idx.feegow?.ativo as boolean | undefined) ?? true);

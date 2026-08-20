@@ -472,8 +472,13 @@ export async function marcarAtendido(dbAdmin: Firestore, args: {
   // Feegow e por agendamento (tanto faz), mas o feegowStatusOk tem de ir pro
   // exame MAIS RECENTE — o que esta sendo emitido. Nao ancorar em "hoje":
   // laudar dias depois do exame acontece (os 13 exames de maio).
+  // 'in' com as duas formas: o importador legado (antes de 15/08) gravou
+  // feegowAppointId como NUMERO — igualdade do Firestore e sensivel a tipo,
+  // entao '==' com string sozinho nunca acha esses exames (reconciliarCancelados
+  // ja tratava isso com String() no comparador). agId ja passou por /^\d+$/,
+  // Number() e seguro.
   const q = await dbAdmin.collection(`workspaces/${args.wsId}/exames`)
-    .where('feegowAppointId', '==', agId).get();
+    .where('feegowAppointId', 'in', [agId, Number(agId)]).get();
   if (q.empty) return { httpStatus: 404, ok: false, mensagem: 'agendamento nao pertence a este local' };
   const alvo = q.docs.reduce((a, b) =>
     String(a.data().dataExame ?? '') >= String(b.data().dataExame ?? '') ? a : b);
