@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { createHash } from 'node:crypto';
 // dcmjs não tem tipos oficiais robustos — importação dinâmica + ts-ignore localizado
 // @ts-ignore — dcmjs não publica tipos completos
 import dcmjs from 'dcmjs';
@@ -211,10 +212,39 @@ function dataIsoParaDicom(iso: string | undefined): string {
   return iso.replace(/-/g, '');
 }
 
-function horaHHMMParaDicom(hhmm: string): string {
+/**
+ * 'HH:MM' ou 'HH:MM:SS' → 'HHMMSS' (DICOM usa segundos; preenche com 00
+ * quando faltam). Exportada pra teste — e pq um `horarioChegada` já com
+ * segundos (ex: vindo do Feegow) não pode virar `HHMMSS00` inválido.
+ */
+export function horaHHMMParaDicom(hhmm: string): string {
   if (!hhmm) return '';
-  // 'HH:MM' → 'HHMMSS' (DICOM usa segundos; preenchemos com 00)
-  return hhmm.replace(':', '') + '00';
+  return hhmm.replace(/:/g, '').padEnd(6, '0').slice(0, 6);
+}
+
+/**
+ * Hash (sha1) dos campos do exame + opts que entram no `.wl` gerado
+ * (Task 5) — usado pelo worklist-sync pra saber se o `.wl` já na pasta
+ * ainda reflete o exame (senão, regrava) sem precisar reabrir/parsear
+ * o DICOM existente.
+ */
+export function hashCamposWl(exame: Exame, opts: GerarWlOpts = {}): string {
+  const campos = [
+    exame.pacienteNome,
+    exame.cpf,
+    exame.feegowPacienteId,
+    exame.id,
+    exame.pacienteDtnasc,
+    exame.sexo,
+    exame.acc,
+    exame.tipoExame,
+    exame.dataExame,
+    exame.horarioChegada,
+    exame.medicoExecutor,
+    opts.scheduledStationName,
+    opts.scheduledProcedureStepLocation,
+  ];
+  return createHash('sha1').update(JSON.stringify(campos.map((c) => c ?? ''))).digest('hex');
 }
 
 /**

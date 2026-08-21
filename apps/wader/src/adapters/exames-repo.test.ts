@@ -15,7 +15,7 @@ vi.mock('./pacientes-repo', () => ({
 }));
 
 vi.mock('./firebase', () => ({
-  FieldValue: { serverTimestamp: () => '__ts__' },
+  FieldValue: { serverTimestamp: () => '__ts__', delete: () => '__del__' },
   getDb: () => ({
     collection: () => ({
       doc: () => ({
@@ -85,6 +85,26 @@ describe('ExamesRepo.marcarMwl', () => {
     const repo = new ExamesRepo('ws1');
     await expect(repo.marcarMwl('ex1', 'ok')).resolves.toBeUndefined();
     expect(updates).toEqual([]);
+  });
+
+  it('grava wlHash junto quando informado', async () => {
+    const repo = new ExamesRepo('ws1');
+    await repo.marcarMwl('ex1', 'ok', 'hash123');
+    expect(updates).toEqual([{ id: 'ex1', obj: { mwlStatus: 'ok', wlHash: 'hash123' } }]);
+  });
+});
+
+describe('ExamesRepo.limparMwl', () => {
+  it('apaga mwlStatus e wlHash', async () => {
+    const repo = new ExamesRepo('ws1');
+    await repo.limparMwl('ex1');
+    expect(updates).toEqual([{ id: 'ex1', obj: { mwlStatus: '__del__', wlHash: '__del__' } }]);
+  });
+
+  it('nunca lança quando a escrita falha (silencioso)', async () => {
+    shouldThrow = true;
+    const repo = new ExamesRepo('ws1');
+    await expect(repo.limparMwl('ex1')).resolves.toBeUndefined();
   });
 });
 

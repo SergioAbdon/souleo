@@ -183,16 +183,34 @@ export class ExamesRepo {
    * (a Task 7 matou o escritor antigo, que gravava sempre 'ok'). Silencioso
    * em erro: um `mwlStatus` desatualizado não pode derrubar o sync.
    */
-  async marcarMwl(exameId: string, status: 'ok' | 'falhou'): Promise<void> {
+  async marcarMwl(exameId: string, status: 'ok' | 'falhou', wlHash?: string): Promise<void> {
     try {
       await getDb()
         .collection('workspaces')
         .doc(this.wsId)
         .collection(COLLECTION)
         .doc(exameId)
-        .update({ mwlStatus: status });
+        .update({ mwlStatus: status, ...(wlHash !== undefined ? { wlHash } : {}) });
     } catch (err) {
       log.warn({ err, exameId, status }, 'Falha ao gravar mwlStatus (segue o jogo)');
+    }
+  }
+
+  /**
+   * Limpa o selo `mwlStatus`/`wlHash` (Task 5) quando o `.wl` correspondente
+   * é removido da pasta — evita que o exame fique com um selo "ok" mentiroso
+   * apontando pra um arquivo que não existe mais.
+   */
+  async limparMwl(exameId: string): Promise<void> {
+    try {
+      await getDb()
+        .collection('workspaces')
+        .doc(this.wsId)
+        .collection(COLLECTION)
+        .doc(exameId)
+        .update({ mwlStatus: FieldValue.delete(), wlHash: FieldValue.delete() });
+    } catch (err) {
+      log.warn({ err, exameId }, 'Falha ao limpar mwlStatus (segue o jogo)');
     }
   }
 
@@ -245,6 +263,8 @@ function docToExame(id: string, data: FirebaseFirestore.DocumentData): Exame {
     emitidoEm: timestampToIso(data.emitidoEm),
     naoRealizadoEm: timestampToIso(data.naoRealizadoEm),
     pdfUrl: data.pdfUrl,
+    mwlStatus: data.mwlStatus,
+    wlHash: data.wlHash,
   };
 }
 

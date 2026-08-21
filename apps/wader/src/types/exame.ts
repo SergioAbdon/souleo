@@ -185,6 +185,11 @@ export interface Exame {
 
   // Após emissão
   pdfUrl?: string;
+
+  /** Resultado da última tentativa de escrita do `.wl` (worklist-sync). */
+  mwlStatus?: 'ok' | 'falhou';
+  /** Hash (sha1) dos campos que entraram no `.wl` gerado — ver `hashCamposWl`. */
+  wlHash?: string;
 }
 
 /**
