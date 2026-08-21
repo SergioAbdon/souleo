@@ -55,8 +55,15 @@ async function planoParaWorkspace(ws) {
     alvoIntegFeegow.get(), alvoIntegOrthanc.get(), alvoPrivFeegow.get(), alvoPrivOrthanc.get(),
   ]);
 
-  const novoIntegFeegow = { tipo: 'feegow', ativo: !!feegowToken, status: 'nunca_testado', procMap: feegowProcMap ?? {} };
-  const novoIntegOrthanc = { tipo: 'orthanc', ativo: ortancAtivo, status: 'nunca_testado', ...(ortancUrl ? { url: ortancUrl } : {}) };
+  // credencialCadastradaEm: o carimbo que a tela le pra dizer "Cadastrado em ..."
+  // e DESTRAVAR os botoes de carregar. A 1a rodada (19/08) esqueceu dele — os
+  // cartoes migrados diziam "Nao cadastrado" com a credencial na gaveta, e foi
+  // preciso backfill a mao (achado da Fase 1 do cronograma de testes, 20/08).
+  const agoraCarimbo = new Date();
+  const novoIntegFeegow = { tipo: 'feegow', ativo: !!feegowToken, status: 'nunca_testado', procMap: feegowProcMap ?? {},
+    ...(feegowToken ? { credencialCadastradaEm: agoraCarimbo } : {}) };
+  const novoIntegOrthanc = { tipo: 'orthanc', ativo: ortancAtivo, status: 'nunca_testado', ...(ortancUrl ? { url: ortancUrl } : {}),
+    ...((ortancUser || ortancPass) ? { credencialCadastradaEm: agoraCarimbo } : {}) };
 
   for (const [nome, snap, alvo, novo, temSegredo] of [
     ['integracoes/feegow', snapIntegFeegow, alvoIntegFeegow, novoIntegFeegow, false],
