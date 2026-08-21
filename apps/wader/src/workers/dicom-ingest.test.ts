@@ -17,21 +17,23 @@ vi.mock('../adapters/firebase', () => {
     get: async () => ({ exists: true, data: () => data }),
   });
   return {
-    FieldValue: { serverTimestamp: () => '__ts__' },
+    FieldValue: { serverTimestamp: () => '__ts__', delete: () => '__delete__' },
     getDb: () => ({
       collection: () => ({
         doc: () => ({
           collection: () => ({
-            where: (_field: string, _op: string, val: string) => ({
-              limit: () => ({
-                get: async () => {
-                  const data = exameStore[val];
-                  if (!data) return { empty: true, docs: [] };
-                  const ref = makeRef(data);
-                  return { empty: false, docs: [{ ref, id: data.__id, data: () => data }] };
-                },
-              }),
-            }),
+            where: (_field: string, _op: string, val: string) => {
+              const fetch = async () => {
+                const data = exameStore[val];
+                if (!data) return { empty: true, docs: [] };
+                const ref = makeRef(data);
+                return { empty: false, docs: [{ ref, id: data.__id, data: () => data }] };
+              };
+              return {
+                limit: () => ({ get: fetch }),
+                get: fetch,
+              };
+            },
             doc: (forma: string) => {
               const data = exameStore[forma];
               return {
@@ -65,7 +67,7 @@ vi.mock('../adapters/dicom-sr-parser', () => ({
   }),
 }));
 
-import { processarEstudo } from './dicom-ingest';
+import { processarEstudo, estudosEmExclusao, CAMPOS_DICOM_LIMPAR } from './dicom-ingest';
 import { extrairMedidasDoEstudo } from '../adapters/dicom-sr-parser';
 
 // ── Fake OrthancClient configurável ────────────────────────────────────
@@ -74,6 +76,7 @@ function makeClient(opts?: {
   series?: Array<{ Modality: string; Instances: string[] }>;
   previewDelays?: Record<string, number>;
   previewFails?: Set<string>;
+  patientId?: string;
 }) {
   const series = opts?.series ?? [
     { Modality: 'US', Instances: ['i1', 'i2', 'i3'] },
@@ -89,7 +92,7 @@ function makeClient(opts?: {
         StudyTime: '101010',
         StudyDescription: 'eco',
       },
-      PatientMainDicomTags: {},
+      PatientMainDicomTags: opts?.patientId ? { PatientID: opts.patientId } : {},
     }),
     getStudySeries: async () =>
       series.map((s) => ({ MainDicomTags: { Modality: s.Modality }, Instances: s.Instances })),
@@ -256,5 +259,57 @@ describe('processarEstudo — two-stage / paralelo / Fix B', () => {
     expect(r.matched).toBe(false);
     expect(updates).toHaveLength(0);
     expect(r.errors.some((e) => e.includes('não existe'))).toBe(true);
+  });
+
+  it('bloqueia match automático quando CPF do DICOM diverge do CPF do exame', async () => {
+    exameStore['EX123'] = { __id: 'docCpf1', status: 'aguardando', cpf: '99988877766' };
+    const client = makeClient({ patientId: '11122233344' });
+    const r = await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+    expect(r.matched).toBe(false);
+    expect(r.motivoBloqueio).toBe('cpf-divergente');
+    expect(updates).toHaveLength(0);
+  });
+
+  it('segue o match quando um dos CPFs está vazio', async () => {
+    exameStore['EX123'] = { __id: 'docCpf2', status: 'aguardando', cpf: '' };
+    const client = makeClient({ patientId: '11122233344' });
+    const r = await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+    expect(r.matched).toBe(true);
+    expect(r.motivoBloqueio).toBeUndefined();
+  });
+
+  it('vínculo persistido vence o ACC: exame com dicomOrthancStudyId==S1 é o alvo mesmo com ACC apontando outro', async () => {
+    exameStore['EX123'] = { __id: 'E1', status: 'aguardando' }; // casaria pelo ACC se chegasse a olhar
+    exameStore['S1'] = { __id: 'E2', status: 'aguardando', dicomOrthancStudyId: 'S1' }; // vínculo persistido
+    const r = await processarEstudo({ client: makeClient(), orthancStudyId: 'S1', wsId: WS });
+    expect(r.matched).toBe(true);
+    expect(r.exameIdNoLeo).toBe('E2');
+  });
+
+  it('override limpa o dono anterior (campos DICOM removidos do exame que tinha o estudo)', async () => {
+    exameStore['S1'] = {
+      __id: 'E1',
+      status: 'andamento',
+      dicomOrthancStudyId: 'S1',
+      medidasDicom: { a: 1 },
+    };
+    exameStore['E2'] = { __id: 'E2', status: 'aguardando' };
+    const r = await processarEstudo({ client: makeClient(), orthancStudyId: 'S1', wsId: WS, exameIdOverride: 'E2' });
+    expect(r.matched).toBe(true);
+    expect(r.exameIdNoLeo).toBe('E2');
+    const limpezaE1 = updates.find((u) => u.id === 'E1');
+    expect(limpezaE1).toBeDefined();
+    for (const campo of CAMPOS_DICOM_LIMPAR) {
+      expect(limpezaE1!.obj[campo]).toBe('__delete__');
+    }
+  });
+
+  it('estudo em estudosEmExclusao não grava nada', async () => {
+    exameStore['EX123'] = { __id: 'docExcl', status: 'aguardando' };
+    estudosEmExclusao.add('s1');
+    const r = await processarEstudo({ client: makeClient(), orthancStudyId: 's1', wsId: WS });
+    expect(r.errors[0]).toMatch(/exclus/i);
+    expect(updates).toHaveLength(0);
+    estudosEmExclusao.delete('s1');
   });
 });

@@ -2,13 +2,28 @@ import { OrthancClient, OrthancStudy } from '../adapters/orthanc-client';
 import { uploadDicomPreview } from '../adapters/storage-uploader';
 import { extrairMedidasDoEstudo, SrParseResult } from '../adapters/dicom-sr-parser';
 import { getDb, FieldValue } from '../adapters/firebase';
-import { candidatos } from '../lib/acc';
+import { candidatos, digitos } from '../lib/acc';
 import { createLogger } from '../logger';
 
 const log = createLogger({ module: 'dicom-ingest' });
 
 /** Quantas imagens baixar/subir em paralelo (Fix A, ADR 2026-06-22). */
 const IMG_CONCURRENCY = 4;
+
+/** Campos DICOM a limpar do dono anterior quando um estudo troca de exame (achado 4B). */
+export const CAMPOS_DICOM_LIMPAR = [
+  'dicomStudyUid',
+  'dicomOrthancStudyId',
+  'dicomMeta',
+  'medidasDicom',
+  'medidasDicomMeta',
+  'imagensDicom',
+  'imagensDicomDetalhes',
+  'imagensSelecionadasPdf',
+] as const;
+
+/** Estudos em exclusão pela tela de conferência (Task 7). Conferido antes de CADA write. */
+export const estudosEmExclusao = new Set<string>();
 
 /**
  * Acha o AccessionNumber do estudo (ADR 2026-05-18, Fix 4).
@@ -57,6 +72,8 @@ export interface IngestResult {
   bytesTotais: number;
   /** Total de medidas extraídas do DICOM SR (0 se estudo não tem SR). */
   medidasExtraidas: number;
+  /** Motivo do bloqueio quando o match automático é recusado por segurança. */
+  motivoBloqueio?: 'cpf-divergente';
   errors: string[];
 }
 
@@ -161,6 +178,11 @@ export async function processarEstudo(opts: {
     errors: [],
   };
 
+  if (estudosEmExclusao.has(opts.orthancStudyId)) {
+    result.errors.push('Estudo em exclusão — processamento abortado');
+    return result;
+  }
+
   // 1) Metadados do estudo
   let study: OrthancStudy;
   try {
@@ -204,32 +226,69 @@ export async function processarEstudo(opts: {
     exameRef = ref;
     exameId = opts.exameIdOverride;
     exameData = snap.data() ?? {};
-  } else {
-    // Match automático por ACC (== AccessionNumber DICOM).
-    // Fix 4 (ADR 2026-05-18): tenta as formas plausíveis do ACC (com/sem
-    // prefixo `EX`, só dígitos). Bounded (≤3 queries) — nunca varre a coleção.
-    const formas = candidatos(accession);
-    for (const forma of formas) {
-      const porAcc = await examesCol.where('acc', '==', forma).limit(1).get();
-      if (!porAcc.empty) {
-        exameRef = porAcc.docs[0].ref;
-        exameId = porAcc.docs[0].id;
-        exameData = porAcc.docs[0].data();
-        break;
+
+    // Troca de vínculo (achado 4B): limpa os campos DICOM de qualquer exame
+    // que ainda aponte pra este estudo/UID, senão o dono antigo fica com
+    // dados órfãos (imagens/medidas de um estudo que já é de outro exame).
+    const limpar: Record<string, unknown> = { atualizadoEm: FieldValue.serverTimestamp() };
+    for (const c of CAMPOS_DICOM_LIMPAR) limpar[c] = FieldValue.delete();
+    for (const campo of ['dicomOrthancStudyId', 'dicomStudyUid'] as const) {
+      const valor = campo === 'dicomOrthancStudyId' ? opts.orthancStudyId : (study.MainDicomTags.StudyInstanceUID ?? '__none__');
+      const donos = await examesCol.where(campo, '==', valor).get();
+      for (const d of donos.docs) {
+        if (d.id === opts.exameIdOverride) continue;
+        await d.ref.update(limpar);
+        log.info({ exameLimpo: d.id, orthancStudyId: opts.orthancStudyId }, 'Dono anterior limpo (troca de vínculo)');
       }
-      // Fallback legado: doc id == ACC
-      const legadoSnap = await examesCol.doc(forma).get();
-      if (legadoSnap.exists) {
-        exameRef = examesCol.doc(forma);
-        exameId = forma;
-        exameData = legadoSnap.data() ?? {};
-        break;
+    }
+  } else {
+    // Vínculo persistido vence o ACC: se algum exame já aponta pra este
+    // estudo (troca de identidade, corrida de acc, etc.), é o alvo — não
+    // reabre pelo ACC, que pode ter passado a casar com outro exame.
+    const porVinculo = await examesCol.where('dicomOrthancStudyId', '==', opts.orthancStudyId).limit(1).get();
+    if (!porVinculo.empty) {
+      exameRef = porVinculo.docs[0].ref;
+      exameId = porVinculo.docs[0].id;
+      exameData = porVinculo.docs[0].data();
+    } else {
+      // Match automático por ACC (== AccessionNumber DICOM).
+      // Fix 4 (ADR 2026-05-18): tenta as formas plausíveis do ACC (com/sem
+      // prefixo `EX`, só dígitos). Bounded (≤3 queries) — nunca varre a coleção.
+      const formas = candidatos(accession);
+      for (const forma of formas) {
+        const porAcc = await examesCol.where('acc', '==', forma).limit(1).get();
+        if (!porAcc.empty) {
+          exameRef = porAcc.docs[0].ref;
+          exameId = porAcc.docs[0].id;
+          exameData = porAcc.docs[0].data();
+          break;
+        }
+        // Fallback legado: doc id == ACC
+        const legadoSnap = await examesCol.doc(forma).get();
+        if (legadoSnap.exists) {
+          exameRef = examesCol.doc(forma);
+          exameId = forma;
+          exameData = legadoSnap.data() ?? {};
+          break;
+        }
       }
     }
 
     if (!exameRef || !exameId) {
       result.errors.push(`Exame com acc=${accession} não encontrado em workspaces/${opts.wsId}/exames`);
       log.warn({ accession, wsId: opts.wsId }, 'Estudo sem exame correspondente');
+      return result;
+    }
+
+    // Guarda de identidade (achado 3): match automático nunca pode ligar um
+    // estudo a um exame de outro paciente. Só bloqueia quando os DOIS CPFs
+    // existem e divergem — CPF vazio (de qualquer lado) não impede o match.
+    const cpfDicom = digitos(String(study.PatientMainDicomTags?.PatientID ?? ''));
+    const cpfExame = digitos(String(exameData.cpf ?? ''));
+    if (cpfDicom && cpfExame && cpfDicom !== cpfExame) {
+      result.motivoBloqueio = 'cpf-divergente';
+      result.errors.push(`Identidade divergente: DICOM PatientID=${cpfDicom} ≠ exame cpf=${cpfExame} — nada gravado`);
+      log.warn({ exameId, acc: accession, cpfDicom, cpfExame }, 'Match BLOQUEADO por CPF divergente (D2)');
       return result;
     }
   }
@@ -303,9 +362,13 @@ export async function processarEstudo(opts: {
       processadoEm: new Date().toISOString(),
     };
   }
+  if (estudosEmExclusao.has(opts.orthancStudyId)) {
+    result.errors.push('Estudo entrou em exclusão durante o processamento — write abortado');
+    return result;
+  }
   await exameRef.update(etapa1);
   log.info(
-    { exameId: accession, medidas: result.medidasExtraidas, reusouSr: !usaNovoSr, status: statusFinal },
+    { exameId, acc: accession, medidas: result.medidasExtraidas, reusouSr: !usaNovoSr, status: statusFinal },
     'Etapa 1 gravada (medidas + status) — médico já pode ver as medidas',
   );
 
@@ -318,7 +381,7 @@ export async function processarEstudo(opts: {
     .filter((s) => (s.MainDicomTags?.Modality ?? '') !== 'SR')
     .flatMap((s) => s.Instances ?? []);
   log.info(
-    { orthancStudyId: opts.orthancStudyId, exameId: accession, imagens: instanceIds.length, concorrencia: IMG_CONCURRENCY },
+    { orthancStudyId: opts.orthancStudyId, exameId, acc: accession, imagens: instanceIds.length, concorrencia: IMG_CONCURRENCY },
     'Baixando previews em paralelo (séries SR excluídas)',
   );
 
@@ -335,6 +398,10 @@ export async function processarEstudo(opts: {
   const semInstances = instanceIds.length === 0;
 
   if (!todasFalharam && !semInstances) {
+    if (estudosEmExclusao.has(opts.orthancStudyId)) {
+      result.errors.push('Estudo entrou em exclusão durante o processamento — write abortado');
+      return result;
+    }
     await exameRef.update({
       imagensDicom: imagensDicom.map((i) => i.url),
       imagensDicomDetalhes: imagensDicom,
@@ -353,7 +420,8 @@ export async function processarEstudo(opts: {
 
   log.info(
     {
-      exameId: accession,
+      exameId,
+      acc: accession,
       imagensProcessadas: result.imagensProcessadas,
       imagensFalhadas: result.imagensFalhadas,
       medidasExtraidas: result.medidasExtraidas,
