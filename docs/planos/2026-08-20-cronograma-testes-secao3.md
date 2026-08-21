@@ -73,6 +73,8 @@ T19 (limpeza), reverter tudo é de graça — os dois mundos convivem.
   não gravava o carimbo `credencialCadastradaEm` — os cartões migrados diziam "Não
   cadastrado" com a credencial na gaveta e **travavam** os botões Carregar. Backfill
   aplicado nos 2 locais + script corrigido (`fix: migracao grava o carimbo`).
-  ☐ T4 final: recarregar a página → "Carregar profissionais" (agora destravado) → os
-  4 médicos preenchidos · ☐ T7
+  **T4 ✅ (print do Sergio, 20/08 ~21h30):** pós-backfill, "Cadastrado em 19/08/2026",
+  botões destravados, os 4 médicos preenchidos (Amanda, Camila, Nagib, Sérgio) e o
+  procMap com os mapeamentos certos. **FASE 1 FECHADA** (T7 dispensado — a Fase 2 cobre
+  a importação real amanhã).
 - Fase 2: ☐  ·  Fase 3: ☐  ·  Pós-barreira: ☐
