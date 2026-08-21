@@ -96,12 +96,31 @@ export class DicomIngestWorker {
     log.info('Cursor de changes resetado pra 0 (estado persistido limpo)');
   }
 
+  /** Esquece a assinatura de um estudo — próximo StableStudy reprocessa do zero (Task 7). */
+  forgetStudy(studyId: string): void {
+    this.store.deleteSignature(studyId);
+  }
+
   private async tick(): Promise<void> {
     this.execCount++;
     this.lastTickAt = new Date();
     try {
       const desde = this.store.getLastSeq();
       const changes = await this.opts.client.changes(desde, 100);
+
+      // Achado 10: se o Orthanc foi restaurado de um backup antigo (ou o
+      // banco foi recriado), o cursor persistido fica À FRENTE do feed real
+      // — `changes.Last` nunca alcança `desde` e o worker trava pra sempre
+      // (loop pedindo `since=desde` e recebendo sempre o mesmo fim de feed
+      // vazio). Detecta e reseta pra reprocessar do zero.
+      if (changes.Last < desde) {
+        log.warn(
+          { desde, last: changes.Last },
+          'Orthanc reiniciado/restaurado (cursor à frente do feed) — resetando cursor',
+        );
+        this.store.reset();
+        return;
+      }
 
       // Estudos estáveis nesta página, deduplicados por ID (fica o mais recente).
       const stable = new Map<string, number>();
@@ -164,6 +183,9 @@ export class DicomIngestWorker {
             // nunca disparava reprocesso quando um SR novo chegava.
             this.store.setSignature(studyId, {
               nImg: result.imagensProcessadas,
+              // Achado 12: TENTADAS (sucesso+falha) — usado por precisaProcessar
+              // pra não reprocessar em loop uma falha permanente.
+              nImgTentadas: result.imagensProcessadas + result.imagensFalhadas,
               nSR: curSR,
               matched: true,
               at: new Date().toISOString(),

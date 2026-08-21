@@ -28,6 +28,14 @@ const log = createLogger({ module: 'ingest-state' });
 export interface StudySignature {
   /** Nº de imagens (instances não-SR) já processadas com sucesso. */
   nImg: number;
+  /**
+   * Nº de instances não-SR TENTADAS (sucesso + falha) no último processamento.
+   * Achado 12: sem isso, uma falha permanente (ex.: instance corrompida) faz
+   * `curImg > nImg` pra sempre — o worker reprocessa o estudo em loop a cada
+   * tick. Quando presente, `precisaProcessar` compara contra este valor (o
+   * Orthanc já tem tudo que tentamos) em vez de `nImg` (só o que deu certo).
+   */
+  nImgTentadas?: number;
   /** Nº de instances SR já vistas (mesma unidade que `precisaProcessar` compara). */
   nSR: number;
   /** Casou com um exame no LEO. */
@@ -101,6 +109,14 @@ export class IngestStateStore {
     this.markDirty();
   }
 
+  /** Remove a assinatura de um estudo (Task 7 — reconciliação/exclusão). */
+  deleteSignature(studyId: string): void {
+    if (this.state.studies[studyId]) {
+      delete this.state.studies[studyId];
+      this.markDirty();
+    }
+  }
+
   /**
    * Decide se um estudo PRECISA ser (re)processado.
    *
@@ -117,7 +133,10 @@ export class IngestStateStore {
     const s = this.state.studies[studyId];
     if (!s) return true;
     if (!s.matched) return true;
-    if (curImg > s.nImg) return true;
+    // Achado 12: compara contra o que foi TENTADO (sucesso+falha), não só o
+    // que deu certo — senão uma falha permanente reprocessa pra sempre.
+    const base = s.nImgTentadas ?? s.nImg;
+    if (curImg > base) return true;
     if (curSR > s.nSR) return true;
     return false;
   }

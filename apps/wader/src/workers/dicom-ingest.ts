@@ -84,6 +84,18 @@ interface ImagemDicom {
 }
 
 /**
+ * Une o array de imagens já gravado com o lote recém-processado, por
+ * `orthancInstanceId` (achado 12). Reprocesso parcial (algumas instances
+ * falham numa tentativa mas já tinham dado certo antes, ou vice-versa) não
+ * pode encolher a galeria: quem já subiu fica, quem subiu de novo atualiza.
+ */
+function mesclarImagensPorInstancia(atuais: ImagemDicom[], novas: ImagemDicom[]): ImagemDicom[] {
+  const porInstancia = new Map(atuais.map((i) => [i.orthancInstanceId, i]));
+  for (const img of novas) porInstancia.set(img.orthancInstanceId, img);
+  return [...porInstancia.values()];
+}
+
+/**
  * Baixa os previews das instances e sobe pro Storage EM PARALELO
  * (Fix A, ADR 2026-06-22). Antes era serial (~1,7s/img ⇒ 9 imgs ~15s);
  * com pool de `IMG_CONCURRENCY` cai pra ~3-4s.
@@ -113,6 +125,7 @@ async function baixarImagensParalelo(
         const upload = await uploadDicomPreview({
           wsId,
           exameId,
+          instanceId,
           seq: i + 1,
           buffer,
           contentType: 'image/jpeg',
@@ -283,9 +296,18 @@ export async function processarEstudo(opts: {
     // Guarda de identidade (achado 3): match automático nunca pode ligar um
     // estudo a um exame de outro paciente. Só bloqueia quando os DOIS CPFs
     // existem e divergem — CPF vazio (de qualquer lado) não impede o match.
+    //
+    // Refinamento: o PatientID do DICOM nem sempre é CPF — a hierarquia do
+    // wl-writer.ts (cpf → feegowPacienteId → doc id) grava o prontuário
+    // Feegow ou o doc id quando o exame nasceu sem CPF. Um PatientID desses
+    // "parece" divergente de um CPF real só por coincidência de dígitos, e
+    // bloquearia um match legítimo. Só bloqueia quando: (1) o PatientID TEM
+    // 11 dígitos (formato de CPF), (2) diverge do CPF do exame, E (3) não é
+    // o feegowPacienteId do exame (não é o caso "PatientID = prontuário").
     const cpfDicom = digitos(String(study.PatientMainDicomTags?.PatientID ?? ''));
     const cpfExame = digitos(String(exameData.cpf ?? ''));
-    if (cpfDicom && cpfExame && cpfDicom !== cpfExame) {
+    const feegowIdExame = digitos(String(exameData.feegowPacienteId ?? ''));
+    if (cpfDicom.length === 11 && cpfExame && cpfDicom !== cpfExame && cpfDicom !== feegowIdExame) {
       result.motivoBloqueio = 'cpf-divergente';
       result.errors.push(`Identidade divergente: DICOM PatientID=${cpfDicom} ≠ exame cpf=${cpfExame} — nada gravado`);
       log.warn({ exameId, acc: accession, cpfDicom, cpfExame }, 'Match BLOQUEADO por CPF divergente (D2)');
@@ -304,6 +326,14 @@ export async function processarEstudo(opts: {
   const statusFinal =
     statusAtual === 'rascunho' || statusAtual === 'emitido' ? statusAtual : 'andamento';
 
+  // COFRE DO EMITIDO (achado 18 / D4): exame já emitido é documento que
+  // circulou — o Wader NUNCA mais escreve nos campos ao vivo (medidasDicom,
+  // dicomMeta, dicomStudyUid, status, imagensDicom/imagensDicomDetalhes).
+  // Um estudo reprocessado (reenvio, imagem adicional) vai pros campos-
+  // sombra `*Pendente` + a flag `dicomAtualizacaoPendente` pra fila de
+  // revisão humana. "Nada muda sem humano".
+  const cofre = statusAtual === 'emitido';
+
   // ── ETAPA 1 (Fix 0): SR PRIMEIRO + write rápido ────────────────────────
   // O dado clinicamente crítico (medidas) chega ao Leo já, sem esperar as
   // imagens. Decisão 13/05/2026: Wader = produtor do SR (server-side, alcança
@@ -319,8 +349,12 @@ export async function processarEstudo(opts: {
   };
   let extraiuSr = false;
 
-  if (opts.forceSr || !jaTemMedidas) {
-    // Extrai SR (Fix B: só quando não temos medidas ainda OU o worker viu SR novo).
+  if (opts.forceSr || !jaTemMedidas || cofre) {
+    // Extrai SR (Fix B: só quando não temos medidas ainda OU o worker viu SR
+    // novo). Cofre sempre extrai: o campo-sombra precisa refletir o estudo
+    // recém-chegado, não pode reusar `medidasDicom` (é o publicado — pode já
+    // ter sido revisado/editado pelo médico, não é a mesma coisa que "já
+    // processamos esse SR").
     try {
       srResult = await extrairMedidasDoEstudo({ client: opts.client, orthancStudyId: opts.orthancStudyId });
       extraiuSr = true;
@@ -343,24 +377,38 @@ export async function processarEstudo(opts: {
       : 0;
 
   const etapa1: Record<string, unknown> = {
-    dicomStudyUid: study.MainDicomTags.StudyInstanceUID ?? null,
     dicomOrthancStudyId: opts.orthancStudyId,
-    dicomMeta: {
+    atualizadoEm: FieldValue.serverTimestamp(),
+  };
+  if (cofre) {
+    // Campos-sombra: NADA nos campos ao vivo (dicomStudyUid/dicomMeta/
+    // medidasDicom/status) — só a fila de revisão.
+    etapa1.dicomAtualizacaoPendente = true;
+    if (usaNovoSr) {
+      etapa1.medidasDicomPendente = srResult.medidas;
+      etapa1.medidasDicomMetaPendente = {
+        srInstanceId: srResult.srInstanceId,
+        metodoFallback: srResult.metodoFallback,
+        processadoEm: new Date().toISOString(),
+      };
+    }
+  } else {
+    etapa1.dicomStudyUid = study.MainDicomTags.StudyInstanceUID ?? null;
+    etapa1.dicomMeta = {
       modality: study.MainDicomTags.Modality ?? 'US',
       studyDate: study.MainDicomTags.StudyDate ?? '',
       studyTime: study.MainDicomTags.StudyTime ?? '',
       studyDescription: study.MainDicomTags.StudyDescription ?? '',
-    },
-    status: statusFinal,
-    atualizadoEm: FieldValue.serverTimestamp(),
-  };
-  if (usaNovoSr) {
-    etapa1.medidasDicom = srResult.medidas;
-    etapa1.medidasDicomMeta = {
-      srInstanceId: srResult.srInstanceId,
-      metodoFallback: srResult.metodoFallback,
-      processadoEm: new Date().toISOString(),
     };
+    etapa1.status = statusFinal;
+    if (usaNovoSr) {
+      etapa1.medidasDicom = srResult.medidas;
+      etapa1.medidasDicomMeta = {
+        srInstanceId: srResult.srInstanceId,
+        metodoFallback: srResult.metodoFallback,
+        processadoEm: new Date().toISOString(),
+      };
+    }
   }
   if (estudosEmExclusao.has(opts.orthancStudyId)) {
     result.errors.push('Estudo entrou em exclusão durante o processamento — write abortado');
@@ -402,11 +450,25 @@ export async function processarEstudo(opts: {
       result.errors.push('Estudo entrou em exclusão durante o processamento — write abortado');
       return result;
     }
-    await exameRef.update({
-      imagensDicom: imagensDicom.map((i) => i.url),
-      imagensDicomDetalhes: imagensDicom,
-      atualizadoEm: FieldValue.serverTimestamp(),
-    });
+    // Merge por orthancInstanceId (achado 12): reprocesso parcial (algumas
+    // instances falharam desta vez) não pode ENCOLHER a galeria — une com o
+    // que já tínhamos, a instance que falhou agora mantém a versão anterior.
+    if (cofre) {
+      const pendentesAtuais = (exameData.imagensDicomPendente as ImagemDicom[] | undefined) ?? [];
+      const pendentesFinais = mesclarImagensPorInstancia(pendentesAtuais, imagensDicom);
+      await exameRef.update({
+        imagensDicomPendente: pendentesFinais,
+        atualizadoEm: FieldValue.serverTimestamp(),
+      });
+    } else {
+      const detalhesAtuais = (exameData.imagensDicomDetalhes as ImagemDicom[] | undefined) ?? [];
+      const detalhesFinais = mesclarImagensPorInstancia(detalhesAtuais, imagensDicom);
+      await exameRef.update({
+        imagensDicom: detalhesFinais.map((i) => i.url),
+        imagensDicomDetalhes: detalhesFinais,
+        atualizadoEm: FieldValue.serverTimestamp(),
+      });
+    }
   } else {
     // Imagens falharam/ausentes: a etapa 1 (medidas+status) JÁ foi gravada,
     // então NÃO regride matched. O worker reavalia por completude

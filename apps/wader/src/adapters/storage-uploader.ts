@@ -13,7 +13,14 @@ export interface UploadResult {
  * Sobe imagem JPG/PNG pro Firebase Storage.
  *
  * Layout do bucket (alinhado com schema do LEO web):
- *   dicom/{wsId}/{exameId}/{seq}.jpg
+ *   dicom/{wsId}/{exameId}/{orthancInstanceId}.jpg
+ *
+ * Path por instância (achado 18/12, ADR 2026-08-21): antes era `{seq}.jpg`
+ * (posição no array) — reprocesso mudava a ordem/sobrava lixo quando o
+ * conjunto de instances mudava entre tentativas. Agora o nome do arquivo É
+ * o id da instance no Orthanc: reprocessar a mesma instance sobrescreve o
+ * mesmo objeto (idempotente) e o cache de 1 ano vira verdade (nome =
+ * conteúdo). `seq` continua existindo só pra ordenar o array no Firestore.
  *
  * Visibilidade pública via `predefinedAcl: 'publicRead'` (decisão 14/05/2026):
  * - URLs `storage.googleapis.com/{bucket}/{path}` são acessadas via IAM, não
@@ -28,13 +35,13 @@ export interface UploadResult {
 export async function uploadDicomPreview(opts: {
   wsId: string;
   exameId: string;
+  instanceId: string;
   seq: number;
   buffer: Buffer;
   contentType?: string;
 }): Promise<UploadResult> {
   const ext = (opts.contentType ?? 'image/jpeg').includes('png') ? 'png' : 'jpg';
-  const seqStr = String(opts.seq).padStart(3, '0');
-  const path = `dicom/${opts.wsId}/${opts.exameId}/${seqStr}.${ext}`;
+  const path = `dicom/${opts.wsId}/${opts.exameId}/${opts.instanceId}.${ext}`;
 
   const bucket = getFbStorage().bucket();
   const file = bucket.file(path);
