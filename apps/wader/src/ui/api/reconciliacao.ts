@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { OrthancClient, OrthancStudy } from '../../adapters/orthanc-client';
 import { getDb, FieldValue } from '../../adapters/firebase';
+import { jaExiste } from '../../adapters/exames-repo';
 import { digitos } from '../../lib/acc';
 import { processarEstudo } from '../../workers/dicom-ingest';
 import { createLogger } from '../../logger';
@@ -118,6 +119,20 @@ export function registerReconciliacaoRoutes(
           return reply.status(404).send({ ok: false, error: `Exame ${exameId} não existe` });
         }
         update.atualizadoEm = FieldValue.serverTimestamp();
+
+        // ACC também é chave com reserva única no "cartório" (accIndex) — trocar
+        // o ACC pela console precisa mover a reserva junto, não só o campo.
+        const accAntigo = (snap.data()?.acc as string) || '';
+        if (typeof update.acc === 'string' && update.acc.trim() !== accAntigo) {
+          const resultado = await trocarAccComReserva(getDb(), config.wsId, exameId, update, accAntigo);
+          if (!resultado.ok) {
+            return reply.status(resultado.status).send({ ok: false, error: resultado.error });
+          }
+          const atualizados = Object.keys(update).filter((k) => k !== 'atualizadoEm');
+          log.info({ exameId, campos: atualizados }, 'Exame editado pela console (ACC trocado)');
+          return reply.send({ ok: true, exameId, atualizados });
+        }
+
         await ref.update(update);
         const atualizados = Object.keys(update).filter((k) => k !== 'atualizadoEm');
         log.info({ exameId, campos: atualizados }, 'Exame editado pela console');
@@ -128,6 +143,43 @@ export function registerReconciliacaoRoutes(
       }
     },
   );
+}
+
+/**
+ * Troca o ACC de um exame já cadastrado, movendo a reserva no "cartório"
+ * (`accIndex`) junto — extraída pra ser testável sem montar o app Fastify
+ * (Task 4, S4-T4). `update` já contém o novo `acc` + demais campos editados
+ * (whitelist aplicada pelo chamador); `accAntigo` é o ACC atual do exame.
+ */
+export async function trocarAccComReserva(
+  db: FirebaseFirestore.Firestore,
+  wsId: string,
+  exameId: string,
+  update: Record<string, unknown>,
+  accAntigo: string,
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  const novo = (update.acc as string).trim();
+  const examesCol = db.collection('workspaces').doc(wsId).collection('exames');
+  const ref = examesCol.doc(exameId);
+
+  const dup = await examesCol.where('acc', '==', novo).limit(1).get();
+  if (!dup.empty && dup.docs[0].id !== exameId) {
+    return { ok: false, status: 409, error: `ACC ${novo} já pertence ao exame ${dup.docs[0].id}` };
+  }
+
+  const batch = db.batch();
+  batch.create(db.doc(`workspaces/${wsId}/accIndex/${novo}`), { exameId, em: FieldValue.serverTimestamp() });
+  if (accAntigo) batch.delete(db.doc(`workspaces/${wsId}/accIndex/${accAntigo}`));
+  batch.update(ref, { ...update, acc: novo });
+  try {
+    await batch.commit();
+  } catch (err) {
+    if (jaExiste(err)) {
+      return { ok: false, status: 409, error: `ACC ${novo} já está em uso` };
+    }
+    throw err;
+  }
+  return { ok: true };
 }
 
 async function montarReconciliacao(
