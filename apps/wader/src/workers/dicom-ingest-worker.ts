@@ -183,7 +183,7 @@ export class DicomIngestWorker {
             // nunca disparava reprocesso quando um SR novo chegava.
             this.store.setSignature(studyId, {
               nImg: result.imagensProcessadas,
-              // Achado 12: TENTADAS (sucesso+falha) — usado por precisaProcessar
+              // Achado 9: TENTADAS (sucesso+falha) — usado por precisaProcessar
               // pra não reprocessar em loop uma falha permanente.
               nImgTentadas: result.imagensProcessadas + result.imagensFalhadas,
               nSR: curSR,

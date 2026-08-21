@@ -4,7 +4,7 @@ import { createLogger } from '../logger';
 const log = createLogger({ module: 'storage-uploader' });
 
 export interface UploadResult {
-  path: string; // caminho relativo no bucket (ex: dicom/wader-dev/abc123/001.jpg)
+  path: string; // caminho relativo no bucket (ex: dicom/wader-dev/abc123/{orthancInstanceId}.jpg)
   url: string; // signed URL pra acesso (válida por 7 dias) OU public URL
   bytes: number;
 }

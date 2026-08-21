@@ -30,7 +30,7 @@ export interface StudySignature {
   nImg: number;
   /**
    * Nº de instances não-SR TENTADAS (sucesso + falha) no último processamento.
-   * Achado 12: sem isso, uma falha permanente (ex.: instance corrompida) faz
+   * Achado 9: sem isso, uma falha permanente (ex.: instance corrompida) faz
    * `curImg > nImg` pra sempre — o worker reprocessa o estudo em loop a cada
    * tick. Quando presente, `precisaProcessar` compara contra este valor (o
    * Orthanc já tem tudo que tentamos) em vez de `nImg` (só o que deu certo).
@@ -133,7 +133,7 @@ export class IngestStateStore {
     const s = this.state.studies[studyId];
     if (!s) return true;
     if (!s.matched) return true;
-    // Achado 12: compara contra o que foi TENTADO (sucesso+falha), não só o
+    // Achado 9: compara contra o que foi TENTADO (sucesso+falha), não só o
     // que deu certo — senão uma falha permanente reprocessa pra sempre.
     const base = s.nImgTentadas ?? s.nImg;
     if (curImg > base) return true;

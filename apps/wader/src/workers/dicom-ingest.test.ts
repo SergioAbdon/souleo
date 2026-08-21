@@ -372,4 +372,17 @@ describe('processarEstudo — two-stage / paralelo / Fix B', () => {
     expect(r.matched).toBe(true);
     expect(r.motivoBloqueio).toBeUndefined();
   });
+
+  it('CPF guard (3ª cláusula): PatientID de 11 dígitos = feegowPacienteId (diverge do CPF) não bloqueia', async () => {
+    exameStore['EX123'] = {
+      __id: 'docFeegow2',
+      status: 'aguardando',
+      cpf: '99988877766',
+      feegowPacienteId: '11122233344',
+    };
+    const client = makeClient({ patientId: '11122233344' }); // PatientID = prontuário Feegow (11 dígitos, diverge do CPF)
+    const r = await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+    expect(r.matched).toBe(true);
+    expect(r.motivoBloqueio).toBeUndefined();
+  });
 });

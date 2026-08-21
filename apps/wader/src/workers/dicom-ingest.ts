@@ -85,7 +85,7 @@ interface ImagemDicom {
 
 /**
  * Une o array de imagens já gravado com o lote recém-processado, por
- * `orthancInstanceId` (achado 12). Reprocesso parcial (algumas instances
+ * `orthancInstanceId` (achado 18/D4). Reprocesso parcial (algumas instances
  * falham numa tentativa mas já tinham dado certo antes, ou vice-versa) não
  * pode encolher a galeria: quem já subiu fica, quem subiu de novo atualiza.
  */
@@ -450,7 +450,7 @@ export async function processarEstudo(opts: {
       result.errors.push('Estudo entrou em exclusão durante o processamento — write abortado');
       return result;
     }
-    // Merge por orthancInstanceId (achado 12): reprocesso parcial (algumas
+    // Merge por orthancInstanceId (achado 18/D4): reprocesso parcial (algumas
     // instances falharam desta vez) não pode ENCOLHER a galeria — une com o
     // que já tínhamos, a instance que falhou agora mantém a versão anterior.
     if (cofre) {
