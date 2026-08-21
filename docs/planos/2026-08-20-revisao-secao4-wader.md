@@ -541,6 +541,74 @@ entrar: é exatamente o check da visita à clínica.)
   supérfluas; `dcmjs` é dependência legítima; validações inline do tamanho do
   problema; `clinica-tempo` usa Intl nativo.
 
+## ADENDO 20/08 — Veredito da tríade sobre a proposta do Sergio "excluir estudo p/ reenvio"
+
+Proposta do operador: na tela de conferência, ação que apaga o estudo do Orthanc,
+limpa o exame e permite reenviar do Vivid (corrigido) para ingestão limpa.
+
+**Placar: Ponytail CONCORDA C/ RESSALVAS · Corretude CONCORDA C/ RESSALVAS ·
+Arquitetura DISCORDA da forma (DELETE puro) e CONCORDA como QUARENTENA.**
+
+Consenso dos três: a ação é legítima e não-redundante (só ela resolve conteúdo
+errado/pixels; o "trocar vínculo" resolve ponteiro errado e continua sendo a
+1ª opção), mas NUNCA como DELETE simples. Forma aprovada pela tríade:
+
+- **QUARENTENA, não exclusão:** `GET /studies/{id}/archive` → ZIP em
+  `backup.path/quarentena/` → verificar → só então remover. Falhou o arquivo,
+  não remove. (Isso faz o `backup.path` virar verdade — ver achado 30.)
+- **Ordem fixa e travada:** marcar estudo "em exclusão" (guarda em memória que o
+  ingest confere antes de CADA update — mata a corrida da gravação-fantasma) →
+  limpar TODOS os donos e TODOS os 8 campos (constante única compartilhada com o
+  escritor) + `removerImagensExame` + status→`aguardando` → DELETE (timeout
+  próprio, 404=sucesso) → `deleteSignature(studyId)` na instância VIVA do store
+  (nunca `resetCursor`, nunca segunda instância) → só então instruir o reenvio.
+- **Recusas:** exame `emitido` (vai pro fluxo corrigir-laudo com snapshot),
+  409 em `WADER_UI_ONLY`, e aviso em `rascunho` (medidas já importadas no laudo
+  não são removidas).
+- **Quem/onde:** fora da reception.html. Disparo pelo LEO web (autenticado, gate
+  por papel) gravando comando em `workspaces/{ws}/comandosWader/`; o Wader puxa e
+  executa (preserva o corte nuvem↔Orthanc). Auditoria append-only em
+  `workspaces/{ws}/auditoria` com retrato do que foi removido (regras no mesmo
+  commit, teste com payload real), breadcrumb na timeline do exame, contador de
+  exclusões no cartão de Integrações.
+- **Pré-requisitos duros:** achados 3 (bloqueio por CPF) e 12 (path por
+  `orthancInstanceId`) ANTES ou JUNTO — sem o 3 a ação não converge (loop com
+  perda a cada volta), sem o 12 a imagem errada continua aparecendo do cache.
+- **Válvula de escape:** botão "reprocessar estudo" na mesma tela (endpoint
+  `POST /api/dicom/import/:id` já existe, falta a UI).
+- **Onda B (só se doer depois):** avaliar `POST /studies/{id}/modify` (corrige
+  etiqueta preservando pixels, sem tocar no Vivid) e `OverwriteInstances:true`.
+
+### 30. [ALTO] O backup do DICOM cru NÃO EXISTE — config validada sem nenhum código
+`apps/wader/src/config/types.ts:66-69` · `config/load.ts:94-96` · `docs/wader/00-arquitetura.md:39`
+
+A doc promete "OneDrive = backup do DICOM cru", o config valida `backup.path`
+como obrigatório — e NENHUMA linha escreve um byte lá (grep confirmado por dois
+revisores). O Orthanc local é a ÚNICA cópia do dado clínico primário (o LEO só
+tem JPGs de preview; o SR cru é parseado e descartado). Qualquer raciocínio "tem
+backup" é pelo documento, não pelo sistema. **Fix:** a quarentena acima estreia o
+uso; avaliar backup periódico real (ou remover a promessa da doc e o campo).
+
+### Extensão do achado 11 (registrada pela arquitetura)
+A credencial do Orthanc vem do FIRESTORE (`workspace-repo`), não do config local
+— qualquer Wader com o `wsId` da clínica (notebook, instância DEV/UI-only)
+alcança o Orthanc da clínica. Qualquer poder novo do console (ex.: a quarentena)
+precisa disso resolvido/gateado antes.
+
+### Refinamento do achado 8 — DECIDIDO pelo Sergio 20/08: régua (i) ESTRITA
+O robô de recuperação vira SUGERIDOR. Só entra sozinho o casamento 100%: ACC
+exato (formas do `candidatos()`) + CPF conferindo (D2). Tudo que for por
+semelhança — e todo exame sem ACC — vai para a tela de conferência como
+sugestão, e a vinculação é MANUAL pelo operador. O contador "recuperados" passa
+a contar só entradas automáticas verdadeiras.
+
+### Adições à tela de conferência (D3, decididas no 1-a-1 com o Sergio)
+Listar também estudos JÁ vinculados (ação "trocar vínculo"); sugestões de
+candidato por CPF/nome/data; rastro de quem/quando vinculou; aviso pós-reenvio
+"confira as imagens antes de emitir" (comportamento do T8 re-render vs. pixel
+queimado: teste de 2 min agendado para a visita); ação de quarentena conforme
+acima.
+
 ## Sequência proposta (após decisões)
 
 1. Spec em `docs/superpowers/specs/` + plano em `docs/planos/` (esteira
