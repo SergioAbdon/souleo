@@ -20,7 +20,8 @@
 
   "polling": {
     "worklistSyncSec": 60,
-    "orthancChangesSec": 30
+    "_comentario_orthancChangesSec": "Chamada local barata (Orthanc na rede da clínica) — curto pra latência: médico vê a medida em segundos, não meio minuto.",
+    "orthancChangesSec": 5
   },
 
   "ui": {

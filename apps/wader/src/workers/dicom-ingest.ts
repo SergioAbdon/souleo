@@ -173,6 +173,14 @@ export async function processarEstudo(opts: {
   /** Worker passa true quando o Orthanc ganhou uma série SR nova (não pular). */
   forceSr?: boolean;
   /**
+   * Latência (achado 29): processa só a etapa 1 (SR/medidas) e retorna —
+   * NÃO baixa imagens. Usado pelo worker na chegada de uma série SR nova
+   * (NewSeries), antes do estudo assentar (StableStudy), pra medida
+   * aparecer pro médico o quanto antes. `precisaProcessar`/assinatura do
+   * worker não é gravada aqui — o StableStudy de sempre cobre as imagens.
+   */
+  soMedidas?: boolean;
+  /**
    * Vínculo MANUAL (console de reconciliação, ADR 2026-06-26): processa este
    * estudo NESTE exame (doc id), ignorando o ACC/identidade do DICOM. Resolve
    * órfão sem ACC e identidade trocada, sem mexer no Vivid.
@@ -420,6 +428,8 @@ export async function processarEstudo(opts: {
     'Etapa 1 gravada (medidas + status) — médico já pode ver as medidas',
   );
 
+  if (opts.soMedidas) return result;
+
   // ── ETAPA 2 (Fix A): imagens em paralelo + write ───────────────────────
   // Só instances NÃO-SR: o /preview de uma instance SR devolve 415 (não há
   // JPG de Structured Report). Filtrar evita 2 "falhas" eternas por estudo e
@@ -459,6 +469,7 @@ export async function processarEstudo(opts: {
       await exameRef.update({
         imagensDicomPendente: pendentesFinais,
         atualizadoEm: FieldValue.serverTimestamp(),
+        dicomUltimoErro: FieldValue.delete(),
       });
     } else {
       const detalhesAtuais = (exameData.imagensDicomDetalhes as ImagemDicom[] | undefined) ?? [];
@@ -467,17 +478,28 @@ export async function processarEstudo(opts: {
         imagensDicom: detalhesFinais.map((i) => i.url),
         imagensDicomDetalhes: detalhesFinais,
         atualizadoEm: FieldValue.serverTimestamp(),
+        dicomUltimoErro: FieldValue.delete(),
       });
     }
   } else {
     // Imagens falharam/ausentes: a etapa 1 (medidas+status) JÁ foi gravada,
     // então NÃO regride matched. O worker reavalia por completude
     // (`curImg > nImg`) e retenta as imagens no próximo ciclo.
+    // Achado 13/14: o erro fica VISÍVEL no exame (não só no log do Wader) —
+    // a recepção/médico vê no LEO que a ingestão travou, sem precisar
+    // abrir o console do Wader.
+    const msgErro = semInstances
+      ? 'Estudo sem instances no Orthanc'
+      : `Falha ao subir ${result.imagensFalhadas} imagens`;
     result.errors.push(
       semInstances
-        ? 'Estudo sem instances no Orthanc'
+        ? msgErro
         : `Todas as ${result.imagensFalhadas} imagens falharam ao baixar/subir`,
     );
+    await exameRef.update({
+      dicomUltimoErro: msgErro,
+      dicomUltimoErroEm: FieldValue.serverTimestamp(),
+    });
   }
 
   log.info(

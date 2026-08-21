@@ -210,8 +210,33 @@ describe('processarEstudo — two-stage / paralelo / Fix B', () => {
     const r = await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
     expect(r.matched).toBe(true);
     expect(r.imagensProcessadas).toBe(0);
-    expect(updates).toHaveLength(1); // só etapa1
+    expect(updates).toHaveLength(2); // etapa1 + write de dicomUltimoErro
     expect(r.errors.some((e) => e.includes('falharam'))).toBe(true);
+  });
+
+  it('soMedidas grava etapa 1 e NÃO baixa imagens', async () => {
+    exameStore['EX123'] = { __id: 'docSoMedidas', status: 'aguardando' };
+    const r = await processarEstudo({ client: makeClient(), orthancStudyId: 's1', wsId: WS, soMedidas: true });
+
+    expect(r.matched).toBe(true);
+    expect(r.medidasExtraidas).toBe(2);
+    expect(r.imagensProcessadas).toBe(0);
+    expect(updates).toHaveLength(1); // só etapa1 — retorna ANTES de baixar imagens
+    expect(updates[0].obj.medidasDicom).toEqual({ a: 1, b: 2 });
+  });
+
+  it('falha total de imagens grava dicomUltimoErro/dicomUltimoErroEm no exame', async () => {
+    exameStore['EX123'] = { __id: 'docErro', status: 'aguardando' };
+    const client = makeClient({
+      series: [{ Modality: 'US', Instances: ['i1', 'i2'] }],
+      previewFails: new Set(['i1', 'i2']),
+    });
+    const r = await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+
+    expect(r.matched).toBe(true);
+    const erroUpdate = updates[updates.length - 1].obj;
+    expect(erroUpdate.dicomUltimoErro).toBe('Falha ao subir 2 imagens');
+    expect(erroUpdate.dicomUltimoErroEm).toBe('__ts__');
   });
 
   it('SR lança exceção: não derruba; segue sem medidas, grava imagens', async () => {

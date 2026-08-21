@@ -134,10 +134,18 @@ async function main(): Promise<void> {
     // distinguir "Wader parado" de "sem exame hoje". Não derruba nada se falhar.
     // Task 8 (D1): também verifica o Orthanc daqui de dentro da rede da clínica
     // (a nuvem não alcança mais ele — Task 7).
-    pararBatimento = iniciarBatimento(config.wsId, lerVersaoPackage(), workspaceRepo, orthancClient);
+    pararBatimento = iniciarBatimento(config.wsId, lerVersaoPackage(), workspaceRepo, orthancClient, {
+      ultimoErroIngest: () => dicomWorker?.getUltimoErro() ?? null,
+    });
   }
 
-  const app = await startUiServer(config, { worklistWorker, dicomWorker, orthancClient });
+  const app = await startUiServer(config, {
+    worklistWorker,
+    dicomWorker,
+    orthancClient,
+    workspaceRepo,
+    versao: lerVersaoPackage(),
+  });
 
   registerShutdownHandlers(app, { worklistWorker, dicomWorker, accWorker, pararBatimento });
 

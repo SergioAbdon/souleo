@@ -1,6 +1,5 @@
 import { FastifyInstance } from 'fastify';
 import { OrthancClient } from '../../adapters/orthanc-client';
-import { WorkspaceRepo } from '../../adapters/workspace-repo';
 import { processarEstudo } from '../../workers/dicom-ingest';
 import { DicomIngestWorker } from '../../workers/dicom-ingest-worker';
 import { createLogger } from '../../logger';
@@ -22,11 +21,9 @@ const log = createLogger({ module: 'api-dicom' });
 export function registerDicomRoutes(
   app: FastifyInstance,
   config: WaderConfig,
-  worker: DicomIngestWorker | null = null,
+  worker: DicomIngestWorker | null,
+  client: OrthancClient,
 ): void {
-  const workspaceRepo = new WorkspaceRepo(config.wsId);
-  const client = new OrthancClient(workspaceRepo);
-
   app.get('/api/dicom/test', async (_req, reply) => {
     const result = await client.testConnection();
     return reply.send(result);

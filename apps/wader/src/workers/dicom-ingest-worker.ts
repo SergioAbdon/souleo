@@ -101,6 +101,11 @@ export class DicomIngestWorker {
     this.store.deleteSignature(studyId);
   }
 
+  /** Último erro do tick (null quando o último tick deu certo). Visibilidade pro batimento. */
+  getUltimoErro(): string | null {
+    return this.lastError;
+  }
+
   private async tick(): Promise<void> {
     this.execCount++;
     this.lastTickAt = new Date();
@@ -120,6 +125,32 @@ export class DicomIngestWorker {
         );
         this.store.reset();
         return;
+      }
+
+      // Medidas na chegada (achado 29 / pacote de latência): quando uma série
+      // SR nova chega, extrai medidas JÁ — sem esperar o estudo assentar
+      // (StableStudy pode levar `StableAge`, default 60s). Roda ANTES do
+      // laço de StableStudy. `soMedidas` não baixa imagens nem grava
+      // assinatura — o StableStudy de sempre cobre isso depois. Cada change
+      // tem seu try: uma falha (estudo sumiu, Orthanc oscilou) não pode
+      // quebrar o tick nem impedir o processamento dos demais changes.
+      for (const c of changes.Changes) {
+        if (c.ChangeType === 'NewSeries' && c.ResourceType === 'Series') {
+          try {
+            const serie = await this.opts.client.getSeries(c.ID);
+            if ((serie.MainDicomTags?.Modality ?? '') === 'SR' && serie.ParentStudy) {
+              await processarEstudo({
+                client: this.opts.client,
+                orthancStudyId: serie.ParentStudy,
+                wsId: this.opts.wsId,
+                forceSr: true,
+                soMedidas: true,
+              });
+            }
+          } catch {
+            // Estudo pode ter sumido entre o change e agora — StableStudy cobre depois.
+          }
+        }
       }
 
       // Estudos estáveis nesta página, deduplicados por ID (fica o mais recente).

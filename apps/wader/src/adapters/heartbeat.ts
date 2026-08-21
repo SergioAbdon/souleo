@@ -31,15 +31,40 @@ export function iniciarBatimento(
   versao: string,
   repo: OrthancConnChecker,
   client: OrthancPinger,
+  extras?: { ultimoErroIngest?: () => string | null },
 ): () => void {
   const bater = async () => {
+    const ref = getDb().doc(`workspaces/${wsId}/integracoes/wader`);
+    const eu = os.hostname();
+
+    // Detecção de 2 Waders ativos no mesmo workspace (achado 11): lê o doc
+    // ANTES de sobrescrever. Máquina diferente + visto há < 10min = a outra
+    // instância ainda está batendo — vira conflito visível no cartão de
+    // Integrações. Vive num try PRÓPRIO: falha na leitura nunca derruba a
+    // gravação de `visto` do batimento (só segue sem detectar conflito).
+    let conflito: string | null = null;
     try {
-      await getDb().doc(`workspaces/${wsId}/integracoes/wader`).set(
+      const atual = (await ref.get()).data() as
+        | { maquina?: string; visto?: { toDate?: () => Date } }
+        | undefined;
+      const vistoDate = atual?.visto?.toDate?.();
+      if (atual?.maquina && atual.maquina !== eu && vistoDate && Date.now() - vistoDate.getTime() < 10 * 60 * 1000) {
+        conflito = atual.maquina;
+        log.warn({ outro: conflito }, '⚠️ DOIS Waders ativos no mesmo workspace');
+      }
+    } catch (e) {
+      log.warn({ err: (e as Error).message }, 'Leitura pré-batimento falhou (segue sem detectar conflito)');
+    }
+
+    try {
+      await ref.set(
         {
           tipo: 'wader',
           visto: new Date(),
           versao,
-          maquina: os.hostname(),
+          maquina: eu,
+          conflito,
+          ultimoErroIngest: extras?.ultimoErroIngest?.() ?? null,
         },
         { merge: true },
       );

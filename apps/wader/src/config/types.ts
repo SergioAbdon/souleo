@@ -70,7 +70,12 @@ export interface BackupConfig {
 export interface PollingConfig {
   /** Intervalo do worker de sync de worklists. Default 60s. */
   worklistSyncSec: number;
-  /** Intervalo do worker de DICOM ingest (Orthanc /changes). Default 30s. */
+  /**
+   * Intervalo do worker de DICOM ingest (Orthanc /changes). Default 5s
+   * (pacote de latência, Task 6 — antes 30s): a chamada é local e barata
+   * (Orthanc na mesma rede da clínica), e um tick mais curto é a diferença
+   * entre o médico ver a medida em ~5s ou esperar até 30s parado na tela.
+   */
   orthancChangesSec: number;
   /**
    * Intervalo do worker de recuperação por ACC. Default 20s (ADR 2026-06-22,
@@ -97,7 +102,7 @@ export const DEFAULT_CONFIG: Partial<WaderConfig> = {
   version: '1.0',
   polling: {
     worklistSyncSec: 60,
-    orthancChangesSec: 30,
+    orthancChangesSec: 5,
     accRecoverySec: 20,
   } as PollingConfig,
   ui: {

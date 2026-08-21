@@ -188,6 +188,16 @@ export class OrthancClient {
   }
 
   /**
+   * Busca UMA série pelo ID (GET /series/{id}) — usado pelo worker quando
+   * chega um change `NewSeries` (achado 29/pacote de latência): descobre se
+   * a série nova é SR (Modality) e a que estudo pertence (ParentStudy) sem
+   * esperar o estudo inteiro assentar (StableStudy).
+   */
+  async getSeries(seriesId: string): Promise<OrthancSeries> {
+    return this.get<OrthancSeries>(`/series/${encodeURIComponent(seriesId)}`);
+  }
+
+  /**
    * Pega tags DICOM "simplified" de uma instância — formato JSON onde tags
    * vêm com nomes legíveis (PatientName, ConceptNameCodeSequence, etc),
    * em vez de números hex (0010,0010).
