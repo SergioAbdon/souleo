@@ -549,9 +549,20 @@ limpa o exame e permite reenviar do Vivid (corrigido) para ingestão limpa.
 **Placar: Ponytail CONCORDA C/ RESSALVAS · Corretude CONCORDA C/ RESSALVAS ·
 Arquitetura DISCORDA da forma (DELETE puro) e CONCORDA como QUARENTENA.**
 
-Consenso dos três: a ação é legítima e não-redundante (só ela resolve conteúdo
-errado/pixels; o "trocar vínculo" resolve ponteiro errado e continua sendo a
-1ª opção), mas NUNCA como DELETE simples. Forma aprovada pela tríade:
+**DECISÃO DO SERGIO 20/08 (sobrepõe as ressalvas de arquivamento):** o
+registro-mãe de todos os exames é o VIVID (arquivo local do aparelho) — LEO e
+Vivid têm registro de tudo; o Orthanc NÃO é a única cópia. Portanto: **DELETE
+direto aprovado, SEM quarentena/ZIP**. O disparo autenticado pelo LEO web fica
+como proteção FUTURA — por enquanto o botão vive no console local, com auditoria
+possível (hostname + operador declarado + retrato do que foi removido, no
+Firestore). Conferir na visita: política de retenção do arquivo do Vivid
+(se ele purga sozinho quando o disco enche — se purgar, reavaliar quarentena).
+
+Consenso dos três (mantido no que não conflita com a decisão acima): a ação é
+legítima e não-redundante (só ela resolve conteúdo errado/pixels; o "trocar
+vínculo" resolve ponteiro errado e continua sendo a 1ª opção). Ressalvas
+TÉCNICAS mantidas (corrida, ordem dos passos, limpeza completa, assinatura,
+pré-requisitos 3 e 12, recusa em emitido, válvula reprocessar):
 
 - **QUARENTENA, não exclusão:** `GET /studies/{id}/archive` → ZIP em
   `backup.path/quarentena/` → verificar → só então remover. Falhou o arquivo,
