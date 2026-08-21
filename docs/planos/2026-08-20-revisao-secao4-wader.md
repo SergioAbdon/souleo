@@ -620,6 +620,29 @@ candidato por CPF/nome/data; rastro de quem/quando vinculou; aviso pós-reenvio
 queimado: teste de 2 min agendado para a visita); ação de quarentena conforme
 acima.
 
+## DECISÕES FINAIS DO 1-A-1 (Sergio, 20-21/08/2026) — TODAS TOMADAS
+
+| # | Decisão |
+|---|---|
+| D1 | **(b)** Schema antigo NÃO importa — botão "solicitar reprocessamento" grava flag; Wader relê o estudo do Orthanc com o parser novo. Sob demanda (mutirão dos 182 opcional, script pronto). |
+| D2 | **Bloquear** match quando CPF do DICOM ≠ CPF do exame (ambos preenchidos) → cai na conferência. |
+| D3 | **(a)** Tela de conferência no console AGORA: órfãos + estudos do dia já vinculados, sugestões por CPF/nome/data, ações **vincular / trocar vínculo / excluir p/ reenvio**, rastro quem/quando, aviso pós-reenvio "confira as imagens". |
+| Excluir p/ reenvio | **DELETE direto, SEM quarentena** (Vivid = registro-mãe; conferir na visita a retenção do T8). Ressalvas técnicas mantidas: trava anti-corrida, ordem fixa (marcar→limpar tudo→DELETE→assinatura→instruir reenvio), limpeza de TODOS os donos/campos + Storage, status→aguardando, recusa em emitido, 409 em UI-only, botão reprocessar, auditoria no Firestore (hostname+operador declarado+retrato). Disparo autenticado pelo LEO = futuro. |
+| Achado 8 | **Régua (i) ESTRITA**: só entra sozinho ACC exato + CPF ok. Semelhança e sem-ACC = sugestão na tela, vínculo manual. |
+| 9, 10, 11, 12, 13, 14 | Aprovados como propostos. |
+| 15 | Aprovado; janela mantida em **4 dias** (custo igual ao de 24h após o filtro; cobre fim de semana). |
+| 16 | **AMPLIADO a pedido do Sergio**: perfil do aparelho CUSTOMIZÁVEL AGORA — mapa sai do código p/ doc no Firestore (semeado Vivid T8), editor no cartão Integrações (padrão procMap/profMap), fallback embutido se ausente, papel+auditoria. **Wader repassa TUDO do SR sem filtro** (inclusive não-classificados, marcados); editor lista "recebidas sem destino" p/ mapear com clique; modal com rodapé "N de M mapeadas". Alarme de regressão mantido. |
+| 17 | Aprovado — sem unidade declarada não importa. |
+| 18 (D4) | Aprovado — emitido = **cofre** (campos-sombra + aviso na fila; nada muda sem humano). |
+| 19 | **(a)** carimbo parserVersao SIM; **(b) faixa plausível REJEITADA** — julgamento de valor é exclusivo do médico; proteção = transparência (16) + olho clínico. |
+| 20 (D5) | **(b) MIGRAR AGORA** para URL assinada com validade (galeria + PDF); remoção de imagens na exclusão do exame. PDF emitido continua documento que circula. |
+| 21, 22, 23 | Aprovados. |
+| 24+25 (D6) | **AUTORIZADO** — task cirúrgica única no Motor/laudo: onSnapshot (tela viva) + modal respeita desmarcações + guarda de emissão ("X de N imagens subindo — emitir?"). Zero mudança em cálculo. Teste do Sergio na conta Gmail antes do merge. |
+| 26-29 | Aprovados. |
+| D7 | **AUTORIZADO** os 7 cortes Ponytail (P1 fecha a suspeita de 12/05). Campos decorativos de backup (achado 30) saem junto — sem quarentena, backup fica p/ visão futura. |
+| Latência | **Pacote aprovado**: tick 30s→5s; assentamento 60s→30s (config Orthanc na visita); **SR processado na chegada** (medidas ~10-15s pós-encerrar); guarda de emissão. Push/webhook = futuro (Wader-produto). |
+| Visão futura registrada | DICOM completo na nuvem (produto); disparo autenticado de exclusão via LEO web; perfis multi-marca (Wader-produto); teste na visita: T8 re-renderiza cabeçalho na reexportação? retenção do arquivo do Vivid. |
+
 ## Sequência proposta (após decisões)
 
 1. Spec em `docs/superpowers/specs/` + plano em `docs/planos/` (esteira
