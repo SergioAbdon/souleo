@@ -1,9 +1,12 @@
+import * as os from 'node:os';
 import { FastifyInstance } from 'fastify';
 import { OrthancClient, OrthancStudy } from '../../adapters/orthanc-client';
 import { getDb, FieldValue } from '../../adapters/firebase';
+import { removerImagensExame } from '../../adapters/storage-uploader';
 import { jaExiste } from '../../adapters/exames-repo';
 import { digitos } from '../../lib/acc';
-import { processarEstudo } from '../../workers/dicom-ingest';
+import { processarEstudo, CAMPOS_DICOM_LIMPAR, estudosEmExclusao } from '../../workers/dicom-ingest';
+import { DicomIngestWorker } from '../../workers/dicom-ingest-worker';
 import { createLogger } from '../../logger';
 import { WaderConfig } from '../../config/types';
 import { hojeClinica } from '../../lib/clinica-tempo';
@@ -29,15 +32,21 @@ interface ExameRecon {
   /** 'casado' = já tem imagens/SR no LEO; 'recebido' = estudo chegou, processando; 'aguardando' = sem estudo ainda. */
   matchStatus: 'casado' | 'recebido' | 'aguardando';
   orthancStudyId: string | null;
+  /** Último erro de ingestão (dicom-ingest.ts grava no exame quando as imagens falham). */
+  dicomUltimoErro: string | null;
 }
 
 interface OrfaoRecon {
   orthancStudyId: string;
   pacienteNomeDicom: string;
   accDicom: string;
+  /** PatientID cru do DICOM — a tela manda de volta como fingerprint pra excluir. */
+  patientIdDicom: string;
   nSeries: number;
   studyDate: string;
   studyTime: string;
+  /** Exame do dia cujo CPF bate com o PatientID do estudo (dígitos) — pré-seleciona o dropdown. */
+  sugestaoExameId: string | null;
 }
 
 /**
@@ -52,11 +61,12 @@ export function registerReconciliacaoRoutes(
   app: FastifyInstance,
   config: WaderConfig,
   client: OrthancClient | null,
+  dicomWorker: DicomIngestWorker | null,
 ): void {
   app.get<{ Querystring: { data?: string } }>('/api/reconciliacao', async (req, reply) => {
     const data = req.query.data || hojeClinica();
     try {
-      const payload = await montarReconciliacao(config.wsId, client, data);
+      const payload = await montarReconciliacao(getDb(), config.wsId, client, data);
       return reply.send({ ok: true, data, ...payload });
     } catch (err) {
       log.error({ err }, 'Falha ao montar reconciliação');
@@ -143,6 +153,165 @@ export function registerReconciliacaoRoutes(
       }
     },
   );
+
+  // POST /api/reconciliacao/excluir-reenvio
+  // Body: { orthancStudyId, fingerprint: { accDicom, patientIdDicom }, operador }
+  // Apaga o estudo do Orthanc pra corrigir cadastro no Vivid e reenviar (D3).
+  app.post<{
+    Body: {
+      orthancStudyId?: string;
+      fingerprint?: { accDicom?: string; patientIdDicom?: string };
+      operador?: string;
+    };
+  }>('/api/reconciliacao/excluir-reenvio', async (req, reply) => {
+    try {
+      const result = await excluirReenvio(getDb(), client, dicomWorker, config.wsId, req.body ?? {});
+      const { status, ...body } = result;
+      if (!body.ok) {
+        log.warn({ body: req.body, error: body.error }, 'excluir-reenvio recusado');
+      } else {
+        log.info({ orthancStudyId: req.body?.orthancStudyId, examesLimpos: body.examesLimpos }, 'Estudo excluído para reenvio');
+      }
+      return reply.status(status).send(body);
+    } catch (err) {
+      log.error({ err }, 'Falha em excluir-reenvio');
+      return reply.status(500).send({ ok: false, error: (err as Error).message });
+    }
+  });
+
+  // POST /api/reconciliacao/reprocessar { orthancStudyId }
+  // Reprocessa um estudo já vinculado (ex.: SR chegou atrasado, imagem faltou).
+  app.post<{ Body: { orthancStudyId?: string } }>(
+    '/api/reconciliacao/reprocessar',
+    async (req, reply) => {
+      const { orthancStudyId } = req.body ?? {};
+      if (!orthancStudyId) {
+        return reply.status(400).send({ ok: false, error: 'orthancStudyId é obrigatório' });
+      }
+      if (!client) {
+        return reply.status(409).send({ ok: false, error: 'Orthanc não configurado nesta instância' });
+      }
+      try {
+        const result = await processarEstudo({ client, orthancStudyId, wsId: config.wsId, forceSr: true });
+        log.info({ orthancStudyId, matched: result.matched }, 'Reprocessamento manual');
+        return reply.send({ ok: result.matched, ...result });
+      } catch (err) {
+        log.error({ err, orthancStudyId }, 'Falha ao reprocessar');
+        return reply.status(500).send({ ok: false, error: (err as Error).message });
+      }
+    },
+  );
+}
+
+/**
+ * Exclui um estudo do Orthanc pra reenvio (Task 7, D3) — extraída pra ser
+ * testável sem montar o app Fastify (mesmo padrão de `trocarAccComReserva`).
+ *
+ * Ordem fixa (trava anti-corrida): marca `estudosEmExclusao` → limpa donos
+ * (campos DICOM + Storage) → grava auditoria (retrato ANTES do DELETE) →
+ * DELETE no Orthanc → esquece a assinatura no worker → desmarca. Enquanto
+ * marcado, `processarEstudo` (dicom-ingest.ts) recusa qualquer write nesse
+ * studyId — mesmo que um `StableStudy` chegue no meio da exclusão.
+ */
+export async function excluirReenvio(
+  db: FirebaseFirestore.Firestore,
+  client: OrthancClient | null,
+  dicomWorker: DicomIngestWorker | null,
+  wsId: string,
+  body: {
+    orthancStudyId?: string;
+    fingerprint?: { accDicom?: string; patientIdDicom?: string };
+    operador?: string;
+  },
+): Promise<{ status: number; ok: boolean; [k: string]: unknown }> {
+  const { orthancStudyId, fingerprint, operador } = body ?? {};
+  if (!orthancStudyId || !fingerprint) {
+    return { status: 400, ok: false, error: 'orthancStudyId e fingerprint são obrigatórios' };
+  }
+  if (!String(operador ?? '').trim()) {
+    return { status: 400, ok: false, error: 'Operador é obrigatório' };
+  }
+  if (!client) {
+    return { status: 409, ok: false, error: 'Orthanc não configurado' };
+  }
+  if (!dicomWorker) {
+    return {
+      status: 409,
+      ok: false,
+      error: 'Instância UI-only não pode excluir (o Wader de produção detém o estado de ingestão)',
+    };
+  }
+
+  const study = await client.getStudy(orthancStudyId).catch(() => null);
+  if (!study) {
+    return { status: 404, ok: false, error: 'Estudo não existe (já excluído?)' };
+  }
+
+  // Anti-corrida com a própria tela: confere a impressão digital capturada
+  // na renderização — se o estudo mudou desde então (ACC/identidade), recusa.
+  const nInst = (study.Series ?? []).length;
+  if (
+    digitos(study.MainDicomTags?.AccessionNumber) !== digitos(fingerprint.accDicom) ||
+    digitos(study.PatientMainDicomTags?.PatientID) !== digitos(fingerprint.patientIdDicom)
+  ) {
+    return { status: 409, ok: false, error: 'O estudo mudou desde que a tela carregou — recarregue e confira' };
+  }
+
+  const examesCol = db.collection('workspaces').doc(wsId).collection('exames');
+  const uid = study.MainDicomTags.StudyInstanceUID ?? '__none__';
+  const donosSnap = [
+    ...(await examesCol.where('dicomOrthancStudyId', '==', orthancStudyId).get()).docs,
+    ...(await examesCol.where('dicomStudyUid', '==', uid).get()).docs,
+  ];
+  const donos = [...new Map(donosSnap.map((d) => [d.id, d])).values()];
+  for (const d of donos) {
+    if ((d.data().status as string) === 'emitido') {
+      return {
+        status: 409,
+        ok: false,
+        error: `Exame ${d.id} está EMITIDO — use o fluxo corrigir-laudo antes de excluir o estudo`,
+      };
+    }
+  }
+
+  estudosEmExclusao.add(orthancStudyId);
+  try {
+    // 1) limpar donos (campos + status de volta + Storage)
+    for (const d of donos) {
+      const limpar: Record<string, unknown> = { atualizadoEm: FieldValue.serverTimestamp() };
+      for (const c of CAMPOS_DICOM_LIMPAR) limpar[c] = FieldValue.delete();
+      const st = d.data().status as string;
+      if (st !== 'rascunho' && st !== 'emitido') limpar.status = 'aguardando';
+      await d.ref.update(limpar);
+      await removerImagensExame(wsId, d.id);
+    }
+    // 2) auditoria (retrato ANTES do DELETE) — append-only, Admin SDK só.
+    await db.collection('workspaces').doc(wsId).collection('auditoria').add({
+      tipo: 'exclusao-estudo-orthanc',
+      orthancStudyId,
+      studyInstanceUID: uid,
+      accDicom: study.MainDicomTags?.AccessionNumber ?? '',
+      patientIdDicom: study.PatientMainDicomTags?.PatientID ?? '',
+      patientNameDicom: study.PatientMainDicomTags?.PatientName ?? '',
+      nSeries: nInst,
+      examesLimpos: donos.map((d) => d.id),
+      operadorDeclarado: String(operador ?? ''),
+      maquina: os.hostname(),
+      em: FieldValue.serverTimestamp(),
+    });
+    // 3) DELETE (404 = sucesso) e 4) esquecer assinatura
+    await client.deleteStudy(orthancStudyId);
+    dicomWorker.forgetStudy(orthancStudyId);
+  } finally {
+    estudosEmExclusao.delete(orthancStudyId);
+  }
+
+  return {
+    status: 200,
+    ok: true,
+    examesLimpos: donos.map((d) => d.id),
+    mensagem: 'Estudo excluído. Corrija o cadastro no aparelho e peça o REENVIO agora.',
+  };
 }
 
 /**
@@ -182,34 +351,28 @@ export async function trocarAccComReserva(
   return { ok: true };
 }
 
-async function montarReconciliacao(
+export async function montarReconciliacao(
+  db: FirebaseFirestore.Firestore,
   wsId: string,
   client: OrthancClient | null,
   data: string,
 ): Promise<{ exames: ExameRecon[]; orfaos: OrfaoRecon[]; orthancOk: boolean }> {
-  // 1) Exames do dia (Firestore). dataExame não é indexado pra where direto —
-  // varremos por status e filtramos em memória (≤ ~30 docs/dia).
-  const examesCol = getDb().collection('workspaces').doc(wsId).collection('exames');
-  const seen = new Set<string>();
-  const exameDocs: Array<Record<string, unknown> & { id: string }> = [];
-  for (const st of ['aguardando', 'andamento', 'rascunho', 'emitido', 'nao-realizado']) {
-    const snap = await examesCol.where('status', '==', st).get();
-    for (const d of snap.docs) {
-      if (seen.has(d.id)) continue;
-      const e = d.data();
-      if (e.dataExame === data) {
-        exameDocs.push({ id: d.id, ...e });
-        seen.add(d.id);
-      }
-    }
-  }
+  // 1) Exames do dia (Firestore) — where direto em dataExame (achado 23), no
+  // lugar de varrer os 5 status e filtrar em memória.
+  const examesCol = db.collection('workspaces').doc(wsId).collection('exames');
+  const snap = await examesCol.where('dataExame', '==', data).get();
+  const exameDocs: Array<Record<string, unknown> & { id: string }> = snap.docs.map((d) => ({
+    id: d.id,
+    ...d.data(),
+  }));
 
-  // 2) Estudos recentes do Orthanc (tolerante a Orthanc fora — só fica sem órfãos).
+  // 2) Estudos do dia no Orthanc (StudyDate filtrado — achado 23). Tolerante
+  // a Orthanc fora (só fica sem órfãos).
   let studies: OrthancStudy[] = [];
   let orthancOk = false;
   if (client) {
     try {
-      studies = await client.listStudies(80);
+      studies = await client.listStudies(80, data);
       orthancOk = true;
     } catch (err) {
       log.warn({ err }, 'Orthanc inacessível — reconciliação sem o lado Vivid');
@@ -260,8 +423,17 @@ async function montarReconciliacao(
       temMedidas,
       matchStatus,
       orthancStudyId: (e.dicomOrthancStudyId as string) || estudo?.ID || null,
+      dicomUltimoErro: (e.dicomUltimoErro as string) || null,
     };
   });
+
+  // CPF (dígitos) -> exame do dia, pra sugerir vínculo de um órfão pelo
+  // PatientID do DICOM (que na maioria das vezes É o CPF — wl-writer.ts).
+  const cpfParaExame = new Map<string, (typeof exameDocs)[number]>();
+  for (const e of exameDocs) {
+    const c = digitos(e.cpf as string);
+    if (c) cpfParaExame.set(c, e);
+  }
 
   // 5) Órfãos: estudos que NÃO estão vinculados a nenhum exame e cujo ACC
   // não casa com nenhum exame do dia (inclui estudos com ACC vazio).
@@ -272,14 +444,21 @@ async function montarReconciliacao(
       if (d && accParaExame.has(d)) return false;
       return true;
     })
-    .map((s) => ({
-      orthancStudyId: s.ID,
-      pacienteNomeDicom: s.PatientMainDicomTags?.PatientName || '(sem nome no DICOM)',
-      accDicom: s.MainDicomTags?.AccessionNumber || '',
-      nSeries: (s.Series ?? []).length,
-      studyDate: s.MainDicomTags?.StudyDate || '',
-      studyTime: s.MainDicomTags?.StudyTime || '',
-    }))
+    .map((s) => {
+      const patientIdDicom = s.PatientMainDicomTags?.PatientID || '';
+      const cpfDicom = digitos(patientIdDicom);
+      const sugestao = cpfDicom ? cpfParaExame.get(cpfDicom) : undefined;
+      return {
+        orthancStudyId: s.ID,
+        pacienteNomeDicom: s.PatientMainDicomTags?.PatientName || '(sem nome no DICOM)',
+        accDicom: s.MainDicomTags?.AccessionNumber || '',
+        patientIdDicom,
+        nSeries: (s.Series ?? []).length,
+        studyDate: s.MainDicomTags?.StudyDate || '',
+        studyTime: s.MainDicomTags?.StudyTime || '',
+        sugestaoExameId: sugestao ? sugestao.id : null,
+      };
+    })
     .sort((a, b) => (b.studyDate + b.studyTime).localeCompare(a.studyDate + a.studyTime));
 
   return { exames, orfaos, orthancOk };

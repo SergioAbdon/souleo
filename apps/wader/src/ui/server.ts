@@ -66,7 +66,7 @@ export async function startUiServer(
   registerOrthancConfigRoutes(app, config, workspaceRepo);
   registerWorklistRoutes(app, config, extras.worklistWorker);
   registerDicomRoutes(app, config, extras.dicomWorker ?? null, orthancClient);
-  registerReconciliacaoRoutes(app, config, orthancClient);
+  registerReconciliacaoRoutes(app, config, orthancClient, extras.dicomWorker ?? null);
 
   await app.listen({ host: '127.0.0.1', port: config.ui.port });
 
@@ -98,6 +98,9 @@ function registerPageRoutes(app: FastifyInstance): void {
   app.get('/', servePage('reception.html'));
   app.get('/admin', servePage('admin.html'));
   app.get('/wizard', servePage('wizard.html'));
+  // Console de conferência (vincular/trocar/excluir p/ reenvio) — só admin,
+  // NUNCA na recepção (decisão do produto, Task 7).
+  app.get('/conferencia', servePage('conferencia.html'));
 }
 
 function registerApiRoutes(app: FastifyInstance, config: WaderConfig): void {
