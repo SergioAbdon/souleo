@@ -67,5 +67,12 @@ T19 (limpeza), reverter tudo é de graça — os dois mundos convivem.
   **1 bug achado e corrigido (`72c6eef`):** a mensagem de token ausente mandava para
   "Local de Trabalho > Integração Feegow" — lugar que não existe mais; agora aponta
   para Integrações > Feegow.
-- Fase 1 (conta real, Yahoo — do Sergio): ☐ T4 com dados reais · ☐ T5 · ☐ T6 · ☐ T7
+- **Fase 1 em andamento (20/08, print do Sergio):** T5 ✅ ("Conexão OK — testada 20/08
+  às 21:12") · T6 ✅ (Orthanc "Nunca testado", sem botão, legenda certa) · contadores
+  certos (17 procedimentos, 4 profissionais). **Bug nº 2 achado e corrigido:** a migração
+  não gravava o carimbo `credencialCadastradaEm` — os cartões migrados diziam "Não
+  cadastrado" com a credencial na gaveta e **travavam** os botões Carregar. Backfill
+  aplicado nos 2 locais + script corrigido (`fix: migracao grava o carimbo`).
+  ☐ T4 final: recarregar a página → "Carregar profissionais" (agora destravado) → os
+  4 médicos preenchidos · ☐ T7
 - Fase 2: ☐  ·  Fase 3: ☐  ·  Pós-barreira: ☐
