@@ -614,6 +614,24 @@ export default function Worklist() {
                           📡 SEM MWL
                         </span>
                       )}
+                      {/* Cofre do emitido (S4-T15 fix X1): o Wader recebeu estudo
+                          novo num exame JÁ EMITIDO — foi tudo pros campos-sombra
+                          e alguém tem que revisar. Sem esta pílula a fila de
+                          revisão existia só no Firestore. */}
+                      {item.dicomAtualizacaoPendente === true && (
+                        <span title="Chegou imagem/medida nova depois da emissão — revise antes de corrigir o laudo"
+                          className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700">
+                          📥 DICOM NOVO — REVISAR
+                        </span>
+                      )}
+                      {/* Ingestão falhou: o erro ficava só no log do Wader e na
+                          tela de conferência. A recepção vê aqui e reenvia. */}
+                      {typeof item.dicomUltimoErro === 'string' && item.dicomUltimoErro.trim() !== '' && (
+                        <span title={item.dicomUltimoErro as string}
+                          className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-600">
+                          ⚠️ IMAGEM FALHOU
+                        </span>
+                      )}
                     </div>
                   </td>
 

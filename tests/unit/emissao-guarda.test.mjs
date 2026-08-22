@@ -43,11 +43,28 @@ describe('precisaConfirmarEmissao', () => {
     );
   });
 
-  test('medidas + imagens → não confirma', () => {
+  test('medidas + imagens (com seleção) → não confirma', () => {
     assert.equal(
-      precisaConfirmarEmissao({ medidasDicomMeta: {}, imagensDicom: ['a.jpg'] }),
+      precisaConfirmarEmissao({ medidasDicomMeta: {}, imagensDicom: ['a.jpg'] }, ['a.jpg']),
       null,
     );
+  });
+
+  // S4-T15 fix (X5): as imagens CHEGARAM, ninguém marcou nenhuma. A seleção
+  // começa vazia — o PDF sai sem imagem tendo N disponíveis, em silêncio.
+  test('imagens disponíveis mas seleção vazia → confirma com a contagem', () => {
+    assert.equal(
+      precisaConfirmarEmissao({ imagensDicom: ['a.jpg', 'b.jpg', 'c.jpg'] }, []),
+      'Nenhuma imagem selecionada para o PDF (3 disponíveis)',
+    );
+    assert.equal(
+      precisaConfirmarEmissao({ imagensDicom: ['a.jpg'] }, undefined),
+      'Nenhuma imagem selecionada para o PDF (1 disponíveis)',
+    );
+  });
+
+  test('exame SEM imagens e sem medidas: seleção vazia não confirma nada', () => {
+    assert.equal(precisaConfirmarEmissao({ imagensDicom: [] }, []), null);
   });
 
   test('erro tem precedência sobre a falta de imagens', () => {

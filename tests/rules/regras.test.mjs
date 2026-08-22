@@ -761,3 +761,19 @@ describe('18. Perfil do aparelho (S4-T13)', () => {
     await assertFails(setDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/integracoes`, 'perfilAparelho'), payloadPerfil({ extra: 'nao deveria colar' })));
   });
 });
+
+// A flag `reprocessarDicom` manda o Wader reler o estudo com o parser novo e
+// SOBRESCREVER medidas/imagens do exame — e ato clinico, nao administracao de
+// fila. Nao esta em camposAdministrativos(), entao a recepcao ja bate na trava;
+// este bloco TRAVA isso (payload real do botao "solicitar reprocessamento").
+describe('19. flag reprocessarDicom e do medico autor (S4-T15 fix)', () => {
+  test('medico AUTOR pede reprocessamento no proprio exame', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), { reprocessarDicom: true }));
+  });
+  // Exame DIFERENTE do teste acima de proposito: o update do medico ja gravou
+  // reprocessarDicom=true em exComAutor, e regravar o mesmo valor da um diff
+  // VAZIO — hasOnly(administrativos) passa trivialmente e o teste mentiria.
+  test('recepcao NAO pede reprocessamento (nao e administracao de fila)', async () => {
+    await assertFails(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exFila1'), { reprocessarDicom: true }));
+  });
+});

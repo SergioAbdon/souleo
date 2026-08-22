@@ -87,8 +87,18 @@ export async function gerarESalvarPdf(
     // Puppeteer buscar. Sem isso o <img src> da 403: o Chrome headless busca
     // por rede, sem a credencial do Admin SDK. Ponto unico — cobre /api/emitir
     // e /api/corrigir-laudo, os dois chamadores desta funcao.
-    const urlsAssinadas = await assinarImagensExame(getFirestore(), getStorage().bucket(), wsId, exameId);
-    await page.setContent(assinarUrlsNoHtml(pdfHtml, urlsAssinadas), { waitUntil: 'networkidle0', timeout: 30000 });
+    const bucket = getStorage().bucket();
+    const urlsAssinadas = await assinarImagensExame(getFirestore(), bucket, wsId, exameId);
+    const htmlAssinado = assinarUrlsNoHtml(pdfHtml, urlsAssinadas);
+    // FAIL-LOUD (S4-T15 fix X4): se sobrou URL canonica de imagem DICOM, a
+    // assinatura nao cobriu tudo (imagem fora do exame, doc dessincronizado).
+    // Sem isto o Chrome headless toma 403 naquele <img> e o PDF ASSINADO sai
+    // com um retangulo vazio no lugar da imagem — sem erro nenhum. Melhor
+    // abortar a emissao que publicar laudo com buraco silencioso.
+    if (htmlAssinado.includes(`https://storage.googleapis.com/${bucket.name}/dicom/`)) {
+      throw new Error('imagem não assinada — emissão abortada');
+    }
+    await page.setContent(htmlAssinado, { waitUntil: 'networkidle0', timeout: 30000 });
     await page.evaluateHandle('document.fonts.ready');
 
     const pdfBuffer = await page.pdf({

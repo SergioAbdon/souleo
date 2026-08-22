@@ -199,8 +199,36 @@ export default function IntegracoesPage() {
     setPerfilMapa(prev => ({ ...prev, [chave]: { campo: '', nomePt: meaning, casas: 0, alvo: '' } }));
   }
 
+  // ── Avisos do editor de perfil (S4-T15 fix X3) ────────────────────────
+  // Uma linha sem `campo` nunca chega no laudo: o import busca o input por id,
+  // e id vazio não existe. Medida do aparelho some em silêncio — bloqueia.
+  const perfilSemCampo = Object.entries(perfilMapa)
+    .filter(([, e]) => !String(e.campo ?? '').trim())
+    .map(([chave]) => chave);
+  // Dois mapeamentos no MESMO campo: um sobrescreve o outro no import (quem
+  // vier por último ganha). É legítimo às vezes (aparelho manda a mesma medida
+  // com dois códigos), então avisa sem bloquear.
+  const perfilCamposRepetidos = [
+    ...new Set(
+      Object.values(perfilMapa)
+        .map(e => String(e.campo ?? '').trim())
+        .filter(c => c)
+        .filter((c, _i, arr) => arr.filter(x => x === c).length > 1),
+    ),
+  ];
+
   async function salvarPerfilAparelho() {
     if (!user || !wsId || perfilSalvando) return;
+    if (perfilSemCampo.length > 0) {
+      setPerfilErro(`Preencha o campo de destino (ex.: b7) nestas linhas: ${perfilSemCampo.join(', ')}`);
+      return;
+    }
+    if (
+      Object.keys(perfilMapa).length === 0 &&
+      !confirm('Salvar o perfil SEM nenhuma linha? Sem linhas o sistema volta ao mapa de fábrica.')
+    ) {
+      return;
+    }
     setPerfilSalvando(true);
     setPerfilErro('');
     try {
@@ -608,6 +636,14 @@ export default function IntegracoesPage() {
                         </div>
                       )}
 
+                      {perfilCamposRepetidos.length > 0 && (
+                        <p className="text-xs text-amber-600">
+                          ⚠️ Dois mapeamentos apontam pro mesmo campo ({perfilCamposRepetidos.join(', ')}) — no import, o último vence.
+                        </p>
+                      )}
+                      {Object.keys(perfilMapa).length === 0 && (
+                        <p className="text-xs text-amber-600">⚠️ Sem linhas o sistema volta ao mapa de fábrica.</p>
+                      )}
                       {perfilErro && <p className="text-xs text-red-600">{perfilErro}</p>}
                       <div className="pt-1">
                         <button type="button" onClick={salvarPerfilAparelho} disabled={perfilSalvando} className={botaoSalvar}>
@@ -619,7 +655,22 @@ export default function IntegracoesPage() {
                 )}
 
                 {t.id === 'wader' && (
-                  <p className="text-xs text-ink-3">{i.versao ? `v${i.versao}` : 'Versão desconhecida'} · {i.maquina || 'máquina desconhecida'}</p>
+                  <div className="space-y-1">
+                    <p className="text-xs text-ink-3">{i.versao ? `v${i.versao}` : 'Versão desconhecida'} · {i.maquina || 'máquina desconhecida'}</p>
+                    {/* O batimento (heartbeat.ts) detecta e grava os dois; sem
+                        isto ficavam só no Firestore e no log do Wader — o dono
+                        nunca via. 2 Waders = worklist e ingestão brigando. */}
+                    {i.conflito && (
+                      <p className="text-xs text-red-600">
+                        ⚠️ 2 Waders ativos: {i.maquina || 'esta máquina'} + {i.conflito}
+                      </p>
+                    )}
+                    {i.ultimoErroIngest && (
+                      <p className="text-xs text-red-600" title={i.ultimoErroIngest}>
+                        ⚠️ Ingestão: {i.ultimoErroIngest}
+                      </p>
+                    )}
+                  </div>
                 )}
                 {erroTeste[t.id] && <p className="text-xs text-red-600">{t.id === 'wader' ? erroTeste[t.id] : `Teste: ${erroTeste[t.id]}`}</p>}
               </CartaoIntegracao>
