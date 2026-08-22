@@ -183,11 +183,13 @@ export default function DicomGallery({
       setErroAssinadas(!urls);
     });
     return () => { vivo = false; };
-  // `imagens` é recriado a cada render do pai; a identidade do array não
-  // pode entrar nas deps (loop). Contagem + exame bastam pra disparar, e o
-  // cache de `buscarUrlsAssinadas` cobre o caso de URL nova sem mudar N.
+  // `imagens` é recriado a cada render do pai; a identidade do array não pode
+  // entrar nas deps (loop). `imagens.join('|')` é estável por CONTEÚDO
+  // (S4-T15 fix D2): `imagens.length` não disparava num remap — reprocesso
+  // troca as URLs sem mudar N, e o efeito ficava com o mapa de assinaturas
+  // antigo, apontando pra objetos que já não existem.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, wsId, exameId, imagens.length]);
+  }, [open, wsId, exameId, imagens.join('|')]);
 
   /** URL de exibição: a assinada quando existe, senão a canônica (legados). */
   const src = (url: string) => assinadas[url] || url;

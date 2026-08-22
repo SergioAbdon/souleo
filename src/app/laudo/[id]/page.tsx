@@ -21,7 +21,7 @@ import DicomGallery, { buscarUrlsAssinadas } from '@/components/laudo/DicomGalle
 import DicomSrImport from '@/components/laudo/DicomSrImport';
 import { normalizarParaImport, prefixoArquivoPorTipo, isSchemaAntigo, InputImport, MedidaSr, MapaSr, SR_TO_MOTOR } from '@/lib/dicom-sr-mapping';
 import { carregarPerfilAparelho } from '@/lib/perfil-aparelho';
-import { precisaConfirmarEmissao } from '@/lib/emissao-guarda';
+import { precisaConfirmarEmissao, SEM_SELECAO_PREFIXO } from '@/lib/emissao-guarda';
 import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
 import { gerarDocx } from '@/lib/exportDocx';
@@ -143,6 +143,12 @@ export default function LaudoPage() {
   // sozinho na tela.
   useEffect(() => {
     if (!workspace?.id || !exameId) return;
+    // Refs zeradas A CADA exame (S4-T15 fix D1): elas vivem no componente, e
+    // navegar laudo→laudo sem desmontar herdava os guards do exame anterior —
+    // laudo emitido abria DESTRAVADO e a seleção de imagens ficava a do
+    // paciente anterior. Zerar aqui é o mesmo escopo do onSnapshot.
+    primeiraSnapshot.current = true;
+    selecaoInicializada.current = false;
     const unsub = onSnapshot(
       doc(db, 'workspaces', workspace.id, 'exames', exameId),
       (snap) => {
@@ -635,10 +641,15 @@ export default function LaudoPage() {
   function handleConfirmarImportSr(selecionados: InputImport[]) {
     if (selecionados.length === 0) return;
     let preenchidos = 0;
+    // Medidas que o médico marcou mas não têm input no DOM (S4-T15 fix D4):
+    // mapeamento aponta pra um campo que não existe nesta tela. Antes só ia
+    // pro console — o médico via "3 importadas" de 5 marcadas e não sabia.
+    const naoImportados: string[] = [];
     for (const s of selecionados) {
       const el = document.getElementById(s.campo) as HTMLInputElement | null;
       if (!el) {
         console.warn(`Campo motor "${s.campo}" não encontrado no DOM (input ${s.nomePt} pulado)`);
+        naoImportados.push(`${s.nomePt} → ${s.campo}`);
         continue;
       }
       // Adaptador já arredondou (regra por tipo: lineares=inteiro, razões=1
@@ -651,7 +662,10 @@ export default function LaudoPage() {
       preenchidos++;
     }
     setDicomImportado(true);
-    alert(`✅ ${preenchidos} medida${preenchidos === 1 ? '' : 's'} importada${preenchidos === 1 ? '' : 's'}. Motor recalcula derivados automaticamente.`);
+    const aviso = naoImportados.length > 0
+      ? `\n\n⚠️ ${naoImportados.length} não importada${naoImportados.length === 1 ? '' : 's'} — confira o Perfil do aparelho em Integrações:\n${naoImportados.join('\n')}`
+      : '';
+    alert(`✅ ${preenchidos} medida${preenchidos === 1 ? '' : 's'} importada${preenchidos === 1 ? '' : 's'}. Motor recalcula derivados automaticamente.${aviso}`);
   }
 
   function handleVoltar() {
@@ -689,9 +703,13 @@ export default function LaudoPage() {
     // Guarda de emissão (S4-T12): o Wader falhou ou ainda não trouxe as
     // imagens deste exame — emitir agora gera um PDF sem imagem nenhuma.
     // Decisão pura em `precisaConfirmarEmissao` (tem teste); aqui só o aviso.
-    const pendenciaDicom = precisaConfirmarEmissao(exame);
+    // A seleção VIVA vai junto (S4-T15 fix D6/X5): a guarda também avisa
+    // quando há imagens mas nenhuma marcada — o PDF sairia sem imagem nenhuma.
+    const pendenciaDicom = precisaConfirmarEmissao(exame, imagensSelecionadasPdf);
     if (pendenciaDicom && !confirm(
-      `Imagens do exame ainda não chegaram ou falharam (${pendenciaDicom}). Emitir mesmo assim?`
+      pendenciaDicom.startsWith(SEM_SELECAO_PREFIXO)
+        ? `${pendenciaDicom}. Emitir mesmo assim?`
+        : `Imagens do exame ainda não chegaram ou falharam (${pendenciaDicom}). Emitir mesmo assim?`
     )) return;
     // Só fecha o popup DEPOIS da guarda (F4): cancelar no confirm mantinha
     // o popup fechado e o médico tinha que reabrir tudo pra emitir.
@@ -1048,8 +1066,15 @@ ${imagensPdfHtml}
         }
       }
     }
-    win.document.write(html);
-    win.document.close();
+    // O popup pode ter sido fechado pelo usuário durante o await das URLs
+    // assinadas (S4-T15 fix D5) — escrever num `document` morto lança e
+    // derrubava o handler inteiro, sem aviso nenhum na tela.
+    try {
+      win.document.write(html);
+      win.document.close();
+    } catch {
+      alert('A janela de impressão foi fechada. Clique em Imprimir de novo.');
+    }
   }
 
   // ── Copiar para Prontuário ──
@@ -1314,6 +1339,7 @@ ${imagensPdfHtml}
         totalRecebidas={totalRecebidas}
         schemaAntigo={schemaAntigo}
         onSolicitarReprocesso={handleSolicitarReprocesso}
+        reprocessoPendente={exame?.reprocessarDicom === true}
       />
       {/* Galeria DICOM — modal full-screen (z-1000) com thumbnails e lightbox.
           Aberta pelo botão "🖼️ Imagens (N)" no sidebar. Modo seleção ON

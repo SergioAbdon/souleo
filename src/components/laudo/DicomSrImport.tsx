@@ -45,11 +45,18 @@ type Props = {
   schemaAntigo?: boolean;
   /** Grava `reprocessarDicom: true` no exame (o Wader consome e limpa). */
   onSolicitarReprocesso?: () => void;
+  /**
+   * `exame.reprocessarDicom === true` — o pedido já está na fila do Wader.
+   * Sem isto o botão continuava clicável e o médico pedia 3, 4 vezes sem
+   * nenhum sinal de que o primeiro pedido tinha sido registrado (S4-T15 D3).
+   */
+  reprocessoPendente?: boolean;
 };
 
 export default function DicomSrImport({
   open, onClose, inputs, pacienteNome, onImportar,
   totalRecebidas = 0, schemaAntigo = false, onSolicitarReprocesso,
+  reprocessoPendente = false,
 }: Props) {
   // Default: todas marcadas (médico geralmente quer importar tudo)
   const [marcadas, setMarcadas] = useState<Set<string>>(new Set());
@@ -139,12 +146,18 @@ export default function DicomSrImport({
               sem unidade e não podem ser importadas com segurança. O Wader relê o estudo
               e devolve as medidas completas — a tela atualiza sozinha.
             </p>
-            <button
-              onClick={() => { onSolicitarReprocesso?.(); onClose(); }}
-              className="px-4 py-2 rounded bg-purple-600 text-white text-[12px] font-semibold hover:bg-purple-700 transition"
-            >
-              🔄 Solicitar reprocessamento
-            </button>
+            {reprocessoPendente ? (
+              <p className="text-[12px] font-semibold text-amber-700">
+                ⏳ Reprocessamento solicitado — aguardando o Wader
+              </p>
+            ) : (
+              <button
+                onClick={() => { onSolicitarReprocesso?.(); onClose(); }}
+                className="px-4 py-2 rounded bg-purple-600 text-white text-[12px] font-semibold hover:bg-purple-700 transition"
+              >
+                🔄 Solicitar reprocessamento
+              </button>
+            )}
           </div>
         ) : (
         <>
@@ -185,7 +198,13 @@ export default function DicomSrImport({
                         onChange={() => toggle(it.key)}
                         className="w-4 h-4 accent-blue-600 cursor-pointer"
                       />
-                      <span className="flex-1 text-sm text-gray-800">{it.nomePt}</span>
+                      {/* Campo de destino visível (S4-T15 fix D3): o médico
+                          precisa saber PRA ONDE a medida vai antes de marcar —
+                          é o que torna o Perfil do aparelho conferível. */}
+                      <span className="flex-1 text-sm text-gray-800">
+                        {it.nomePt}
+                        <span className="text-[10px] font-mono text-gray-400 ml-1.5">→ {it.campo}</span>
+                      </span>
                       <span className="text-sm font-mono font-semibold text-gray-700 whitespace-nowrap">
                         {/* valor JÁ arredondado pelo adaptador (regra por tipo).
                             Só display; NÃO mexe no valor importado nem em dados futuros. */}
