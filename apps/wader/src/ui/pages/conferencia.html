@@ -4,62 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Wader · Conferência</title>
+    <!-- Base compartilhada com /admin (tokens, header, card, pill, button). -->
+    <link rel="stylesheet" href="/static/wader.css" />
     <style>
-      :root {
-        --bg: #f8fafc;
-        --fg: #0f172a;
-        --muted: #64748b;
-        --accent: #1e3a5f;
-        --border: #e2e8f0;
-        --success: #16a34a;
-        --warn: #f59e0b;
-        --danger: #dc2626;
-      }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        background: var(--bg);
-        color: var(--fg);
-      }
-      header {
-        padding: 1rem 2rem;
-        background: white;
-        border-bottom: 1px solid var(--border);
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-      }
-      header h1 { font-size: 1.1rem; margin: 0; font-weight: 600; }
-      header nav a {
-        color: var(--muted);
-        text-decoration: none;
-        margin-left: 1rem;
-        font-size: 0.9rem;
-      }
-      header nav a:hover { color: var(--accent); }
-      main {
-        padding: 2rem;
-        max-width: 1280px;
-        margin: 0 auto;
-        display: grid;
-        gap: 1.25rem;
-      }
-      .card {
-        background: white;
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 1.5rem;
-      }
-      .card h2 {
-        margin: 0 0 0.25rem;
-        font-size: 1rem;
-        font-weight: 600;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-      }
-      .card .subtitle { font-size: 0.8rem; color: var(--muted); margin: 0 0 1rem; }
+      main { max-width: 1280px; }
+      .card h2 { margin: 0 0 0.25rem; }
+      .card .subtitle { margin: 0 0 1rem; }
       .toolbar {
         display: flex;
         flex-wrap: wrap;
@@ -87,34 +37,12 @@
       tbody tr:hover { background: #f8fafc; }
       td.empty { color: var(--muted); text-align: center; padding: 1.5rem; }
       code { font-family: 'Consolas', monospace; }
-      .pill {
-        display: inline-block;
-        padding: 2px 8px;
-        border-radius: 4px;
-        font-size: 0.7rem;
-        font-weight: 600;
-        text-transform: uppercase;
-      }
-      .pill.green { background: #dcfce7; color: #14532d; }
-      .pill.yellow { background: #fef3c7; color: #92400e; }
-      .pill.red { background: #fee2e2; color: #7f1d1d; }
-      .pill.gray { background: #e2e8f0; color: #475569; }
       button {
         padding: 0.35rem 0.7rem;
-        background: var(--accent);
-        color: white;
-        border: none;
-        border-radius: 6px;
         font-size: 0.78rem;
-        font-weight: 600;
-        cursor: pointer;
         margin-right: 0.3rem;
         white-space: nowrap;
       }
-      button:hover { opacity: 0.9; }
-      button.secondary { background: white; color: var(--accent); border: 1px solid var(--border); }
-      button.danger { background: var(--danger); }
-      button:disabled { opacity: 0.5; cursor: not-allowed; }
       .row-actions { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
       pre.error {
         background: #fee2e2;
@@ -202,23 +130,30 @@
       </section>
     </main>
 
+    <!-- `$` e `fetchJson` — mesmos helpers do /admin. -->
+    <script src="/static/wader-ui.js"></script>
     <script>
-      const $ = (id) => document.getElementById(id);
       const OPERADOR_KEY = 'wader.conferencia.operador';
 
       let exames = [];
       let orfaos = [];
 
-      async function fetchJson(url, init) {
-        const res = await fetch(url, init);
-        const body = await res.json().catch(() => ({}));
-        return { httpStatus: res.status, ...body };
-      }
-
       function escapeHtml(s) {
         return String(s ?? '').replace(/[&<>"']/g, (c) => (
           { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
         ));
+      }
+
+      /**
+       * Valor vindo do servidor entrando como ARGUMENTO JS dentro de um
+       * atributo `onclick="..."`. escapeHtml sozinho NÃO basta aqui: o parser
+       * de atributo decodifica `&#39;` de volta pra `'` antes do JS ler, e a
+       * aspa reabre. JSON.stringify fecha o lado JS (aspas escapadas + as
+       * próprias aspas da string), escapeHtml fecha o lado HTML.
+       * Necessário porque `dicomOrthancStudyId` é gravável pelo médico-autor.
+       */
+      function jsArg(v) {
+        return escapeHtml(JSON.stringify(String(v ?? '')));
       }
 
       /** PatientName DICOM vem com '^' e o operador nao deve precisar digitar acento/caret. */
@@ -274,11 +209,17 @@
           return;
         }
         tbody.innerHTML = exames.map((e, i) => {
+          // Sem `accDicom` o estudo não está na listagem desta data (o servidor
+          // só devolve a fingerprint dos estudos do dia consultado) — a trava
+          // anti-corrida do excluir-reenvio não teria o que conferir. Desabilita
+          // em vez de mandar um fingerprint pela metade e tomar 400.
+          const semFingerprint = e.accDicom == null;
+          const selId = `sel-troca-${e.id}`;
           const acoes = e.orthancStudyId
-            ? `<select id="sel-troca-${e.id}"><option value="">— trocar p/ —</option>${optionsExames(e.id)}</select>
-               <button class="secondary" onclick="comBotao(this, () => vincular('${e.orthancStudyId}', 'sel-troca-${e.id}'))">Trocar vínculo</button>
-               <button class="secondary" onclick="comBotao(this, () => reprocessar('${e.orthancStudyId}'))">Reprocessar</button>
-               <button class="danger" onclick="comBotao(this, () => excluirExame(${i}))">Excluir p/ reenvio</button>`
+            ? `<select id="${escapeHtml(selId)}"><option value="">— trocar p/ —</option>${optionsExames(e.id)}</select>
+               <button class="secondary" onclick="comBotao(this, () => vincular(${jsArg(e.orthancStudyId)}, ${jsArg(selId)}))">Trocar vínculo</button>
+               <button class="secondary" onclick="comBotao(this, () => reprocessar(${jsArg(e.orthancStudyId)}))">Reprocessar</button>
+               <button class="danger" ${semFingerprint ? 'disabled title="estudo fora desta data — abra a data do estudo"' : ''} onclick="comBotao(this, () => excluirExame(${i}))">Excluir p/ reenvio</button>`
             : '—';
           return `
             <tr>
@@ -310,7 +251,7 @@
             <td><select id="sel-orfao-${i}"><option value="">— escolha o exame —</option>${optionsExames(null)}</select></td>
             <td>
               <div class="row-actions">
-                <button onclick="comBotao(this, () => vincular('${o.orthancStudyId}', 'sel-orfao-${i}'))">Vincular</button>
+                <button onclick="comBotao(this, () => vincular(${jsArg(o.orthancStudyId)}, 'sel-orfao-${i}'))">Vincular</button>
                 <button class="danger" onclick="comBotao(this, () => excluir(${i}))">Excluir p/ reenvio</button>
               </div>
             </td>
@@ -408,6 +349,10 @@
       async function excluirExame(indice) {
         const e = exames[indice];
         if (!e || !e.orthancStudyId) return;
+        if (e.accDicom == null || e.patientIdDicom == null) {
+          alert('Estudo fora desta data — abra a data do estudo para excluir.');
+          return;
+        }
         await excluirEstudo(
           e.orthancStudyId,
           { accDicom: e.accDicom, patientIdDicom: e.patientIdDicom },

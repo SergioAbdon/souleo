@@ -20,6 +20,14 @@ export const CAMPOS_DICOM_LIMPAR = [
   'imagensDicom',
   'imagensDicomDetalhes',
   'imagensSelecionadasPdf',
+  // Campos-sombra do cofre do emitido + sinalização: se o dono anterior
+  // perdeu o estudo, a fila de revisão e o erro dele também são mentira.
+  'medidasDicomPendente',
+  'medidasDicomMetaPendente',
+  'imagensDicomPendente',
+  'dicomAtualizacaoPendente',
+  'dicomUltimoErro',
+  'dicomUltimoErroEm',
 ] as const;
 
 /** Estudos em exclusão pela tela de conferência (Task 7). Conferido antes de CADA write. */
@@ -258,6 +266,16 @@ export async function processarEstudo(opts: {
       const donos = await examesCol.where(campo, '==', valor).get();
       for (const d of donos.docs) {
         if (d.id === opts.exameIdOverride) continue;
+        // Cofre do emitido: um dono EMITIDO é documento que já circulou —
+        // limpar suas imagens/medidas aqui deixaria o PDF assinado apontando
+        // pro nada. Espelha a recusa do `excluirReenvio`: preserva e avisa.
+        if ((d.data().status as string) === 'emitido') {
+          log.warn(
+            { exameEmitido: d.id, orthancStudyId: opts.orthancStudyId },
+            'Dono emitido preservado — use corrigir-laudo',
+          );
+          continue;
+        }
         await d.ref.update(limpar);
         log.info({ exameLimpo: d.id, orthancStudyId: opts.orthancStudyId }, 'Dono anterior limpo (troca de vínculo)');
       }
@@ -386,12 +404,15 @@ export async function processarEstudo(opts: {
       : 0;
 
   const etapa1: Record<string, unknown> = {
-    dicomOrthancStudyId: opts.orthancStudyId,
     atualizadoEm: FieldValue.serverTimestamp(),
   };
   if (cofre) {
     // Campos-sombra: NADA nos campos ao vivo (dicomStudyUid/dicomMeta/
-    // medidasDicom/status) — só a fila de revisão.
+    // medidasDicom/status/dicomOrthancStudyId) — só a fila de revisão.
+    // `dicomOrthancStudyId` também é campo ao vivo (achado da tríade): é o
+    // ponteiro que a tela de conferência e o excluir-reenvio usam pra achar o
+    // dono do estudo. Reescrevê-lo no emitido re-aponta um laudo publicado pra
+    // um estudo que o médico nunca revisou. "Nada muda sem humano".
     etapa1.dicomAtualizacaoPendente = true;
     if (usaNovoSr) {
       etapa1.medidasDicomPendente = srResult.medidas;
@@ -403,6 +424,7 @@ export async function processarEstudo(opts: {
       };
     }
   } else {
+    etapa1.dicomOrthancStudyId = opts.orthancStudyId;
     etapa1.dicomStudyUid = study.MainDicomTags.StudyInstanceUID ?? null;
     etapa1.dicomMeta = {
       modality: study.MainDicomTags.Modality ?? 'US',

@@ -66,12 +66,19 @@ export async function syncWorklists(opts: {
   const repo = new ExamesRepo(opts.wsId);
   const wsRepo = new WorkspaceRepo(opts.wsId);
 
-  // Busca uma vez o nome da clínica (cache reuso entre exames do tick)
+  // Busca uma vez o nome da clínica (cache reuso entre exames do tick).
+  // ABORTA o sync se falhar (achado da tríade): `nomeClinica` entra no
+  // `hashCamposWl`. Seguir com '' faria o hash divergir do gravado, regravando
+  // TODOS os `.wl` da pasta — e no tick seguinte, com o Firestore de volta,
+  // regravaria tudo de novo. Oscilação eterna. Melhor pular o tick.
   let nomeClinica = '';
   try {
     nomeClinica = await wsRepo.getNomeClinica();
   } catch (err) {
-    log.warn({ err }, 'Não consegui buscar nomeClinica do workspace, usando vazio');
+    const msg = `Não consegui buscar nomeClinica do workspace — sync abortado: ${(err as Error).message}`;
+    log.error({ err }, msg);
+    result.errors.push(msg);
+    return result;
   }
 
   const todosExames = await repo.listarDoDia(dataAlvo);

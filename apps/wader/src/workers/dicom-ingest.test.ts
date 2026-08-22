@@ -331,6 +331,25 @@ describe('processarEstudo — two-stage / paralelo / Fix B', () => {
     }
   });
 
+  // S4-T15 fix (W5): espelha a recusa do excluirReenvio — dono EMITIDO é
+  // documento que já circulou; limpar suas imagens deixaria o PDF assinado
+  // apontando pro nada.
+  it('override NÃO limpa dono EMITIDO (preserva; use corrigir-laudo)', async () => {
+    exameStore['S1'] = {
+      __id: 'E1',
+      status: 'emitido',
+      dicomOrthancStudyId: 'S1',
+      medidasDicom: { a: 1 },
+    };
+    exameStore['E2'] = { __id: 'E2', status: 'aguardando' };
+    const r = await processarEstudo({ client: makeClient(), orthancStudyId: 'S1', wsId: WS, exameIdOverride: 'E2' });
+
+    expect(r.matched).toBe(true);
+    expect(r.exameIdNoLeo).toBe('E2');
+    expect(updates.find((u) => u.id === 'E1')).toBeUndefined(); // intocado
+    expect(exameStore['S1'].medidasDicom).toEqual({ a: 1 });
+  });
+
   it('estudo em estudosEmExclusao não grava nada', async () => {
     exameStore['EX123'] = { __id: 'docExcl', status: 'aguardando' };
     estudosEmExclusao.add('s1');
@@ -354,6 +373,10 @@ describe('processarEstudo — two-stage / paralelo / Fix B', () => {
     expect(etapa1.dicomMeta).toBeUndefined();
     expect(etapa1.dicomStudyUid).toBeUndefined();
     expect(etapa1.status).toBeUndefined();
+    // S4-T15 fix (W4): `dicomOrthancStudyId` também é campo AO VIVO — é o
+    // ponteiro que a conferência usa pra achar o dono. Reescrevê-lo no emitido
+    // re-aponta um laudo publicado pra um estudo que o médico nunca revisou.
+    expect(etapa1.dicomOrthancStudyId).toBeUndefined();
 
     const etapa2 = updates[1].obj;
     expect(etapa2.imagensDicom).toBeUndefined();

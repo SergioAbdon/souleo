@@ -93,15 +93,21 @@ export class AccRecoveryWorker {
     this.execCount++;
     this.lastTickAt = new Date();
     try {
-      // Query indexada (status+dataExame, índice composto já publicado) —
+      // Query indexada (status+dataExame DESC, índice composto já publicado) —
       // nunca varre a coleção inteira. Filtro em memória remanescente: só
       // `!dicomStudyUid && acc` (não dá pra indexar "ausência de campo").
+      //
+      // orderBy dataExame DESC é obrigatório (achado da tríade): sem ele o
+      // Firestore ordena por doc id e a página de 25 enche com exames velhos
+      // da janela — o exame de HOJE, que é o que a recepção está esperando,
+      // nunca entra no lote e nunca é recuperado.
       const snap = await getDb()
         .collection('workspaces')
         .doc(this.opts.wsId)
         .collection('exames')
         .where('status', '==', 'aguardando')
         .where('dataExame', '>=', this.cutoffData())
+        .orderBy('dataExame', 'desc')
         .limit(25)
         .get();
 

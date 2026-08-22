@@ -42,9 +42,11 @@ vi.mock('../adapters/exames-repo', () => ({
   },
 }));
 
+let nomeClinicaThrows = false;
 vi.mock('../adapters/workspace-repo', () => ({
   WorkspaceRepo: class {
     async getNomeClinica() {
+      if (nomeClinicaThrows) throw new Error('Firestore fora do ar');
       return 'Clinica Teste';
     }
   },
@@ -76,6 +78,7 @@ let worklistPath: string;
 
 beforeEach(() => {
   hojeClinicaMock = HOJE;
+  nomeClinicaThrows = false;
   examesDoDia = [];
   marcarMwlCalls = [];
   limparMwlCalls = [];
@@ -112,6 +115,23 @@ describe('syncWorklists', () => {
     expect(salvarWlMock).not.toHaveBeenCalled();
     expect(result.wlsIntactos).toBe(1);
     expect(marcarMwlCalls).toEqual([['ex1', 'ok', hashReal]]);
+  });
+
+  // S4-T15 fix (W2): nomeClinica entra no hash. Seguir com '' faria o hash
+  // divergir e regravaria TODOS os .wl — e regravaria de novo no tick seguinte
+  // com o Firestore de volta. Oscilação eterna. Melhor pular o tick.
+  it('ABORTA o sync quando getNomeClinica falha (não regrava tudo com nome vazio)', async () => {
+    nomeClinicaThrows = true;
+    const hashReal = hashCamposWl(exame() as any, { scheduledProcedureStepLocation: 'Clinica Teste' });
+    examesDoDia = [exame({ wlHash: hashReal, mwlStatus: 'ok' })];
+    listarWlExistentesMock.mockReturnValue(['ex1.wl']);
+
+    const result = await syncWorklists({ wsId: WS, worklistPath, data: HOJE });
+
+    expect(salvarWlMock).not.toHaveBeenCalled();
+    expect(deletarWlMock).not.toHaveBeenCalled();
+    expect(marcarMwlCalls).toEqual([]);
+    expect(result.errors[0]).toMatch(/nomeClinica/);
   });
 
   it('limpa mwlStatus quando o .wl é removido', async () => {

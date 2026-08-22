@@ -125,7 +125,13 @@ export function registerReconciliacaoRoutes(
       }
       const update: Record<string, unknown> = {};
       for (const k of CAMPOS_EDITAVEIS) {
-        if (k in campos && campos[k] !== undefined) update[k] = campos[k];
+        if (k in campos && campos[k] !== undefined) {
+          // ACC é chave de match com o DICOM: normaliza aqui, no laço, e não só
+          // no caminho de troca-com-reserva. Sem isto o caminho "sem troca"
+          // (mesmo ACC + outro campo editado) gravava o valor cru — um espaço
+          // invisível colado pelo operador vira órfão permanente.
+          update[k] = k === 'acc' && typeof campos[k] === 'string' ? (campos[k] as string).trim() : campos[k];
+        }
       }
       if (Object.keys(update).length === 0) {
         return reply.status(400).send({ ok: false, error: 'Nenhum campo editável informado', editaveis: CAMPOS_EDITAVEIS });
@@ -236,6 +242,16 @@ export async function excluirReenvio(
   if (!orthancStudyId || !fingerprint) {
     return { status: 400, ok: false, error: 'orthancStudyId e fingerprint são obrigatórios' };
   }
+  // A fingerprint É a trava anti-corrida. `digitos(undefined)` devolve '' e um
+  // estudo com ACC/PatientID vazio casaria com '' — a trava passaria sem nunca
+  // ter sido conferida. Exige os dois campos como string, explicitamente.
+  if (typeof fingerprint.accDicom !== 'string' || typeof fingerprint.patientIdDicom !== 'string') {
+    return {
+      status: 400,
+      ok: false,
+      error: 'fingerprint.accDicom e fingerprint.patientIdDicom são obrigatórios (estudo fora desta data — abra a data do estudo)',
+    };
+  }
   if (!String(operador ?? '').trim()) {
     return { status: 400, ok: false, error: 'Operador é obrigatório' };
   }
@@ -291,7 +307,15 @@ export async function excluirReenvio(
       const st = d.data().status as string;
       if (st !== 'rascunho' && st !== 'emitido') limpar.status = 'aguardando';
       await d.ref.update(limpar);
-      await removerImagensExame(wsId, d.id);
+      // Storage é best-effort: uma falha aqui (rede, permissão, objeto já
+      // apagado) NÃO pode abortar a exclusão no meio — os campos do Firestore
+      // já foram limpos e os donos seguintes ainda não. Sobra de JPG órfão no
+      // bucket é lixo barato; estado meio-escrito é bug clínico.
+      try {
+        await removerImagensExame(wsId, d.id);
+      } catch (err) {
+        log.warn({ err, exameId: d.id, orthancStudyId }, 'Falha ao remover imagens do Storage — exclusão segue');
+      }
     }
     // 2) auditoria (retrato ANTES do DELETE) — append-only, Admin SDK só.
     await db.collection('workspaces').doc(wsId).collection('auditoria').add({

@@ -12,9 +12,10 @@ vi.mock('./dicom-ingest', () => ({
   processarEstudo: (...args: unknown[]) => processarEstudoMock(...args),
 }));
 
-// ── Mock Firestore: espiona a cadeia where().where().limit().get() ─────
+// ── Mock Firestore: espiona where().where().orderBy().limit().get() ────
 let queryDocs: Array<{ id: string; data: () => Record<string, unknown> }>;
 let whereCalls: Array<[string, string, unknown]>;
+let orderByCalls: Array<[string, string]>;
 let limitCalls: number[];
 
 vi.mock('../adapters/firebase', () => ({
@@ -28,9 +29,14 @@ vi.mock('../adapters/firebase', () => ({
               where: (f2: string, o2: string, v2: unknown) => {
                 whereCalls.push([f2, o2, v2]);
                 return {
-                  limit: (n: number) => {
-                    limitCalls.push(n);
-                    return { get: async () => ({ docs: queryDocs }) };
+                  orderBy: (campo: string, dir: string) => {
+                    orderByCalls.push([campo, dir]);
+                    return {
+                      limit: (n: number) => {
+                        limitCalls.push(n);
+                        return { get: async () => ({ docs: queryDocs }) };
+                      },
+                    };
                   },
                 };
               },
@@ -64,6 +70,7 @@ beforeEach(() => {
   hojeClinicaMock = '2026-08-21';
   queryDocs = [];
   whereCalls = [];
+  orderByCalls = [];
   limitCalls = [];
   processarEstudoMock.mockReset();
 });
@@ -114,5 +121,14 @@ describe('AccRecoveryWorker — régua estrita', () => {
       ['dataExame', '>=', '2026-08-17'],
     ]);
     expect(limitCalls).toEqual([25]);
+  });
+
+  // S4-T15 fix (W1): sem orderBy DESC o Firestore ordena por doc id e a página
+  // de 25 enche com exames velhos da janela — o de HOJE nunca entra no lote.
+  it('ordena por dataExame DESC (o exame de hoje entra na página de 25)', async () => {
+    const worker = new AccRecoveryWorker({ wsId: WS, client: makeClient({ studiesByAcc: {}, studies: {} }), intervalSec: 30 });
+    await (worker as any).tick();
+
+    expect(orderByCalls).toEqual([['dataExame', 'desc']]);
   });
 });

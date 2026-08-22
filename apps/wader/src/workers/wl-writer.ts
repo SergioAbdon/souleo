@@ -250,12 +250,19 @@ export function hashCamposWl(exame: Exame, opts: GerarWlOpts = {}): string {
 /**
  * Salva o `.wl` no filesystem.
  * Nome do arquivo = `{exameId}.wl` — único, fácil de rastrear/deletar.
+ *
+ * Escrita ATÔMICA (tmp + rename, mesmo padrão do `ingest-state`): o plugin
+ * Worklist do Orthanc relê a pasta a cada C-FIND do Vivid. Um write direto
+ * pode ser lido pela metade — o aparelho vê um DICOM truncado e a worklist
+ * "pisca". `renameSync` no mesmo volume é atômico.
  */
 export function salvarWl(worklistPath: string, exame: Exame, opts: GerarWlOpts = {}): string {
   const buffer = gerarWlBuffer(exame, opts);
   const filename = `${exame.id}.wl`;
   const fullPath = path.join(worklistPath, filename);
-  fs.writeFileSync(fullPath, buffer);
+  const tmpPath = `${fullPath}.tmp`;
+  fs.writeFileSync(tmpPath, buffer);
+  fs.renameSync(tmpPath, fullPath);
   log.info(
     {
       exameId: exame.id,

@@ -250,14 +250,24 @@ export class DicomIngestWorker {
         for (const d of flagSnap.docs) {
           const studyId = d.data().dicomOrthancStudyId as string | undefined;
           if (studyId) {
-            await processarEstudo({
+            const result = await processarEstudo({
               client: this.opts.client,
               orthancStudyId: studyId,
               wsId: this.opts.wsId,
               forceSr: true,
               exameIdOverride: d.id,
             });
-            await d.ref.update({ reprocessarDicom: FieldValue.delete() });
+            // A flag some de qualquer jeito (senão o tick reprocessa em loop),
+            // mas um reprocesso que NÃO casou tem que ficar visível no exame —
+            // o médico pediu e precisa saber que não deu, sem abrir o log do
+            // Wader. Silêncio aqui = "pedi e nada aconteceu".
+            const limpar: Record<string, unknown> = { reprocessarDicom: FieldValue.delete() };
+            if (!result.matched) {
+              limpar.dicomUltimoErro =
+                'Reprocesso falhou: ' + (result.errors[0] ?? 'estudo indisponível');
+              limpar.dicomUltimoErroEm = FieldValue.serverTimestamp();
+            }
+            await d.ref.update(limpar);
           } else {
             await d.ref.update({
               reprocessarDicom: FieldValue.delete(),

@@ -106,4 +106,33 @@ describe('DicomIngestWorker — reprocesso sob demanda (flag reprocessarDicom)',
     expect(exames['doc2'].dicomUltimoErro).toBe('Reprocesso pedido mas exame sem estudo vinculado');
     expect(exames['doc2'].dicomUltimoErroEm).toBe('__ts__');
   });
+
+  // S4-T15 fix (W7): a flag some de qualquer jeito (senão o tick loopa), mas
+  // um reprocesso que NÃO casou precisa ficar visível no exame — o médico
+  // pediu e tem que saber que não deu, sem abrir o log do Wader.
+  it('reprocesso que não casou: flag limpa E dicomUltimoErro gravado', async () => {
+    exames['doc3'] = { reprocessarDicom: true, dicomOrthancStudyId: 'S1' };
+    processarEstudoImpl = async () => ({
+      orthancStudyId: 'S1',
+      matched: false,
+      errors: ['Estudo sem AccessionNumber — não dá pra fazer match'],
+    });
+    const worker = makeWorker('c');
+    await (worker as any).tick();
+
+    expect(exames['doc3'].reprocessarDicom).toBeUndefined();
+    expect(exames['doc3'].dicomUltimoErro).toBe(
+      'Reprocesso falhou: Estudo sem AccessionNumber — não dá pra fazer match',
+    );
+    expect(exames['doc3'].dicomUltimoErroEm).toBe('__ts__');
+  });
+
+  it('reprocesso sem erro reportado: mensagem genérica de indisponível', async () => {
+    exames['doc4'] = { reprocessarDicom: true, dicomOrthancStudyId: 'S1' };
+    processarEstudoImpl = async () => ({ orthancStudyId: 'S1', matched: false, errors: [] });
+    const worker = makeWorker('d');
+    await (worker as any).tick();
+
+    expect(exames['doc4'].dicomUltimoErro).toBe('Reprocesso falhou: estudo indisponível');
+  });
 });

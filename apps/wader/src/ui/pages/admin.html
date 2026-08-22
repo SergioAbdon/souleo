@@ -4,47 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Wader · Admin</title>
+    <!-- Base compartilhada com /conferencia (tokens, header, card, pill, button). -->
+    <link rel="stylesheet" href="/static/wader.css" />
     <style>
-      :root {
-        --bg: #f8fafc;
-        --fg: #0f172a;
-        --muted: #64748b;
-        --accent: #1e3a5f;
-        --border: #e2e8f0;
-        --success: #16a34a;
-        --warn: #f59e0b;
-        --danger: #dc2626;
-      }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        background: var(--bg);
-        color: var(--fg);
-      }
-      header {
-        padding: 1rem 2rem;
-        background: white;
-        border-bottom: 1px solid var(--border);
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-      }
-      header h1 { font-size: 1.1rem; margin: 0; font-weight: 600; }
-      header nav a {
-        color: var(--muted);
-        text-decoration: none;
-        margin-left: 1rem;
-        font-size: 0.9rem;
-      }
-      header nav a:hover { color: var(--accent); }
-      main {
-        padding: 2rem;
-        max-width: 1100px;
-        margin: 0 auto;
-        display: grid;
-        gap: 1.25rem;
-      }
+      main { max-width: 1100px; }
       .grid-2 {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -53,21 +16,8 @@
       @media (max-width: 800px) {
         .grid-2 { grid-template-columns: 1fr; }
       }
-      .card {
-        background: white;
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 1.5rem;
-      }
-      .card h2 {
-        margin: 0 0 1rem;
-        font-size: 1rem;
-        font-weight: 600;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-      }
-      .card .subtitle { font-size: 0.8rem; color: var(--muted); margin-top: -0.5rem; margin-bottom: 1rem; }
+      .card h2 { margin: 0 0 1rem; }
+      .card .subtitle { margin-top: -0.5rem; margin-bottom: 1rem; }
       .field {
         display: flex;
         justify-content: space-between;
@@ -78,18 +28,6 @@
       .field:last-child { border: 0; }
       .field .label { color: var(--muted); }
       .field .value { font-family: 'Consolas', monospace; color: var(--fg); }
-      .pill {
-        display: inline-block;
-        padding: 2px 8px;
-        border-radius: 4px;
-        font-size: 0.7rem;
-        font-weight: 600;
-        text-transform: uppercase;
-      }
-      .pill.green { background: #dcfce7; color: #14532d; }
-      .pill.yellow { background: #fef3c7; color: #92400e; }
-      .pill.red { background: #fee2e2; color: #7f1d1d; }
-      .pill.gray { background: #e2e8f0; color: #475569; }
       .badge {
         display: inline-block;
         padding: 2px 8px;
@@ -102,18 +40,9 @@
       }
       button {
         padding: 0.4rem 0.8rem;
-        background: var(--accent);
-        color: white;
-        border: none;
-        border-radius: 6px;
         font-size: 0.8rem;
-        font-weight: 600;
-        cursor: pointer;
         margin-right: 0.4rem;
       }
-      button:hover { opacity: 0.9; }
-      button.secondary { background: white; color: var(--accent); border: 1px solid var(--border); }
-      button:disabled { opacity: 0.5; cursor: not-allowed; }
       .actions { margin-top: 0.75rem; }
       pre.error {
         background: #fee2e2;
@@ -203,9 +132,9 @@
       </section>
     </main>
 
+    <!-- `$` e `fetchJson` — mesmos helpers da /conferencia. -->
+    <script src="/static/wader-ui.js"></script>
     <script>
-      const $ = (id) => document.getElementById(id);
-
       function fmtField(label, value) {
         return `<div class="field"><span class="label">${label}</span><span class="value">${value}</span></div>`;
       }
@@ -214,11 +143,6 @@
         const cls = value ? 'green' : 'red';
         const txt = value ? trueLabel : falseLabel;
         return `<span class="pill ${cls}">${txt}</span>`;
-      }
-
-      async function fetchJson(url, init) {
-        const res = await fetch(url, init);
-        return res.json();
       }
 
       async function refreshAll() {

@@ -95,6 +95,14 @@ function validate(cfg: WaderConfig, source: string): void {
     errors.push('ui.port deve estar entre 1 e 65535');
   }
 
+  // Teto de 15s no /changes: o pacote de latência (Task 6) baixou o default
+  // pra 5s, mas o `wader.config.json` já instalado na clínica tem 30 EXPLÍCITO
+  // — o merge com defaults preserva o valor do arquivo e a clínica nunca veria
+  // a melhoria. Clamp em vez de erro: config velho continua carregando.
+  if (cfg.polling.orthancChangesSec > 15) {
+    cfg.polling.orthancChangesSec = 15;
+  }
+
   if (errors.length > 0) {
     throw new ConfigError(
       `Erros de validação em ${source}:\n  - ${errors.join('\n  - ')}`

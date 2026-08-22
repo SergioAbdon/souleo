@@ -59,7 +59,11 @@ export async function uploadDicomPreview(opts: {
     // Sem predefinedAcl (D5b): objeto nasce privado. A URL abaixo vira
     // identificador, não link direto — ver comentário do topo do arquivo.
     metadata: {
-      cacheControl: 'public, max-age=31536000', // 1 ano (imagens DICOM são imutáveis)
+      // `private` desde D5b: o objeto não é mais público, e é servido por
+      // signed URL de 1h. Um `public, max-age=1 ano` autorizaria proxies
+      // compartilhados a guardar imagem de paciente — e a cachear além da
+      // validade da assinatura. 1h casa com a vida da URL.
+      cacheControl: 'private, max-age=3600',
       metadata: {
         wsId: opts.wsId,
         exameId: opts.exameId,
