@@ -724,3 +724,40 @@ describe('17. espelho ortancAtivo fecha do outro lado (achado 17)', () => {
     await assertFails(updateDoc(doc(como(DR_A), 'workspaces', LOCAL_A2), { ortancAtivo: false }));
   });
 });
+
+describe('18. Perfil do aparelho (S4-T13)', () => {
+  const payloadPerfil = (extra = {}) => ({
+    nome: 'GE Vivid T8',
+    mapeamentos: { 'AO_18015-8': { campo: 'b7', nomePt: 'Raiz Aórtica', casas: 0, alvo: 'mm' } },
+    atualizadoEm: new Date(),
+    atualizadoPor: DR_A,
+    ...extra,
+  });
+
+  test('membro (medico do local) LE o perfil do aparelho', async () => {
+    await assertSucceeds(getDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/integracoes`, 'perfilAparelho')));
+  });
+  test('recepcao TAMBEM le (transparencia — nao e segredo, ao contrario de feegow/orthanc)', async () => {
+    await assertSucceeds(getDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/integracoes`, 'perfilAparelho')));
+  });
+  test('membro de OUTRA conta NAO le', async () => {
+    await assertFails(getDoc(doc(como(DR_B), `workspaces/${LOCAL_A1}/integracoes`, 'perfilAparelho')));
+  });
+  test('anonimo NAO le', async () => {
+    const anon = env.unauthenticatedContext().firestore();
+    await assertFails(getDoc(doc(anon, `workspaces/${LOCAL_A1}/integracoes`, 'perfilAparelho')));
+  });
+
+  test('dono ESCREVE o perfil do aparelho (payload real do editor)', async () => {
+    await assertSucceeds(setDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/integracoes`, 'perfilAparelho'), payloadPerfil()));
+  });
+  test('recepcao NAO escreve', async () => {
+    await assertFails(setDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/integracoes`, 'perfilAparelho'), payloadPerfil()));
+  });
+  test('medico do local (nao-dono) NAO escreve', async () => {
+    await assertFails(setDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/integracoes`, 'perfilAparelho'), payloadPerfil()));
+  });
+  test('dono NAO escreve campo fora da whitelist (fail-closed)', async () => {
+    await assertFails(setDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/integracoes`, 'perfilAparelho'), payloadPerfil({ extra: 'nao deveria colar' })));
+  });
+});

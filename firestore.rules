@@ -133,6 +133,22 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Perfil do aparelho (S4-T13): mapa medida-do-Vivid -> campo do laudo,
+      // editavel no cartao Integracoes (decisao Sergio: transparencia total).
+      // Diferente do generico /integracoes/{tipo} acima: SEM segredo, entao
+      // o CLIENTE escreve direto (mesmo padrao de tiposLaudo abaixo) — nao
+      // precisa de rota server-side so pra isso. Leitura: qualquer membro (o
+      // medico quer ver o que o aparelho manda, nao so o dono). Escrita: so
+      // o dono, mesma trava dos outros editores de integracoes. Match literal
+      // e mais especifico que o wildcard /integracoes/{tipo} acima — vence
+      // pra este doc (testado em tests/rules, secao 18).
+      match /integracoes/perfilAparelho {
+        allow read: if superadmin() || alcancaLocal(wsId);
+        allow create, update: if ehDonoDoLocal(wsId)
+          && request.resource.data.keys().hasOnly(['nome', 'mapeamentos', 'atualizadoEm', 'atualizadoPor']);
+        allow delete: if false;
+      }
+
       match /pacientes/{pacId} {
         allow read: if superadmin() || alcancaLocal(wsId);
         allow create, update: if alcancaLocal(wsId);

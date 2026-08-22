@@ -15,10 +15,12 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, setDoc, serverTimestamp, query, orderBy, limit } from 'firebase/firestore';
 import { podeVerIntegracoes } from '@/lib/permissoes';
 import { TIPOS_INTEGRACAO, rotuloEstado, tomEstado, type Integracao, type TipoIntegracao } from '@/lib/integracoes';
 import type { AcaoFeegow } from '@/lib/feegow-admin';
+import { carregarPerfilAparelho, SR_TO_MOTOR, type MapaSr } from '@/lib/perfil-aparelho';
+import { isSchemaNovo, type MedidaSr } from '@/lib/dicom-sr-mapping';
 import PageHeader from '@/components/shell/PageHeader';
 import CartaoIntegracao from '@/components/integracoes/CartaoIntegracao';
 
@@ -97,6 +99,15 @@ export default function IntegracoesPage() {
   const [orthancSalvando, setOrthancSalvando] = useState(false);
   const [orthancErro, setOrthancErro] = useState('');
 
+  // Perfil do aparelho (S4-T13): mapa medida-do-Vivid -> campo do laudo,
+  // client escreve direto (sem segredo — regra propria em firestore.rules).
+  // Semeado com SR_TO_MOTOR na 1a carga via carregarPerfilAparelho (mesma
+  // fonte que o laudo vai usar quando D6 autorizar o consumo).
+  const [perfilMapa, setPerfilMapa] = useState<MapaSr>(SR_TO_MOTOR);
+  const [perfilRecebidas, setPerfilRecebidas] = useState<Array<{ chave: string; meaning: string; unit: string }>>([]);
+  const [perfilSalvando, setPerfilSalvando] = useState(false);
+  const [perfilErro, setPerfilErro] = useState('');
+
   useEffect(() => {
     if (authLoading) return;
     if (!wsId || !podeVer) { setLoading(false); return; }
@@ -129,10 +140,82 @@ export default function IntegracoesPage() {
       setOrthancAtivo(idx.orthanc?.ativo ?? !!workspace?.ortancAtivo);
       setLoading(false);
     });
+    // carregarPerfilAparelho ja devolve SR_TO_MOTOR quando o doc esta ausente/
+    // vazio/malformado — e exatamente a "semeadura" da 1a edicao (bullet 2 do
+    // brief): o form nasce preenchido com o default, Salvar grava por cima.
+    carregarPerfilAparelho(db, wsId).then(setPerfilMapa);
+    // "Recebidas sem destino" (S4-T13): ultimos 20 exames por dataExame —
+    // mesmo orderBy sem where que src/lib/firestore.ts:280 ja usa (nao exige
+    // indice composto novo). So schema NOVO tem unit/meaning; agrega 1x por
+    // chave (o exame mais recente decide o rotulo se a mesma chave aparecer
+    // em mais de um exame).
+    getDocs(query(collection(db, 'workspaces', wsId, 'exames'), orderBy('dataExame', 'desc'), limit(20))).then(snap => {
+      const achadas = new Map<string, { meaning: string; unit: string }>();
+      snap.forEach(d => {
+        const medidas = d.data().medidasDicom as Record<string, MedidaSr | number> | undefined;
+        if (!isSchemaNovo(medidas)) return;
+        for (const [chave, m] of Object.entries(medidas)) {
+          if (!achadas.has(chave)) achadas.set(chave, { meaning: m.meaning || chave, unit: m.unit || '' });
+        }
+      });
+      setPerfilRecebidas([...achadas].map(([chave, v]) => ({ chave, ...v })));
+    });
     // Fallback de workspace?.ortanc* de proposito fora das deps — so na carga
     // inicial (ver comentario acima); reagir a eles reintroduziria o mesmo problema.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wsId, podeVer, authLoading]);
+
+  // "Recebidas sem destino" = achadas nos ultimos 20 exames MENOS as ja
+  // mapeadas — recalcula quando qualquer um dos dois muda (mapear() some da
+  // lista sem esperar um novo fetch).
+  const perfilRecebidasSemDestino = perfilRecebidas.filter(r => !(r.chave in perfilMapa));
+
+  function perfilMudarLinha(chave: string, campo: keyof MapaSr[string], valor: string) {
+    setPerfilMapa(prev => ({
+      ...prev,
+      [chave]: { ...prev[chave], [campo]: campo === 'casas' ? Number(valor) || 0 : valor } as MapaSr[string],
+    }));
+  }
+
+  function perfilRemoverLinha(chave: string) {
+    setPerfilMapa(prev => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { [chave]: _omit, ...resto } = prev;
+      return resto;
+    });
+  }
+
+  function perfilAdicionarLinha() {
+    let chave = 'nova_chave';
+    let n = 1;
+    while (chave in perfilMapa) chave = `nova_chave_${n++}`;
+    setPerfilMapa(prev => ({ ...prev, [chave]: { campo: '', nomePt: '', casas: 0, alvo: '' } }));
+  }
+
+  // Botao "mapear" na tabela de recebidas: abre a linha ja pre-preenchida
+  // com o nome real (meaning) que o aparelho mandou — o dono so ajusta
+  // campo/alvo/casas e Salva.
+  function perfilMapear(chave: string, meaning: string) {
+    setPerfilMapa(prev => ({ ...prev, [chave]: { campo: '', nomePt: meaning, casas: 0, alvo: '' } }));
+  }
+
+  async function salvarPerfilAparelho() {
+    if (!user || !wsId || perfilSalvando) return;
+    setPerfilSalvando(true);
+    setPerfilErro('');
+    try {
+      await setDoc(doc(db, 'workspaces', wsId, 'integracoes', 'perfilAparelho'), {
+        nome: 'GE Vivid T8',
+        mapeamentos: perfilMapa,
+        atualizadoEm: serverTimestamp(),
+        atualizadoPor: user.uid,
+      });
+    } catch {
+      setPerfilErro('Falha ao salvar o perfil do aparelho.');
+    } finally {
+      setPerfilSalvando(false);
+    }
+  }
 
   // Recarrega SÓ o doc testado (mesma normalizacao do carregamento inicial —
   // senão o cartão faz conta com Timestamp cru e mostra NaN).
@@ -476,6 +559,61 @@ export default function IntegracoesPage() {
                           {removendo === 'orthanc' ? 'removendo…' : 'Remover credencial'}
                         </button>
                       )}
+                    </div>
+
+                    {/* Perfil do aparelho (S4-T13): transparencia total — o
+                        dono ve toda medida que o Vivid manda e decide pra
+                        qual campo do laudo ela vai, sem mexer em codigo. */}
+                    <div className="space-y-2 border-t border-borda pt-3">
+                      <label className="block text-xs font-semibold text-ink-3 uppercase">Perfil do aparelho (medidas do SR)</label>
+
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] text-ink-3 font-medium">Mapeadas</p>
+                        {Object.entries(perfilMapa).map(([chave, e]) => (
+                          <div key={chave} className="flex items-center gap-1.5 text-xs">
+                            <span className="w-28 shrink-0 text-ink-3 font-mono text-[10px] truncate" title={chave}>{chave}</span>
+                            <input type="text" value={e.nomePt} placeholder="Nome PT"
+                              onChange={ev => perfilMudarLinha(chave, 'nomePt', ev.target.value)}
+                              className={`${campoInput} flex-1`} />
+                            <input type="text" value={e.campo} placeholder="Campo (b7)"
+                              onChange={ev => perfilMudarLinha(chave, 'campo', ev.target.value)}
+                              className={`${campoInput} w-20 font-mono`} />
+                            <select value={e.alvo} onChange={ev => perfilMudarLinha(chave, 'alvo', ev.target.value)}
+                              className="border border-borda rounded-lg px-1.5 py-2 text-xs bg-card text-ink focus:outline-none focus:border-p1">
+                              <option value="mm">mm</option>
+                              <option value="cm/s">cm/s</option>
+                              <option value="">—</option>
+                            </select>
+                            <input type="number" value={e.casas} min={0} max={3}
+                              onChange={ev => perfilMudarLinha(chave, 'casas', ev.target.value)}
+                              className={`${campoInput} w-14`} />
+                            <button type="button" onClick={() => perfilRemoverLinha(chave)}
+                              className="text-ink-3 hover:text-red-600 transition px-1" title="Remover linha">✕</button>
+                          </div>
+                        ))}
+                        <button type="button" onClick={perfilAdicionarLinha} className={botaoRemover}>+ Adicionar linha</button>
+                      </div>
+
+                      {perfilRecebidasSemDestino.length > 0 && (
+                        <div className="space-y-1.5 pt-1">
+                          <p className="text-[11px] text-ink-3 font-medium">Recebidas sem destino (últimos 20 exames)</p>
+                          {perfilRecebidasSemDestino.map(r => (
+                            <div key={r.chave} className="flex items-center gap-2 text-xs">
+                              <span className="w-28 shrink-0 text-ink-3 font-mono text-[10px] truncate" title={r.chave}>{r.chave}</span>
+                              <span className="flex-1 text-ink-2 truncate" title={r.meaning}>{r.meaning}</span>
+                              <span className="text-ink-3 w-12">{r.unit || '—'}</span>
+                              <button type="button" onClick={() => perfilMapear(r.chave, r.meaning)} className={botaoRemover}>mapear</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {perfilErro && <p className="text-xs text-red-600">{perfilErro}</p>}
+                      <div className="pt-1">
+                        <button type="button" onClick={salvarPerfilAparelho} disabled={perfilSalvando} className={botaoSalvar}>
+                          {perfilSalvando ? 'salvando…' : 'Salvar perfil'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
