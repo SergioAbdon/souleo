@@ -6,6 +6,8 @@
 // o emulador da suite so sobe firestore+auth).
 import { test, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { register } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { resolverPapel } from '../../src/lib/exame-admin.ts';
@@ -95,6 +97,27 @@ describe('assinarImagensExame (200 com membro devolvendo o mapa)', () => {
     assert.deepEqual(bucket._assinadas, [path], 'path derivado da URL bate com o path original (round-trip do encode)');
   });
 
+  // Achado CRITICAL: url/path vem do doc do exame, editavel pelo
+  // medico-autor via regra. Sem o confinamento em paresUrlPath, uma URL
+  // canonica forjada apontando pra fora de dicom/{wsId}/{exameId}/ (ex.:
+  // o laudo em PDF de OUTRA clinica) seria assinada igual a uma imagem
+  // legitima. RED: comente o `if (path && path.startsWith(prefixo))` por
+  // `if (path)` em imagens-dicom-admin.ts e este teste falha.
+  test('URL canonica forjada fora do prefixo do exame -> sem entrada no mapa, nada assinado', async () => {
+    const legitima = `https://storage.googleapis.com/${BUCKET_NAME}/dicom/${WS}/exForjado/i1.jpg`;
+    const pathForjado = 'laudos/wsOutro/laudo_X.pdf';
+    const forjada = `https://storage.googleapis.com/${BUCKET_NAME}/${encodeURIComponent(pathForjado)}`;
+    await db.doc(`workspaces/${WS}/exames/exForjado`).set({
+      pacienteNome: 'P', imagensDicom: [legitima, forjada],
+      imagensDicomDetalhes: [{ url: legitima, path: `dicom/${WS}/exForjado/i1.jpg`, orthancInstanceId: 'i1' }],
+    });
+    const bucket = bucketFalso();
+    const urls = await assinarImagensExame(db, bucket, WS, 'exForjado');
+    assert.deepEqual(Object.keys(urls), [legitima], 'so a imagem do proprio exame entra no mapa');
+    assert.equal(urls[forjada], undefined, 'a URL forjada nao pode ganhar signed URL');
+    assert.deepEqual(bucket._assinadas, [`dicom/${WS}/exForjado/i1.jpg`], 'nenhuma assinatura foi gerada pro path forjado');
+  });
+
   test('exame sem imagens -> {}', async () => {
     await db.doc(`workspaces/${WS}/exames/exSemImg`).set({ pacienteNome: 'P' });
     const urls = await assinarImagensExame(db, bucketFalso(), WS, 'exSemImg');
@@ -110,6 +133,26 @@ describe('assinarImagensExame (200 com membro devolvendo o mapa)', () => {
 describe('derivarPathDeUrl', () => {
   test('URL fora do bucket esperado -> null', () => {
     assert.equal(derivarPathDeUrl('https://storage.googleapis.com/outro-bucket/dicom/x.jpg', BUCKET_NAME), null);
+  });
+});
+
+// Fiação do gate (hoje so as pecas isoladas — requireUid/resolverPapel —
+// eram testadas, nunca a rota em si). 'next/server' nao resolve em node
+// --test puro sem bundler (ver _route-loader-imagens-urls.mjs); o loader
+// resolve pro arquivo real do Next e troca so auth-admin/exame-admin por
+// um mock minimo pra simular o miss sem precisar de id token do emulador.
+describe('POST /api/exame/imagens-urls (handler ponta-a-ponta, gate coberto)', () => {
+  test('uid autenticado sem vinculo (resolverPapel -> null) -> 403 sem_permissao', async () => {
+    register(pathToFileURL('./tests/api/_route-loader-imagens-urls.mjs'), import.meta.url);
+    const { POST } = await import('../../src/app/api/exame/imagens-urls/route.ts');
+    const req = new Request('http://localhost/api/exame/imagens-urls', {
+      method: 'POST',
+      headers: { authorization: 'Bearer uid-teste-rota', 'content-type': 'application/json' },
+      body: JSON.stringify({ wsId: 'wsQualquer', exameId: 'exQualquer' }),
+    });
+    const res = await POST(req);
+    assert.equal(res.status, 403);
+    assert.deepEqual(await res.json(), { ok: false, motivo: 'sem_permissao' });
   });
 });
 

@@ -31,15 +31,25 @@ type ImagemDetalhe = { url?: string; path?: string };
 // Path por imagem: prefere imagensDicomDetalhes[].path (gravado pelo Wader
 // junto da URL — dicom-ingest.ts); cai pra derivar da própria URL canônica
 // em imagensDicom pros exames legados sem detalhes.
-function paresUrlPath(exame: Record<string, unknown>, bucketName: string): Array<{ url: string; path: string }> {
+//
+// Confinamento (achado CRITICAL da revisão): url/path vêm do doc do exame,
+// editável pelo médico-autor via regra — sem confinamento a rota assinaria
+// QUALQUER objeto do bucket (ex.: laudo de outra clínica). Mesmo padrão do
+// vizinho apagadorDePdf em src/app/api/exame/route.ts:16-30: wsId/exameId
+// SEMPRE vêm do chamador (nunca do doc), e todo path fora do prefixo é
+// descartado antes de assinar.
+function paresUrlPath(
+  exame: Record<string, unknown>, bucketName: string, wsId: string, exameId: string,
+): Array<{ url: string; path: string }> {
   const urls = ((exame.imagensDicom as string[] | undefined) ?? []).filter(Boolean);
   if (urls.length === 0) return [];
   const detalhes = (exame.imagensDicomDetalhes as ImagemDetalhe[] | undefined) ?? [];
   const porUrl = new Map(detalhes.filter((d) => d.url && d.path).map((d) => [d.url as string, d.path as string]));
+  const prefixo = `dicom/${wsId}/${exameId}/`;
   const pares: Array<{ url: string; path: string }> = [];
   for (const url of urls) {
     const path = porUrl.get(url) ?? derivarPathDeUrl(url, bucketName);
-    if (path) pares.push({ url, path });
+    if (path && path.startsWith(prefixo)) pares.push({ url, path });
   }
   return pares;
 }
@@ -51,7 +61,7 @@ export async function assinarImagensExame(
 ): Promise<Record<string, string>> {
   const snap = await db.doc(`workspaces/${wsId}/exames/${exameId}`).get();
   if (!snap.exists) return {};
-  const pares = paresUrlPath(snap.data()!, bucket.name);
+  const pares = paresUrlPath(snap.data()!, bucket.name, wsId, exameId);
   if (pares.length === 0) return {};
   const expires = Date.now() + UMA_HORA_MS;
   const entradas = await Promise.all(pares.map(async ({ url, path }) => {

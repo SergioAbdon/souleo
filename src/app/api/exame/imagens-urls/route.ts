@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb, adminStorage, requireUid } from '@/lib/auth-admin';
 import { resolverPapel } from '@/lib/exame-admin';
 import { assinarImagensExame } from '@/lib/imagens-dicom-admin';
+import { idValido } from '@/lib/convite-server';
 
 export const runtime = 'nodejs';
 
@@ -18,7 +19,10 @@ export async function POST(req: NextRequest) {
   }
   try {
     const { wsId, exameId } = await req.json();
-    if (!wsId || !exameId) {
+    // id malformado (fora do charset de doc-id) reconstruiria um path
+    // errado no Admin SDK e estourava 500 mais adiante — 400 aqui, igual
+    // /api/convite/info.
+    if (!idValido(wsId) || !idValido(exameId)) {
       return NextResponse.json({ ok: false, motivo: 'dados_invalidos' }, { status: 400 });
     }
     const dbAdmin = adminDb();
