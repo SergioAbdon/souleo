@@ -32,6 +32,14 @@ interface ExameRecon {
   /** 'casado' = já tem imagens/SR no LEO; 'recebido' = estudo chegou, processando; 'aguardando' = sem estudo ainda. */
   matchStatus: 'casado' | 'recebido' | 'aguardando';
   orthancStudyId: string | null;
+  /**
+   * Fingerprint do estudo vinculado (DICOM), null quando não há estudo.
+   * Usado pelo botão "Excluir p/ reenvio" no caso clínico principal: exame
+   * do dia que já casou com o estudo ERRADO (troca de paciente no Vivid).
+   */
+  accDicom: string | null;
+  patientIdDicom: string | null;
+  pacienteNomeDicom: string | null;
   /** Último erro de ingestão (dicom-ingest.ts grava no exame quando as imagens falham). */
   dicomUltimoErro: string | null;
 }
@@ -299,10 +307,26 @@ export async function excluirReenvio(
       maquina: os.hostname(),
       em: FieldValue.serverTimestamp(),
     });
-    // 3) DELETE (404 = sucesso) e 4) esquecer assinatura
-    await client.deleteStudy(orthancStudyId);
-    dicomWorker.forgetStudy(orthancStudyId);
+    // 3) DELETE (404 = sucesso). Se lançar (erro real do Orthanc), os donos já
+    // foram limpos — a resposta precisa dizer isso em vez de um 500 genérico.
+    try {
+      await client.deleteStudy(orthancStudyId);
+    } catch (err) {
+      log.error({ err, orthancStudyId }, 'DELETE no Orthanc falhou após limpar os donos');
+      return {
+        status: 500,
+        ok: false,
+        error:
+          'Exclusão INCOMPLETA: os exames já foram limpos mas o estudo PODE continuar no Orthanc — ' +
+          'recarregue a tela e tente excluir de novo (ou use Reprocessar/Vincular para restaurar).',
+        examesLimpos: donos.map((d) => d.id),
+      };
+    }
   } finally {
+    // Esquecer a assinatura sempre (mesmo se o DELETE lançou): esquecer a
+    // mais é inofensivo, e sem isto a assinatura matched:true impediria o
+    // reprocesso automático de um estudo que sobreviveu ao DELETE.
+    dicomWorker.forgetStudy(orthancStudyId);
     estudosEmExclusao.delete(orthancStudyId);
   }
 
@@ -423,6 +447,9 @@ export async function montarReconciliacao(
       temMedidas,
       matchStatus,
       orthancStudyId: (e.dicomOrthancStudyId as string) || estudo?.ID || null,
+      accDicom: estudo?.MainDicomTags?.AccessionNumber || null,
+      patientIdDicom: estudo?.PatientMainDicomTags?.PatientID || null,
+      pacienteNomeDicom: estudo?.PatientMainDicomTags?.PatientName || null,
       dicomUltimoErro: (e.dicomUltimoErro as string) || null,
     };
   });

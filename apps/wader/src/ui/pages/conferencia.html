@@ -221,6 +221,28 @@
         ));
       }
 
+      /** PatientName DICOM vem com '^' e o operador nao deve precisar digitar acento/caret. */
+      var DIACRITICOS_RE = new RegExp('[' + String.fromCharCode(0x0300) + '-' + String.fromCharCode(0x036f) + ']', 'g');
+      function normalizarNome(s) {
+        return String(s ?? '')
+          .replace(/\^/g, ' ')
+          .normalize('NFD')
+          .replace(DIACRITICOS_RE, '')
+          .trim()
+          .toUpperCase()
+          .replace(/\s+/g, ' ');
+      }
+
+      function errMsg(r) {
+        return r.error ?? (r.errors && r.errors.join('; ')) ?? JSON.stringify(r);
+      }
+
+      /** Desabilita o botão durante o fetch — evita duplo clique concorrente. */
+      async function comBotao(btn, fn) {
+        if (btn) btn.disabled = true;
+        try { await fn(); } finally { if (btn) btn.disabled = false; }
+      }
+
       function initOperador() {
         $('operador').value = localStorage.getItem(OPERADOR_KEY) || '';
         $('operador').addEventListener('input', () => {
@@ -251,11 +273,12 @@
           tbody.innerHTML = '<tr><td colspan="8" class="empty">Nenhum exame nesta data.</td></tr>';
           return;
         }
-        tbody.innerHTML = exames.map((e) => {
+        tbody.innerHTML = exames.map((e, i) => {
           const acoes = e.orthancStudyId
             ? `<select id="sel-troca-${e.id}"><option value="">— trocar p/ —</option>${optionsExames(e.id)}</select>
-               <button class="secondary" onclick="vincular('${e.orthancStudyId}', 'sel-troca-${e.id}')">Trocar vínculo</button>
-               <button class="secondary" onclick="reprocessar('${e.orthancStudyId}')">Reprocessar</button>`
+               <button class="secondary" onclick="comBotao(this, () => vincular('${e.orthancStudyId}', 'sel-troca-${e.id}'))">Trocar vínculo</button>
+               <button class="secondary" onclick="comBotao(this, () => reprocessar('${e.orthancStudyId}'))">Reprocessar</button>
+               <button class="danger" onclick="comBotao(this, () => excluirExame(${i}))">Excluir p/ reenvio</button>`
             : '—';
           return `
             <tr>
@@ -287,8 +310,8 @@
             <td><select id="sel-orfao-${i}"><option value="">— escolha o exame —</option>${optionsExames(null)}</select></td>
             <td>
               <div class="row-actions">
-                <button onclick="vincular('${o.orthancStudyId}', 'sel-orfao-${i}')">Vincular</button>
-                <button class="danger" onclick="excluir(${i})">Excluir p/ reenvio</button>
+                <button onclick="comBotao(this, () => vincular('${o.orthancStudyId}', 'sel-orfao-${i}'))">Vincular</button>
+                <button class="danger" onclick="comBotao(this, () => excluir(${i}))">Excluir p/ reenvio</button>
               </div>
             </td>
           </tr>
@@ -328,7 +351,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ orthancStudyId, exameId }),
         });
-        if (!r.ok) { alert('Falha ao vincular:\n\n' + (r.error || JSON.stringify(r))); return; }
+        if (!r.ok) { alert('Falha ao vincular:\n\n' + errMsg(r)); return; }
         alert('Confira as imagens antes de emitir.');
         await carregar($('data').value);
       }
@@ -339,14 +362,17 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ orthancStudyId }),
         });
-        if (!r.ok) { alert('Falha ao reprocessar:\n\n' + (r.error || JSON.stringify(r))); return; }
+        if (!r.ok) { alert('Falha ao reprocessar:\n\n' + errMsg(r)); return; }
         alert(`Reprocessado: ${r.imagensProcessadas ?? 0} imagens, ${r.medidasExtraidas ?? 0} medidas.`);
         await carregar($('data').value);
       }
 
-      async function excluir(indice) {
-        const o = orfaos[indice];
-        if (!o) return;
+      /**
+       * Exclui um estudo do Orthanc pra reenvio — fluxo compartilhado entre
+       * "Estudos sem dono" (órfão) e "Exames do dia" (exame já casado com o
+       * estudo errado — caso clínico principal: troca de paciente no Vivid).
+       */
+      async function excluirEstudo(orthancStudyId, fingerprint, pacienteNomeDicom) {
         const operador = getOperador();
         if (!operador) { alert('Preencha o campo Operador antes de excluir.'); return; }
 
@@ -355,10 +381,10 @@
           'As imagens somem do LEO e do Orthanc. ' +
           'Após excluir: corrija o cadastro no Vivid e REENVIE.\n\n' +
           'Para confirmar, digite EXATAMENTE o nome do paciente do DICOM:\n' +
-          o.pacienteNomeDicom;
+          pacienteNomeDicom;
         const digitado = prompt(aviso);
         if (digitado === null) return; // cancelou
-        if (digitado.trim().toUpperCase() !== String(o.pacienteNomeDicom).trim().toUpperCase()) {
+        if (normalizarNome(digitado) !== normalizarNome(pacienteNomeDicom)) {
           alert('Nome não confere — exclusão cancelada.');
           return;
         }
@@ -366,15 +392,27 @@
         const r = await fetchJson('/api/reconciliacao/excluir-reenvio', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            orthancStudyId: o.orthancStudyId,
-            fingerprint: { accDicom: o.accDicom, patientIdDicom: o.patientIdDicom },
-            operador,
-          }),
+          body: JSON.stringify({ orthancStudyId, fingerprint, operador }),
         });
-        if (!r.ok) { alert('Falha ao excluir:\n\n' + (r.error || JSON.stringify(r))); return; }
+        if (!r.ok) { alert('Falha ao excluir:\n\n' + errMsg(r)); return; }
         alert(r.mensagem || 'Estudo excluído.');
         await carregar($('data').value);
+      }
+
+      async function excluir(indice) {
+        const o = orfaos[indice];
+        if (!o) return;
+        await excluirEstudo(o.orthancStudyId, { accDicom: o.accDicom, patientIdDicom: o.patientIdDicom }, o.pacienteNomeDicom);
+      }
+
+      async function excluirExame(indice) {
+        const e = exames[indice];
+        if (!e || !e.orthancStudyId) return;
+        await excluirEstudo(
+          e.orthancStudyId,
+          { accDicom: e.accDicom, patientIdDicom: e.patientIdDicom },
+          e.pacienteNomeDicom || e.pacienteNome,
+        );
       }
 
       initOperador();

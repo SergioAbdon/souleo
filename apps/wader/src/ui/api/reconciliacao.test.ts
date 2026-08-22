@@ -166,6 +166,96 @@ describe('excluirReenvio', () => {
     estudosEmExclusao.clear();
   });
 
+  it('recusa com 400 quando operador não foi informado', async () => {
+    const { db } = makeFakeExameDb([]);
+    const client = makeFakeClient(STUDY_BASE);
+    const worker = makeFakeWorker();
+    const resultado = await excluirReenvio(db, client, worker, 'ws1', {
+      orthancStudyId: 'study1',
+      fingerprint: FINGERPRINT_OK,
+      operador: '  ',
+    });
+    expect(resultado.status).toBe(400);
+    expect(resultado.ok).toBe(false);
+    expect(client.deleteStudy).not.toHaveBeenCalled();
+  });
+
+  it('recusa com 404 quando o estudo não existe no Orthanc', async () => {
+    const { db } = makeFakeExameDb([]);
+    const client = makeFakeClient(null);
+    const worker = makeFakeWorker();
+    const resultado = await excluirReenvio(db, client, worker, 'ws1', {
+      orthancStudyId: 'study-inexistente',
+      fingerprint: FINGERPRINT_OK,
+      operador: 'Ana',
+    });
+    expect(resultado.status).toBe(404);
+    expect(resultado.ok).toBe(false);
+  });
+
+  it('dono achado por dicomStudyUid (sem dicomOrthancStudyId) também é limpo', async () => {
+    const order: string[] = [];
+    const { db } = makeFakeExameDb(
+      [{ id: 'ex-uid', data: { status: 'aguardando', dicomStudyUid: 'uid1' } }],
+      order,
+    );
+    const client = makeFakeClient(STUDY_BASE, order);
+    const worker = makeFakeWorker(order);
+
+    const resultado = await excluirReenvio(db, client, worker, 'ws1', {
+      orthancStudyId: 'study1',
+      fingerprint: FINGERPRINT_OK,
+      operador: 'Ana',
+    });
+
+    expect(resultado.ok).toBe(true);
+    expect(resultado.examesLimpos).toEqual(['ex-uid']);
+    expect(order).toContain('update:ex-uid');
+  });
+
+  it('exame rascunho NÃO tem o status regredido pra aguardando na limpeza', async () => {
+    const examesData = [{ id: 'ex-rascunho', data: { status: 'rascunho', dicomOrthancStudyId: 'study1' } }];
+    const { db } = makeFakeExameDb(examesData);
+    const client = makeFakeClient(STUDY_BASE);
+    const worker = makeFakeWorker();
+
+    const resultado = await excluirReenvio(db, client, worker, 'ws1', {
+      orthancStudyId: 'study1',
+      fingerprint: FINGERPRINT_OK,
+      operador: 'Ana',
+    });
+
+    expect(resultado.ok).toBe(true);
+    // Mesma referência mutada por `ref.update` — 'status' não deve aparecer
+    // no update pra um exame rascunho (ele nunca chegou a avançar de status).
+    expect(examesData[0].data.status).toBe('rascunho');
+  });
+
+  it('deleteStudy lançando (erro real, não-404) responde exclusão incompleta em vez de 500 genérico', async () => {
+    const { db } = makeFakeExameDb([
+      { id: 'ex1', data: { status: 'aguardando', dicomOrthancStudyId: 'study1' } },
+    ]);
+    const client = makeFakeClient(STUDY_BASE);
+    vi.mocked(client.deleteStudy).mockImplementation(async () => {
+      throw new Error('Orthanc 500: Internal Server Error');
+    });
+    const worker = makeFakeWorker();
+
+    const resultado = await excluirReenvio(db, client, worker, 'ws1', {
+      orthancStudyId: 'study1',
+      fingerprint: FINGERPRINT_OK,
+      operador: 'Ana',
+    });
+
+    expect(resultado.status).toBe(500);
+    expect(resultado.ok).toBe(false);
+    expect(resultado.error).toMatch(/INCOMPLETA/);
+    expect(resultado.examesLimpos).toEqual(['ex1']);
+    // forgetStudy chamado mesmo com o DELETE falhando (esquecer a mais é inofensivo).
+    expect(worker.forgetStudy).toHaveBeenCalledWith('study1');
+    expect(estudosEmExclusao.has('study1')).toBe(false);
+  });
+
   it('recusa quando dicomWorker é null (UI-only) com 409', async () => {
     const { db } = makeFakeExameDb([]);
     const client = makeFakeClient(STUDY_BASE);
