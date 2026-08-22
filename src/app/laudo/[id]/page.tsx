@@ -6,12 +6,12 @@
 // IDs DOM idênticos — compatível DICOM SR
 // ══════════════════════════════════════════════════════════════════
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { getExame, saveExame } from '@/lib/firestore';
+import { saveExame } from '@/lib/firestore';
 import { db, auth } from '@/lib/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { dataLocalHoje } from '@/lib/utils';
 // v3: billing agora e server-side via /api/emitir
 // gerarESalvarPdf legado removido — emissao + PDF agora sao server-side em /api/emitir
@@ -19,7 +19,8 @@ import SidebarLaudo from '@/components/laudo/SidebarLaudo';
 import SheetA4 from '@/components/laudo/SheetA4';
 import DicomGallery from '@/components/laudo/DicomGallery';
 import DicomSrImport from '@/components/laudo/DicomSrImport';
-import { normalizarParaImport, prefixoArquivoPorTipo, InputImport, MedidaSr } from '@/lib/dicom-sr-mapping';
+import { normalizarParaImport, prefixoArquivoPorTipo, isSchemaAntigo, InputImport, MedidaSr } from '@/lib/dicom-sr-mapping';
+import { precisaConfirmarEmissao } from '@/lib/emissao-guarda';
 import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
 import { gerarDocx } from '@/lib/exportDocx';
@@ -66,6 +67,9 @@ export default function LaudoPage() {
   const [reedicaoAtiva, setReedicaoAtiva] = useState(false);
   const editorRef = useRef<EditorLaudoRef>(null);
   const pendingHtml = useRef<string | null>(null);
+  // Tela viva (S4-T12): o listener do exame roda a cada gravação do Wader;
+  // este guard marca a PRIMEIRA snapshot (a única que inicializa states).
+  const primeiraSnapshot = useRef(true);
 
   const exameId = params.id as string;
   const p1 = (workspace?.corPrimaria as string) || '#8B1A1A';
@@ -113,32 +117,47 @@ export default function LaudoPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Carregar exame
+  // Carregar exame — TELA VIVA (S4-T12, achado 24).
+  // Antes: `getExame()` uma vez. O médico abria o laudo enquanto o Wader
+  // ainda processava e a tela ficava congelada — botão "📡 Importar" cinza
+  // e "🖼️ Imagens" vazio pra sempre, até dar F5. Agora `onSnapshot`: o que
+  // o Wader grava (medidasDicom, imagensDicom, dicomUltimoErro) acende
+  // sozinho na tela.
   useEffect(() => {
-    if (workspace?.id && exameId) {
-      getExame(workspace.id, exameId).then(ex => {
-        if (ex) {
-          setExame(ex);
-          const dados = ex as Record<string, unknown>;
-          if (dados.emitidoEm) setEmitido(true);
+    if (!workspace?.id || !exameId) return;
+    const unsub = onSnapshot(
+      doc(db, 'workspaces', workspace.id, 'exames', exameId),
+      (snap) => {
+        if (!snap.exists()) return;
+        const dados = { id: snap.id, ...snap.data() } as Record<string, unknown>;
+        setExame(dados);
 
-          // Inicializa seleção de imagens pra impressão:
-          //  - Se já tem `imagensSelecionadasPdf` salvo → usa
-          //  - Senão → default = primeiras 8 (ou todas, se exame tem <8)
-          //    Esse default só vive em memória; só persiste no Firestore
-          //    quando médico toggle alguma imagem (auto-save abaixo).
-          const todas = (dados.imagensDicom as string[] | undefined) || [];
-          const salvas = dados.imagensSelecionadasPdf as string[] | undefined;
-          if (salvas && Array.isArray(salvas)) {
-            // Filtra URLs salvas que ainda existem em imagensDicom (defensivo
-            // contra remap/reprocessamento que mudou URLs)
-            setImagensSelecionadasPdf(salvas.filter((u) => todas.includes(u)));
-          } else {
-            setImagensSelecionadasPdf(todas.slice(0, 8));
-          }
+        // Inicialização SÓ na primeira snapshot (guard de ref): estes dois
+        // states são do médico depois disso — reinicializar a cada gravação
+        // do Wader retrancaria o laudo desbloqueado e desfaria a seleção de
+        // imagens que ele acabou de fazer.
+        if (!primeiraSnapshot.current) return;
+        primeiraSnapshot.current = false;
+        if (dados.emitidoEm) setEmitido(true);
+
+        // Inicializa seleção de imagens pra impressão:
+        //  - Se já tem `imagensSelecionadasPdf` salvo → usa
+        //  - Senão → default = primeiras 8 (ou todas, se exame tem <8)
+        //    Esse default só vive em memória; só persiste no Firestore
+        //    quando médico toggle alguma imagem (auto-save abaixo).
+        const todas = (dados.imagensDicom as string[] | undefined) || [];
+        const salvas = dados.imagensSelecionadasPdf as string[] | undefined;
+        if (salvas && Array.isArray(salvas)) {
+          // Filtra URLs salvas que ainda existem em imagensDicom (defensivo
+          // contra remap/reprocessamento que mudou URLs)
+          setImagensSelecionadasPdf(salvas.filter((u) => todas.includes(u)));
+        } else {
+          setImagensSelecionadasPdf(todas.slice(0, 8));
         }
-      });
-    }
+      },
+      (err) => console.warn('laudo onSnapshot:', err),
+    );
+    return () => unsub();
   }, [workspace?.id, exameId]);
 
   /**
@@ -163,15 +182,22 @@ export default function LaudoPage() {
     }
   }
 
-  // Preencher quando exame + motor prontos
+  // Preencher quando exame + motor prontos.
+  //
+  // Dep é `exameCarregado` (boolean), NÃO o objeto `exame`: com a tela viva
+  // (onSnapshot acima) o objeto muda a cada gravação do Wader. Se o efeito
+  // seguisse o objeto, `preencherExame()` jogaria as medidas salvas por cima
+  // do que o médico está digitando — e reabriria o prompt "Rascunho salvo…"
+  // no meio do laudo. Preenchimento é carga inicial: roda uma vez.
+  const exameCarregado = !!exame;
   useEffect(() => {
-    if (exame && motorLoaded) {
+    if (exameCarregado && motorLoaded) {
       setTimeout(() => {
         try { preencherExame(); safeCalc(); } catch (e) { console.warn('preencher:', e); }
       }, 500);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exame, motorLoaded]);
+  }, [exameCarregado, motorLoaded]);
 
   // Carregar motor
   useEffect(() => {
@@ -487,6 +513,24 @@ export default function LaudoPage() {
     return await saveExame(workspace.id, dados, user.uid);
   }
 
+  // Lista de inputs importáveis MEMOIZADA (S4-T12, achado 25). Antes o JSX
+  // chamava `getInputsImportaveis()` a cada render → array novo a cada render
+  // → o `useEffect` de reset do modal (dep `inputs`) re-marcava TODAS as
+  // medidas que o médico tinha acabado de desmarcar. Com o memo a referência
+  // só muda quando `medidasDicom` muda de verdade.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const inputsImportaveis = useMemo(() => getInputsImportaveis(), [exame?.medidasDicom]);
+  // Schema antigo (Record<string, number>, sem unidade) não é importável — o
+  // caminho seguro é reprocessar no Wader (Task 10). `totalRecebidas` só faz
+  // sentido no schema novo; no antigo vale 0 e o rodapé some.
+  const medidasDicomBrutas = exame?.medidasDicom as Record<string, MedidaSr | number> | undefined;
+  const schemaAntigo = isSchemaAntigo(medidasDicomBrutas);
+  const totalMedidasBrutas = Object.keys(medidasDicomBrutas || {}).length;
+  const totalRecebidas = schemaAntigo ? 0 : totalMedidasBrutas;
+  // No schema antigo o botão "📡 Importar" recebe a contagem BRUTA só pra
+  // ficar clicável (com 0 ele nasce desabilitado e o legado não teria como
+  // pedir o reprocesso); é o modal que explica que elas não são importáveis.
+
   /**
    * Abre o modal de IMPORTAÇÃO de medidas DICOM SR.
    *
@@ -501,8 +545,10 @@ export default function LaudoPage() {
    */
   function handleImportarDicom() {
     if (!workspace?.id) return;
-    const inputsDisponiveis = getInputsImportaveis();
-    if (inputsDisponiveis.length === 0) {
+    // Schema antigo abre o modal MESMO com 0 importáveis — é lá que fica o
+    // botão de pedir reprocesso ao Wader (S4-T12). Sem esta exceção o alerta
+    // abaixo era o fim da linha pros exames legados.
+    if (inputsImportaveis.length === 0 && !schemaAntigo) {
       alert(
         'Sem medidas DICOM SR mapeáveis pra importar.\n\n' +
         'Ou o Wader ainda não processou o estudo, ou as medidas SR não estão ' +
@@ -522,6 +568,24 @@ export default function LaudoPage() {
   function getInputsImportaveis(): InputImport[] {
     const medidasDicom = exame?.medidasDicom as Record<string, MedidaSr | number> | undefined;
     return normalizarParaImport(medidasDicom);
+  }
+
+  /**
+   * Pede ao Wader pra reprocessar o estudo deste exame (S4-T12).
+   * Grava só a flag `reprocessarDicom` no doc — o worker do Wader varre
+   * `where('reprocessarDicom','==',true)`, reprocessa com o parser novo e
+   * limpa a flag (Task 9). O médico é o autor do exame, a regra permite.
+   * A tela viva mostra as medidas novas chegando sem F5.
+   */
+  async function handleSolicitarReprocesso() {
+    if (!workspace?.id || !exameId) return;
+    try {
+      await updateDoc(doc(db, 'workspaces', workspace.id, 'exames', exameId), { reprocessarDicom: true });
+      toast('Reprocessamento solicitado — o Wader responde em instantes');
+    } catch (e) {
+      console.warn('reprocessarDicom:', e);
+      toast('Não consegui solicitar o reprocessamento. Tente de novo.');
+    }
   }
 
   /**
@@ -600,6 +664,13 @@ export default function LaudoPage() {
   async function handleEmitir(incluirImagens: boolean = true) {
     setPopupOpen(false);
     if (!workspace?.id || !exameId || !user?.uid) return;
+    // Guarda de emissão (S4-T12): o Wader falhou ou ainda não trouxe as
+    // imagens deste exame — emitir agora gera um PDF sem imagem nenhuma.
+    // Decisão pura em `precisaConfirmarEmissao` (tem teste); aqui só o aviso.
+    const pendenciaDicom = precisaConfirmarEmissao(exame);
+    if (pendenciaDicom && !confirm(
+      `Imagens do exame ainda não chegaram ou falharam (${pendenciaDicom}). Emitir mesmo assim?`
+    )) return;
     // Guarda escolha do médico no state — `gerarPdfHtml()` consulta isso
     // antes de incluir as páginas extras de imagens
     setImagensIncluidasNoPdf(incluirImagens);
@@ -1138,7 +1209,7 @@ ${imagensPdfHtml}
         dicomLoading={dicomLoading}
         dicomImportado={dicomImportado}
         ortancAtivo={!!workspace?.ortancAtivo}
-        totalMedidasDicom={getInputsImportaveis().length}
+        totalMedidasDicom={schemaAntigo ? totalMedidasBrutas : inputsImportaveis.length}
         totalImagensDicom={((exame?.imagensDicom as string[] | undefined) || []).length}
         onAbrirGaleria={() => setGaleriaOpen(true)}
         emitido={emitido}
@@ -1196,9 +1267,12 @@ ${imagensPdfHtml}
       <DicomSrImport
         open={srImportOpen}
         onClose={() => setSrImportOpen(false)}
-        inputs={getInputsImportaveis()}
+        inputs={inputsImportaveis}
         pacienteNome={exame?.pacienteNome as string | undefined}
         onImportar={handleConfirmarImportSr}
+        totalRecebidas={totalRecebidas}
+        schemaAntigo={schemaAntigo}
+        onSolicitarReprocesso={handleSolicitarReprocesso}
       />
       {/* Galeria DICOM — modal full-screen (z-1000) com thumbnails e lightbox.
           Aberta pelo botão "🖼️ Imagens (N)" no sidebar. Modo seleção ON
@@ -1207,6 +1281,8 @@ ${imagensPdfHtml}
         open={galeriaOpen}
         onClose={() => setGaleriaOpen(false)}
         imagens={(exame?.imagensDicom as string[] | undefined) || []}
+        wsId={workspace?.id}
+        exameId={exameId}
         pacienteNome={exame?.pacienteNome as string | undefined}
         tipoExame={exame?.tipoExame as string | undefined}
         permitirSelecao

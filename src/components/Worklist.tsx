@@ -94,7 +94,9 @@ export default function Worklist() {
   // impressão ("INDEPENDENTE DA SELEÇÃO DO MÉDICO, ELA PODE IMPRIMIR TODA CASO
   // JULGUE NECESSARIO. POR PADRAO SELECIONA AS 8 PRIMEIRAS"). Seleção é local
   // (efêmera, não persiste no Firestore) — não interfere com a seleção do médico.
-  const [galeria, setGaleria] = useState<{ imagens: string[]; paciente: string; tipo: string } | null>(null);
+  // `exameId` entra aqui (S4-T12) só pra galeria conseguir pedir as URLs
+  // assinadas — as imagens novas nascem privadas no Storage.
+  const [galeria, setGaleria] = useState<{ exameId: string; imagens: string[]; paciente: string; tipo: string } | null>(null);
   const [secretariaSelecionadas, setSecretariaSelecionadas] = useState<string[]>([]);
 
   // Quando galeria abre, default = 8 primeiras imagens
@@ -691,6 +693,7 @@ export default function Worklist() {
                           agora abre <DicomGallery /> direto no contexto do Worklist. */}
                       {Array.isArray(item.imagensDicom) && (item.imagensDicom as unknown[]).length > 0 && (
                         <Btn cor="cyan" onClick={() => setGaleria({
+                          exameId: item.id as string,
                           imagens: item.imagensDicom as string[],
                           paciente: (item.pacienteNome as string) || '',
                           tipo: tiposMap[(item.tipoExame as string) || '']?.nome || (item.tipoExame as string) || '',
@@ -797,6 +800,8 @@ export default function Worklist() {
         open={galeria !== null}
         onClose={() => setGaleria(null)}
         imagens={galeria?.imagens || []}
+        wsId={wsId}
+        exameId={galeria?.exameId}
         pacienteNome={galeria?.paciente}
         tipoExame={galeria?.tipo}
         permitirSelecao
