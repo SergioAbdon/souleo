@@ -1,6 +1,7 @@
 import { OrthancClient } from '../adapters/orthanc-client';
 import { processarEstudo, IngestResult } from './dicom-ingest';
 import { IngestStateStore } from './ingest-state';
+import { getDb, FieldValue } from '../adapters/firebase';
 import { createLogger } from '../logger';
 
 const log = createLogger({ module: 'dicom-ingest-worker' });
@@ -231,6 +232,42 @@ export class DicomIngestWorker {
           log.error({ err, orthancStudyId: studyId }, 'Falha ao processar estudo — reavaliará');
           this.lastError = (err as Error).message;
         }
+      }
+
+      // Reprocesso sob demanda (D1-b, Task 9): o laudo web grava
+      // `reprocessarDicom:true` num exame de schema antigo (ou sempre que o
+      // médico pedir "solicitar reprocessamento") — relê o estudo do Orthanc
+      // com o parser novo. Try próprio: um exame com flag ruim não pode
+      // derrubar o tick nem impedir o avanço do cursor.
+      try {
+        const flagSnap = await getDb()
+          .collection('workspaces')
+          .doc(this.opts.wsId)
+          .collection('exames')
+          .where('reprocessarDicom', '==', true)
+          .limit(10)
+          .get();
+        for (const d of flagSnap.docs) {
+          const studyId = d.data().dicomOrthancStudyId as string | undefined;
+          if (studyId) {
+            await processarEstudo({
+              client: this.opts.client,
+              orthancStudyId: studyId,
+              wsId: this.opts.wsId,
+              forceSr: true,
+              exameIdOverride: d.id,
+            });
+            await d.ref.update({ reprocessarDicom: FieldValue.delete() });
+          } else {
+            await d.ref.update({
+              reprocessarDicom: FieldValue.delete(),
+              dicomUltimoErro: 'Reprocesso pedido mas exame sem estudo vinculado',
+              dicomUltimoErroEm: FieldValue.serverTimestamp(),
+            });
+          }
+        }
+      } catch (err) {
+        log.warn({ err }, 'Falha ao consumir flag reprocessarDicom — tentará no próximo tick');
       }
 
       // Avança o cursor SÓ depois de processar a página (crash no meio ⇒

@@ -91,11 +91,6 @@ function validate(cfg: WaderConfig, source: string): void {
 
   if (!cfg.orthanc?.worklistPath) errors.push('orthanc.worklistPath é obrigatório');
 
-  if (!cfg.backup?.path) errors.push('backup.path é obrigatório');
-  if (cfg.backup && cfg.backup.retentionDays < 1) {
-    errors.push('backup.retentionDays deve ser >= 1');
-  }
-
   if (cfg.ui.port < 1 || cfg.ui.port > 65535) {
     errors.push('ui.port deve estar entre 1 e 65535');
   }

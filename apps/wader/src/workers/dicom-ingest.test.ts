@@ -97,7 +97,6 @@ function makeClient(opts?: {
     }),
     getStudySeries: async () =>
       series.map((s) => ({ MainDicomTags: { Modality: s.Modality }, Instances: s.Instances })),
-    getStudyInstances: async () => series.flatMap((s) => s.Instances),
     getInstancePreview: async (id: string) => {
       const d = opts?.previewDelays?.[id] ?? 0;
       if (d) await new Promise((r) => setTimeout(r, d));

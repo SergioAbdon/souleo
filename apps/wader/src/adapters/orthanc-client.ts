@@ -210,17 +210,6 @@ export class OrthancClient {
   }
 
   /**
-   * Lista IDs de instâncias de um estudo.
-   * Útil pra iterar e baixar todas as imagens.
-   */
-  async getStudyInstances(studyId: string): Promise<string[]> {
-    const series = await this.get<{ Instances: string[] }[]>(
-      `/studies/${encodeURIComponent(studyId)}/series`,
-    );
-    return series.flatMap((s) => s.Instances ?? []);
-  }
-
-  /**
    * Lista séries de um estudo com tags DICOM principais.
    * Útil pra filtrar por modalidade (ex: separar série US de série SR).
    */
@@ -260,13 +249,6 @@ export class OrthancClient {
    */
   async getInstancePreview(instanceId: string): Promise<Buffer> {
     return this.getBinary(`/instances/${encodeURIComponent(instanceId)}/preview`);
-  }
-
-  /**
-   * Baixa o arquivo DICOM cru (.dcm) de uma instância.
-   */
-  async getInstanceFile(instanceId: string): Promise<Buffer> {
-    return this.getBinary(`/instances/${encodeURIComponent(instanceId)}/file`);
   }
 
   // ─── Helpers internos ──────────────────────────────────────────────

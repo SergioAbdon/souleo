@@ -12,8 +12,8 @@
  *   │ wsId, agentId                     │ integracoes/orthanc.url │
  *   │ firebase.serviceAccountPath       │ privado/orthanc.user/   │
  *   │ orthanc.worklistPath (filesystem) │ pass; integracoes/      │
- *   │ backup.path (filesystem)          │ feegow.procMap          │
- *   │ ui.port, polling.intervals        │ nomeClinica, logoB64,   │
+ *   │ ui.port, polling.intervals        │ feegow.procMap;         │
+ *   │                                    │ nomeClinica, logoB64,   │
  *   │                                    │ corPrimaria — qualquer  │
  *   │                                    │ coisa que admin edita   │
  *   │                                    │ via LocalModal do LEO   │
@@ -26,14 +26,11 @@ export interface WaderConfig {
   version: string;
   wsId: string;
   agentId: string;
-  activatedAt?: string;
 
   firebase: FirebaseConfig;
   orthanc: OrthancLocalConfig;
-  backup: BackupConfig;
   polling: PollingConfig;
   ui: UiConfig;
-  telemetry?: TelemetryConfig;
 }
 
 export interface FirebaseConfig {
@@ -62,11 +59,6 @@ export interface OrthancLocalConfig {
   scheduledStationName?: string;
 }
 
-export interface BackupConfig {
-  path: string;
-  retentionDays: number;
-}
-
 export interface PollingConfig {
   /** Intervalo do worker de sync de worklists. Default 60s. */
   worklistSyncSec: number;
@@ -87,12 +79,6 @@ export interface PollingConfig {
 
 export interface UiConfig {
   port: number;
-  showTrayIcon: boolean;
-}
-
-export interface TelemetryConfig {
-  sentryDsn?: string;
-  sampleRate: number;
 }
 
 /**
@@ -107,6 +93,5 @@ export const DEFAULT_CONFIG: Partial<WaderConfig> = {
   } as PollingConfig,
   ui: {
     port: 8043,
-    showTrayIcon: true,
   },
 };

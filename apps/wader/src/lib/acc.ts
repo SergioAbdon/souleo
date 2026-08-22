@@ -17,13 +17,6 @@ export function digitos(acc: string | null | undefined): string {
   return (acc || '').replace(/\D/g, '');
 }
 
-/** Dois ACCs são "o mesmo" se os dígitos batem (ignora prefixo/espaços). */
-export function accIgual(a: string | null | undefined, b: string | null | undefined): boolean {
-  const da = digitos(a);
-  const db = digitos(b);
-  return da.length > 0 && da === db;
-}
-
 /**
  * Formas plausíveis do ACC pra tentar no Firestore (`where('acc','==',c)`),
  * em ordem de probabilidade. Bounded (≤3) — nunca varre a coleção.
