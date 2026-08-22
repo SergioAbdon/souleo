@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Wader · Conferência</title>
+    <style>
+      :root {
+        --bg: #f8fafc;
+        --fg: #0f172a;
+        --muted: #64748b;
+        --accent: #1e3a5f;
+        --border: #e2e8f0;
+        --success: #16a34a;
+        --warn: #f59e0b;
+        --danger: #dc2626;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+      }
+      header {
+        padding: 1rem 2rem;
+        background: white;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      header h1 { font-size: 1.1rem; margin: 0; font-weight: 600; }
+      header nav a {
+        color: var(--muted);
+        text-decoration: none;
+        margin-left: 1rem;
+        font-size: 0.9rem;
+      }
+      header nav a:hover { color: var(--accent); }
+      main {
+        padding: 2rem;
+        max-width: 1280px;
+        margin: 0 auto;
+        display: grid;
+        gap: 1.25rem;
+      }
+      .card {
+        background: white;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 1.5rem;
+      }
+      .card h2 {
+        margin: 0 0 0.25rem;
+        font-size: 1rem;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .card .subtitle { font-size: 0.8rem; color: var(--muted); margin: 0 0 1rem; }
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: 1.25rem;
+      }
+      .field-group label {
+        display: block;
+        font-size: 0.78rem;
+        color: var(--muted);
+        margin-bottom: 0.25rem;
+      }
+      input, select {
+        font-family: inherit;
+        font-size: 0.85rem;
+        padding: 0.4rem 0.6rem;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: white;
+        color: var(--fg);
+      }
+      table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+      th, td { text-align: left; padding: 0.5rem 0.5rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+      th { color: var(--muted); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; }
+      tbody tr:hover { background: #f8fafc; }
+      td.empty { color: var(--muted); text-align: center; padding: 1.5rem; }
+      code { font-family: 'Consolas', monospace; }
+      .pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+      }
+      .pill.green { background: #dcfce7; color: #14532d; }
+      .pill.yellow { background: #fef3c7; color: #92400e; }
+      .pill.red { background: #fee2e2; color: #7f1d1d; }
+      .pill.gray { background: #e2e8f0; color: #475569; }
+      button {
+        padding: 0.35rem 0.7rem;
+        background: var(--accent);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+        margin-right: 0.3rem;
+        white-space: nowrap;
+      }
+      button:hover { opacity: 0.9; }
+      button.secondary { background: white; color: var(--accent); border: 1px solid var(--border); }
+      button.danger { background: var(--danger); }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      .row-actions { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+      pre.error {
+        background: #fee2e2;
+        color: #7f1d1d;
+        padding: 0.6rem 0.8rem;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        margin: 0 0 1rem;
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Wader · Conferência</h1>
+      <nav>
+        <a href="/admin">Admin</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="card">
+        <div class="toolbar">
+          <div class="field-group">
+            <label for="data">Data</label>
+            <input type="date" id="data" />
+          </div>
+          <div class="field-group">
+            <label for="operador">Operador (obrigatório p/ excluir)</label>
+            <input type="text" id="operador" placeholder="Seu nome" style="width: 220px" />
+          </div>
+          <div class="field-group">
+            <button class="secondary" onclick="carregar($('data').value)">⟳ Recarregar</button>
+          </div>
+          <div class="field-group" style="margin-left: auto">
+            <span id="orthanc-status"></span>
+          </div>
+        </div>
+        <pre class="error" id="erro"></pre>
+      </section>
+
+      <section class="card">
+        <h2>Exames do dia</h2>
+        <p class="subtitle">Agenda do LEO cruzada com o que já chegou do Vivid (Orthanc)</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Paciente</th>
+              <th>ACC</th>
+              <th>Tipo</th>
+              <th>Status</th>
+              <th>Vínculo</th>
+              <th>Imagens</th>
+              <th>Erro</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody id="exames-body">
+            <tr><td colspan="8" class="empty">Carregando…</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2>Estudos sem dono</h2>
+        <p class="subtitle">Chegaram no Orthanc mas não casaram com nenhum exame do dia — vincule ao exame certo ou exclua para pedir reenvio</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Paciente (DICOM)</th>
+              <th>ACC (DICOM)</th>
+              <th>Hora</th>
+              <th>Séries</th>
+              <th>Vincular a</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody id="orfaos-body">
+            <tr><td colspan="6" class="empty">Carregando…</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const OPERADOR_KEY = 'wader.conferencia.operador';
+
+      let exames = [];
+      let orfaos = [];
+
+      async function fetchJson(url, init) {
+        const res = await fetch(url, init);
+        const body = await res.json().catch(() => ({}));
+        return { httpStatus: res.status, ...body };
+      }
+
+      function escapeHtml(s) {
+        return String(s ?? '').replace(/[&<>"']/g, (c) => (
+          { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+        ));
+      }
+
+      function initOperador() {
+        $('operador').value = localStorage.getItem(OPERADOR_KEY) || '';
+        $('operador').addEventListener('input', () => {
+          localStorage.setItem(OPERADOR_KEY, $('operador').value);
+        });
+      }
+
+      function getOperador() {
+        return ($('operador').value || '').trim();
+      }
+
+      function matchPill(status) {
+        const map = { casado: ['green', 'CASADO'], recebido: ['yellow', 'RECEBIDO'], aguardando: ['gray', 'AGUARDANDO'] };
+        const [cls, label] = map[status] || ['gray', status];
+        return `<span class="pill ${cls}">${label}</span>`;
+      }
+
+      function optionsExames(excetoId) {
+        return exames
+          .filter((e) => e.id !== excetoId)
+          .map((e) => `<option value="${e.id}">${escapeHtml(e.pacienteNome)} (${escapeHtml(e.acc) || 'sem ACC'})</option>`)
+          .join('');
+      }
+
+      function renderExames() {
+        const tbody = $('exames-body');
+        if (exames.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" class="empty">Nenhum exame nesta data.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = exames.map((e) => {
+          const acoes = e.orthancStudyId
+            ? `<select id="sel-troca-${e.id}"><option value="">— trocar p/ —</option>${optionsExames(e.id)}</select>
+               <button class="secondary" onclick="vincular('${e.orthancStudyId}', 'sel-troca-${e.id}')">Trocar vínculo</button>
+               <button class="secondary" onclick="reprocessar('${e.orthancStudyId}')">Reprocessar</button>`
+            : '—';
+          return `
+            <tr>
+              <td>${escapeHtml(e.pacienteNome)}</td>
+              <td><code>${escapeHtml(e.acc) || '—'}</code></td>
+              <td>${escapeHtml(e.tipoExame)}</td>
+              <td>${escapeHtml(e.status)}</td>
+              <td>${matchPill(e.matchStatus)}</td>
+              <td>${e.nImagens}</td>
+              <td>${e.dicomUltimoErro ? `<span class="pill red" title="${escapeHtml(e.dicomUltimoErro)}">ERRO</span>` : '—'}</td>
+              <td><div class="row-actions">${acoes}</div></td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      function renderOrfaos() {
+        const tbody = $('orfaos-body');
+        if (orfaos.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" class="empty">Nenhum estudo sem dono.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = orfaos.map((o, i) => `
+          <tr>
+            <td>${escapeHtml(o.pacienteNomeDicom)}</td>
+            <td><code>${escapeHtml(o.accDicom) || '—'}</code></td>
+            <td>${escapeHtml(o.studyTime)}</td>
+            <td>${o.nSeries}</td>
+            <td><select id="sel-orfao-${i}"><option value="">— escolha o exame —</option>${optionsExames(null)}</select></td>
+            <td>
+              <div class="row-actions">
+                <button onclick="vincular('${o.orthancStudyId}', 'sel-orfao-${i}')">Vincular</button>
+                <button class="danger" onclick="excluir(${i})">Excluir p/ reenvio</button>
+              </div>
+            </td>
+          </tr>
+        `).join('');
+        orfaos.forEach((o, i) => {
+          if (o.sugestaoExameId) {
+            const sel = $(`sel-orfao-${i}`);
+            if (sel) sel.value = o.sugestaoExameId;
+          }
+        });
+      }
+
+      async function carregar(dataParam) {
+        const qs = dataParam ? `?data=${encodeURIComponent(dataParam)}` : '';
+        const r = await fetchJson(`/api/reconciliacao${qs}`);
+        if (!r.ok) {
+          $('erro').textContent = r.error || 'Falha ao carregar a reconciliação.';
+          $('erro').style.display = 'block';
+          return;
+        }
+        $('erro').style.display = 'none';
+        $('data').value = r.data;
+        exames = r.exames || [];
+        orfaos = r.orfaos || [];
+        renderExames();
+        renderOrfaos();
+        $('orthanc-status').innerHTML = r.orthancOk
+          ? '<span class="pill green">Orthanc OK</span>'
+          : '<span class="pill red">Orthanc inacessível</span>';
+      }
+
+      async function vincular(orthancStudyId, selId) {
+        const exameId = $(selId).value;
+        if (!exameId) { alert('Escolha um exame antes de vincular.'); return; }
+        const r = await fetchJson('/api/reconciliacao/vincular', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orthancStudyId, exameId }),
+        });
+        if (!r.ok) { alert('Falha ao vincular:\n\n' + (r.error || JSON.stringify(r))); return; }
+        alert('Confira as imagens antes de emitir.');
+        await carregar($('data').value);
+      }
+
+      async function reprocessar(orthancStudyId) {
+        const r = await fetchJson('/api/reconciliacao/reprocessar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orthancStudyId }),
+        });
+        if (!r.ok) { alert('Falha ao reprocessar:\n\n' + (r.error || JSON.stringify(r))); return; }
+        alert(`Reprocessado: ${r.imagensProcessadas ?? 0} imagens, ${r.medidasExtraidas ?? 0} medidas.`);
+        await carregar($('data').value);
+      }
+
+      async function excluir(indice) {
+        const o = orfaos[indice];
+        if (!o) return;
+        const operador = getOperador();
+        if (!operador) { alert('Preencha o campo Operador antes de excluir.'); return; }
+
+        const aviso =
+          'Remover permanentemente o estudo do arquivo da clínica. ' +
+          'As imagens somem do LEO e do Orthanc. ' +
+          'Após excluir: corrija o cadastro no Vivid e REENVIE.\n\n' +
+          'Para confirmar, digite EXATAMENTE o nome do paciente do DICOM:\n' +
+          o.pacienteNomeDicom;
+        const digitado = prompt(aviso);
+        if (digitado === null) return; // cancelou
+        if (digitado.trim().toUpperCase() !== String(o.pacienteNomeDicom).trim().toUpperCase()) {
+          alert('Nome não confere — exclusão cancelada.');
+          return;
+        }
+
+        const r = await fetchJson('/api/reconciliacao/excluir-reenvio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orthancStudyId: o.orthancStudyId,
+            fingerprint: { accDicom: o.accDicom, patientIdDicom: o.patientIdDicom },
+            operador,
+          }),
+        });
+        if (!r.ok) { alert('Falha ao excluir:\n\n' + (r.error || JSON.stringify(r))); return; }
+        alert(r.mensagem || 'Estudo excluído.');
+        await carregar($('data').value);
+      }
+
+      initOperador();
+      carregar();
+    </script>
+  </body>
+</html>
