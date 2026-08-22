@@ -65,6 +65,7 @@ vi.mock('../adapters/dicom-sr-parser', () => ({
     if (srThrows) throw new Error('SR boom');
     return srMock;
   }),
+  PARSER_VERSAO: 'sr-2026-08-21',
 }));
 
 import { processarEstudo, estudosEmExclusao, CAMPOS_DICOM_LIMPAR } from './dicom-ingest';

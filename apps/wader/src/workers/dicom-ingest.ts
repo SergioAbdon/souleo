@@ -1,6 +1,6 @@
 import { OrthancClient, OrthancStudy } from '../adapters/orthanc-client';
 import { uploadDicomPreview } from '../adapters/storage-uploader';
-import { extrairMedidasDoEstudo, SrParseResult } from '../adapters/dicom-sr-parser';
+import { extrairMedidasDoEstudo, SrParseResult, PARSER_VERSAO } from '../adapters/dicom-sr-parser';
 import { getDb, FieldValue } from '../adapters/firebase';
 import { candidatos, digitos } from '../lib/acc';
 import { createLogger } from '../logger';
@@ -354,6 +354,7 @@ export async function processarEstudo(opts: {
     srInstanceId: null,
     totalMedidas: 0,
     metodoFallback: 'sem-sr',
+    parserVersao: PARSER_VERSAO,
   };
   let extraiuSr = false;
 
@@ -398,6 +399,7 @@ export async function processarEstudo(opts: {
         srInstanceId: srResult.srInstanceId,
         metodoFallback: srResult.metodoFallback,
         processadoEm: new Date().toISOString(),
+        parserVersao: srResult.parserVersao,
       };
     }
   } else {
@@ -415,6 +417,7 @@ export async function processarEstudo(opts: {
         srInstanceId: srResult.srInstanceId,
         metodoFallback: srResult.metodoFallback,
         processadoEm: new Date().toISOString(),
+        parserVersao: srResult.parserVersao,
       };
     }
   }

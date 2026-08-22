@@ -172,6 +172,8 @@ export interface Exame {
     metodoFallback: 'content-sequence' | 'tags-diretas' | 'sem-sr';
     /** Quando o Wader processou. */
     processadoEm: string; // ISO timestamp
+    /** Versão do parser (`PARSER_VERSAO` em `dicom-sr-parser.ts`) que gerou essas medidas. */
+    parserVersao?: string;
   };
 
   versao: number;
