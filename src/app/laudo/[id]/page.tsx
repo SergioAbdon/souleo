@@ -19,7 +19,8 @@ import SidebarLaudo from '@/components/laudo/SidebarLaudo';
 import SheetA4 from '@/components/laudo/SheetA4';
 import DicomGallery, { buscarUrlsAssinadas } from '@/components/laudo/DicomGallery';
 import DicomSrImport from '@/components/laudo/DicomSrImport';
-import { normalizarParaImport, prefixoArquivoPorTipo, isSchemaAntigo, InputImport, MedidaSr } from '@/lib/dicom-sr-mapping';
+import { normalizarParaImport, prefixoArquivoPorTipo, isSchemaAntigo, InputImport, MedidaSr, MapaSr, SR_TO_MOTOR } from '@/lib/dicom-sr-mapping';
+import { carregarPerfilAparelho } from '@/lib/perfil-aparelho';
 import { precisaConfirmarEmissao } from '@/lib/emissao-guarda';
 import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
@@ -75,6 +76,10 @@ export default function LaudoPage() {
   // ao guard acima, o médico que abrisse o laudo antes do Wader terminar
   // ficava com seleção [] pra sempre — e emitia o laudo SEM imagem nenhuma.
   const selecaoInicializada = useRef(false);
+  // Perfil do aparelho (S4-T13, decisão 16): mapa medida-do-SR → campo do
+  // laudo, editável no cartão Integrações. Nasce no default embutido, então
+  // falha de leitura NUNCA derruba a importação — só mantém a whitelist.
+  const [perfilAparelho, setPerfilAparelho] = useState<MapaSr>(SR_TO_MOTOR);
 
   const exameId = params.id as string;
   const p1 = (workspace?.corPrimaria as string) || '#8B1A1A';
@@ -121,6 +126,14 @@ export default function LaudoPage() {
     }, 300);
     return () => clearInterval(interval);
   }, []);
+
+  // Perfil do aparelho — UMA leitura por workspace (não muda durante o laudo).
+  useEffect(() => {
+    if (!workspace?.id) return;
+    carregarPerfilAparelho(db, workspace.id)
+      .then(setPerfilAparelho)
+      .catch((err) => console.warn('perfilAparelho:', err));
+  }, [workspace?.id]);
 
   // Carregar exame — TELA VIVA (S4-T12, achado 24).
   // Antes: `getExame()` uma vez. O médico abria o laudo enquanto o Wader
@@ -529,7 +542,7 @@ export default function LaudoPage() {
   // medidas que o médico tinha acabado de desmarcar. Com o memo a referência
   // só muda quando `medidasDicom` muda de verdade.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const inputsImportaveis = useMemo(() => getInputsImportaveis(), [exame?.medidasDicom]);
+  const inputsImportaveis = useMemo(() => getInputsImportaveis(), [exame?.medidasDicom, perfilAparelho]);
   // Schema antigo (Record<string, number>, sem unidade) não é importável — o
   // caminho seguro é reprocessar no Wader (Task 10). `totalRecebidas` só faz
   // sentido no schema novo; no antigo vale 0 e o rodapé some.
@@ -577,7 +590,7 @@ export default function LaudoPage() {
    */
   function getInputsImportaveis(): InputImport[] {
     const medidasDicom = exame?.medidasDicom as Record<string, MedidaSr | number> | undefined;
-    return normalizarParaImport(medidasDicom);
+    return normalizarParaImport(medidasDicom, perfilAparelho);
   }
 
   /**
@@ -1020,7 +1033,12 @@ ${imagensPdfHtml}
   // branco. Aqui trocamos textualmente canônica→assinada antes do
   // document.write, reusando o mesmo helper/contrato da galeria. Rota
   // falhou → segue com o HTML original (legados ainda são públicos).
+  //
+  // A janela abre ANTES do await: depois dele o clique já não conta como
+  // gesto do usuário e o navegador bloqueia o popup em rota lenta.
   async function handleImprimir() {
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (!win) return;
     let html = gerarPdfHtml();
     if (workspace?.id && imagensIncluidasNoPdf && imagensSelecionadasPdf.length > 0) {
       const assinadas = await buscarUrlsAssinadas(workspace.id, exameId, imagensSelecionadasPdf);
@@ -1030,11 +1048,8 @@ ${imagensPdfHtml}
         }
       }
     }
-    const win = window.open('', '_blank', 'width=900,height=700');
-    if (win) {
-      win.document.write(html);
-      win.document.close();
-    }
+    win.document.write(html);
+    win.document.close();
   }
 
   // ── Copiar para Prontuário ──
