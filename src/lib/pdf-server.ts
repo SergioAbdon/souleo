@@ -95,7 +95,10 @@ export async function gerarESalvarPdf(
     // Sem isto o Chrome headless toma 403 naquele <img> e o PDF ASSINADO sai
     // com um retangulo vazio no lugar da imagem — sem erro nenhum. Melhor
     // abortar a emissao que publicar laudo com buraco silencioso.
-    if (htmlAssinado.includes(`https://storage.googleapis.com/${bucket.name}/dicom/`)) {
+    // Sem a barra final: a URL canonica gravada codifica o path inteiro
+    // (encodeURIComponent), entao ela aparece como `/dicom%2F...` — `/dicom`
+    // cobre as duas formas.
+    if (htmlAssinado.includes(`https://storage.googleapis.com/${bucket.name}/dicom`)) {
       throw new Error('imagem não assinada — emissão abortada');
     }
     await page.setContent(htmlAssinado, { waitUntil: 'networkidle0', timeout: 30000 });
