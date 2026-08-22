@@ -515,8 +515,9 @@ export default function LaudoPage() {
 
   /**
    * Retorna a lista de inputs DICOM importáveis pro motor (filtrados via
-   * whitelist SR_TO_MOTOR). Funciona com schema NOVO (medidas com contexto)
-   * e ANTIGO (Record<string, number>) via normalizarParaImport.
+   * whitelist SR_TO_MOTOR). Só funciona com schema NOVO (medidas com
+   * contexto) — schema ANTIGO (Record<string, number>, sem unidade) sempre
+   * devolve `[]` (Task 10 — reprocesso é o único caminho seguro, Task 12).
    */
   function getInputsImportaveis(): InputImport[] {
     const medidasDicom = exame?.medidasDicom as Record<string, MedidaSr | number> | undefined;
