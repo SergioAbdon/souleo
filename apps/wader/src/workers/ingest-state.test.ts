@@ -40,4 +40,20 @@ describe('IngestStateStore.precisaProcessar (contrato do Fix B / nSR = instances
     s.setSignature('e1', { nImg: 0, nSR: 0, matched: false, at: 'x' });
     expect(s.precisaProcessar('e1', 9, 1)).toBe(true);
   });
+
+  it('precisaProcessar usa nImgTentadas quando presente (falha permanente não loopa)', () => {
+    const s = novoStore();
+    s.setSignature('e1', { nImg: 8, nImgTentadas: 9, nSR: 1, matched: true, at: 'x' });
+    expect(s.precisaProcessar('e1', 9, 1)).toBe(false); // 9 tentadas = 9 no Orthanc
+    expect(s.precisaProcessar('e1', 10, 1)).toBe(true); // chegou imagem nova
+  });
+});
+
+describe('IngestStateStore.deleteSignature', () => {
+  it('remove e persiste', () => {
+    const s = novoStore();
+    s.setSignature('e1', { nImg: 1, nSR: 0, matched: true, at: 'x' });
+    s.deleteSignature('e1');
+    expect(s.getSignature('e1')).toBeUndefined();
+  });
 });

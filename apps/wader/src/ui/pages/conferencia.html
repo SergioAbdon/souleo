@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Wader · Conferência</title>
+    <!-- Base compartilhada com /admin (tokens, header, card, pill, button). -->
+    <link rel="stylesheet" href="/static/wader.css" />
+    <style>
+      main { max-width: 1280px; }
+      .card h2 { margin: 0 0 0.25rem; }
+      .card .subtitle { margin: 0 0 1rem; }
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: 1.25rem;
+      }
+      .field-group label {
+        display: block;
+        font-size: 0.78rem;
+        color: var(--muted);
+        margin-bottom: 0.25rem;
+      }
+      input, select {
+        font-family: inherit;
+        font-size: 0.85rem;
+        padding: 0.4rem 0.6rem;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: white;
+        color: var(--fg);
+      }
+      table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+      th, td { text-align: left; padding: 0.5rem 0.5rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+      th { color: var(--muted); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; }
+      tbody tr:hover { background: #f8fafc; }
+      td.empty { color: var(--muted); text-align: center; padding: 1.5rem; }
+      code { font-family: 'Consolas', monospace; }
+      button {
+        padding: 0.35rem 0.7rem;
+        font-size: 0.78rem;
+        margin-right: 0.3rem;
+        white-space: nowrap;
+      }
+      .row-actions { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+      pre.error {
+        background: #fee2e2;
+        color: #7f1d1d;
+        padding: 0.6rem 0.8rem;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        margin: 0 0 1rem;
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Wader · Conferência</h1>
+      <nav>
+        <a href="/admin">Admin</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="card">
+        <div class="toolbar">
+          <div class="field-group">
+            <label for="data">Data</label>
+            <input type="date" id="data" />
+          </div>
+          <div class="field-group">
+            <label for="operador">Operador (obrigatório p/ excluir)</label>
+            <input type="text" id="operador" placeholder="Seu nome" style="width: 220px" />
+          </div>
+          <div class="field-group">
+            <button class="secondary" onclick="carregar($('data').value)">⟳ Recarregar</button>
+          </div>
+          <div class="field-group" style="margin-left: auto">
+            <span id="orthanc-status"></span>
+          </div>
+        </div>
+        <pre class="error" id="erro"></pre>
+      </section>
+
+      <section class="card">
+        <h2>Exames do dia</h2>
+        <p class="subtitle">Agenda do LEO cruzada com o que já chegou do Vivid (Orthanc)</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Paciente</th>
+              <th>ACC</th>
+              <th>Tipo</th>
+              <th>Status</th>
+              <th>Vínculo</th>
+              <th>Imagens</th>
+              <th>Erro</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody id="exames-body">
+            <tr><td colspan="8" class="empty">Carregando…</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2>Estudos sem dono</h2>
+        <p class="subtitle">Chegaram no Orthanc mas não casaram com nenhum exame do dia — vincule ao exame certo ou exclua para pedir reenvio</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Paciente (DICOM)</th>
+              <th>ACC (DICOM)</th>
+              <th>Hora</th>
+              <th>Séries</th>
+              <th>Vincular a</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody id="orfaos-body">
+            <tr><td colspan="6" class="empty">Carregando…</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+
+    <!-- `$` e `fetchJson` — mesmos helpers do /admin. -->
+    <script src="/static/wader-ui.js"></script>
+    <script>
+      const OPERADOR_KEY = 'wader.conferencia.operador';
+
+      let exames = [];
+      let orfaos = [];
+
+      function escapeHtml(s) {
+        return String(s ?? '').replace(/[&<>"']/g, (c) => (
+          { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+        ));
+      }
+
+      /**
+       * Valor vindo do servidor entrando como ARGUMENTO JS dentro de um
+       * atributo `onclick="..."`. escapeHtml sozinho NÃO basta aqui: o parser
+       * de atributo decodifica `&#39;` de volta pra `'` antes do JS ler, e a
+       * aspa reabre. JSON.stringify fecha o lado JS (aspas escapadas + as
+       * próprias aspas da string), escapeHtml fecha o lado HTML.
+       * Necessário porque `dicomOrthancStudyId` é gravável pelo médico-autor.
+       */
+      function jsArg(v) {
+        return escapeHtml(JSON.stringify(String(v ?? '')));
+      }
+
+      /** PatientName DICOM vem com '^' e o operador nao deve precisar digitar acento/caret. */
+      var DIACRITICOS_RE = new RegExp('[' + String.fromCharCode(0x0300) + '-' + String.fromCharCode(0x036f) + ']', 'g');
+      function normalizarNome(s) {
+        return String(s ?? '')
+          .replace(/\^/g, ' ')
+          .normalize('NFD')
+          .replace(DIACRITICOS_RE, '')
+          .trim()
+          .toUpperCase()
+          .replace(/\s+/g, ' ');
+      }
+
+      function errMsg(r) {
+        return r.error ?? (r.errors && r.errors.join('; ')) ?? JSON.stringify(r);
+      }
+
+      /** Desabilita o botão durante o fetch — evita duplo clique concorrente. */
+      async function comBotao(btn, fn) {
+        if (btn) btn.disabled = true;
+        try { await fn(); } finally { if (btn) btn.disabled = false; }
+      }
+
+      function initOperador() {
+        $('operador').value = localStorage.getItem(OPERADOR_KEY) || '';
+        $('operador').addEventListener('input', () => {
+          localStorage.setItem(OPERADOR_KEY, $('operador').value);
+        });
+      }
+
+      function getOperador() {
+        return ($('operador').value || '').trim();
+      }
+
+      function matchPill(status) {
+        const map = { casado: ['green', 'CASADO'], recebido: ['yellow', 'RECEBIDO'], aguardando: ['gray', 'AGUARDANDO'] };
+        const [cls, label] = map[status] || ['gray', status];
+        return `<span class="pill ${cls}">${label}</span>`;
+      }
+
+      function optionsExames(excetoId) {
+        return exames
+          .filter((e) => e.id !== excetoId)
+          .map((e) => `<option value="${e.id}">${escapeHtml(e.pacienteNome)} (${escapeHtml(e.acc) || 'sem ACC'})</option>`)
+          .join('');
+      }
+
+      function renderExames() {
+        const tbody = $('exames-body');
+        if (exames.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" class="empty">Nenhum exame nesta data.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = exames.map((e, i) => {
+          // Sem `accDicom` o estudo não está na listagem desta data (o servidor
+          // só devolve a fingerprint dos estudos do dia consultado) — a trava
+          // anti-corrida do excluir-reenvio não teria o que conferir. Desabilita
+          // em vez de mandar um fingerprint pela metade e tomar 400.
+          const semFingerprint = e.accDicom == null;
+          const selId = `sel-troca-${e.id}`;
+          const acoes = e.orthancStudyId
+            ? `<select id="${escapeHtml(selId)}"><option value="">— trocar p/ —</option>${optionsExames(e.id)}</select>
+               <button class="secondary" onclick="comBotao(this, () => vincular(${jsArg(e.orthancStudyId)}, ${jsArg(selId)}))">Trocar vínculo</button>
+               <button class="secondary" onclick="comBotao(this, () => reprocessar(${jsArg(e.orthancStudyId)}))">Reprocessar</button>
+               <button class="danger" ${semFingerprint ? 'disabled title="estudo fora desta data — abra a data do estudo"' : ''} onclick="comBotao(this, () => excluirExame(${i}))">Excluir p/ reenvio</button>`
+            : '—';
+          return `
+            <tr>
+              <td>${escapeHtml(e.pacienteNome)}</td>
+              <td><code>${escapeHtml(e.acc) || '—'}</code></td>
+              <td>${escapeHtml(e.tipoExame)}</td>
+              <td>${escapeHtml(e.status)}</td>
+              <td>${matchPill(e.matchStatus)}</td>
+              <td>${e.nImagens}</td>
+              <td>${e.dicomUltimoErro ? `<span class="pill red" title="${escapeHtml(e.dicomUltimoErro)}">ERRO</span>` : '—'}</td>
+              <td><div class="row-actions">${acoes}</div></td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      function renderOrfaos() {
+        const tbody = $('orfaos-body');
+        if (orfaos.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" class="empty">Nenhum estudo sem dono.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = orfaos.map((o, i) => `
+          <tr>
+            <td>${escapeHtml(o.pacienteNomeDicom)}</td>
+            <td><code>${escapeHtml(o.accDicom) || '—'}</code></td>
+            <td>${escapeHtml(o.studyTime)}</td>
+            <td>${o.nSeries}</td>
+            <td><select id="sel-orfao-${i}"><option value="">— escolha o exame —</option>${optionsExames(null)}</select></td>
+            <td>
+              <div class="row-actions">
+                <button onclick="comBotao(this, () => vincular(${jsArg(o.orthancStudyId)}, 'sel-orfao-${i}'))">Vincular</button>
+                <button class="danger" onclick="comBotao(this, () => excluir(${i}))">Excluir p/ reenvio</button>
+              </div>
+            </td>
+          </tr>
+        `).join('');
+        orfaos.forEach((o, i) => {
+          if (o.sugestaoExameId) {
+            const sel = $(`sel-orfao-${i}`);
+            if (sel) sel.value = o.sugestaoExameId;
+          }
+        });
+      }
+
+      async function carregar(dataParam) {
+        const qs = dataParam ? `?data=${encodeURIComponent(dataParam)}` : '';
+        const r = await fetchJson(`/api/reconciliacao${qs}`);
+        if (!r.ok) {
+          $('erro').textContent = r.error || 'Falha ao carregar a reconciliação.';
+          $('erro').style.display = 'block';
+          return;
+        }
+        $('erro').style.display = 'none';
+        $('data').value = r.data;
+        exames = r.exames || [];
+        orfaos = r.orfaos || [];
+        renderExames();
+        renderOrfaos();
+        $('orthanc-status').innerHTML = r.orthancOk
+          ? '<span class="pill green">Orthanc OK</span>'
+          : '<span class="pill red">Orthanc inacessível</span>';
+      }
+
+      async function vincular(orthancStudyId, selId) {
+        const exameId = $(selId).value;
+        if (!exameId) { alert('Escolha um exame antes de vincular.'); return; }
+        const r = await fetchJson('/api/reconciliacao/vincular', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orthancStudyId, exameId }),
+        });
+        if (!r.ok) { alert('Falha ao vincular:\n\n' + errMsg(r)); return; }
+        alert('Confira as imagens antes de emitir.');
+        await carregar($('data').value);
+      }
+
+      async function reprocessar(orthancStudyId) {
+        const r = await fetchJson('/api/reconciliacao/reprocessar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orthancStudyId }),
+        });
+        if (!r.ok) { alert('Falha ao reprocessar:\n\n' + errMsg(r)); return; }
+        alert(`Reprocessado: ${r.imagensProcessadas ?? 0} imagens, ${r.medidasExtraidas ?? 0} medidas.`);
+        await carregar($('data').value);
+      }
+
+      /**
+       * Exclui um estudo do Orthanc pra reenvio — fluxo compartilhado entre
+       * "Estudos sem dono" (órfão) e "Exames do dia" (exame já casado com o
+       * estudo errado — caso clínico principal: troca de paciente no Vivid).
+       */
+      async function excluirEstudo(orthancStudyId, fingerprint, pacienteNomeDicom) {
+        const operador = getOperador();
+        if (!operador) { alert('Preencha o campo Operador antes de excluir.'); return; }
+
+        const aviso =
+          'Remover permanentemente o estudo do arquivo da clínica. ' +
+          'As imagens somem do LEO e do Orthanc. ' +
+          'Após excluir: corrija o cadastro no Vivid e REENVIE.\n\n' +
+          'Para confirmar, digite EXATAMENTE o nome do paciente do DICOM:\n' +
+          pacienteNomeDicom;
+        const digitado = prompt(aviso);
+        if (digitado === null) return; // cancelou
+        if (normalizarNome(digitado) !== normalizarNome(pacienteNomeDicom)) {
+          alert('Nome não confere — exclusão cancelada.');
+          return;
+        }
+
+        const r = await fetchJson('/api/reconciliacao/excluir-reenvio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orthancStudyId, fingerprint, operador }),
+        });
+        if (!r.ok) { alert('Falha ao excluir:\n\n' + errMsg(r)); return; }
+        alert(r.mensagem || 'Estudo excluído.');
+        await carregar($('data').value);
+      }
+
+      async function excluir(indice) {
+        const o = orfaos[indice];
+        if (!o) return;
+        await excluirEstudo(o.orthancStudyId, { accDicom: o.accDicom, patientIdDicom: o.patientIdDicom }, o.pacienteNomeDicom);
+      }
+
+      async function excluirExame(indice) {
+        const e = exames[indice];
+        if (!e || !e.orthancStudyId) return;
+        if (e.accDicom == null || e.patientIdDicom == null) {
+          alert('Estudo fora desta data — abra a data do estudo para excluir.');
+          return;
+        }
+        await excluirEstudo(
+          e.orthancStudyId,
+          { accDicom: e.accDicom, patientIdDicom: e.patientIdDicom },
+          e.pacienteNomeDicom || e.pacienteNome,
+        );
+      }
+
+      initOperador();
+      carregar();
+    </script>
+  </body>
+</html>

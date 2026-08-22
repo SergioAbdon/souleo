@@ -23,6 +23,10 @@ type Params = {
   wsId: string; exameId: string; uid: string;
   subRef: DocumentReference | null;
   apagarPdf: (url: string) => Promise<void>;
+  // D5b/achado 20: so apagarExame chama — cancelar/transferir mantem o doc
+  // (e as imagens). Opcional pra nao quebrar chamador/teste que ainda nao
+  // injeta (skip silencioso, igual limparPdf faz com pdfUrl ausente).
+  apagarImagens?: (wsId: string, exameId: string) => Promise<void>;
   motivo?: string; novoMedicoUid?: string;
 };
 
@@ -154,6 +158,14 @@ export async function apagarExame(db: Firestore, p: Params): Promise<Resultado> 
 
   if (emitido) await devolverConsumo(db, p, 'apagar');
   await limparPdf(exame, p);
+  // D5b/achado 20: imagens DICOM saem junto do exame — sem status:'emitido'
+  // travando (elas existem pra rascunho/andamento tambem, o Wader grava
+  // assim que o estudo chega). Nunca bloqueia a exclusao (mesmo padrao do
+  // limparPdf acima).
+  if (p.apagarImagens) {
+    try { await p.apagarImagens(p.wsId, p.exameId); }
+    catch (e) { console.error('apagarImagens:', e); }
+  }
   // Achado 8: a reserva de ACC (accIndex/{acc}) nasce junto com o exame
   // (gravarImportacao) — some junto tambem, senao fica orfa (ninguem mais
   // aponta pra ela, mas ela trava aquele ACC pra sempre). Mesmo batch:

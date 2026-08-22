@@ -1,6 +1,7 @@
 import { OrthancClient } from '../adapters/orthanc-client';
 import { processarEstudo, IngestResult } from './dicom-ingest';
 import { IngestStateStore } from './ingest-state';
+import { getDb, FieldValue } from '../adapters/firebase';
 import { createLogger } from '../logger';
 
 const log = createLogger({ module: 'dicom-ingest-worker' });
@@ -96,12 +97,62 @@ export class DicomIngestWorker {
     log.info('Cursor de changes resetado pra 0 (estado persistido limpo)');
   }
 
+  /** Esquece a assinatura de um estudo — próximo StableStudy reprocessa do zero (Task 7). */
+  forgetStudy(studyId: string): void {
+    this.store.deleteSignature(studyId);
+  }
+
+  /** Último erro do tick (null quando o último tick deu certo). Visibilidade pro batimento. */
+  getUltimoErro(): string | null {
+    return this.lastError;
+  }
+
   private async tick(): Promise<void> {
     this.execCount++;
     this.lastTickAt = new Date();
     try {
       const desde = this.store.getLastSeq();
       const changes = await this.opts.client.changes(desde, 100);
+
+      // Achado 10: se o Orthanc foi restaurado de um backup antigo (ou o
+      // banco foi recriado), o cursor persistido fica À FRENTE do feed real
+      // — `changes.Last` nunca alcança `desde` e o worker trava pra sempre
+      // (loop pedindo `since=desde` e recebendo sempre o mesmo fim de feed
+      // vazio). Detecta e reseta pra reprocessar do zero.
+      if (changes.Last < desde) {
+        log.warn(
+          { desde, last: changes.Last },
+          'Orthanc reiniciado/restaurado (cursor à frente do feed) — resetando cursor',
+        );
+        this.store.reset();
+        return;
+      }
+
+      // Medidas na chegada (achado 29 / pacote de latência): quando uma série
+      // SR nova chega, extrai medidas JÁ — sem esperar o estudo assentar
+      // (StableStudy pode levar `StableAge`, default 60s). Roda ANTES do
+      // laço de StableStudy. `soMedidas` não baixa imagens nem grava
+      // assinatura — o StableStudy de sempre cobre isso depois. Cada change
+      // tem seu try: uma falha (estudo sumiu, Orthanc oscilou) não pode
+      // quebrar o tick nem impedir o processamento dos demais changes.
+      for (const c of changes.Changes) {
+        if (c.ChangeType === 'NewSeries' && c.ResourceType === 'Series') {
+          try {
+            const serie = await this.opts.client.getSeries(c.ID);
+            if ((serie.MainDicomTags?.Modality ?? '') === 'SR' && serie.ParentStudy) {
+              await processarEstudo({
+                client: this.opts.client,
+                orthancStudyId: serie.ParentStudy,
+                wsId: this.opts.wsId,
+                forceSr: true,
+                soMedidas: true,
+              });
+            }
+          } catch {
+            // Estudo pode ter sumido entre o change e agora — StableStudy cobre depois.
+          }
+        }
+      }
 
       // Estudos estáveis nesta página, deduplicados por ID (fica o mais recente).
       const stable = new Map<string, number>();
@@ -164,6 +215,9 @@ export class DicomIngestWorker {
             // nunca disparava reprocesso quando um SR novo chegava.
             this.store.setSignature(studyId, {
               nImg: result.imagensProcessadas,
+              // Achado 9: TENTADAS (sucesso+falha) — usado por precisaProcessar
+              // pra não reprocessar em loop uma falha permanente.
+              nImgTentadas: result.imagensProcessadas + result.imagensFalhadas,
               nSR: curSR,
               matched: true,
               at: new Date().toISOString(),
@@ -178,6 +232,52 @@ export class DicomIngestWorker {
           log.error({ err, orthancStudyId: studyId }, 'Falha ao processar estudo — reavaliará');
           this.lastError = (err as Error).message;
         }
+      }
+
+      // Reprocesso sob demanda (D1-b, Task 9): o laudo web grava
+      // `reprocessarDicom:true` num exame de schema antigo (ou sempre que o
+      // médico pedir "solicitar reprocessamento") — relê o estudo do Orthanc
+      // com o parser novo. Try próprio: um exame com flag ruim não pode
+      // derrubar o tick nem impedir o avanço do cursor.
+      try {
+        const flagSnap = await getDb()
+          .collection('workspaces')
+          .doc(this.opts.wsId)
+          .collection('exames')
+          .where('reprocessarDicom', '==', true)
+          .limit(10)
+          .get();
+        for (const d of flagSnap.docs) {
+          const studyId = d.data().dicomOrthancStudyId as string | undefined;
+          if (studyId) {
+            const result = await processarEstudo({
+              client: this.opts.client,
+              orthancStudyId: studyId,
+              wsId: this.opts.wsId,
+              forceSr: true,
+              exameIdOverride: d.id,
+            });
+            // A flag some de qualquer jeito (senão o tick reprocessa em loop),
+            // mas um reprocesso que NÃO casou tem que ficar visível no exame —
+            // o médico pediu e precisa saber que não deu, sem abrir o log do
+            // Wader. Silêncio aqui = "pedi e nada aconteceu".
+            const limpar: Record<string, unknown> = { reprocessarDicom: FieldValue.delete() };
+            if (!result.matched) {
+              limpar.dicomUltimoErro =
+                'Reprocesso falhou: ' + (result.errors[0] ?? 'estudo indisponível');
+              limpar.dicomUltimoErroEm = FieldValue.serverTimestamp();
+            }
+            await d.ref.update(limpar);
+          } else {
+            await d.ref.update({
+              reprocessarDicom: FieldValue.delete(),
+              dicomUltimoErro: 'Reprocesso pedido mas exame sem estudo vinculado',
+              dicomUltimoErroEm: FieldValue.serverTimestamp(),
+            });
+          }
+        }
+      } catch (err) {
+        log.warn({ err }, 'Falha ao consumir flag reprocessarDicom — tentará no próximo tick');
       }
 
       // Avança o cursor SÓ depois de processar a página (crash no meio ⇒

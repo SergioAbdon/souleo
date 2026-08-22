@@ -94,7 +94,9 @@ export default function Worklist() {
   // impressão ("INDEPENDENTE DA SELEÇÃO DO MÉDICO, ELA PODE IMPRIMIR TODA CASO
   // JULGUE NECESSARIO. POR PADRAO SELECIONA AS 8 PRIMEIRAS"). Seleção é local
   // (efêmera, não persiste no Firestore) — não interfere com a seleção do médico.
-  const [galeria, setGaleria] = useState<{ imagens: string[]; paciente: string; tipo: string } | null>(null);
+  // `exameId` entra aqui (S4-T12) só pra galeria conseguir pedir as URLs
+  // assinadas — as imagens novas nascem privadas no Storage.
+  const [galeria, setGaleria] = useState<{ exameId: string; imagens: string[]; paciente: string; tipo: string } | null>(null);
   const [secretariaSelecionadas, setSecretariaSelecionadas] = useState<string[]>([]);
 
   // Quando galeria abre, default = 8 primeiras imagens
@@ -612,6 +614,24 @@ export default function Worklist() {
                           📡 SEM MWL
                         </span>
                       )}
+                      {/* Cofre do emitido (S4-T15 fix X1): o Wader recebeu estudo
+                          novo num exame JÁ EMITIDO — foi tudo pros campos-sombra
+                          e alguém tem que revisar. Sem esta pílula a fila de
+                          revisão existia só no Firestore. */}
+                      {item.dicomAtualizacaoPendente === true && (
+                        <span title="Chegou imagem/medida nova depois da emissão — revise antes de corrigir o laudo"
+                          className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700">
+                          📥 DICOM NOVO — REVISAR
+                        </span>
+                      )}
+                      {/* Ingestão falhou: o erro ficava só no log do Wader e na
+                          tela de conferência. A recepção vê aqui e reenvia. */}
+                      {typeof item.dicomUltimoErro === 'string' && item.dicomUltimoErro.trim() !== '' && (
+                        <span title={item.dicomUltimoErro as string}
+                          className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-600">
+                          ⚠️ IMAGEM FALHOU
+                        </span>
+                      )}
                     </div>
                   </td>
 
@@ -691,6 +711,7 @@ export default function Worklist() {
                           agora abre <DicomGallery /> direto no contexto do Worklist. */}
                       {Array.isArray(item.imagensDicom) && (item.imagensDicom as unknown[]).length > 0 && (
                         <Btn cor="cyan" onClick={() => setGaleria({
+                          exameId: item.id as string,
                           imagens: item.imagensDicom as string[],
                           paciente: (item.pacienteNome as string) || '',
                           tipo: tiposMap[(item.tipoExame as string) || '']?.nome || (item.tipoExame as string) || '',
@@ -797,6 +818,8 @@ export default function Worklist() {
         open={galeria !== null}
         onClose={() => setGaleria(null)}
         imagens={galeria?.imagens || []}
+        wsId={wsId}
+        exameId={galeria?.exameId}
         pacienteNome={galeria?.paciente}
         tipoExame={galeria?.tipo}
         permitirSelecao

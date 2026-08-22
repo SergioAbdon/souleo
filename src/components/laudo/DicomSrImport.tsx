@@ -31,18 +31,47 @@ type Props = {
    * `window.importarDICOM({ measurements })` com esses valores.
    */
   onImportar: (selecionados: InputImport[]) => void;
+  /**
+   * Total de medidas que o Wader RECEBEU no SR (antes da whitelist). O
+   * rodapé mostra "N de M mapeadas" — o médico enxerga o que ficou de fora
+   * em vez de achar que o exame só tinha N medidas. 0 = linha some.
+   */
+  totalRecebidas?: number;
+  /**
+   * Medidas gravadas no schema ANTIGO (número puro, sem unidade). Não dá
+   * pra importar com segurança (o "E 0,63 m/s → 630 mm/s" nasceu daí): o
+   * modal troca a lista pelo pedido de reprocesso.
+   */
+  schemaAntigo?: boolean;
+  /** Grava `reprocessarDicom: true` no exame (o Wader consome e limpa). */
+  onSolicitarReprocesso?: () => void;
+  /**
+   * `exame.reprocessarDicom === true` — o pedido já está na fila do Wader.
+   * Sem isto o botão continuava clicável e o médico pedia 3, 4 vezes sem
+   * nenhum sinal de que o primeiro pedido tinha sido registrado (S4-T15 D3).
+   */
+  reprocessoPendente?: boolean;
 };
 
-export default function DicomSrImport({ open, onClose, inputs, pacienteNome, onImportar }: Props) {
+export default function DicomSrImport({
+  open, onClose, inputs, pacienteNome, onImportar,
+  totalRecebidas = 0, schemaAntigo = false, onSolicitarReprocesso,
+  reprocessoPendente = false,
+}: Props) {
   // Default: todas marcadas (médico geralmente quer importar tudo)
   const [marcadas, setMarcadas] = useState<Set<string>>(new Set());
 
-  // Reset quando abre — re-marca todas
+  // Reset quando abre — re-marca todas.
+  // Dep é SÓ `[open]` (S4-T12, achado 25): com `inputs` na lista, qualquer
+  // re-render do pai que criasse um array novo re-marcava tudo por cima das
+  // caixas que o médico tinha acabado de desmarcar. O pai agora memoiza a
+  // lista, então o conteúdo na abertura é sempre o corrente.
   useEffect(() => {
     if (open) {
       setMarcadas(new Set(inputs.map((i) => i.key)));
     }
-  }, [open, inputs]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   // ESC fecha
   useEffect(() => {
@@ -104,6 +133,34 @@ export default function DicomSrImport({ open, onClose, inputs, pacienteNome, onI
           </button>
         </div>
 
+        {schemaAntigo ? (
+          /* SCHEMA ANTIGO — sem lista: só o caminho seguro (reprocessar).
+             As medidas legadas são números puros, sem unidade; importar
+             "no chute" é o que produziu o E de 0,63 m/s virando 630. */
+          <div className="px-6 py-8 text-center">
+            <p className="text-sm font-semibold text-gray-800 mb-1.5">
+              Medidas em formato antigo — solicitar reprocessamento no Wader
+            </p>
+            <p className="text-[12px] text-gray-600 leading-relaxed mb-5">
+              Este exame foi processado por uma versão antiga do Wader: as medidas vieram
+              sem unidade e não podem ser importadas com segurança. O Wader relê o estudo
+              e devolve as medidas completas — a tela atualiza sozinha.
+            </p>
+            {reprocessoPendente ? (
+              <p className="text-[12px] font-semibold text-amber-700">
+                ⏳ Reprocessamento solicitado — aguardando o Wader
+              </p>
+            ) : (
+              <button
+                onClick={() => { onSolicitarReprocesso?.(); onClose(); }}
+                className="px-4 py-2 rounded bg-purple-600 text-white text-[12px] font-semibold hover:bg-purple-700 transition"
+              >
+                🔄 Solicitar reprocessamento
+              </button>
+            )}
+          </div>
+        ) : (
+        <>
         {/* DESCRIÇÃO */}
         <div className="px-5 pt-3 pb-2 text-[11px] text-gray-600 border-b border-gray-100 flex-shrink-0">
           Marque quais inputs importar do exame. Valores calculados (FE, Massa,
@@ -141,7 +198,13 @@ export default function DicomSrImport({ open, onClose, inputs, pacienteNome, onI
                         onChange={() => toggle(it.key)}
                         className="w-4 h-4 accent-blue-600 cursor-pointer"
                       />
-                      <span className="flex-1 text-sm text-gray-800">{it.nomePt}</span>
+                      {/* Campo de destino visível (S4-T15 fix D3): o médico
+                          precisa saber PRA ONDE a medida vai antes de marcar —
+                          é o que torna o Perfil do aparelho conferível. */}
+                      <span className="flex-1 text-sm text-gray-800">
+                        {it.nomePt}
+                        <span className="text-[10px] font-mono text-gray-400 ml-1.5">→ {it.campo}</span>
+                      </span>
                       <span className="text-sm font-mono font-semibold text-gray-700 whitespace-nowrap">
                         {/* valor JÁ arredondado pelo adaptador (regra por tipo).
                             Só display; NÃO mexe no valor importado nem em dados futuros. */}
@@ -160,6 +223,13 @@ export default function DicomSrImport({ open, onClose, inputs, pacienteNome, onI
         <div className="border-t border-gray-200 px-5 py-3 flex items-center gap-2 flex-shrink-0">
           <span className="text-[11px] text-gray-600 flex-1">
             {marcadas.size} de {inputs.length} selecionada{marcadas.size === 1 ? '' : 's'}
+            {/* Quantas das medidas que o Wader RECEBEU o LEO sabe mapear —
+                sem isso o médico não tinha como saber o que ficou de fora. */}
+            {totalRecebidas > 0 && (
+              <span className="block text-[10px] text-gray-500">
+                {inputs.length} de {totalRecebidas} medidas recebidas estão mapeadas
+              </span>
+            )}
           </span>
           {inputs.length > 0 && (
             <>
@@ -185,6 +255,8 @@ export default function DicomSrImport({ open, onClose, inputs, pacienteNome, onI
             ✅ Importar ({marcadas.size})
           </button>
         </div>
+        </>
+        )}
       </div>
     </div>
   );

@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import { ExamesRepo } from '../adapters/exames-repo';
 import { WorkspaceRepo } from '../adapters/workspace-repo';
 import { StatusExame } from '../types/exame';
-import { salvarWl, deletarWl, listarWlExistentes } from './wl-writer';
+import { salvarWl, deletarWl, listarWlExistentes, hashCamposWl } from './wl-writer';
 import { createLogger } from '../logger';
 import { hojeClinica } from '../lib/clinica-tempo';
 
@@ -66,12 +66,19 @@ export async function syncWorklists(opts: {
   const repo = new ExamesRepo(opts.wsId);
   const wsRepo = new WorkspaceRepo(opts.wsId);
 
-  // Busca uma vez o nome da clínica (cache reuso entre exames do tick)
+  // Busca uma vez o nome da clínica (cache reuso entre exames do tick).
+  // ABORTA o sync se falhar (achado da tríade): `nomeClinica` entra no
+  // `hashCamposWl`. Seguir com '' faria o hash divergir do gravado, regravando
+  // TODOS os `.wl` da pasta — e no tick seguinte, com o Firestore de volta,
+  // regravaria tudo de novo. Oscilação eterna. Melhor pular o tick.
   let nomeClinica = '';
   try {
     nomeClinica = await wsRepo.getNomeClinica();
   } catch (err) {
-    log.warn({ err }, 'Não consegui buscar nomeClinica do workspace, usando vazio');
+    const msg = `Não consegui buscar nomeClinica do workspace — sync abortado: ${(err as Error).message}`;
+    log.error({ err }, msg);
+    result.errors.push(msg);
+    return result;
   }
 
   const todosExames = await repo.listarDoDia(dataAlvo);
@@ -86,19 +93,42 @@ export async function syncWorklists(opts: {
     wlsExistentes.map((f) => f.replace(/\.wl$/, '')),
   );
 
-  // 1) Cria .wl que falta
+  const optsWl = {
+    scheduledStationName: opts.scheduledStationName,
+    scheduledProcedureStepLocation: nomeClinica,
+  };
+
+  // 1) Cria .wl que falta OU regrava quando o exame mudou (hash diverge)
+  //    OU reafirma o selo mwlStatus (ex: Wader reiniciou e perdeu o carimbo).
   for (const exame of elegiveis) {
+    const hashAtual = hashCamposWl(exame, optsWl);
+
     if (idsExistentesNaPasta.has(exame.id)) {
-      result.wlsIntactos++;
+      if (exame.wlHash === hashAtual && exame.mwlStatus === 'ok') {
+        result.wlsIntactos++;
+        continue;
+      }
+      try {
+        if (exame.wlHash !== hashAtual) {
+          salvarWl(opts.worklistPath, exame, optsWl);
+          result.wlsCriados++;
+        } else {
+          result.wlsIntactos++;
+        }
+        await repo.marcarMwl(exame.id, 'ok', hashAtual);
+      } catch (err) {
+        const msg = `Falha ao regravar .wl pra exame ${exame.id}: ${(err as Error).message}`;
+        log.error({ err, exameId: exame.id }, msg);
+        result.errors.push(msg);
+        await repo.marcarMwl(exame.id, 'falhou');
+      }
       continue;
     }
+
     try {
-      salvarWl(opts.worklistPath, exame, {
-        scheduledStationName: opts.scheduledStationName,
-        scheduledProcedureStepLocation: nomeClinica,
-      });
+      salvarWl(opts.worklistPath, exame, optsWl);
       result.wlsCriados++;
-      await repo.marcarMwl(exame.id, 'ok');
+      await repo.marcarMwl(exame.id, 'ok', hashAtual);
     } catch (err) {
       const msg = `Falha ao gerar .wl pra exame ${exame.id}: ${(err as Error).message}`;
       log.error({ err, exameId: exame.id }, msg);
@@ -107,17 +137,24 @@ export async function syncWorklists(opts: {
     }
   }
 
-  // 2) Remove .wl obsoletos (sem exame correspondente ou exame não-elegível)
-  for (const filename of wlsExistentes) {
-    const exameId = filename.replace(/\.wl$/, '');
-    if (idsElegiveis.has(exameId)) continue;
-    try {
-      const removed = deletarWl(opts.worklistPath, exameId);
-      if (removed) result.wlsRemovidos++;
-    } catch (err) {
-      const msg = `Falha ao remover .wl ${filename}: ${(err as Error).message}`;
-      log.error({ err, exameId }, msg);
-      result.errors.push(msg);
+  // 2) Remove .wl obsoletos (sem exame correspondente ou exame não-elegível).
+  //    Só roda pro dia de hoje: uma consulta a um dia passado/futuro
+  //    (`opts.data`) é só leitura — não pode apagar a worklist de hoje no aparelho.
+  if (dataAlvo === hojeClinica()) {
+    for (const filename of wlsExistentes) {
+      const exameId = filename.replace(/\.wl$/, '');
+      if (idsElegiveis.has(exameId)) continue;
+      try {
+        const removed = deletarWl(opts.worklistPath, exameId);
+        if (removed) {
+          result.wlsRemovidos++;
+          await repo.limparMwl(exameId);
+        }
+      } catch (err) {
+        const msg = `Falha ao remover .wl ${filename}: ${(err as Error).message}`;
+        log.error({ err, exameId }, msg);
+        result.errors.push(msg);
+      }
     }
   }
 

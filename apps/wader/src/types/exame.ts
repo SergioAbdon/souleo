@@ -20,24 +20,12 @@ export type TipoExame = 'eco_tt' | 'doppler_carotidas' | 'eco_te' | 'eco_stress'
 /**
  * Item do `medidasDicom` (schema novo 15/05/2026).
  *
- * `grupo` é o Measurement Group onde o código apareceu no SR (LA = Left
- * Atrium, LV = Left Ventricle, AO = Aortic, MV = Mitral Valve, etc).
- * Crítico pra desambiguar códigos genéricos como `M-02550` ("Diameter"),
- * que sozinho não diz qual estrutura.
- *
- * Definido também em `apps/wader/src/adapters/dicom-sr-parser.ts` — esta
- * é a "fonte da verdade" do tipo no schema do Firestore.
+ * Reexportado de `dicom-sr-parser.ts` (P7 — fonte única, elimina a
+ * duplicação silenciosa dentro do próprio Wader; a duplicação Wader↔web
+ * continua por falta de pacote compartilhado, ver achado 19).
  */
-export interface MedidaSr {
-  /** Valor numérico (na unidade indicada por `unit`). */
-  value: number;
-  /** Unidade do SR (ex: 'cm', 'm/s', 'ml', '%', 'kg', ''). */
-  unit: string;
-  /** Nome legível em inglês, vindo direto do `CodeMeaning` do SR. */
-  meaning: string;
-  /** Grupo (estrutura anatômica) — ver `GrupoSr` no parser. */
-  grupo: 'LA' | 'LV' | 'AO' | 'MV' | 'RA' | 'RV' | 'TV' | 'PV' | 'general';
-}
+import type { MedidaSr, GrupoSr } from '../adapters/dicom-sr-parser';
+export type { MedidaSr, GrupoSr };
 
 export const TIPOS_EXAME_LABEL: Record<TipoExame, string> = {
   eco_tt: 'Ecocardiograma Transtorácico',
@@ -172,6 +160,8 @@ export interface Exame {
     metodoFallback: 'content-sequence' | 'tags-diretas' | 'sem-sr';
     /** Quando o Wader processou. */
     processadoEm: string; // ISO timestamp
+    /** Versão do parser (`PARSER_VERSAO` em `dicom-sr-parser.ts`) que gerou essas medidas. */
+    parserVersao?: string;
   };
 
   versao: number;
@@ -185,6 +175,11 @@ export interface Exame {
 
   // Após emissão
   pdfUrl?: string;
+
+  /** Resultado da última tentativa de escrita do `.wl` (worklist-sync). */
+  mwlStatus?: 'ok' | 'falhou';
+  /** Hash (sha1) dos campos que entraram no `.wl` gerado — ver `hashCamposWl`. */
+  wlHash?: string;
 }
 
 /**

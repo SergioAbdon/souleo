@@ -6,6 +6,8 @@
 import chromium from '@sparticuz/chromium';
 import puppeteer, { type Browser } from 'puppeteer-core';
 import { getStorage } from 'firebase-admin/storage';
+import { getFirestore } from 'firebase-admin/firestore';
+import { assinarImagensExame, assinarUrlsNoHtml } from './imagens-dicom-admin';
 
 // ── Resolver executável do Chrome (Vercel ou local) ──
 async function resolverExecutavel(): Promise<{ executablePath: string; args: string[]; headless: boolean }> {
@@ -80,7 +82,26 @@ export async function gerarESalvarPdf(
     });
 
     const page = await browser.newPage();
-    await page.setContent(pdfHtml, { waitUntil: 'networkidle0', timeout: 30000 });
+    // D5b: imagens DICOM nascem privadas no Storage — troca a URL canonica
+    // embutida no HTML (imagensSelecionadasPdf) por signed URL ANTES do
+    // Puppeteer buscar. Sem isso o <img src> da 403: o Chrome headless busca
+    // por rede, sem a credencial do Admin SDK. Ponto unico — cobre /api/emitir
+    // e /api/corrigir-laudo, os dois chamadores desta funcao.
+    const bucket = getStorage().bucket();
+    const urlsAssinadas = await assinarImagensExame(getFirestore(), bucket, wsId, exameId);
+    const htmlAssinado = assinarUrlsNoHtml(pdfHtml, urlsAssinadas);
+    // FAIL-LOUD (S4-T15 fix X4): se sobrou URL canonica de imagem DICOM, a
+    // assinatura nao cobriu tudo (imagem fora do exame, doc dessincronizado).
+    // Sem isto o Chrome headless toma 403 naquele <img> e o PDF ASSINADO sai
+    // com um retangulo vazio no lugar da imagem — sem erro nenhum. Melhor
+    // abortar a emissao que publicar laudo com buraco silencioso.
+    // Sem a barra final: a URL canonica gravada codifica o path inteiro
+    // (encodeURIComponent), entao ela aparece como `/dicom%2F...` — `/dicom`
+    // cobre as duas formas.
+    if (htmlAssinado.includes(`https://storage.googleapis.com/${bucket.name}/dicom`)) {
+      throw new Error('imagem não assinada — emissão abortada');
+    }
+    await page.setContent(htmlAssinado, { waitUntil: 'networkidle0', timeout: 30000 });
     await page.evaluateHandle('document.fonts.ready');
 
     const pdfBuffer = await page.pdf({

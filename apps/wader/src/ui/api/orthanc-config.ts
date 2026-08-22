@@ -15,9 +15,11 @@ const log = createLogger({ module: 'api-orthanc-config' });
  *   - Conferir se admin atualizou URL no LocalModal do LEO web
  *   - Diagnosticar quando Wader não consegue alcançar Orthanc
  */
-export function registerOrthancConfigRoutes(app: FastifyInstance, config: WaderConfig): void {
-  const workspaceRepo = new WorkspaceRepo(config.wsId);
-
+export function registerOrthancConfigRoutes(
+  app: FastifyInstance,
+  config: WaderConfig,
+  workspaceRepo: WorkspaceRepo,
+): void {
   app.get('/api/orthanc/config', async (_req, reply) => {
     try {
       const conn = await workspaceRepo.getOrthancConnection();

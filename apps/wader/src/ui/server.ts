@@ -7,6 +7,7 @@ import { WaderConfig } from '../config/types';
 import { WorklistSyncWorker } from '../workers/worklist-sync-worker';
 import { DicomIngestWorker } from '../workers/dicom-ingest-worker';
 import { OrthancClient } from '../adapters/orthanc-client';
+import { WorkspaceRepo } from '../adapters/workspace-repo';
 import { registerAgendamentosRoutes } from './api/agendamentos';
 import { registerProcedimentosRoutes } from './api/procedimentos';
 import { registerOrthancConfigRoutes } from './api/orthanc-config';
@@ -33,12 +34,18 @@ export interface UiServerExtras {
   worklistWorker: WorklistSyncWorker | null;
   dicomWorker?: DicomIngestWorker | null;
   orthancClient?: OrthancClient | null;
+  /** Instância única compartilhada (fim das cópias em dicom.ts/orthanc-config.ts). */
+  workspaceRepo?: WorkspaceRepo | null;
+  /** Versão real do package.json (index.ts) — /version deixa de mentir "0.1.0". */
+  versao?: string;
 }
 
 export async function startUiServer(
   config: WaderConfig,
   extras: UiServerExtras = { worklistWorker: null, dicomWorker: null },
 ): Promise<FastifyInstance> {
+  const workspaceRepo = extras.workspaceRepo ?? new WorkspaceRepo(config.wsId);
+  const orthancClient = extras.orthancClient ?? new OrthancClient(workspaceRepo);
   const app = Fastify({
     logger: false, // usamos pino diretamente via createLogger
     bodyLimit: 50 * 1024 * 1024, // 50 MB (DICOM SR pode ser grande)
@@ -51,15 +58,15 @@ export async function startUiServer(
     decorateReply: false,
   });
 
-  registerHealthRoutes(app);
+  registerHealthRoutes(app, extras.versao);
   registerPageRoutes(app);
   registerApiRoutes(app, config);
   registerAgendamentosRoutes(app, config);
   registerProcedimentosRoutes(app, config);
-  registerOrthancConfigRoutes(app, config);
+  registerOrthancConfigRoutes(app, config, workspaceRepo);
   registerWorklistRoutes(app, config, extras.worklistWorker);
-  registerDicomRoutes(app, config, extras.dicomWorker ?? null);
-  registerReconciliacaoRoutes(app, config, extras.orthancClient ?? null);
+  registerDicomRoutes(app, config, extras.dicomWorker ?? null, orthancClient);
+  registerReconciliacaoRoutes(app, config, orthancClient, extras.dicomWorker ?? null);
 
   await app.listen({ host: '127.0.0.1', port: config.ui.port });
 
@@ -67,16 +74,18 @@ export async function startUiServer(
   return app;
 }
 
-function registerHealthRoutes(app: FastifyInstance): void {
+function registerHealthRoutes(app: FastifyInstance, versao?: string): void {
   app.get('/health', async () => ({
     status: 'ok',
     service: 'wader',
     timestamp: new Date().toISOString(),
   }));
 
+  // Achado 11/pacote de latência: versão REAL do package.json (index.ts),
+  // não o literal '0.1.0' congelado desde a F1 — o cartão de Integrações
+  // precisa saber qual versão está rodando de fato pra depurar clínica a clínica.
   app.get('/version', async () => ({
-    version: '0.1.0',
-    phase: 'F1 — Esqueleto',
+    version: versao ?? '0.0.0',
   }));
 }
 
@@ -89,6 +98,9 @@ function registerPageRoutes(app: FastifyInstance): void {
   app.get('/', servePage('reception.html'));
   app.get('/admin', servePage('admin.html'));
   app.get('/wizard', servePage('wizard.html'));
+  // Console de conferência (vincular/trocar/excluir p/ reenvio) — só admin,
+  // NUNCA na recepção (decisão do produto, Task 7).
+  app.get('/conferencia', servePage('conferencia.html'));
 }
 
 function registerApiRoutes(app: FastifyInstance, config: WaderConfig): void {

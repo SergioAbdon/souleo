@@ -2,6 +2,7 @@ import { OrthancClient } from '../adapters/orthanc-client';
 import { processarEstudo } from './dicom-ingest';
 import { getDb } from '../adapters/firebase';
 import { digitos } from '../lib/acc';
+import { hojeClinica } from '../lib/clinica-tempo';
 import { createLogger } from '../logger';
 
 const log = createLogger({ module: 'acc-recovery-worker' });
@@ -30,6 +31,12 @@ export interface AccRecoveryWorkerOptions {
  * Resultado: recuperação em ≤ um ciclo (não depende de paginar o feed),
  * tolerante a ACC digitado sem o prefixo `EX` (wildcard nos dígitos).
  * Idempotente e seguro: `processarEstudo` respeita a Trava 2 de status.
+ *
+ * RÉGUA ESTRITA (achados 8/15/26): o Orthanc pode devolver estudos com ACC
+ * só "parecido" (wildcard nos dígitos). Vincular sozinho só quando o ACC do
+ * estudo bate EXATO com o do exame E o estudo realmente entrou nesse mesmo
+ * exame (não em outro dono, ex.: vínculo persistido). Qualquer coisa fora
+ * disso vira órfão — resolve na tela de conferência, nunca no automático.
  */
 export class AccRecoveryWorker {
   private timer: NodeJS.Timeout | null = null;
@@ -75,36 +82,43 @@ export class AccRecoveryWorker {
     };
   }
 
+  /** Data de corte (YYYY-MM-DD) — hoje da clínica (não UTC), menos `janelaDias`. */
   private cutoffData(): string {
     const dias = this.opts.janelaDias ?? 4;
-    const d = new Date();
-    d.setDate(d.getDate() - dias);
-    return d.toISOString().slice(0, 10); // YYYY-MM-DD
+    const [y, m, d] = hojeClinica().split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d - dias)).toISOString().slice(0, 10);
   }
 
   private async tick(): Promise<void> {
     this.execCount++;
     this.lastTickAt = new Date();
     try {
-      // Single-field where (sem índice composto) + filtro em memória.
+      // Query indexada (status+dataExame DESC, índice composto já publicado) —
+      // nunca varre a coleção inteira. Filtro em memória remanescente: só
+      // `!dicomStudyUid && acc` (não dá pra indexar "ausência de campo").
+      //
+      // orderBy dataExame DESC é obrigatório (achado da tríade): sem ele o
+      // Firestore ordena por doc id e a página de 25 enche com exames velhos
+      // da janela — o exame de HOJE, que é o que a recepção está esperando,
+      // nunca entra no lote e nunca é recuperado.
       const snap = await getDb()
         .collection('workspaces')
         .doc(this.opts.wsId)
         .collection('exames')
         .where('status', '==', 'aguardando')
+        .where('dataExame', '>=', this.cutoffData())
+        .orderBy('dataExame', 'desc')
+        .limit(25)
         .get();
 
-      const cutoff = this.cutoffData();
       const pendentes = snap.docs
         .map((d) => ({ id: d.id, data: d.data() as Record<string, unknown> }))
         .filter(
           (e) =>
             !e.data.dicomStudyUid &&
             typeof e.data.acc === 'string' &&
-            (e.data.acc as string).length > 0 &&
-            (typeof e.data.dataExame !== 'string' || (e.data.dataExame as string) >= cutoff),
-        )
-        .slice(0, 25);
+            (e.data.acc as string).length > 0,
+        );
 
       if (pendentes.length === 0) {
         this.lastError = null;
@@ -121,24 +135,32 @@ export class AccRecoveryWorker {
           const studyIds = await this.opts.client.findStudiesByAccession(d);
           if (studyIds.length === 0) continue;
 
+          // Régua estrita (achados 8/15/26): só vincula sozinho quando o ACC
+          // do estudo bate DÍGITO A DÍGITO com o do exame que originou a
+          // busca. ACC "parecido" (ex.: com um dígito a mais/errado) fica
+          // órfão pra vinculação manual na tela de conferência — nunca chuta.
           for (const studyId of studyIds) {
+            const study = await this.opts.client.getStudy(studyId);
+            const accEstudo = digitos(String(study.MainDicomTags?.AccessionNumber ?? ''));
+            if (accEstudo !== d) {
+              log.info(
+                { exameId: e.id, acc, accEstudo, studyId },
+                'ACC apenas PARECIDO — não vincula (régua estrita; resolver na tela de conferência)',
+              );
+              continue;
+            }
+
             const result = await processarEstudo({
               client: this.opts.client,
               orthancStudyId: studyId,
               wsId: this.opts.wsId,
             });
-            if (result.matched) {
+            // Só conta como recuperado se o estudo entrou NO exame que
+            // originou esta busca (não em outro dono — ex.: vínculo
+            // persistido redirecionando pra outro exame).
+            if (result.exameIdNoLeo === e.id && result.matched) {
               this.recuperados++;
-              log.info(
-                {
-                  exameId: e.id,
-                  acc,
-                  orthancStudyId: studyId,
-                  imagens: result.imagensProcessadas,
-                  medidas: result.medidasExtraidas,
-                },
-                'Exame recuperado por ACC (sem esperar o feed de changes)',
-              );
+              log.info({ exameId: e.id, acc, orthancStudyId: studyId }, 'Exame recuperado por ACC exato');
               break; // casou — não tenta outros estudos pro mesmo exame
             }
           }

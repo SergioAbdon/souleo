@@ -21,6 +21,53 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { useEffect, useState } from 'react';
+import { auth } from '@/lib/firebase';
+
+// Cache do mapa {url canônica → url assinada} por exame. As assinadas valem
+// 1h (imagens-dicom-admin.ts); expiramos com folga em 45min pra galeria
+// aberta a manhã inteira não começar a servir 403.
+// ponytail: Map em memória do módulo — some no F5, que é exatamente quando
+// renovar sai de graça. Se um dia precisar sobreviver ao reload, sessionStorage.
+const CACHE_MS = 45 * 60 * 1000;
+const cacheAssinadas = new Map<string, { em: number; urls: Record<string, string> }>();
+
+/**
+ * Busca (com cache) as URLs assinadas das imagens do exame. Falha → `null`:
+ * a galeria cai na URL canônica (ainda pública nos 182 exames legados) e
+ * avisa o médico que as imagens novas podem não carregar.
+ *
+ * FIX F2 (S4-T12 fix): o cache era chaveado SÓ por exameId. Com a tela viva,
+ * as imagens que o Wader grava depois de a galeria abrir ficavam de fora do
+ * mapa por 45min (PDF/print em branco). Agora o cache só vale se cobrir
+ * TODAS as URLs pedidas — imagem nova ⇒ refetch. Mais robusto que chavear
+ * por `imagens.length`, que não pega remap (mesma contagem, outras URLs).
+ */
+export async function buscarUrlsAssinadas(
+  wsId: string,
+  exameId: string,
+  urls: string[],
+): Promise<Record<string, string> | null> {
+  const cached = cacheAssinadas.get(exameId);
+  if (cached && Date.now() - cached.em < CACHE_MS && urls.every((u) => cached.urls[u])) {
+    return cached.urls;
+  }
+  try {
+    const token = await auth.currentUser?.getIdToken();
+    const res = await fetch('/api/exame/imagens-urls', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
+      body: JSON.stringify({ wsId, exameId }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const r = await res.json();
+    if (!r?.ok || !r.urls) return null;
+    cacheAssinadas.set(exameId, { em: Date.now(), urls: r.urls });
+    return r.urls;
+  } catch (e) {
+    console.warn('imagens-urls:', e);
+    return null;
+  }
+}
 
 /**
  * Quebra um array de URLs em páginas de 8 (2 cols × 4 lin) e gera HTML.
@@ -67,8 +114,16 @@ ${pgUrls
 }
 
 type Props = {
-  /** URLs públicas das imagens (Firebase Storage). Vazio/undefined = modal não renderiza. */
+  /** URLs canônicas das imagens no Storage. Vazio/undefined = modal não renderiza. */
   imagens: string[];
+  /**
+   * Local + exame das imagens. Com os dois preenchidos a galeria troca cada
+   * URL canônica pela assinada (/api/exame/imagens-urls) — os objetos novos
+   * nascem PRIVADOS no Storage. Sem eles (ou se a rota falhar) renderiza a
+   * canônica, que ainda abre nos exames legados.
+   */
+  wsId?: string;
+  exameId?: string;
   /** Controle externo do modal. */
   open: boolean;
   onClose: () => void;
@@ -102,6 +157,8 @@ export default function DicomGallery({
   imagens,
   open,
   onClose,
+  wsId,
+  exameId,
   pacienteNome,
   tipoExame,
   permitirSelecao = false,
@@ -110,6 +167,32 @@ export default function DicomGallery({
 }: Props) {
   // null = modo grid; número = modo lightbox mostrando aquele índice
   const [zoomIdx, setZoomIdx] = useState<number | null>(null);
+  // Mapa {canônica → assinada}. Vazio até a rota responder (e pra sempre se
+  // ela falhar) — `src()` cai na canônica nesse caso.
+  const [assinadas, setAssinadas] = useState<Record<string, string>>({});
+  // Rota de assinatura falhou (F8): mostra aviso discreto no topo em vez de
+  // deixar o médico olhando thumbnails quebradas sem explicação.
+  const [erroAssinadas, setErroAssinadas] = useState(false);
+
+  useEffect(() => {
+    if (!open || !wsId || !exameId || imagens.length === 0) return;
+    let vivo = true;
+    buscarUrlsAssinadas(wsId, exameId, imagens).then((urls) => {
+      if (!vivo) return;
+      setAssinadas(urls || {});
+      setErroAssinadas(!urls);
+    });
+    return () => { vivo = false; };
+  // `imagens` é recriado a cada render do pai; a identidade do array não pode
+  // entrar nas deps (loop). `imagens.join('|')` é estável por CONTEÚDO
+  // (S4-T15 fix D2): `imagens.length` não disparava num remap — reprocesso
+  // troca as URLs sem mudar N, e o efeito ficava com o mapa de assinaturas
+  // antigo, apontando pra objetos que já não existem.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, wsId, exameId, imagens.join('|')]);
+
+  /** URL de exibição: a assinada quando existe, senão a canônica (legados). */
+  const src = (url: string) => assinadas[url] || url;
 
   // Resetar zoom ao fechar (evita reabrir já no lightbox da última vez)
   useEffect(() => {
@@ -154,6 +237,9 @@ export default function DicomGallery({
       return;
     }
     const titulo = pacienteNome ? `Imagens · ${pacienteNome}` : 'Imagens DICOM';
+    // `selecionadas.map(src)`: a janela de impressão busca as imagens
+    // sozinha, sem a sessão do médico — na URL canônica privada voltaria 403
+    // e sairia página em branco.
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/>
 <title>${titulo}</title>
 <style>
@@ -179,7 +265,7 @@ export default function DicomGallery({
   💡 No diálogo de impressão, em <strong>"Mais configurações"</strong>, desmarque
   <strong>"Cabeçalhos e rodapés"</strong> pra não cortar a 4ª linha de imagens.
 </div>
-${renderPaginas(selecionadas, pacienteNome, tipoExame)}
+${renderPaginas(selecionadas.map(src), pacienteNome, tipoExame)}
 <script>window.onload=()=>{setTimeout(()=>window.print(),500);};</script>
 </body></html>`;
     const w = window.open('', '_blank', 'width=900,height=700');
@@ -256,6 +342,12 @@ ${renderPaginas(selecionadas, pacienteNome, tipoExame)}
         </div>
       </header>
 
+      {erroAssinadas && (
+        <div className="flex-shrink-0 px-4 py-1.5 bg-amber-500/15 text-amber-200 text-[11px] text-center border-b border-amber-500/25">
+          ⚠️ Imagens podem não carregar — recarregue a página
+        </div>
+      )}
+
       {/* ── CORPO ── */}
       {zoomIdx === null ? (
         // ───── MODO GRID ─────
@@ -282,7 +374,7 @@ ${renderPaginas(selecionadas, pacienteNome, tipoExame)}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={url}
+                    src={src(url)}
                     loading="lazy"
                     alt={`Imagem DICOM ${i + 1}`}
                     onClick={() => setZoomIdx(i)}
@@ -342,7 +434,7 @@ ${renderPaginas(selecionadas, pacienteNome, tipoExame)}
 
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={imagens[zoomIdx]}
+            src={src(imagens[zoomIdx])}
             alt={`Imagem DICOM ${zoomIdx + 1}`}
             className="max-h-[88vh] max-w-[88vw] object-contain select-none"
             draggable={false}

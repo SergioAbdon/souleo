@@ -1,11 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import os from 'os';
 
 let setCalls: Array<{ path: string; data: unknown; opts: unknown }>;
 let shouldThrowWader: boolean;
+let docData: Record<string, unknown>;
+let getShouldThrow: boolean;
 
 vi.mock('./firebase', () => ({
   getDb: () => ({
     doc: (path: string) => ({
+      get: async () => {
+        if (getShouldThrow && path.endsWith('/integracoes/wader')) {
+          throw new Error('firestore indisponível na leitura');
+        }
+        return { data: () => docData[path] };
+      },
       set: async (data: unknown, opts: unknown) => {
         if (shouldThrowWader && path.endsWith('/integracoes/wader')) {
           throw new Error('firestore indisponível');
@@ -28,6 +37,8 @@ describe('iniciarBatimento', () => {
   beforeEach(() => {
     setCalls = [];
     shouldThrowWader = false;
+    docData = {};
+    getShouldThrow = false;
     vi.useFakeTimers();
   });
 
@@ -153,6 +164,76 @@ describe('iniciarBatimento', () => {
 
     expect(callFor('workspaces/ws1/integracoes/wader')).toHaveLength(1);
     expect(callFor('workspaces/ws1/integracoes/orthanc')).toHaveLength(0);
+
+    parar();
+    vi.useRealTimers();
+  });
+
+  it('detecta outro Wader ativo: maquina diferente com visto < 10min grava conflito', async () => {
+    docData['workspaces/ws1/integracoes/wader'] = {
+      maquina: 'outra-maquina-xyz',
+      visto: { toDate: () => new Date(Date.now() - 2 * 60 * 1000) },
+    };
+    const repo = { getOrthancConnection: async () => null };
+    const client = { system: async () => ({}) };
+    const parar = iniciarBatimento('ws1', '1.2.3', repo, client);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const waderCalls = callFor('workspaces/ws1/integracoes/wader');
+    expect(waderCalls).toHaveLength(1);
+    const data = waderCalls[0].data as Record<string, unknown>;
+    expect(data.conflito).toBe('outra-maquina-xyz');
+
+    parar();
+    vi.useRealTimers();
+  });
+
+  it('mesma maquina limpa o campo conflito', async () => {
+    docData['workspaces/ws1/integracoes/wader'] = {
+      maquina: os.hostname(),
+      visto: { toDate: () => new Date(Date.now() - 2 * 60 * 1000) },
+    };
+    const repo = { getOrthancConnection: async () => null };
+    const client = { system: async () => ({}) };
+    const parar = iniciarBatimento('ws1', '1.2.3', repo, client);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const waderCalls = callFor('workspaces/ws1/integracoes/wader');
+    expect(waderCalls).toHaveLength(1);
+    const data = waderCalls[0].data as Record<string, unknown>;
+    expect(data.conflito).toBeNull();
+
+    parar();
+    vi.useRealTimers();
+  });
+
+  it('leitura pré-batimento falha: NAO derruba o batimento (visto continua sendo gravado, sem conflito)', async () => {
+    getShouldThrow = true;
+    const repo = { getOrthancConnection: async () => null };
+    const client = { system: async () => ({}) };
+    const parar = iniciarBatimento('ws1', '1.2.3', repo, client);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const waderCalls = callFor('workspaces/ws1/integracoes/wader');
+    expect(waderCalls).toHaveLength(1);
+    const data = waderCalls[0].data as Record<string, unknown>;
+    expect(data.conflito).toBeNull();
+
+    parar();
+    vi.useRealTimers();
+  });
+
+  it('ultimoErroIngest do worker vira campo no batimento', async () => {
+    const repo = { getOrthancConnection: async () => null };
+    const client = { system: async () => ({}) };
+    const parar = iniciarBatimento('ws1', '1.2.3', repo, client, {
+      ultimoErroIngest: () => 'Falha ao subir 2 imagens',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const waderCalls = callFor('workspaces/ws1/integracoes/wader');
+    const data = waderCalls[0].data as Record<string, unknown>;
+    expect(data.ultimoErroIngest).toBe('Falha ao subir 2 imagens');
 
     parar();
     vi.useRealTimers();

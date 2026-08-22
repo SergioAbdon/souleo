@@ -12,8 +12,8 @@
  *   │ wsId, agentId                     │ integracoes/orthanc.url │
  *   │ firebase.serviceAccountPath       │ privado/orthanc.user/   │
  *   │ orthanc.worklistPath (filesystem) │ pass; integracoes/      │
- *   │ backup.path (filesystem)          │ feegow.procMap          │
- *   │ ui.port, polling.intervals        │ nomeClinica, logoB64,   │
+ *   │ ui.port, polling.intervals        │ feegow.procMap;         │
+ *   │                                    │ nomeClinica, logoB64,   │
  *   │                                    │ corPrimaria — qualquer  │
  *   │                                    │ coisa que admin edita   │
  *   │                                    │ via LocalModal do LEO   │
@@ -26,14 +26,11 @@ export interface WaderConfig {
   version: string;
   wsId: string;
   agentId: string;
-  activatedAt?: string;
 
   firebase: FirebaseConfig;
   orthanc: OrthancLocalConfig;
-  backup: BackupConfig;
   polling: PollingConfig;
   ui: UiConfig;
-  telemetry?: TelemetryConfig;
 }
 
 export interface FirebaseConfig {
@@ -62,15 +59,15 @@ export interface OrthancLocalConfig {
   scheduledStationName?: string;
 }
 
-export interface BackupConfig {
-  path: string;
-  retentionDays: number;
-}
-
 export interface PollingConfig {
   /** Intervalo do worker de sync de worklists. Default 60s. */
   worklistSyncSec: number;
-  /** Intervalo do worker de DICOM ingest (Orthanc /changes). Default 30s. */
+  /**
+   * Intervalo do worker de DICOM ingest (Orthanc /changes). Default 5s
+   * (pacote de latência, Task 6 — antes 30s): a chamada é local e barata
+   * (Orthanc na mesma rede da clínica), e um tick mais curto é a diferença
+   * entre o médico ver a medida em ~5s ou esperar até 30s parado na tela.
+   */
   orthancChangesSec: number;
   /**
    * Intervalo do worker de recuperação por ACC. Default 20s (ADR 2026-06-22,
@@ -82,12 +79,6 @@ export interface PollingConfig {
 
 export interface UiConfig {
   port: number;
-  showTrayIcon: boolean;
-}
-
-export interface TelemetryConfig {
-  sentryDsn?: string;
-  sampleRate: number;
 }
 
 /**
@@ -97,11 +88,10 @@ export const DEFAULT_CONFIG: Partial<WaderConfig> = {
   version: '1.0',
   polling: {
     worklistSyncSec: 60,
-    orthancChangesSec: 30,
+    orthancChangesSec: 5,
     accRecoverySec: 20,
   } as PollingConfig,
   ui: {
     port: 8043,
-    showTrayIcon: true,
   },
 };

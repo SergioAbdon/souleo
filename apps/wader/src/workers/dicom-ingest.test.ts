@@ -17,21 +17,23 @@ vi.mock('../adapters/firebase', () => {
     get: async () => ({ exists: true, data: () => data }),
   });
   return {
-    FieldValue: { serverTimestamp: () => '__ts__' },
+    FieldValue: { serverTimestamp: () => '__ts__', delete: () => '__delete__' },
     getDb: () => ({
       collection: () => ({
         doc: () => ({
           collection: () => ({
-            where: (_field: string, _op: string, val: string) => ({
-              limit: () => ({
-                get: async () => {
-                  const data = exameStore[val];
-                  if (!data) return { empty: true, docs: [] };
-                  const ref = makeRef(data);
-                  return { empty: false, docs: [{ ref, id: data.__id, data: () => data }] };
-                },
-              }),
-            }),
+            where: (_field: string, _op: string, val: string) => {
+              const fetch = async () => {
+                const data = exameStore[val];
+                if (!data) return { empty: true, docs: [] };
+                const ref = makeRef(data);
+                return { empty: false, docs: [{ ref, id: data.__id, data: () => data }] };
+              };
+              return {
+                limit: () => ({ get: fetch }),
+                get: fetch,
+              };
+            },
             doc: (forma: string) => {
               const data = exameStore[forma];
               return {
@@ -63,9 +65,10 @@ vi.mock('../adapters/dicom-sr-parser', () => ({
     if (srThrows) throw new Error('SR boom');
     return srMock;
   }),
+  PARSER_VERSAO: 'sr-2026-08-21',
 }));
 
-import { processarEstudo } from './dicom-ingest';
+import { processarEstudo, estudosEmExclusao, CAMPOS_DICOM_LIMPAR } from './dicom-ingest';
 import { extrairMedidasDoEstudo } from '../adapters/dicom-sr-parser';
 
 // ── Fake OrthancClient configurável ────────────────────────────────────
@@ -74,6 +77,7 @@ function makeClient(opts?: {
   series?: Array<{ Modality: string; Instances: string[] }>;
   previewDelays?: Record<string, number>;
   previewFails?: Set<string>;
+  patientId?: string;
 }) {
   const series = opts?.series ?? [
     { Modality: 'US', Instances: ['i1', 'i2', 'i3'] },
@@ -89,11 +93,10 @@ function makeClient(opts?: {
         StudyTime: '101010',
         StudyDescription: 'eco',
       },
-      PatientMainDicomTags: {},
+      PatientMainDicomTags: opts?.patientId ? { PatientID: opts.patientId } : {},
     }),
     getStudySeries: async () =>
       series.map((s) => ({ MainDicomTags: { Modality: s.Modality }, Instances: s.Instances })),
-    getStudyInstances: async () => series.flatMap((s) => s.Instances),
     getInstancePreview: async (id: string) => {
       const d = opts?.previewDelays?.[id] ?? 0;
       if (d) await new Promise((r) => setTimeout(r, d));
@@ -160,10 +163,12 @@ describe('processarEstudo — two-stage / paralelo / Fix B', () => {
     expect(r.medidasExtraidas).toBe(2); // preservou contagem existente
   });
 
-  it('Trava 2: emitido continua emitido', async () => {
+  it('Trava 2 + cofre: emitido nunca é tocado nos campos ao vivo (status/medidasDicom)', async () => {
     exameStore['EX123'] = { __id: 'doc5', status: 'emitido', medidasDicom: { x: 1 } };
     await processarEstudo({ client: makeClient(), orthancStudyId: 's1', wsId: WS });
-    expect(updates[0].obj.status).toBe('emitido');
+    expect(updates[0].obj.status).toBeUndefined();
+    expect(updates[0].obj.medidasDicom).toBeUndefined();
+    expect(exameStore['EX123'].status).toBe('emitido'); // nunca regrediu/mudou
   });
 
   it('Trava 2: rascunho continua rascunho', async () => {
@@ -205,8 +210,33 @@ describe('processarEstudo — two-stage / paralelo / Fix B', () => {
     const r = await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
     expect(r.matched).toBe(true);
     expect(r.imagensProcessadas).toBe(0);
-    expect(updates).toHaveLength(1); // só etapa1
+    expect(updates).toHaveLength(2); // etapa1 + write de dicomUltimoErro
     expect(r.errors.some((e) => e.includes('falharam'))).toBe(true);
+  });
+
+  it('soMedidas grava etapa 1 e NÃO baixa imagens', async () => {
+    exameStore['EX123'] = { __id: 'docSoMedidas', status: 'aguardando' };
+    const r = await processarEstudo({ client: makeClient(), orthancStudyId: 's1', wsId: WS, soMedidas: true });
+
+    expect(r.matched).toBe(true);
+    expect(r.medidasExtraidas).toBe(2);
+    expect(r.imagensProcessadas).toBe(0);
+    expect(updates).toHaveLength(1); // só etapa1 — retorna ANTES de baixar imagens
+    expect(updates[0].obj.medidasDicom).toEqual({ a: 1, b: 2 });
+  });
+
+  it('falha total de imagens grava dicomUltimoErro/dicomUltimoErroEm no exame', async () => {
+    exameStore['EX123'] = { __id: 'docErro', status: 'aguardando' };
+    const client = makeClient({
+      series: [{ Modality: 'US', Instances: ['i1', 'i2'] }],
+      previewFails: new Set(['i1', 'i2']),
+    });
+    const r = await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+
+    expect(r.matched).toBe(true);
+    const erroUpdate = updates[updates.length - 1].obj;
+    expect(erroUpdate.dicomUltimoErro).toBe('Falha ao subir 2 imagens');
+    expect(erroUpdate.dicomUltimoErroEm).toBe('__ts__');
   });
 
   it('SR lança exceção: não derruba; segue sem medidas, grava imagens', async () => {
@@ -256,5 +286,151 @@ describe('processarEstudo — two-stage / paralelo / Fix B', () => {
     expect(r.matched).toBe(false);
     expect(updates).toHaveLength(0);
     expect(r.errors.some((e) => e.includes('não existe'))).toBe(true);
+  });
+
+  it('bloqueia match automático quando CPF do DICOM diverge do CPF do exame', async () => {
+    exameStore['EX123'] = { __id: 'docCpf1', status: 'aguardando', cpf: '99988877766' };
+    const client = makeClient({ patientId: '11122233344' });
+    const r = await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+    expect(r.matched).toBe(false);
+    expect(r.motivoBloqueio).toBe('cpf-divergente');
+    expect(updates).toHaveLength(0);
+  });
+
+  it('segue o match quando um dos CPFs está vazio', async () => {
+    exameStore['EX123'] = { __id: 'docCpf2', status: 'aguardando', cpf: '' };
+    const client = makeClient({ patientId: '11122233344' });
+    const r = await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+    expect(r.matched).toBe(true);
+    expect(r.motivoBloqueio).toBeUndefined();
+  });
+
+  it('vínculo persistido vence o ACC: exame com dicomOrthancStudyId==S1 é o alvo mesmo com ACC apontando outro', async () => {
+    exameStore['EX123'] = { __id: 'E1', status: 'aguardando' }; // casaria pelo ACC se chegasse a olhar
+    exameStore['S1'] = { __id: 'E2', status: 'aguardando', dicomOrthancStudyId: 'S1' }; // vínculo persistido
+    const r = await processarEstudo({ client: makeClient(), orthancStudyId: 'S1', wsId: WS });
+    expect(r.matched).toBe(true);
+    expect(r.exameIdNoLeo).toBe('E2');
+  });
+
+  it('override limpa o dono anterior (campos DICOM removidos do exame que tinha o estudo)', async () => {
+    exameStore['S1'] = {
+      __id: 'E1',
+      status: 'andamento',
+      dicomOrthancStudyId: 'S1',
+      medidasDicom: { a: 1 },
+    };
+    exameStore['E2'] = { __id: 'E2', status: 'aguardando' };
+    const r = await processarEstudo({ client: makeClient(), orthancStudyId: 'S1', wsId: WS, exameIdOverride: 'E2' });
+    expect(r.matched).toBe(true);
+    expect(r.exameIdNoLeo).toBe('E2');
+    const limpezaE1 = updates.find((u) => u.id === 'E1');
+    expect(limpezaE1).toBeDefined();
+    for (const campo of CAMPOS_DICOM_LIMPAR) {
+      expect(limpezaE1!.obj[campo]).toBe('__delete__');
+    }
+  });
+
+  // S4-T15 fix (W5): espelha a recusa do excluirReenvio — dono EMITIDO é
+  // documento que já circulou; limpar suas imagens deixaria o PDF assinado
+  // apontando pro nada.
+  it('override NÃO limpa dono EMITIDO (preserva; use corrigir-laudo)', async () => {
+    exameStore['S1'] = {
+      __id: 'E1',
+      status: 'emitido',
+      dicomOrthancStudyId: 'S1',
+      medidasDicom: { a: 1 },
+    };
+    exameStore['E2'] = { __id: 'E2', status: 'aguardando' };
+    const r = await processarEstudo({ client: makeClient(), orthancStudyId: 'S1', wsId: WS, exameIdOverride: 'E2' });
+
+    expect(r.matched).toBe(true);
+    expect(r.exameIdNoLeo).toBe('E2');
+    expect(updates.find((u) => u.id === 'E1')).toBeUndefined(); // intocado
+    expect(exameStore['S1'].medidasDicom).toEqual({ a: 1 });
+  });
+
+  it('estudo em estudosEmExclusao não grava nada', async () => {
+    exameStore['EX123'] = { __id: 'docExcl', status: 'aguardando' };
+    estudosEmExclusao.add('s1');
+    const r = await processarEstudo({ client: makeClient(), orthancStudyId: 's1', wsId: WS });
+    expect(r.errors[0]).toMatch(/exclus/i);
+    expect(updates).toHaveLength(0);
+    estudosEmExclusao.delete('s1');
+  });
+
+  it('exame emitido: estudo novo vai para campos-sombra, nada sobrescrito (cofre do emitido, D4)', async () => {
+    exameStore['EX123'] = { __id: 'docEmit', status: 'emitido', medidasDicom: { x: 1 } };
+    const r = await processarEstudo({ client: makeClient(), orthancStudyId: 's1', wsId: WS });
+
+    expect(r.matched).toBe(true);
+    const etapa1 = updates[0].obj;
+    expect(etapa1.medidasDicomPendente).toEqual({ a: 1, b: 2 }); // srMock do beforeEach
+    expect(etapa1.medidasDicomMetaPendente).toBeDefined();
+    expect(etapa1.dicomAtualizacaoPendente).toBe(true);
+    expect(etapa1.medidasDicom).toBeUndefined();
+    expect(etapa1.medidasDicomMeta).toBeUndefined();
+    expect(etapa1.dicomMeta).toBeUndefined();
+    expect(etapa1.dicomStudyUid).toBeUndefined();
+    expect(etapa1.status).toBeUndefined();
+    // S4-T15 fix (W4): `dicomOrthancStudyId` também é campo AO VIVO — é o
+    // ponteiro que a conferência usa pra achar o dono. Reescrevê-lo no emitido
+    // re-aponta um laudo publicado pra um estudo que o médico nunca revisou.
+    expect(etapa1.dicomOrthancStudyId).toBeUndefined();
+
+    const etapa2 = updates[1].obj;
+    expect(etapa2.imagensDicom).toBeUndefined();
+    expect(etapa2.imagensDicomDetalhes).toBeUndefined();
+    expect(etapa2.imagensDicomPendente).toBeDefined();
+    expect((etapa2.imagensDicomPendente as unknown[]).length).toBe(3);
+  });
+
+  it('etapa 2 mescla imagens por orthancInstanceId (reprocesso parcial não encolhe a galeria)', async () => {
+    exameStore['EX123'] = {
+      __id: 'docMerge',
+      status: 'andamento',
+      medidasDicom: { x: 1 },
+      imagensDicomDetalhes: [
+        { url: 'url_i1', path: 'p_i1', orthancInstanceId: 'i1' },
+        { url: 'url_i2', path: 'p_i2', orthancInstanceId: 'i2' },
+        { url: 'url_i3', path: 'p_i3', orthancInstanceId: 'i3' },
+      ],
+    };
+    const client = makeClient({
+      series: [{ Modality: 'US', Instances: ['i1', 'i2', 'i3'] }],
+      previewFails: new Set(['i2']), // reprocesso: i2 falha desta vez, i1/i3 sobem de novo
+    });
+    const r = await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+
+    expect(r.matched).toBe(true);
+    const detalhes = updates[1].obj.imagensDicomDetalhes as Array<{ orthancInstanceId: string }>;
+    expect(detalhes).toHaveLength(3); // união: i1/i3 reprocessados + i2 preservado do estado anterior
+    expect(detalhes.map((d) => d.orthancInstanceId).sort()).toEqual(['i1', 'i2', 'i3']);
+  });
+
+  it('CPF guard (refinamento): PatientID = feegowPacienteId (sem CPF no DICOM) não bloqueia mesmo com exame já tendo CPF', async () => {
+    exameStore['EX123'] = {
+      __id: 'docFeegow',
+      status: 'aguardando',
+      cpf: '11122233344',
+      feegowPacienteId: '84521',
+    };
+    const client = makeClient({ patientId: '84521' }); // PatientID = prontuário Feegow (hierarquia do wl-writer)
+    const r = await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+    expect(r.matched).toBe(true);
+    expect(r.motivoBloqueio).toBeUndefined();
+  });
+
+  it('CPF guard (3ª cláusula): PatientID de 11 dígitos = feegowPacienteId (diverge do CPF) não bloqueia', async () => {
+    exameStore['EX123'] = {
+      __id: 'docFeegow2',
+      status: 'aguardando',
+      cpf: '99988877766',
+      feegowPacienteId: '11122233344',
+    };
+    const client = makeClient({ patientId: '11122233344' }); // PatientID = prontuário Feegow (11 dígitos, diverge do CPF)
+    const r = await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+    expect(r.matched).toBe(true);
+    expect(r.motivoBloqueio).toBeUndefined();
   });
 });

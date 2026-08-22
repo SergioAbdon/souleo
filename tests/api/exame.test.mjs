@@ -13,6 +13,10 @@ const DONO = 'uidDono', MED = 'uidMed', MED2 = 'uidMed2', RITA = 'uidRita';
 let pdfsApagados;
 const apagarPdf = async (url) => { pdfsApagados.push(url); };
 
+// Spy do apagador de imagens (D5b/achado 20): registra wsId/exameId, nao toca Storage.
+let imagensApagadas;
+const apagarImagens = async (wsId, exameId) => { imagensApagadas.push({ wsId, exameId }); };
+
 before(async () => {
   if (!getApps().length) initializeApp({ projectId: 'leo-testes' });
   db = getFirestore();
@@ -28,6 +32,7 @@ before(async () => {
 
 beforeEach(async () => {
   pdfsApagados = [];
+  imagensApagadas = [];
   await db.doc(`subscriptions/${CONTA}`).set({ contaId: CONTA, franquiaMensal: 600, franquiaUsada: 10, creditosExtras: 3 });
 });
 
@@ -105,6 +110,16 @@ describe('apagar', () => {
     await db.doc(`workspaces/${WS}/exames/filaSemAcc`).set({ pacienteNome: 'F', medicoUid: MED, status: 'aguardando' });
     const r = await apagarExame(db, { wsId: WS, exameId: 'filaSemAcc', uid: MED, subRef: subRef(), apagarPdf });
     assert.equal(r.ok, true);
+  });
+  // D5b/achado 20: exclusao de exame passa a apagar as imagens no Storage
+  // tambem. apagarImagens e opcional (skip silencioso, todos os outros
+  // testes acima ja provam isso indiretamente); aqui confere que, quando
+  // injetado, e chamado com o wsId/exameId certos.
+  test('apagar chama apagarImagens(wsId, exameId) quando injetado (achado 20)', async () => {
+    await db.doc(`workspaces/${WS}/exames/filaImg`).set({ pacienteNome: 'F', medicoUid: MED, status: 'aguardando' });
+    const r = await apagarExame(db, { wsId: WS, exameId: 'filaImg', uid: MED, subRef: subRef(), apagarPdf, apagarImagens });
+    assert.equal(r.ok, true);
+    assert.deepEqual(imagensApagadas, [{ wsId: WS, exameId: 'filaImg' }]);
   });
 });
 

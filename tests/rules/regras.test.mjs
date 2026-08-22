@@ -724,3 +724,56 @@ describe('17. espelho ortancAtivo fecha do outro lado (achado 17)', () => {
     await assertFails(updateDoc(doc(como(DR_A), 'workspaces', LOCAL_A2), { ortancAtivo: false }));
   });
 });
+
+describe('18. Perfil do aparelho (S4-T13)', () => {
+  const payloadPerfil = (extra = {}) => ({
+    nome: 'GE Vivid T8',
+    mapeamentos: { 'AO_18015-8': { campo: 'b7', nomePt: 'Raiz Aórtica', casas: 0, alvo: 'mm' } },
+    atualizadoEm: new Date(),
+    atualizadoPor: DR_A,
+    ...extra,
+  });
+
+  test('membro (medico do local) LE o perfil do aparelho', async () => {
+    await assertSucceeds(getDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/integracoes`, 'perfilAparelho')));
+  });
+  test('recepcao TAMBEM le (transparencia — nao e segredo, ao contrario de feegow/orthanc)', async () => {
+    await assertSucceeds(getDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/integracoes`, 'perfilAparelho')));
+  });
+  test('membro de OUTRA conta NAO le', async () => {
+    await assertFails(getDoc(doc(como(DR_B), `workspaces/${LOCAL_A1}/integracoes`, 'perfilAparelho')));
+  });
+  test('anonimo NAO le', async () => {
+    const anon = env.unauthenticatedContext().firestore();
+    await assertFails(getDoc(doc(anon, `workspaces/${LOCAL_A1}/integracoes`, 'perfilAparelho')));
+  });
+
+  test('dono ESCREVE o perfil do aparelho (payload real do editor)', async () => {
+    await assertSucceeds(setDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/integracoes`, 'perfilAparelho'), payloadPerfil()));
+  });
+  test('recepcao NAO escreve', async () => {
+    await assertFails(setDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/integracoes`, 'perfilAparelho'), payloadPerfil()));
+  });
+  test('medico do local (nao-dono) NAO escreve', async () => {
+    await assertFails(setDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/integracoes`, 'perfilAparelho'), payloadPerfil()));
+  });
+  test('dono NAO escreve campo fora da whitelist (fail-closed)', async () => {
+    await assertFails(setDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/integracoes`, 'perfilAparelho'), payloadPerfil({ extra: 'nao deveria colar' })));
+  });
+});
+
+// A flag `reprocessarDicom` manda o Wader reler o estudo com o parser novo e
+// SOBRESCREVER medidas/imagens do exame — e ato clinico, nao administracao de
+// fila. Nao esta em camposAdministrativos(), entao a recepcao ja bate na trava;
+// este bloco TRAVA isso (payload real do botao "solicitar reprocessamento").
+describe('19. flag reprocessarDicom e do medico autor (S4-T15 fix)', () => {
+  test('medico AUTOR pede reprocessamento no proprio exame', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), { reprocessarDicom: true }));
+  });
+  // Exame DIFERENTE do teste acima de proposito: o update do medico ja gravou
+  // reprocessarDicom=true em exComAutor, e regravar o mesmo valor da um diff
+  // VAZIO — hasOnly(administrativos) passa trivialmente e o teste mentiria.
+  test('recepcao NAO pede reprocessamento (nao e administracao de fila)', async () => {
+    await assertFails(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exFila1'), { reprocessarDicom: true }));
+  });
+});

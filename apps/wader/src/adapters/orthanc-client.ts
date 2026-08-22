@@ -4,6 +4,8 @@ import { createLogger } from '../logger';
 const log = createLogger({ module: 'orthanc-client' });
 
 const DEFAULT_TIMEOUT_MS = 10_000;
+/** DELETE /studies/{id} pode demorar (Orthanc apaga instâncias em cascata). */
+const DELETE_TIMEOUT_MS = 60_000;
 
 export interface OrthancSystemInfo {
   Version: string;
@@ -158,25 +160,53 @@ export class OrthancClient {
   /**
    * Lista estudos (expandidos, com tags) — usado pela console de reconciliação
    * (ADR 2026-06-26) pra cruzar o que o Vivid mandou com a agenda do LEO.
+   *
+   * `dataIso` (YYYY-MM-DD, achado 23): filtra por `StudyDate` no próprio
+   * Orthanc (`tools/find`) em vez de trazer os últimos N estudos de qualquer
+   * dia — a tela de conferência é sempre "hoje" (ou uma data escolhida).
    */
-  async listStudies(limit = 80): Promise<OrthancStudy[]> {
+  async listStudies(limit = 80, dataIso?: string): Promise<OrthancStudy[]> {
+    const Query: Record<string, string> = {};
+    if (dataIso) Query.StudyDate = dataIso.replace(/-/g, '');
     return this.post<OrthancStudy[]>('/tools/find', {
       Level: 'Study',
-      Query: {},
+      Query,
       Expand: true,
       Limit: limit,
     });
   }
 
   /**
-   * Lista IDs de instâncias de um estudo.
-   * Útil pra iterar e baixar todas as imagens.
+   * Apaga um estudo (e tudo dentro: séries/instâncias) do Orthanc —
+   * "excluir para reenvio" (Task 7, D3). Sem quarentena/ZIP (decisão do
+   * Sergio: o Vivid é o registro-mãe, o Orthanc é só trânsito).
+   *
+   * Timeout próprio (60s, mais longo que os 10s padrão): apagar em cascata
+   * pode demorar num estudo com muitas instâncias. 404 = sucesso silencioso
+   * (idempotente — já foi apagado, ou nunca existiu).
    */
-  async getStudyInstances(studyId: string): Promise<string[]> {
-    const series = await this.get<{ Instances: string[] }[]>(
-      `/studies/${encodeURIComponent(studyId)}/series`,
-    );
-    return series.flatMap((s) => s.Instances ?? []);
+  async deleteStudy(studyId: string): Promise<void> {
+    const conn = await this.resolveConn();
+    const url = conn.url + `/studies/${encodeURIComponent(studyId)}`;
+    const headers = this.buildHeaders(conn, 'application/json');
+
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), DELETE_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { method: 'DELETE', headers, signal: controller.signal });
+      if (res.status === 404) return; // já não existe — sucesso (idempotente)
+      if (!res.ok) {
+        throw new OrthancError(`Orthanc ${res.status}: ${res.statusText}`, res.status, url);
+      }
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') {
+        throw new OrthancError(`Timeout (${DELETE_TIMEOUT_MS}ms) apagando ${url}`);
+      }
+      if (err instanceof OrthancError) throw err;
+      throw new OrthancError(`Falha de rede: ${(err as Error).message}`, undefined, url);
+    } finally {
+      clearTimeout(t);
+    }
   }
 
   /**
@@ -185,6 +215,16 @@ export class OrthancClient {
    */
   async getStudySeries(studyId: string): Promise<OrthancSeries[]> {
     return this.get<OrthancSeries[]>(`/studies/${encodeURIComponent(studyId)}/series`);
+  }
+
+  /**
+   * Busca UMA série pelo ID (GET /series/{id}) — usado pelo worker quando
+   * chega um change `NewSeries` (achado 29/pacote de latência): descobre se
+   * a série nova é SR (Modality) e a que estudo pertence (ParentStudy) sem
+   * esperar o estudo inteiro assentar (StableStudy).
+   */
+  async getSeries(seriesId: string): Promise<OrthancSeries> {
+    return this.get<OrthancSeries>(`/series/${encodeURIComponent(seriesId)}`);
   }
 
   /**
@@ -209,13 +249,6 @@ export class OrthancClient {
    */
   async getInstancePreview(instanceId: string): Promise<Buffer> {
     return this.getBinary(`/instances/${encodeURIComponent(instanceId)}/preview`);
-  }
-
-  /**
-   * Baixa o arquivo DICOM cru (.dcm) de uma instância.
-   */
-  async getInstanceFile(instanceId: string): Promise<Buffer> {
-    return this.getBinary(`/instances/${encodeURIComponent(instanceId)}/file`);
   }
 
   // ─── Helpers internos ──────────────────────────────────────────────
