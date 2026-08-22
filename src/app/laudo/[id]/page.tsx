@@ -17,7 +17,7 @@ import { dataLocalHoje } from '@/lib/utils';
 // gerarESalvarPdf legado removido — emissao + PDF agora sao server-side em /api/emitir
 import SidebarLaudo from '@/components/laudo/SidebarLaudo';
 import SheetA4 from '@/components/laudo/SheetA4';
-import DicomGallery from '@/components/laudo/DicomGallery';
+import DicomGallery, { buscarUrlsAssinadas } from '@/components/laudo/DicomGallery';
 import DicomSrImport from '@/components/laudo/DicomSrImport';
 import { normalizarParaImport, prefixoArquivoPorTipo, isSchemaAntigo, InputImport, MedidaSr } from '@/lib/dicom-sr-mapping';
 import { precisaConfirmarEmissao } from '@/lib/emissao-guarda';
@@ -68,8 +68,13 @@ export default function LaudoPage() {
   const editorRef = useRef<EditorLaudoRef>(null);
   const pendingHtml = useRef<string | null>(null);
   // Tela viva (S4-T12): o listener do exame roda a cada gravação do Wader;
-  // este guard marca a PRIMEIRA snapshot (a única que inicializa states).
+  // este guard marca a PRIMEIRA snapshot (a única que inicializa `emitido`).
   const primeiraSnapshot = useRef(true);
+  // Guard SEPARADO da seleção de imagens (FIX F1, S4-T12 fix): a seleção só
+  // pode ser inicializada na primeira snapshot QUE JÁ TEM imagens. Amarrada
+  // ao guard acima, o médico que abrisse o laudo antes do Wader terminar
+  // ficava com seleção [] pra sempre — e emitia o laudo SEM imagem nenhuma.
+  const selecaoInicializada = useRef(false);
 
   const exameId = params.id as string;
   const p1 = (workspace?.corPrimaria as string) || '#8B1A1A';
@@ -132,20 +137,25 @@ export default function LaudoPage() {
         const dados = { id: snap.id, ...snap.data() } as Record<string, unknown>;
         setExame(dados);
 
-        // Inicialização SÓ na primeira snapshot (guard de ref): estes dois
-        // states são do médico depois disso — reinicializar a cada gravação
-        // do Wader retrancaria o laudo desbloqueado e desfaria a seleção de
-        // imagens que ele acabou de fazer.
-        if (!primeiraSnapshot.current) return;
-        primeiraSnapshot.current = false;
-        if (dados.emitidoEm) setEmitido(true);
+        // `emitido` SÓ na primeira snapshot (guard de ref): depois disso o
+        // state é do médico — reinicializar a cada gravação do Wader
+        // retrancaria o laudo que ele acabou de desbloquear.
+        if (primeiraSnapshot.current) {
+          primeiraSnapshot.current = false;
+          if (dados.emitidoEm) setEmitido(true);
+        }
 
-        // Inicializa seleção de imagens pra impressão:
-        //  - Se já tem `imagensSelecionadasPdf` salvo → usa
+        // Inicializa seleção de imagens pra impressão — na primeira snapshot
+        // QUE JÁ TRAZ imagens (guard próprio, FIX F1). Sem imagens não há o
+        // que inicializar: a snapshot seguinte do Wader é que vai valer.
+        //  - Se já tem `imagensSelecionadasPdf` salvo → usa (filtrado)
         //  - Senão → default = primeiras 8 (ou todas, se exame tem <8)
         //    Esse default só vive em memória; só persiste no Firestore
         //    quando médico toggle alguma imagem (auto-save abaixo).
+        // Já inicializada NÃO re-roda: a escolha do médico é soberana.
         const todas = (dados.imagensDicom as string[] | undefined) || [];
+        if (selecaoInicializada.current || todas.length === 0) return;
+        selecaoInicializada.current = true;
         const salvas = dados.imagensSelecionadasPdf as string[] | undefined;
         if (salvas && Array.isArray(salvas)) {
           // Filtra URLs salvas que ainda existem em imagensDicom (defensivo
@@ -662,7 +672,6 @@ export default function LaudoPage() {
   }
 
   async function handleEmitir(incluirImagens: boolean = true) {
-    setPopupOpen(false);
     if (!workspace?.id || !exameId || !user?.uid) return;
     // Guarda de emissão (S4-T12): o Wader falhou ou ainda não trouxe as
     // imagens deste exame — emitir agora gera um PDF sem imagem nenhuma.
@@ -671,6 +680,9 @@ export default function LaudoPage() {
     if (pendenciaDicom && !confirm(
       `Imagens do exame ainda não chegaram ou falharam (${pendenciaDicom}). Emitir mesmo assim?`
     )) return;
+    // Só fecha o popup DEPOIS da guarda (F4): cancelar no confirm mantinha
+    // o popup fechado e o médico tinha que reabrir tudo pra emitir.
+    setPopupOpen(false);
     // Guarda escolha do médico no state — `gerarPdfHtml()` consulta isso
     // antes de incluir as páginas extras de imagens
     setImagensIncluidasNoPdf(incluirImagens);
@@ -1002,8 +1014,22 @@ ${imagensPdfHtml}
   }
 
   // ── PDF via window.open ──
-  function handleImprimir() {
-    const html = gerarPdfHtml();
+  // FIX F3 (S4-T12 fix): `gerarPdfHtml()` monta as páginas de imagem com a
+  // URL CANÔNICA. Nos exames novos o objeto nasce privado no Storage e a
+  // janela de impressão (sem a sessão do médico) recebia 403 → páginas em
+  // branco. Aqui trocamos textualmente canônica→assinada antes do
+  // document.write, reusando o mesmo helper/contrato da galeria. Rota
+  // falhou → segue com o HTML original (legados ainda são públicos).
+  async function handleImprimir() {
+    let html = gerarPdfHtml();
+    if (workspace?.id && imagensIncluidasNoPdf && imagensSelecionadasPdf.length > 0) {
+      const assinadas = await buscarUrlsAssinadas(workspace.id, exameId, imagensSelecionadasPdf);
+      if (assinadas) {
+        for (const [canonica, assinada] of Object.entries(assinadas)) {
+          html = html.split(canonica).join(assinada);
+        }
+      }
+    }
     const win = window.open('', '_blank', 'width=900,height=700');
     if (win) {
       win.document.write(html);

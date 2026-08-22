@@ -32,13 +32,25 @@ const CACHE_MS = 45 * 60 * 1000;
 const cacheAssinadas = new Map<string, { em: number; urls: Record<string, string> }>();
 
 /**
- * Busca (com cache) as URLs assinadas das imagens do exame. Falha → mapa
- * vazio: a galeria cai na URL canônica, que ainda é pública nos 182 exames
- * legados (a migração de privacidade só vale dos novos pra frente).
+ * Busca (com cache) as URLs assinadas das imagens do exame. Falha → `null`:
+ * a galeria cai na URL canônica (ainda pública nos 182 exames legados) e
+ * avisa o médico que as imagens novas podem não carregar.
+ *
+ * FIX F2 (S4-T12 fix): o cache era chaveado SÓ por exameId. Com a tela viva,
+ * as imagens que o Wader grava depois de a galeria abrir ficavam de fora do
+ * mapa por 45min (PDF/print em branco). Agora o cache só vale se cobrir
+ * TODAS as URLs pedidas — imagem nova ⇒ refetch. Mais robusto que chavear
+ * por `imagens.length`, que não pega remap (mesma contagem, outras URLs).
  */
-async function buscarUrlsAssinadas(wsId: string, exameId: string): Promise<Record<string, string>> {
+export async function buscarUrlsAssinadas(
+  wsId: string,
+  exameId: string,
+  urls: string[],
+): Promise<Record<string, string> | null> {
   const cached = cacheAssinadas.get(exameId);
-  if (cached && Date.now() - cached.em < CACHE_MS) return cached.urls;
+  if (cached && Date.now() - cached.em < CACHE_MS && urls.every((u) => cached.urls[u])) {
+    return cached.urls;
+  }
   try {
     const token = await auth.currentUser?.getIdToken();
     const res = await fetch('/api/exame/imagens-urls', {
@@ -46,13 +58,14 @@ async function buscarUrlsAssinadas(wsId: string, exameId: string): Promise<Recor
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
       body: JSON.stringify({ wsId, exameId }),
     });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const r = await res.json();
-    if (!r?.ok || !r.urls) return {};
+    if (!r?.ok || !r.urls) return null;
     cacheAssinadas.set(exameId, { em: Date.now(), urls: r.urls });
     return r.urls;
   } catch (e) {
     console.warn('imagens-urls:', e);
-    return {};
+    return null;
   }
 }
 
@@ -157,12 +170,23 @@ export default function DicomGallery({
   // Mapa {canônica → assinada}. Vazio até a rota responder (e pra sempre se
   // ela falhar) — `src()` cai na canônica nesse caso.
   const [assinadas, setAssinadas] = useState<Record<string, string>>({});
+  // Rota de assinatura falhou (F8): mostra aviso discreto no topo em vez de
+  // deixar o médico olhando thumbnails quebradas sem explicação.
+  const [erroAssinadas, setErroAssinadas] = useState(false);
 
   useEffect(() => {
     if (!open || !wsId || !exameId || imagens.length === 0) return;
     let vivo = true;
-    buscarUrlsAssinadas(wsId, exameId).then((urls) => { if (vivo) setAssinadas(urls); });
+    buscarUrlsAssinadas(wsId, exameId, imagens).then((urls) => {
+      if (!vivo) return;
+      setAssinadas(urls || {});
+      setErroAssinadas(!urls);
+    });
     return () => { vivo = false; };
+  // `imagens` é recriado a cada render do pai; a identidade do array não
+  // pode entrar nas deps (loop). Contagem + exame bastam pra disparar, e o
+  // cache de `buscarUrlsAssinadas` cobre o caso de URL nova sem mudar N.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, wsId, exameId, imagens.length]);
 
   /** URL de exibição: a assinada quando existe, senão a canônica (legados). */
@@ -315,6 +339,12 @@ ${renderPaginas(selecionadas.map(src), pacienteNome, tipoExame)}
           </button>
         </div>
       </header>
+
+      {erroAssinadas && (
+        <div className="flex-shrink-0 px-4 py-1.5 bg-amber-500/15 text-amber-200 text-[11px] text-center border-b border-amber-500/25">
+          ⚠️ Imagens podem não carregar — recarregue a página
+        </div>
+      )}
 
       {/* ── CORPO ── */}
       {zoomIdx === null ? (
