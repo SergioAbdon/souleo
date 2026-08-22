@@ -15,7 +15,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, getDoc, setDoc, serverTimestamp, query, limit } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, setDoc, serverTimestamp, query, orderBy, limit } from 'firebase/firestore';
 import { podeVerIntegracoes } from '@/lib/permissoes';
 import { TIPOS_INTEGRACAO, rotuloEstado, tomEstado, type Integracao, type TipoIntegracao } from '@/lib/integracoes';
 import type { AcaoFeegow } from '@/lib/feegow-admin';
@@ -61,6 +61,9 @@ function rotuloCadastro(cadastradoEm: number | null | undefined): string {
 }
 
 const campoInput = 'w-full border border-borda rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1 bg-card text-ink';
+// Variante sem o w-full (que vence w-20/w-14 na ordem do CSS do Tailwind v4
+// e fazia cada input da linha do perfil disputar 100% — colapso a 26px).
+const campoCompacto = campoInput.replace('w-full ', '');
 const botaoSalvar = 'text-xs font-semibold px-3 py-1.5 rounded-lg bg-p2 text-white hover:bg-p2-deep transition disabled:opacity-50 disabled:cursor-not-allowed';
 const botaoRemover = 'text-xs font-medium px-3 py-1.5 rounded-lg border border-borda text-ink-3 hover:bg-ativo transition disabled:opacity-50 disabled:cursor-not-allowed';
 
@@ -147,24 +150,20 @@ export default function IntegracoesPage() {
     // "Recebidas sem destino" (S4-T13): ultimos 20 exames com medidas. So
     // schema NOVO tem unit/meaning; agrega 1x por chave (o exame mais recente
     // decide o rotulo).
-    // Sem orderBy: dataExame tem fieldOverride no firestore.indexes.json que
-    // DESLIGA o indice automatico — orderBy('dataExame') puro dava
-    // failed-precondition em producao e a secao sumia em silencio (bug achado
-    // no teste 22/08). Busca 50 sem ordem, ordena no cliente, pega os 20 mais
-    // recentes. E .catch: falha de query nao pode apagar a secao sem rastro.
-    getDocs(query(collection(db, 'workspaces', wsId, 'exames'), limit(50))).then(snap => {
-      const docs = snap.docs
-        .map(d => d.data())
-        .sort((a, b) => String(b.dataExame ?? '').localeCompare(String(a.dataExame ?? '')))
-        .slice(0, 20);
+    // Historico (teste 22/08): um fieldOverride de dataExame no
+    // firestore.indexes.json desligava o indice automatico e este orderBy dava
+    // failed-precondition em producao, sem catch — a secao sumia em silencio.
+    // O override era dano colateral (collectionGroup nao e usado no repo) e
+    // foi removido; o .catch fica como cinto de seguranca com rastro.
+    getDocs(query(collection(db, 'workspaces', wsId, 'exames'), orderBy('dataExame', 'desc'), limit(20))).then(snap => {
       const achadas = new Map<string, { meaning: string; unit: string }>();
-      for (const data of docs) {
-        const medidas = data.medidasDicom as Record<string, MedidaSr | number> | undefined;
-        if (!isSchemaNovo(medidas)) continue;
+      snap.forEach(d => {
+        const medidas = d.data().medidasDicom as Record<string, MedidaSr | number> | undefined;
+        if (!isSchemaNovo(medidas)) return;
         for (const [chave, m] of Object.entries(medidas)) {
           if (!achadas.has(chave)) achadas.set(chave, { meaning: m.meaning || chave, unit: m.unit || '' });
         }
-      }
+      });
       setPerfilRecebidas([...achadas].map(([chave, v]) => ({ chave, ...v })));
     }).catch(err => console.warn('[perfil] falha ao buscar medidas recebidas:', err));
     // Fallback de workspace?.ortanc* de proposito fora das deps — so na carga
@@ -611,10 +610,10 @@ export default function IntegracoesPage() {
                             <span className="w-24 shrink-0 text-ink-3 font-mono text-[10px] truncate" title={chave}>{chave}</span>
                             <input type="text" value={e.nomePt} placeholder="Nome PT"
                               onChange={ev => perfilMudarLinha(chave, 'nomePt', ev.target.value)}
-                              className={`${campoInput} flex-1 min-w-[130px]`} />
+                              className={`${campoCompacto} flex-1 min-w-[130px]`} />
                             <input type="text" value={e.campo} placeholder="Campo (b7)"
                               onChange={ev => perfilMudarLinha(chave, 'campo', ev.target.value)}
-                              className={`${campoInput} w-20 font-mono`} />
+                              className={`${campoCompacto} w-20 font-mono`} />
                             <select value={e.alvo} onChange={ev => perfilMudarLinha(chave, 'alvo', ev.target.value)}
                               className="border border-borda rounded-lg px-1.5 py-2 text-xs bg-card text-ink focus:outline-none focus:border-p1">
                               <option value="mm">mm</option>
@@ -623,7 +622,7 @@ export default function IntegracoesPage() {
                             </select>
                             <input type="number" value={e.casas} min={0} max={3}
                               onChange={ev => perfilMudarLinha(chave, 'casas', ev.target.value)}
-                              className={`${campoInput} w-14`} />
+                              className={`${campoCompacto} w-14`} />
                             <button type="button" onClick={() => perfilRemoverLinha(chave)}
                               className="text-ink-3 hover:text-red-600 transition px-1" title="Remover linha">✕</button>
                           </div>
