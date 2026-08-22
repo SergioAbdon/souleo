@@ -16,6 +16,7 @@
         "secao1:publicar-regras": "node --env-file=.env.local scripts/secao1/04-publicar-regras.mjs",
         "integracoes:migrar": "node --env-file=.env.local scripts/integracoes/01-migrar.mjs",
         "integracoes:limpar": "node --env-file=.env.local scripts/integracoes/02-limpar-campos-antigos.mjs",
+        "imagens:privar": "node --env-file=.env.local scripts/imagens-privar.mjs",
         "test:unit": "node --test tests/unit/*.test.mjs",
         "test:rules": "npx firebase emulators:exec --only firestore --project leo-testes \"node --test tests/rules/regras.test.mjs\"",
         "test:api": "npx firebase emulators:exec --only firestore,auth --project leo-testes \"node --test tests/api/*.test.mjs\"",

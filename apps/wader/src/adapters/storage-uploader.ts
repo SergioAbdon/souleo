@@ -22,12 +22,20 @@ export interface UploadResult {
  * mesmo objeto (idempotente) e o cache de 1 ano vira verdade (nome =
  * conteúdo). `seq` continua existindo só pra ordenar o array no Firestore.
  *
- * Visibilidade pública via `predefinedAcl: 'publicRead'` (decisão 14/05/2026):
- * - URLs `storage.googleapis.com/{bucket}/{path}` são acessadas via IAM, não
- *   pelas Firebase Storage Rules. Por isso a regra `match /dicom/...` em
- *   storage.rules NÃO basta — também precisa flag de ACL pública no objeto.
- * - Comentário antigo dizia que as rules sozinhas resolviam — mentira: o
- *   `<img src={url}>` no browser sempre dava 403 antes deste fix.
+ * Privado por padrão (D5b, achado 20 — 22/08/2026): objeto nasce SEM
+ * `predefinedAcl: 'publicRead'`. Até aqui (decisão 14/05/2026) o upload
+ * setava ACL pública porque `storage.googleapis.com/{bucket}/{path}` é
+ * acessado via IAM, não pelas Firebase Storage Rules — a regra `match
+ * /dicom/...` em storage.rules nunca bastou sozinha. Isso funcionava, mas
+ * deixava laudo de paciente acessível por qualquer um que tivesse a URL,
+ * pra sempre.
+ *
+ * A URL `storage.googleapis.com/{bucket}/{path}` devolvida abaixo CONTINUA
+ * sendo gravada no exame — mas agora é só um IDENTIFICADOR ESTÁVEL, não
+ * mais um link direto. Quem exibe/imprime (galeria, PDF) troca essa URL
+ * canônica por uma signed URL de curta duração via Admin SDK (Task 12 e
+ * src/lib/imagens-dicom-admin.ts no lado web). `scripts/imagens-privar.mjs`
+ * migra os objetos antigos que ainda têm a ACL pública de antes.
  *
  * Escrita continua bloqueada pelo browser (regras do storage.rules); só o
  * Wader (admin SDK) sobe.
@@ -48,7 +56,8 @@ export async function uploadDicomPreview(opts: {
 
   await file.save(opts.buffer, {
     contentType: opts.contentType ?? 'image/jpeg',
-    predefinedAcl: 'publicRead', // ⬅️ libera leitura anônima via storage.googleapis.com
+    // Sem predefinedAcl (D5b): objeto nasce privado. A URL abaixo vira
+    // identificador, não link direto — ver comentário do topo do arquivo.
     metadata: {
       cacheControl: 'public, max-age=31536000', // 1 ano (imagens DICOM são imutáveis)
       metadata: {
@@ -59,8 +68,9 @@ export async function uploadDicomPreview(opts: {
     },
   });
 
-  // URL pública direta via storage.googleapis.com — funciona porque o objeto
-  // tem ACL `publicRead` (setada no `.save()` acima).
+  // URL canônica via storage.googleapis.com — desde D5b NÃO é mais link
+  // direto (objeto é privado): serve só de identificador estável, gravado
+  // no exame. Exibição/impressão trocam por signed URL (getSignedUrl).
   const url = `https://storage.googleapis.com/${bucket.name}/${encodeURIComponent(path)}`;
 
   log.info(

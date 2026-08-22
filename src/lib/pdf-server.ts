@@ -6,6 +6,8 @@
 import chromium from '@sparticuz/chromium';
 import puppeteer, { type Browser } from 'puppeteer-core';
 import { getStorage } from 'firebase-admin/storage';
+import { getFirestore } from 'firebase-admin/firestore';
+import { assinarImagensExame, assinarUrlsNoHtml } from './imagens-dicom-admin';
 
 // ── Resolver executável do Chrome (Vercel ou local) ──
 async function resolverExecutavel(): Promise<{ executablePath: string; args: string[]; headless: boolean }> {
@@ -80,7 +82,13 @@ export async function gerarESalvarPdf(
     });
 
     const page = await browser.newPage();
-    await page.setContent(pdfHtml, { waitUntil: 'networkidle0', timeout: 30000 });
+    // D5b: imagens DICOM nascem privadas no Storage — troca a URL canonica
+    // embutida no HTML (imagensSelecionadasPdf) por signed URL ANTES do
+    // Puppeteer buscar. Sem isso o <img src> da 403: o Chrome headless busca
+    // por rede, sem a credencial do Admin SDK. Ponto unico — cobre /api/emitir
+    // e /api/corrigir-laudo, os dois chamadores desta funcao.
+    const urlsAssinadas = await assinarImagensExame(getFirestore(), getStorage().bucket(), wsId, exameId);
+    await page.setContent(assinarUrlsNoHtml(pdfHtml, urlsAssinadas), { waitUntil: 'networkidle0', timeout: 30000 });
     await page.evaluateHandle('document.fonts.ready');
 
     const pdfBuffer = await page.pdf({
