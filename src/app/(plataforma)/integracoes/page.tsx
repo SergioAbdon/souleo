@@ -15,7 +15,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, getDoc, setDoc, serverTimestamp, query, orderBy, limit } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, setDoc, serverTimestamp, query, limit } from 'firebase/firestore';
 import { podeVerIntegracoes } from '@/lib/permissoes';
 import { TIPOS_INTEGRACAO, rotuloEstado, tomEstado, type Integracao, type TipoIntegracao } from '@/lib/integracoes';
 import type { AcaoFeegow } from '@/lib/feegow-admin';
@@ -144,22 +144,29 @@ export default function IntegracoesPage() {
     // vazio/malformado — e exatamente a "semeadura" da 1a edicao (bullet 2 do
     // brief): o form nasce preenchido com o default, Salvar grava por cima.
     carregarPerfilAparelho(db, wsId).then(setPerfilMapa);
-    // "Recebidas sem destino" (S4-T13): ultimos 20 exames por dataExame —
-    // mesmo orderBy sem where que src/lib/firestore.ts:280 ja usa (nao exige
-    // indice composto novo). So schema NOVO tem unit/meaning; agrega 1x por
-    // chave (o exame mais recente decide o rotulo se a mesma chave aparecer
-    // em mais de um exame).
-    getDocs(query(collection(db, 'workspaces', wsId, 'exames'), orderBy('dataExame', 'desc'), limit(20))).then(snap => {
+    // "Recebidas sem destino" (S4-T13): ultimos 20 exames com medidas. So
+    // schema NOVO tem unit/meaning; agrega 1x por chave (o exame mais recente
+    // decide o rotulo).
+    // Sem orderBy: dataExame tem fieldOverride no firestore.indexes.json que
+    // DESLIGA o indice automatico — orderBy('dataExame') puro dava
+    // failed-precondition em producao e a secao sumia em silencio (bug achado
+    // no teste 22/08). Busca 50 sem ordem, ordena no cliente, pega os 20 mais
+    // recentes. E .catch: falha de query nao pode apagar a secao sem rastro.
+    getDocs(query(collection(db, 'workspaces', wsId, 'exames'), limit(50))).then(snap => {
+      const docs = snap.docs
+        .map(d => d.data())
+        .sort((a, b) => String(b.dataExame ?? '').localeCompare(String(a.dataExame ?? '')))
+        .slice(0, 20);
       const achadas = new Map<string, { meaning: string; unit: string }>();
-      snap.forEach(d => {
-        const medidas = d.data().medidasDicom as Record<string, MedidaSr | number> | undefined;
-        if (!isSchemaNovo(medidas)) return;
+      for (const data of docs) {
+        const medidas = data.medidasDicom as Record<string, MedidaSr | number> | undefined;
+        if (!isSchemaNovo(medidas)) continue;
         for (const [chave, m] of Object.entries(medidas)) {
           if (!achadas.has(chave)) achadas.set(chave, { meaning: m.meaning || chave, unit: m.unit || '' });
         }
-      });
+      }
       setPerfilRecebidas([...achadas].map(([chave, v]) => ({ chave, ...v })));
-    });
+    }).catch(err => console.warn('[perfil] falha ao buscar medidas recebidas:', err));
     // Fallback de workspace?.ortanc* de proposito fora das deps — so na carga
     // inicial (ver comentario acima); reagir a eles reintroduziria o mesmo problema.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -598,11 +605,13 @@ export default function IntegracoesPage() {
                       <div className="space-y-1.5">
                         <p className="text-[11px] text-ink-3 font-medium">Mapeadas</p>
                         {Object.entries(perfilMapa).map(([chave, e]) => (
-                          <div key={chave} className="flex items-center gap-1.5 text-xs">
-                            <span className="w-28 shrink-0 text-ink-3 font-mono text-[10px] truncate" title={chave}>{chave}</span>
+                          // flex-wrap + min-w: o cartao e estreito (~284px) e sem isso o
+                          // input de nomePt colapsava a 26px (bug achado no teste 22/08)
+                          <div key={chave} className="flex flex-wrap items-center gap-1.5 text-xs">
+                            <span className="w-24 shrink-0 text-ink-3 font-mono text-[10px] truncate" title={chave}>{chave}</span>
                             <input type="text" value={e.nomePt} placeholder="Nome PT"
                               onChange={ev => perfilMudarLinha(chave, 'nomePt', ev.target.value)}
-                              className={`${campoInput} flex-1`} />
+                              className={`${campoInput} flex-1 min-w-[130px]`} />
                             <input type="text" value={e.campo} placeholder="Campo (b7)"
                               onChange={ev => perfilMudarLinha(chave, 'campo', ev.target.value)}
                               className={`${campoInput} w-20 font-mono`} />
