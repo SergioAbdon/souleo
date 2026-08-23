@@ -242,6 +242,23 @@ describe('dedup não engole linha legitimamente repetida (Important 4)', () => {
   });
 });
 
+describe('médico reordena parágrafo (regressão do fix1)', () => {
+  test('subir um parágrafo NÃO apaga a linha que ele ultrapassou', () => {
+    const prev = [VE_LEVE, AE, AORTA];
+    assert.deepEqual(mesclarLinhas(prev, [...prev], [AE, VE_LEVE, AORTA]), [AE, VE_LEVE, AORTA]);
+  });
+
+  test('reordenar 2 linhas mantém as 2, na ordem do médico', () => {
+    const prev = [VE_LEVE, AE];
+    assert.deepEqual(mesclarLinhas(prev, [...prev], [AE, VE_LEVE]), [AE, VE_LEVE]);
+  });
+
+  test('reordenar com frase manual junto mantém as 3', () => {
+    const prev = [VE_LEVE, AE];
+    assert.deepEqual(mesclarLinhas(prev, [...prev], [AE, VE_LEVE, MANUAL]), [AE, VE_LEVE, MANUAL]);
+  });
+});
+
 describe('colapsarWilkins — bloco renderizado no editor volta a ser sentinela', () => {
   const SENT = '__WILKINS__{"mob":2,"esp":2,"sub":1,"cal":1,"sc":6,"concFrase":"Favorável."}';
   const RENDER = [

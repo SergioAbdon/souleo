@@ -39,9 +39,14 @@ function linhas(html: string): string[] {
     .filter(Boolean);
 }
 
-/** Índice do `<h3>` que separa achados de conclusões (-1 = não há). */
+/**
+ * Índice do `<h3>` que separa achados de conclusões (-1 = não há).
+ * Casa o TÍTULO, não qualquer `<h3>`: o StarterKit tem input rule de heading
+ * ("### " + espaço, Ctrl+Alt+3), e um título que o médico escreva no meio dos
+ * achados cortava o laudo ali — o resto migrava pra lista da CONCLUSÃO.
+ */
 function corteConclusao(html: string): number {
-  return (html || '').search(/<h3[\s>]/i);
+  return (html || '').search(/<h3[^>]*>\s*CONCLUS/i);
 }
 
 /** Linhas de ACHADOS = tudo antes do `<h3>CONCLUSÃO</h3>`. */

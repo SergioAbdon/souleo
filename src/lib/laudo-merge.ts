@@ -61,13 +61,17 @@ function estruturas(toks: string[]): Set<string> {
  *
  * ponytail: heurística de saco de palavras com dois portões — barata e
  * suficiente pras frases do motor (mudam 1-2 palavras: "leve"→"moderado").
- * Limites conhecidos, os DOIS na direção segura (a linha vira "manual": o
- * texto do médico FICA, só deixa de sofrer override do motor):
- *   · médico reescreve o começo da frase ("O ventrículo…") → não casa mais;
+ * Dois limites conhecidos, com desfechos DIFERENTES:
+ *   · médico reescreve o começo da frase ("O ventrículo…") → a linha vira
+ *     "manual": o texto dele FICA, só deixa de sofrer override do motor;
  *   · motor troca a 2a palavra ("Hipertrofia concêntrica" → "excêntrica")
- *     numa linha JÁ editada → as duas versões convivem no laudo.
- * O que NÃO acontece mais: apagar frase do médico casando anatomias
- * diferentes. Upgrade, se doer: diff word-level (levenshtein por palavra).
+ *     numa linha JÁ editada → o portão 1 também falha no sentido
+ *     prev×nova: o slot conta como sumido, a edição do médico NÃO é
+ *     emitida e sai só a frase nova do motor. Bate com a decisão D2-c
+ *     ("motor mudou o conteúdo → motor vence"), mas o médico perde o que
+ *     tinha escrito NAQUELA linha — não é o caso benigno do primeiro item.
+ * O que NÃO acontece mais: apagar frase do médico de OUTRA anatomia por
+ * casamento errado. Upgrade, se doer: diff word-level (levenshtein).
  */
 function semelhanca(a: string, b: string): number {
   const la = tokens(a);
@@ -241,14 +245,23 @@ export function mesclarLinhas(prevGer: string[], novaGer: string[], atuais: stri
 
   // 2) Saída na ordem do motor.
   const out: string[] = [];
-  const push = (t: string) => out.push(t);
-  // Linha que o médico digitou e o motor PASSOU A GERAR sozinho sai uma vez
-  // só, na posição do motor. É o único caso de duplicata que o merge cria —
-  // dedup global (o que havia antes) engolia linha legitimamente repetida
-  // do próprio motor (Important 4 do review).
+  const emitidos = new Set<string>();
+  const push = (t: string) => { out.push(t); emitidos.add(t); };
+  // Linha manual cujo texto o motor TAMBÉM gera é adiada, não suprimida:
+  //  · se o motor emitir a linha, a manual não volta (sem duplicata);
+  //  · se não emitir — o slot foi lido como apagado, que é o que acontece
+  //    quando o médico REORDENA um parágrafo —, ela volta no lugar dela.
+  // Suprimir de cara (versão anterior deste fix) apagava a linha que o
+  // médico tinha acabado de mover. Dedup global (versão original) engolia
+  // linha legitimamente repetida do motor. Este é o meio termo.
   const doMotor = new Set(nova);
+  const adiadas: Array<{ texto: string; pos: number }> = [];
   const despejar = (chave: number | null) => {
-    for (const man of manuais) if (man.ancora === chave && !doMotor.has(man.texto)) push(man.texto);
+    for (const man of manuais) {
+      if (man.ancora !== chave) continue;
+      if (doMotor.has(man.texto)) adiadas.push({ texto: man.texto, pos: out.length });
+      else push(man.texto);
+    }
   };
 
   despejar(null); // manuais antes de qualquer linha do motor
@@ -269,6 +282,12 @@ export function mesclarLinhas(prevGer: string[], novaGer: string[], atuais: stri
     } else {
       despejar(p); // slot sumiu do motor: linha some, manuais ancoradas ficam
     }
+  }
+  // Adiadas que o motor não emitiu voltam na posição em que estavam (de trás
+  // pra frente: cada splice desloca só o que vem depois).
+  for (let k = adiadas.length - 1; k >= 0; k--) {
+    const { texto, pos } = adiadas[k];
+    if (!emitidos.has(texto)) { out.splice(pos, 0, texto); emitidos.add(texto); }
   }
   return out;
 }

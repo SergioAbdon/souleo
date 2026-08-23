@@ -37,6 +37,14 @@ describe('linhasAchados', () => {
     assert.deepEqual(linhasAchados('<p>Wilkins &amp; Block: 3 &lt; 5</p>'), ['Wilkins & Block: 3 < 5']);
   });
 
+  test('<h3> que o médico digita NÃO corta os achados', () => {
+    // StarterKit tem input rule de heading ("### " + espaço): só o <h3> da
+    // CONCLUSÃO separa os blocos, qualquer outro é linha de achado.
+    const html = `<p>a</p><h3>Comentário</h3><p>b</p>${H3}<ol><li>c</li></ol>`;
+    assert.deepEqual(linhasAchados(html), ['a', 'Comentário', 'b']);
+    assert.deepEqual(linhasConclusoes(html), ['c']);
+  });
+
   test('parágrafo vazio some, HTML vazio devolve []', () => {
     assert.deepEqual(linhasAchados('<p></p><p>Achado.</p><p>  </p>'), ['Achado.']);
     assert.deepEqual(linhasAchados(''), []);

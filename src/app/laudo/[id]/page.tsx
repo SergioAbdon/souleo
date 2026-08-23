@@ -108,6 +108,9 @@ export default function LaudoPage() {
   // Tela viva (S4-T12): o listener do exame roda a cada gravação do Wader;
   // este guard marca a PRIMEIRA snapshot (a única que inicializa `emitido`).
   const primeiraSnapshot = useRef(true);
+  // Último exame que a página preencheu — distingue carga inicial de TROCA de
+  // exame no bloco de reset (S5-T2 fix2).
+  const exameAnteriorRef = useRef<string | null>(null);
   // Guard SEPARADO da seleção de imagens (FIX F1, S4-T12 fix): a seleção só
   // pode ser inicializada na primeira snapshot QUE JÁ TEM imagens. Amarrada
   // ao guard acima, o médico que abrisse o laudo antes do Wader terminar
@@ -199,6 +202,15 @@ export default function LaudoPage() {
     // o autosave gravar o laudo de A dentro do exame de B).
     pendingHtml.current = null;
     dirtyRef.current = false;
+    // Sidebar limpa na TROCA de exame (nunca na carga: os selects nascem com
+    // default do HTML e zerar aqui mudaria o 1o laudo). Sem isso, medida que
+    // o exame novo não tem fica com o número do paciente anterior — e o
+    // Senna90 fabrica o laudo de B com os dados de A. As chaves são as mesmas
+    // que `coletarMedidas()` grava; reusar evita a lista duplicada.
+    if (exameAnteriorRef.current && exameAnteriorRef.current !== exameId) {
+      Object.keys(coletarMedidas()).forEach((id) => setVal(id, ''));
+    }
+    exameAnteriorRef.current = exameId;
     const unsub = onSnapshot(
       doc(db, 'workspaces', workspace.id, 'exames', exameId),
       (snap) => {
@@ -263,20 +275,29 @@ export default function LaudoPage() {
 
   // Preencher quando exame + motor prontos.
   //
-  // Dep é `exameCarregado` (boolean), NÃO o objeto `exame`: com a tela viva
+  // Dep é o ID do exame CARREGADO, NÃO o objeto `exame`: com a tela viva
   // (onSnapshot acima) o objeto muda a cada gravação do Wader. Se o efeito
   // seguisse o objeto, `preencherExame()` jogaria as medidas salvas por cima
   // do que o médico está digitando — e reabriria o prompt "Rascunho salvo…"
-  // no meio do laudo. Preenchimento é carga inicial: roda uma vez.
-  const exameCarregado = !!exame;
+  // no meio do laudo. O ID só muda quando é OUTRO exame.
+  //
+  // Por que o ID do exame carregado e não `exameId` da rota (S5-T2 fix2):
+  // navegar /laudo/A → /laudo/B troca `exameId` na hora, mas `exame` só vira
+  // B quando a snapshot chega. Seguir a rota rodaria `preencherExame()` com o
+  // closure de A — re-preenchendo a sidebar com A e jogando o laudoHtml de A
+  // em `pendingHtml`, ou seja, trazendo de volta o vazamento que a `key` do
+  // editor acabou de fechar. Seguindo `exame.id`, o preenchimento só roda
+  // quando os dados do exame novo já estão em mãos: sidebar de B, rascunho
+  // de B, `textoRestauradoRef` armado antes do `sc()` (fluxo da T1 intacto).
+  const exameCarregadoId = (exame?.id as string) || '';
   useEffect(() => {
-    if (exameCarregado && motorLoaded) {
+    if (exameCarregadoId && motorLoaded) {
       setTimeout(() => {
         try { preencherExame(); safeCalc(); } catch (e) { console.warn('preencher:', e); }
       }, 500);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exameCarregado, motorLoaded]);
+  }, [exameCarregadoId, motorLoaded]);
 
   // Autosave (S5-T1): a cada 60s, se houve mudança real (dirtyRef) desde o
   // último save, grava no servidor. NUNCA roda com laudo emitido (travado/
