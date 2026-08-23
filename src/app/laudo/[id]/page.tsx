@@ -1438,6 +1438,11 @@ ${imagensPdfHtml}
       if (el instanceof HTMLSelectElement) el.selectedIndex = 0;
       else if (el instanceof HTMLInputElement && el.type === 'checkbox') el.checked = false;
     });
+    // Painel do Wilkins: desmarcar o toggle não o esconde (quem faz isso é o
+    // onClick da sidebar) — aberto com o toggle off, o médico preenche os 4
+    // escores e nada entra no laudo.
+    const wf = document.getElementById('wilkins-fields');
+    if (wf) wf.style.display = 'none';
     if (trocaDeExame) {
       // Identificação do paciente ANTERIOR: `preencherExame()` só escreve
       // campo vazio (`if (el && !el.value && val)`), então sem zerar aqui o
