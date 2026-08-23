@@ -22,6 +22,7 @@ import DicomSrImport from '@/components/laudo/DicomSrImport';
 import { normalizarParaImport, prefixoArquivoPorTipo, isSchemaAntigo, InputImport, MedidaSr, MapaSr, SR_TO_MOTOR } from '@/lib/dicom-sr-mapping';
 import { carregarPerfilAparelho } from '@/lib/perfil-aparelho';
 import { precisaConfirmarEmissao, SEM_SELECAO_PREFIXO } from '@/lib/emissao-guarda';
+import { decidirFontePreenchimento, type RascunhoLocal } from '@/lib/rascunho-restauracao';
 import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
 import { gerarDocx } from '@/lib/exportDocx';
@@ -68,6 +69,10 @@ export default function LaudoPage() {
   const [reedicaoAtiva, setReedicaoAtiva] = useState(false);
   const editorRef = useRef<EditorLaudoRef>(null);
   const pendingHtml = useRef<string | null>(null);
+  // Dirty flag (S5-T1): setada pelo listener delegado do #laudo-sidebar
+  // (medidas) e pelo onDirty do EditorLaudo (achados/conclusões). Autosave
+  // e beforeunload leem este ref — zerado só em salvamento COM sucesso.
+  const dirtyRef = useRef(false);
   // Tela viva (S4-T12): o listener do exame roda a cada gravação do Wader;
   // este guard marca a PRIMEIRA snapshot (a única que inicializa `emitido`).
   const primeiraSnapshot = useRef(true);
@@ -228,6 +233,33 @@ export default function LaudoPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exameCarregado, motorLoaded]);
 
+  // Autosave (S5-T1): a cada 60s, se houve mudança real (dirtyRef) desde o
+  // último save, grava no servidor. NUNCA roda com laudo emitido (travado/
+  // assinado — editar aqui não é o fluxo, é reedição via handleDesbloquear).
+  // Zera dirtyRef só em sucesso — falha (offline) tenta de novo no próximo tick.
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      if (emitido || !dirtyRef.current) return;
+      const ok = await salvarLaudo('andamento', { laudoHtml: editorRef.current?.getHTML() ?? '' });
+      if (ok) dirtyRef.current = false;
+    }, 60_000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emitido]);
+
+  // beforeunload (S5-T1): avisa se há mudança não salva e o laudo não foi
+  // emitido — emitido é documento fechado, não há o que perder ao sair.
+  useEffect(() => {
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      if (dirtyRef.current && !emitido) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [emitido]);
+
   // Carregar motor
   useEffect(() => {
     if (motorLoaded) return;
@@ -361,6 +393,7 @@ export default function LaudoPage() {
                 if (!t) return;
                 const tag = t.tagName;
                 if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') {
+                  dirtyRef.current = true; // S5-T1: medida mudou → rascunho desatualizado
                   sc();
                 }
               };
@@ -452,27 +485,30 @@ export default function LaudoPage() {
       }
     } catch { /* */ }
 
-    // Verificar rascunho local
+    // Rascunho local x exame do servidor: decisão pura em rascunho-restauracao.ts
+    // (testada em tests/unit). nº9: recusar NÃO apaga — plano B local continua
+    // disponível depois. O `confirm()` (impuro) fica aqui, só a resposta viaja.
+    let rascunhoLocal: RascunhoLocal = null;
     try {
       const raw = localStorage.getItem(`rascunho_${exameId}`);
-      if (raw) {
-        const rascunho = JSON.parse(raw);
-        const quando = new Date(rascunho.timestamp);
-        const fmt = quando.toLocaleDateString('pt-BR') + ' ' + quando.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-        if (confirm(`Rascunho salvo em ${fmt}. Deseja recuperar?`)) {
-          Object.entries(rascunho.medidas as Record<string, string>).forEach(([id, val]) => { if (val) setVal(id, val); });
-          return;
-        } else {
-          localStorage.removeItem(`rascunho_${exameId}`);
-        }
-      }
+      if (raw) rascunhoLocal = JSON.parse(raw);
     } catch { /* sem rascunho */ }
-
-    const med = exame.medidas as Record<string, string> | undefined;
-    if (med) {
-      Object.entries(med).forEach(([id, val]) => { if (val) setVal(id, val); });
+    let aceitouRascunho = false;
+    if (rascunhoLocal) {
+      const quando = new Date(rascunhoLocal.timestamp || 0);
+      const fmt = quando.toLocaleDateString('pt-BR') + ' ' + quando.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      aceitouRascunho = confirm(`Rascunho salvo em ${fmt}. Deseja recuperar?`);
     }
-    // Sempre preencher identificação a partir do exame (fallback se medidas não tiver)
+    const fonte = decidirFontePreenchimento(rascunhoLocal, aceitouRascunho, {
+      medidas: exame.medidas as Record<string, string> | undefined,
+      laudoHtml: exame.laudoHtml as string | undefined,
+    });
+    if (fonte.medidas) {
+      Object.entries(fonte.medidas).forEach(([id, val]) => { if (val) setVal(id, val); });
+    }
+    if (fonte.laudoHtml) pendingHtml.current = fonte.laudoHtml;
+
+    // nº8: identificação SEMPRE preenchida a partir do exame (fallback se medidas não tiver)
     const idCampos: [string, string][] = [
       ['nome', exame.pacienteNome as string || ''],
       ['dtnasc', exame.pacienteDtnasc as string || ''],
@@ -689,13 +725,18 @@ export default function LaudoPage() {
     setPopupOpen(true);
   }
 
-  function handleRascunho() {
+  // S5-T1: rascunho de verdade — grava no servidor via salvarLaudo (era
+  // código morto). Plano B local continua como rede de segurança offline.
+  async function handleRascunho() {
     setPopupOpen(false);
+    const okServer = await salvarLaudo('andamento', { laudoHtml: editorRef.current?.getHTML() ?? '' });
     try {
-      const medidas = coletarMedidas();
-      localStorage.setItem(`rascunho_${exameId}`, JSON.stringify({ medidas, timestamp: Date.now() }));
-      toast('Rascunho salvo localmente');
-    } catch { toast('Erro ao salvar rascunho'); }
+      localStorage.setItem(`rascunho_${exameId}`, JSON.stringify({
+        medidas: coletarMedidas(), laudoHtml: editorRef.current?.getHTML() ?? '', timestamp: Date.now(),
+      }));
+    } catch { /* */ }
+    dirtyRef.current = false;
+    toast(okServer ? 'Rascunho salvo' : 'Rascunho salvo só neste navegador (sem conexão)');
   }
 
   async function handleEmitir(incluirImagens: boolean = true) {
@@ -1310,6 +1351,7 @@ ${imagensPdfHtml}
           <EditorLaudo
             ref={editorRef}
             placeholder="Achados e conclusões do exame..."
+            onDirty={() => { dirtyRef.current = true; }}
             onAddFrase={() => {
               const w = window as unknown as Record<string, unknown>;
               const fn = w.abrirBanco as ((target: unknown, pos: string) => void);

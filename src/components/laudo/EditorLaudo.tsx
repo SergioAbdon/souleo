@@ -66,9 +66,14 @@ export type EditorLaudoRef = {
 type Props = {
   placeholder?: string;
   onAddFrase?: () => void;
+  // Dirty flag (S5-T1): chamado a cada mudança REAL do médico (digitar,
+  // formatar, inserir frase) — NÃO quando o motor reescreve o documento
+  // via `setContent` (gate `settingContent` abaixo, `emitUpdate:false`
+  // também evitaria o disparo). Task 2 reusa este mesmo mecanismo.
+  onDirty?: () => void;
 };
 
-const EditorLaudo = forwardRef<EditorLaudoRef, Props>(({ placeholder, onAddFrase }, ref) => {
+const EditorLaudo = forwardRef<EditorLaudoRef, Props>(({ placeholder, onAddFrase, onDirty }, ref) => {
   const settingContent = useRef(false);
 
   const editor = useEditor({
@@ -87,6 +92,9 @@ const EditorLaudo = forwardRef<EditorLaudoRef, Props>(({ placeholder, onAddFrase
         class: 'outline-none',
         style: "font-size:8.5pt;font-family:'IBM Plex Sans',sans-serif;line-height:1.6;min-height:120px;",
       },
+    },
+    onUpdate: () => {
+      if (!settingContent.current) onDirty?.();
     },
   });
 
