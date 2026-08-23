@@ -619,6 +619,19 @@ export default function LaudoPage() {
       });
       if (fonte.medidas) {
         Object.entries(fonte.medidas).forEach(([id, val]) => { if (val) setVal(id, val); });
+        // S5-T3: `setVal` só escreve `.value` — o Senna90 já lê o select
+        // direto do DOM (não depende disso pro texto sair certo), mas sem
+        // isto o painel manual restaurado ficaria invisível (parecendo que
+        // a seleção "sumiu"). A Task 5 cobre o dispatch de change genérico.
+        const diastSel = document.getElementById('diast-manual-sel') as HTMLSelectElement | null;
+        if (diastSel && parseInt(diastSel.value, 10) >= 0) {
+          const panel = document.getElementById('diast-manual-panel');
+          const btnAuto = document.getElementById('diast-btn-auto');
+          const btnManual = document.getElementById('diast-btn-manual');
+          if (panel) panel.style.display = 'block';
+          if (btnManual) btnManual.className = 'flex-1 text-[10px] font-semibold py-1 rounded transition bg-[#1E3A5F] text-white';
+          if (btnAuto) btnAuto.className = 'flex-1 text-[10px] font-semibold py-1 rounded transition bg-transparent text-[#6B7280] hover:bg-white';
+        }
       }
       if (fonte.laudoHtml) {
         pendingHtml.current = fonte.laudoHtml;
@@ -658,7 +671,8 @@ export default function LaudoPage() {
       'b19', 'b20', 'b21', 'b22', 'b23', 'b24_diast', 'b37', 'b38', 'b54', 'b32', 'b33', 'gls_ve', 'gls_vd', 'lars',
       'b34', 'b35', 'b34t', 'b36', 'b39', 'b40', 'b39p', 'b40p', 'psmap',
       'b41', 'b42', 'b45', 'b46', 'b47', 'b46t', 'b47t', 'b50', 'b51', 'b52', 'b50p',
-      'b55', 'b56', 'b57', 'b58', 'b59', 'b60', 'b61', 'b62', 'wk-mob', 'wk-esp', 'wk-cal', 'wk-sub'];
+      'b55', 'b56', 'b57', 'b58', 'b59', 'b60', 'b61', 'b62', 'wk-mob', 'wk-esp', 'wk-cal', 'wk-sub',
+      'diast-manual-sel'];
     const m: Record<string, string> = {};
     campos.forEach(id => { const el = document.getElementById(id) as HTMLInputElement | null; if (el) m[id] = el.value || ''; });
     return m;

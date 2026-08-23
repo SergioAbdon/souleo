@@ -353,7 +353,14 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
         <div className="col-span-2 mb-1">
           <div className="flex items-center gap-1.5 bg-[#F3F4F6] rounded-md p-1">
             <button type="button" id="diast-btn-auto"
-              onClick={() => { motorCall('setDiastModo', 'auto'); motorCalc(); }}
+              onClick={() => {
+                // S5-T3: sem zerar o select, o Senna90 (que lê #diast-manual-sel
+                // direto do DOM) continuaria achando que o modo é manual mesmo
+                // depois de clicar "Automático".
+                const sel = document.getElementById('diast-manual-sel') as HTMLSelectElement | null;
+                if (sel) { sel.value = '-1'; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+                motorCall('setDiastModo', 'auto'); motorCalc();
+              }}
               className="flex-1 text-[10px] font-semibold py-1 rounded transition bg-[#1E3A5F] text-white">
               Automático
             </button>
