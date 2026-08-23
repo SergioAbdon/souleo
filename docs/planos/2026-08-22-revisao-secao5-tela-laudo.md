@@ -198,6 +198,25 @@ de conjuntos de IDs **antes da primeira linha da Seção 6**.
   (recomendação: SIM — é o seguro da Seção 6).
 - **D8 (Ponytail):** autorizar os cortes/simplificações.
 
+## DECISÕES FINAIS DO 1-A-1 (Sergio, 22/08/2026) — TODAS TOMADAS
+
+| # | Decisão |
+|---|---|
+| D1 (nº1) | Rascunho COMPLETO (medidas+texto) no servidor + autosave 60s quando houver mudança + beforeunload. localStorage vira plano B. |
+| D2 (nº2) | **(c) merge POR LINHA, "última alteração vence"**: linha acrescentada pelo médico sempre fica; linha do motor editada fica ATÉ o motor ter conteúdo novo para ela (aí sobrescreve — médico re-edita se quiser); linha intocada atualiza como planilha. |
+| D3 (nº3) | Manual da diastólica passa a FUNCIONAR agora (adapter lê o DOM + Senna90 consome + persistido no coletarMedidas). |
+| nº4,5,6 | Aprovados: Sec esconde em vez de desmontar; pacienteNome digitado vence; dtexame sem defaultValue. |
+| D4 (nº7) | Corrigir-laudo = administrativo de verdade: cfgSnapshot da emissão (autoria de quem emitiu), corpo clínico NÃO regenerado, recusa em reedição ativa. **ADENDO Sergio: recepção/administração podem corrigir convênio/solicitante, SEM crédito; NOME continua ato do médico (desbloqueio com crédito).** |
+| nº8,9 | Aprovados: recuperação preenche identificação; recusar NÃO apaga o rascunho. |
+| nº10,11,12 | Aprovados: trava única (CSS :not(admin) + editable={!emitido} + deletar loop imperativo); guard de emissão dupla; Limpar/carga disparam o recálculo completo. |
+| D5 (nº13,14,22) | AUTORIZADOS os 3 toques cirúrgicos no motor legado (guards do calc + alertaIT religado; banco de frases via _onInserirFrase; apagar importarDICOM/DICOM_TO_DOM podre) — revisor dedicado. |
+| nº15,16,17,18 | Aprovados: Wilkins persistido/fiação; key={exameId} (remount por exame); poda da seleção de imagens no snapshot; busca Feegow com credencial. |
+| D6 (nº19) AMPLIADO | (a) guarda de tipo + título do catálogo; **(b) espelho A4 UNIFICADO** (moldura cabeçalho/identificação/assinatura vira peça compartilhada); **(c) carótidas lauda em TEXTO LIVRE estilo Word dentro da moldura** (tela laudo-texto ganha o espelho). Pedido explícito do Sergio: o espelho deve valer para todos os tipos futuros. |
+| nº20,21,23 | Aprovados: apagar cópia morta do motor (src/motor/motorv8mp4.js e irmãos sem uso); reinjeção idempotente + cleanup dos globals; change borbulhado pós-preencherExame. |
+| nº24 | **Correção de rumo do Sergio: SEXO é campo do MOTOR (muda cortes), não da identificação** — edição de sexo em laudo emitido = reedição CLÍNICA com crédito, registrada como tal. |
+| D7 | APROVADO: doc do Contrato da Ponte (7 itens) + teste automático que trava as listas de campos (quebra o build se divergirem) — pré-requisito da Seção 6, entra nesta correção. |
+| D8 | APROVADO: cortes/simplificações Ponytail entram (4 deletar + 6 simplificar + resíduos baixos). |
+
 ## O que a tríade verificou e está CERTO
 Toda a camada da Seção 4 (tela viva, guards, modal, galeria assinada, guarda de
 emissão, importação SR com perfil) passou limpa nas três óticas; a ponte
