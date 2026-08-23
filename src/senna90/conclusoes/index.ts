@@ -39,7 +39,7 @@ import { getDiastModo } from '../achados/index';
 // Estado manual diastologia (referenciado do mesmo state em achados/index.ts)
 let _diastManualSelecaoConcl = -1;
 let _diastManualTextoLivreConcl = '';
-export function setDiastManualConcl(idx: number) { _diastManualSelecaoConcl = idx; }
+export function setDiastManualConcl(idx: number) { _diastManualSelecaoConcl = Math.trunc(idx); }
 export function setDiastTextoLivreConcl(txt: string) { _diastManualTextoLivreConcl = txt; }
 
 // ══ HELPERS ═════════════════════════════════════════════════════

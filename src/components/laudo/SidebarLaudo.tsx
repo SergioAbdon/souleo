@@ -75,7 +75,7 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
     const timer = setTimeout(() => {
       const sidebar = document.getElementById('laudo-sidebar');
       if (!sidebar) return;
-      const ignorar = ['nome', 'dtnasc', 'dtexame', 'convenio', 'solicitante', 'wk-mob', 'wk-esp', 'wk-cal', 'wk-sub', 'wilkins-toggle', 'diast-manual-sel'];
+      const ignorar = ['nome', 'dtnasc', 'dtexame', 'convenio', 'solicitante', 'wk-mob', 'wk-esp', 'wk-cal', 'wk-sub', 'wilkins-toggle'];
       const campos = sidebar.querySelectorAll('input:not(.hidden), select:not(.hidden)') as NodeListOf<HTMLInputElement | HTMLSelectElement>;
       if (motorBloqueado) {
         // Bloquear todos os campos do motor

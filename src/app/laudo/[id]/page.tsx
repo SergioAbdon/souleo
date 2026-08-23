@@ -1457,6 +1457,16 @@ ${imagensPdfHtml}
     // escores e nada entra no laudo.
     const wf = document.getElementById('wilkins-fields');
     if (wf) wf.style.display = 'none';
+    // Diastólica manual (review S5-T3, I1+I2): mesma classe de bug do Wilkins
+    // acima. (I2) valor canônico explícito — não confia em selectedIndex==0
+    // do <select> (se alguém reordenar as <option>, o loop de camposSel
+    // acima selecionaria outro índice; esta linha corrige por cima, sempre).
+    // (I1) quem sabe fechar #diast-manual-panel e repintar os botões
+    // "Automático"/"Manual" é o wrapper de window.setDiastModo — sem chamá-lo
+    // aqui a tela ficava dizendo "Manual" com o motor já em auto.
+    setVal('diast-manual-sel', '-1');
+    const setDiastModoFn = (window as unknown as Record<string, unknown>).setDiastModo as ((m: string) => void) | undefined;
+    if (setDiastModoFn) setDiastModoFn('auto');
     if (trocaDeExame) {
       // Identificação do paciente ANTERIOR: `preencherExame()` só escreve
       // campo vazio (`if (el && !el.value && val)`), então sem zerar aqui o

@@ -17,11 +17,12 @@ export async function resolve(specifier, context, nextResolve) {
     return await nextResolve(specifier, context);
   } catch (err) {
     if (err?.code !== 'ERR_MODULE_NOT_FOUND' || !specifier.startsWith('.')) throw err;
-    const base = fileURLToPath(new URL(specifier, context.parentURL));
-    for (const ext of ['.ts', '/index.ts']) {
-      if (existsSync(base + ext)) {
-        return nextResolve(pathToFileURL(base + ext).href, context);
-      }
+    // Só '.ts': import de diretório (ex. './achados') lança
+    // ERR_UNSUPPORTED_DIR_IMPORT, não ERR_MODULE_NOT_FOUND (filtrado acima) —
+    // '/index.ts' nunca seria alcançado (review S5-T3, M2).
+    const base = fileURLToPath(new URL(specifier, context.parentURL)) + '.ts';
+    if (existsSync(base)) {
+      return nextResolve(pathToFileURL(base).href, context);
     }
     throw err;
   }

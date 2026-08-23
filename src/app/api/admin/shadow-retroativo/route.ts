@@ -92,8 +92,11 @@ function dadosParaMedidas(dados: Record<string, unknown>): MedidasEcoTT {
       volADindex: num('b25'),
       laStrain: num('lars'),
       sinaisHP: str('b38') === 'S' ? 'S' : '',
-      modoManual: 'auto',
-      selecaoManual: -1,
+      // Review S5-T3 (M4): antes fixava 'auto', então todo exame laudado em
+      // manual aparecia como "divergência inesperada" contra o motor antigo
+      // (que respeitava a seleção salva). Mesma regra do adapter: sel>=0 = manual.
+      modoManual: (num('diast-manual-sel') ?? -1) >= 0 ? 'manual' : 'auto',
+      selecaoManual: num('diast-manual-sel') ?? -1,
       textoLivre: '',
     },
     sistolica: {

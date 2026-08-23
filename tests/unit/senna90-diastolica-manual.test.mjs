@@ -37,9 +37,18 @@ describe('calcular() — modo manual da diastólica (S5-T3)', () => {
 
   test('modoManual "auto" (padrão) preserva o cálculo automático — zero mudança de fórmula', () => {
     const m = medidasVazias();
-    // ritmo sinusal + índices normais de fato calculados pelo motor (auto)
+    // ritmo sinusal + 2 critérios avaliados e nenhum alterado (calculos/diastologia.ts:121-139)
+    // => 'Índices diastólicos do ventrículo esquerdo preservados' calculado de verdade pelo
+    // motor — pina o texto real (review M3), não só a ausência da sentença manual.
     m.gerais.ritmo = 'S';
+    m.diastolica.eSeptal = 10;
+    m.diastolica.relacaoEEseptal = 10;
+    m.sistolica.feSimpson = 60; // FE preservada => algoritmo completo (calculos/diastologia.ts:97-115)
     const r = calcular(m);
+    assert.ok(
+      r.achados.includes('Índices diastólicos do ventrículo esquerdo preservados'),
+      `auto não calculou o esperado: ${JSON.stringify(r.achados)}`
+    );
     assert.ok(!r.achados.includes('Disfunção diastólica do ventrículo esquerdo de grau II (padrão pseudonormal).'));
   });
 
