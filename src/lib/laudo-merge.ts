@@ -102,6 +102,13 @@ type Par = [number | null, number | null];
  *      — é aqui que "VE ... grau leve" reencontra "VE ... grau moderado".
  * Devolve os pares na ordem de `b` (a ordem de saída é sempre a de quem
  * chegou por último: o motor no passo 2, o editor no passo 1).
+ *
+ * ponytail: alinhamento por posição+texto, sem noção de "linha movida".
+ * Dívida conhecida: linha do motor que o médico REORDENA perde o casamento
+ * exato e vira manual congelada — sobrevive até quando o motor derruba o
+ * slot (contraria o "slot que sumiu → a linha some" da D2-c). Preservar
+ * texto é o lado seguro do erro, mas fica registrado. Upgrade, se doer:
+ * casar por conteúdo antes da posição (LCS com detecção de movimento).
  */
 function alinhar(a: string[], b: string[]): Par[] {
   // ── LCS ──

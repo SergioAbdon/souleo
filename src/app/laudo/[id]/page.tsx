@@ -203,12 +203,15 @@ export default function LaudoPage() {
     pendingHtml.current = null;
     dirtyRef.current = false;
     // Sidebar limpa na TROCA de exame (nunca na carga: os selects nascem com
-    // default do HTML e zerar aqui mudaria o 1o laudo). Sem isso, medida que
-    // o exame novo não tem fica com o número do paciente anterior — e o
-    // Senna90 fabrica o laudo de B com os dados de A. As chaves são as mesmas
-    // que `coletarMedidas()` grava; reusar evita a lista duplicada.
+    // default do HTML e zerar aqui mudaria o 1o laudo). Sem isso, campo que o
+    // exame novo não sobrescreve fica com o dado do paciente anterior — e o
+    // Senna90 fabrica o laudo de B com os dados de A. É a MESMA limpeza do
+    // botão "Limpar" (`limparCampos`), que já reseta select por
+    // `selectedIndex` e desmarca checkbox — `wilkins-toggle` ligado no
+    // paciente A fazia o laudo de B sair com "0 pontos, favorável para
+    // valvuloplastia mitral percutânea".
     if (exameAnteriorRef.current && exameAnteriorRef.current !== exameId) {
-      Object.keys(coletarMedidas()).forEach((id) => setVal(id, ''));
+      limparCampos(true);
     }
     exameAnteriorRef.current = exameId;
     const unsub = onSnapshot(
@@ -249,6 +252,9 @@ export default function LaudoPage() {
       (err) => console.warn('laudo onSnapshot:', err),
     );
     return () => unsub();
+  // `limparCampos` é declaração de função da própria página (estável, mexe só
+  // no DOM): entrar como dep re-assinaria o onSnapshot a cada render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspace?.id, exameId]);
 
   /**
@@ -1388,9 +1394,25 @@ ${imagensPdfHtml}
 
   function handleLimpar() {
     if (!confirm('Limpar todos os campos?')) return;
-    // Limpar TODOS os campos do motor pelos IDs conhecidos (não depende de
-    // a seção estar aberta/fechada no DOM). Mesma motivação do fix de
-    // event-delegation acima — Sec só monta children quando `open=true`.
+    limparCampos();
+  }
+
+  /**
+   * Zera os campos do motor pelos IDs conhecidos (não depende de a seção
+   * estar aberta/fechada no DOM — `Sec` só monta children com `open=true`;
+   * mesma motivação do fix de event-delegation).
+   *
+   * Dois chamadores: o botão "Limpar" (com `confirm`, acima) e a TROCA de
+   * exame (S5-T2 fix3). A wave 2 tinha escrito uma segunda limpeza a partir
+   * de `Object.keys(coletarMedidas())` e foi por aí que dois campos do
+   * paciente anterior vazaram pro exame novo: `convenio` (excluído de
+   * `coletarMedidas` de propósito — fonte única) e `wilkins-toggle`
+   * (checkbox: `.value = ''` nunca desmarca). Uma função só, dois
+   * chamadores.
+   *
+   * @param trocaDeExame também limpa a identificação — ver dentro.
+   */
+  function limparCampos(trocaDeExame = false) {
     const camposNum = [
       'peso','altura',
       'b7','b8','b9','b10','b11','b12','b13','b28','b29',
@@ -1416,8 +1438,19 @@ ${imagensPdfHtml}
       if (el instanceof HTMLSelectElement) el.selectedIndex = 0;
       else if (el instanceof HTMLInputElement && el.type === 'checkbox') el.checked = false;
     });
-    const dtEx = document.getElementById('dtexame') as HTMLInputElement;
-    if (dtEx) dtEx.value = dataLocalHoje();
+    if (trocaDeExame) {
+      // Identificação do paciente ANTERIOR: `preencherExame()` só escreve
+      // campo vazio (`if (el && !el.value && val)`), então sem zerar aqui o
+      // nome/convênio/data de A ficam na tela do exame de B — e
+      // `salvarLaudo` grava `coletarIdentificacao()` lida do DOM. `convenio`
+      // é o pior: canônico pra Worklist/Extrato e fora de `coletarMedidas`,
+      // então nada o sobrescrevia. `dtexame` fica VAZIO (não "hoje") pra
+      // `preencherExame()` conseguir escrever a data do exame novo.
+      ['nome', 'dtnasc', 'dtexame', 'solicitante', 'convenio'].forEach((id) => setVal(id, ''));
+    } else {
+      const dtEx = document.getElementById('dtexame') as HTMLInputElement;
+      if (dtEx) dtEx.value = dataLocalHoje();
+    }
     safeCalc();
   }
 

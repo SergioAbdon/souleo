@@ -44,6 +44,14 @@ function linhas(html: string): string[] {
  * Casa o TÍTULO, não qualquer `<h3>`: o StarterKit tem input rule de heading
  * ("### " + espaço, Ctrl+Alt+3), e um título que o médico escreva no meio dos
  * achados cortava o laudo ali — o resto migrava pra lista da CONCLUSÃO.
+ *
+ * ponytail: casa por texto ("CONCLUS" pega CONCLUSÃO/Conclusao/CONCLUSAO).
+ * Limite conhecido: se o médico RENOMEAR o título ("IMPRESSÃO") ou apagá-lo,
+ * isto devolve −1 → a lista inteira é lida como achados e as conclusões
+ * voltam vazias, o que faz o merge regerá-las: elas saem DUPLICADAS (uma vez
+ * como parágrafos, outra na lista numerada). Ainda assim é melhor que casar
+ * qualquer `<h3>` (que truncava o laudo em silêncio). Upgrade, se doer:
+ * marcar o título com um atributo próprio no `montarLaudoHtml`.
  */
 function corteConclusao(html: string): number {
   return (html || '').search(/<h3[^>]*>\s*CONCLUS/i);
