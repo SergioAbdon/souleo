@@ -79,6 +79,17 @@ export default function LaudoPage() {
   // continua rodando normal — tabela/derivados intactos); do próximo input
   // em diante o fluxo volta ao normal.
   const textoRestauradoRef = useRef(false);
+  // Restauração roda só 1x (S5-T1 fix2, achado do re-review): `preencherExame()`
+  // é chamado DUAS vezes na carga — 1x dentro de motorInicializar (~444) e 1x no
+  // useEffect [exameCarregado, motorLoaded] (~245, 500ms depois), duplicidade
+  // pré-existente. Sem este guard, a 2a chamada re-arma `textoRestauradoRef`
+  // depois que a 1a `sc()` já tinha consumido — engolindo a próxima edição
+  // genuína do médico — e o `confirm()` do rascunho podia aparecer 2×. O
+  // preenchimento de medidas/identificação (idempotente, só escreve campo
+  // vazio) continua rodando nas duas chamadas. Task 7 traz o remount por
+  // exame que zera os refs — quando isso existir, este guard volta a fazer
+  // sentido reavaliar junto.
+  const restauracaoFeitaRef = useRef(false);
   // Corrida autosave × emissão (S5-T1 fix, achado IMPORTANT do revisor):
   // true durante handleEmitir — o tick do autosave (60s) não salva por cima
   // de uma emissão em curso. Task 7 reusa este mesmo ref pro guard de duplo
@@ -493,50 +504,56 @@ export default function LaudoPage() {
   function preencherExame() {
     if (!exame) return;
 
-    // v3: limpar rascunhos orfaos (mais de 7 dias)
-    try {
-      const SETE_DIAS = 7 * 24 * 60 * 60 * 1000;
-      const agora = Date.now();
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key?.startsWith('rascunho_')) {
-          try {
-            const r = JSON.parse(localStorage.getItem(key) || '{}');
-            if (r.timestamp && agora - r.timestamp > SETE_DIAS) {
-              localStorage.removeItem(key);
-            }
-          } catch { localStorage.removeItem(key!); }
-        }
-      }
-    } catch { /* */ }
+    // Bloco de restauração roda só na 1a chamada (S5-T1 fix2): guard
+    // `restauracaoFeitaRef` — ver comentário na declaração do ref, acima.
+    if (!restauracaoFeitaRef.current) {
+      restauracaoFeitaRef.current = true;
 
-    // Rascunho local x exame do servidor: decisão pura em rascunho-restauracao.ts
-    // (testada em tests/unit). nº9: recusar NÃO apaga — plano B local continua
-    // disponível depois. O `confirm()` (impuro) fica aqui, só a resposta viaja.
-    let rascunhoLocal: RascunhoLocal = null;
-    try {
-      const raw = localStorage.getItem(`rascunho_${exameId}`);
-      if (raw) rascunhoLocal = JSON.parse(raw);
-    } catch { /* sem rascunho */ }
-    let aceitouRascunho = false;
-    if (rascunhoLocal) {
-      const quando = new Date(rascunhoLocal.timestamp || 0);
-      const fmt = quando.toLocaleDateString('pt-BR') + ' ' + quando.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-      aceitouRascunho = confirm(`Rascunho salvo em ${fmt}. Deseja recuperar?`);
-    }
-    const fonte = decidirFontePreenchimento(rascunhoLocal, aceitouRascunho, {
-      medidas: exame.medidas as Record<string, string> | undefined,
-      laudoHtml: exame.laudoHtml as string | undefined,
-    });
-    if (fonte.medidas) {
-      Object.entries(fonte.medidas).forEach(([id, val]) => { if (val) setVal(id, val); });
-    }
-    if (fonte.laudoHtml) {
-      pendingHtml.current = fonte.laudoHtml;
-      // Marca restauração (cobre os DOIS caminhos: rascunho aceito e
-      // exame.laudoHtml — `decidirFontePreenchimento` já resolveu qual).
-      // Ver comentário no `sc()` de motorInicializar (achado CRITICAL).
-      textoRestauradoRef.current = true;
+      // v3: limpar rascunhos orfaos (mais de 7 dias)
+      try {
+        const SETE_DIAS = 7 * 24 * 60 * 60 * 1000;
+        const agora = Date.now();
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key?.startsWith('rascunho_')) {
+            try {
+              const r = JSON.parse(localStorage.getItem(key) || '{}');
+              if (r.timestamp && agora - r.timestamp > SETE_DIAS) {
+                localStorage.removeItem(key);
+              }
+            } catch { localStorage.removeItem(key!); }
+          }
+        }
+      } catch { /* */ }
+
+      // Rascunho local x exame do servidor: decisão pura em rascunho-restauracao.ts
+      // (testada em tests/unit). nº9: recusar NÃO apaga — plano B local continua
+      // disponível depois. O `confirm()` (impuro) fica aqui, só a resposta viaja.
+      let rascunhoLocal: RascunhoLocal = null;
+      try {
+        const raw = localStorage.getItem(`rascunho_${exameId}`);
+        if (raw) rascunhoLocal = JSON.parse(raw);
+      } catch { /* sem rascunho */ }
+      let aceitouRascunho = false;
+      if (rascunhoLocal) {
+        const quando = new Date(rascunhoLocal.timestamp || 0);
+        const fmt = quando.toLocaleDateString('pt-BR') + ' ' + quando.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        aceitouRascunho = confirm(`Rascunho salvo em ${fmt}. Deseja recuperar?`);
+      }
+      const fonte = decidirFontePreenchimento(rascunhoLocal, aceitouRascunho, {
+        medidas: exame.medidas as Record<string, string> | undefined,
+        laudoHtml: exame.laudoHtml as string | undefined,
+      });
+      if (fonte.medidas) {
+        Object.entries(fonte.medidas).forEach(([id, val]) => { if (val) setVal(id, val); });
+      }
+      if (fonte.laudoHtml) {
+        pendingHtml.current = fonte.laudoHtml;
+        // Marca restauração (cobre os DOIS caminhos: rascunho aceito e
+        // exame.laudoHtml — `decidirFontePreenchimento` já resolveu qual).
+        // Ver comentário no `sc()` de motorInicializar (achado CRITICAL).
+        textoRestauradoRef.current = true;
+      }
     }
 
     // nº8: identificação SEMPRE preenchida a partir do exame (fallback se medidas não tiver)
