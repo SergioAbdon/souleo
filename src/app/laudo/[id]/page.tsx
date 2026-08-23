@@ -37,6 +37,7 @@ import { executarEReportar, shadowModeAtivo } from '@/lib/shadow-runner';
 import { senna90Primario } from '@/lib/primary-engine-flag';
 import { calcularSenna90, criarDebounce } from '@/lib/senna90-bridge';
 import { montarLaudoHtml } from '@/lib/senna90-render';
+import { mesclarLinhas } from '@/lib/laudo-merge';
 
 export default function LaudoPage() {
   const params = useParams();
@@ -99,6 +100,11 @@ export default function LaudoPage() {
   // (medidas) e pelo onDirty do EditorLaudo (achados/conclusões). Autosave
   // e beforeunload leem este ref — zerado só em salvamento COM sucesso.
   const dirtyRef = useRef(false);
+  // Última geração do motor por bloco (S5-T2): é o "estado conhecido" contra
+  // o qual o merge por linha decide o que o médico mexeu. `null` = ainda não
+  // houve geração neste exame (ver o pseudo-prev em `dispararSenna90`).
+  const prevGerAchados = useRef<string[] | null>(null);
+  const prevGerConclusoes = useRef<string[] | null>(null);
   // Tela viva (S4-T12): o listener do exame roda a cada gravação do Wader;
   // este guard marca a PRIMEIRA snapshot (a única que inicializa `emitido`).
   const primeiraSnapshot = useRef(true);
@@ -180,6 +186,13 @@ export default function LaudoPage() {
     // paciente anterior. Zerar aqui é o mesmo escopo do onSnapshot.
     primeiraSnapshot.current = true;
     selecaoInicializada.current = false;
+    // Restauração e merge também são POR EXAME (S5-T2, nota pendente da T1):
+    // navegar laudo→laudo sem desmontar levava o texto do paciente anterior
+    // como "geração conhecida" — o merge protegeria frases do laudo errado.
+    restauracaoFeitaRef.current = false;
+    textoRestauradoRef.current = false;
+    prevGerAchados.current = null;
+    prevGerConclusoes.current = null;
     const unsub = onSnapshot(
       doc(db, 'workspaces', workspace.id, 'exames', exameId),
       (snap) => {
@@ -377,10 +390,32 @@ export default function LaudoPage() {
             // alimenta a ponte. Debounce evita estourar rate-limit 60/min.
             // Falha (rede/auth) → não re-renderiza, motor antigo segue
             // fazendo params-tbody/calc-* (sem regressão).
+            //
+            // Merge por linha (S5-T2, decisão D2-c): o que sai pro editor NÃO
+            // é mais a geração crua do motor — é ela mesclada com o que está
+            // no editor agora. Regra em `src/lib/laudo-merge.ts` (25 testes).
             const dispararSenna90 = criarDebounce(300, async () => {
               const r = await calcularSenna90();
               if (!r) return; // falha → fallback silencioso (motor antigo)
-              const html = montarLaudoHtml(r.achados, r.conclusoes);
+              const ed = editorRef.current;
+              // Editor ainda não montou: nada pra preservar, e o HTML vai
+              // esperar em `pendingHtml`. Mesclar contra [] aqui APAGARIA o
+              // laudo inteiro (tudo pareceria "linha que o médico deletou").
+              const atuaisA = ed ? ed.getAchadosLines() : null;
+              const atuaisC = ed ? ed.getConclusoesLines() : null;
+              // 1a geração do exame com o editor JÁ preenchido (rascunho
+              // restaurado): alinha contra a PRÓPRIA geração nova como
+              // pseudo-prev — o que casa com o motor é substituído por ele
+              // mesmo (idempotente), o que não casa é do médico e FICA.
+              const prevA = prevGerAchados.current ?? (atuaisA?.length ? r.achados : null);
+              const prevC = prevGerConclusoes.current ?? (atuaisC?.length ? r.conclusoes : null);
+              const mescladoA = prevA && atuaisA ? mesclarLinhas(prevA, r.achados, atuaisA) : r.achados;
+              const mescladoC = prevC && atuaisC ? mesclarLinhas(prevC, r.conclusoes, atuaisC) : r.conclusoes;
+              prevGerAchados.current = r.achados;
+              prevGerConclusoes.current = r.conclusoes;
+              // Passa pelo `_onLaudoGerado` de propósito: é lá que a sentinela
+              // __WILKINS__ vira bloco formatado (o merge devolve a sentinela).
+              const html = montarLaudoHtml(mescladoA, mescladoC);
               const onGer = (window as unknown as Record<string, unknown>)
                 ._onLaudoGerado as ((h: string) => void) | undefined;
               if (onGer) onGer(html);
