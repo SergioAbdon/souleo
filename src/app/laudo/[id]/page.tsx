@@ -500,6 +500,22 @@ export default function LaudoPage() {
               const onInputOrChange = (e: Event) => {
                 const t = e.target as HTMLElement | null;
                 if (!t) return;
+                // nº23: sinal SINTÉTICO disparado ao fim de `preencherExame()`
+                // (target = o próprio container, não um campo). NÃO é edição
+                // do médico — não marca dirty, não passa pelo `sc()` completo
+                // (que dispararia o Senna90 e consumiria PREMATURAMENTE o
+                // guard `textoRestauradoRef`: os dois chamadores de
+                // `preencherExame()` já rodam `sc()`/`safeCalc()` logo depois,
+                // então o QUE FALTAVA era só revelar o condicional PSMAP
+                // (setado por valor sem disparar `change` real) + recalcular
+                // os derivados do motor legado — nada mais).
+                if (t.id === 'laudo-sidebar') {
+                  const refluxoPulmonarFn = (window as unknown as Record<string, unknown>)
+                    .refluxoPulmonar as (() => void) | undefined;
+                  if (refluxoPulmonarFn) { try { refluxoPulmonarFn(); } catch { /* */ } }
+                  safeCalc();
+                  return;
+                }
                 const tag = t.tagName;
                 if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') {
                   dirtyRef.current = true; // S5-T1: medida mudou → rascunho desatualizado
@@ -655,11 +671,35 @@ export default function LaudoPage() {
       const el = document.getElementById(id) as HTMLInputElement | null;
       if (el && !el.value && val) setVal(id, val);
     });
+
+    // nº23: campos restaurados acima via `setVal` (só `.value`/`.checked`,
+    // sem `dispatchEvent`) deixam condicionais que dependem de `change` pra
+    // se revelar — ex.: b40p restaurado com valor mas #field-psmap continua
+    // `display:none` porque quem o abre é `refluxoPulmonar()`, chamado só
+    // pelo `onChange` do próprio select. UM change borbulhado no container
+    // (tratado à parte no listener delegado — não marca dirty, não dispara
+    // Senna90 de novo) resolve sem precisar mirar campo por campo.
+    const sidebarEl = document.getElementById('laudo-sidebar');
+    if (sidebarEl) sidebarEl.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   function setVal(id: string, val: string) {
     const el = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
-    if (el) el.value = val;
+    if (!el) return;
+    // nº15: único checkbox da tela — `.value` não marca/desmarca. Restaura
+    // o check E reabre o painel (senão o escore salvo fica invisível até o
+    // médico clicar de novo, e a próxima edição de medida o apagaria).
+    if (el instanceof HTMLInputElement && el.type === 'checkbox') {
+      el.checked = val === '1';
+      if (el.id === 'wilkins-toggle') {
+        const fields = document.getElementById('wilkins-fields');
+        if (fields) fields.style.display = el.checked ? 'grid' : 'none';
+        const icon = document.getElementById('wilkins-icon');
+        if (icon) icon.textContent = el.checked ? '☑' : '☐';
+      }
+      return;
+    }
+    el.value = val;
   }
 
   function coletarMedidas(): Record<string, string> {
@@ -672,9 +712,18 @@ export default function LaudoPage() {
       'b34', 'b35', 'b34t', 'b36', 'b39', 'b40', 'b39p', 'b40p', 'psmap',
       'b41', 'b42', 'b45', 'b46', 'b47', 'b46t', 'b47t', 'b50', 'b51', 'b52', 'b50p',
       'b55', 'b56', 'b57', 'b58', 'b59', 'b60', 'b61', 'b62', 'wk-mob', 'wk-esp', 'wk-cal', 'wk-sub',
-      'diast-manual-sel'];
+      'diast-manual-sel',
+      // nº15 (background T2/T3): faltava aqui — o escore de Wilkins nunca
+      // era persistido, então reabrir o laudo sempre voltava com o painel
+      // fechado e a 1a medida editada apagava o cálculo salvo em silêncio.
+      'wilkins-toggle'];
     const m: Record<string, string> = {};
-    campos.forEach(id => { const el = document.getElementById(id) as HTMLInputElement | null; if (el) m[id] = el.value || ''; });
+    campos.forEach(id => {
+      const el = document.getElementById(id) as HTMLInputElement | null;
+      if (!el) return;
+      // Checkbox não tem `.value` significativo — grava '1'/'0' (setVal sabe ler de volta).
+      m[id] = el.type === 'checkbox' ? (el.checked ? '1' : '0') : (el.value || '');
+    });
     return m;
   }
 
@@ -913,8 +962,11 @@ export default function LaudoPage() {
       medidas, achados, conclusoes,
       ...identificacao,
       cfgSnapshot: { clinica: clinicaNome, slogan: clinicaSlogan, localEnd: clinicaEnd, localTel: clinicaTel, medNome: profile?.nome, medCrm: profile?.crm, medUf: profile?.ufCrm, p1 },
-      // Dados extras pra consumo/log (server usa)
-      pacienteNome: (exame?.pacienteNome as string) || identificacao.pacienteNome || '',
+      // nº5: pacienteNome NÃO reentra aqui — `...identificacao` (acima) já
+      // traz o nome atual do DOM. A linha antiga sobrescrevia com
+      // `exame.pacienteNome` (valor STALE do servidor) sempre que existia,
+      // igual ao bug do `convenio` (comentário abaixo) — nome editado na tela
+      // nunca chegava a salvar.
       tipoExame: (exame?.tipoExame as string) || '',
       // convenio: NÃO sobrescrever aqui. Vem de `...identificacao` (valor
       // do DOM = o que o médico vê). A linha antiga jogava o `exame.convenio`
@@ -1457,6 +1509,10 @@ ${imagensPdfHtml}
     // escores e nada entra no laudo.
     const wf = document.getElementById('wilkins-fields');
     if (wf) wf.style.display = 'none';
+    // nº15: ícone tem estado próprio agora (☐/☑) — sem isto o "Limpar"
+    // desmarcava o checkbox mas o ícone continuava mostrando ☑.
+    const wi = document.getElementById('wilkins-icon');
+    if (wi) wi.textContent = '☐';
     // Diastólica manual (review S5-T3, I1+I2): mesma classe de bug do Wilkins
     // acima. (I2) valor canônico explícito — não confia em selectedIndex==0
     // do <select> (se alguém reordenar as <option>, o loop de camposSel

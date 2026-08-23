@@ -6,7 +6,6 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { useState, useEffect, useRef, ReactNode } from 'react';
-import { dataLocalHoje } from '@/lib/utils';
 
 // Helpers para chamar funções do motor (expostas em window.*)
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -139,11 +138,12 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
                     if (dtEl) { dtEl.value = dtnasc; dtEl.dispatchEvent(new Event('input', { bubbles: true })); }
                   }
                 }
-                if (pac.sexo) {
-                  const sexVal = pac.sexo === 'Masculino' ? 'M' : pac.sexo === 'Feminino' ? 'F' : pac.sexo;
-                  const sexEl = document.getElementById('sexo') as HTMLSelectElement;
-                  if (sexEl) { sexEl.value = sexVal; sexEl.dispatchEvent(new Event('change', { bubbles: true })); }
-                }
+                // nº24 (decisão Sergio): sexo é campo CLÍNICO — segue a
+                // trava do MOTOR (readOnlyMotor), não a da identificação.
+                // Este fluxo é o desbloqueio ADMINISTRATIVO (nome/data/
+                // convênio, crédito de identificação); sexo NÃO entra aqui
+                // mesmo vindo do Feegow — só a reedição clínica (motor
+                // desbloqueado, outro crédito) pode mudá-lo.
               }
             }
           }
@@ -299,7 +299,12 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
         <F label={idBloqueado ? '🔒 Nome completo' : 'Nome completo'}><input type="text" id="nome" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
         <div className="grid grid-cols-2 gap-x-3 gap-y-[7px] mt-[7px]">
           <F label={idBloqueado ? '🔒 Data de nascimento' : 'Data de nascimento'}><input type="date" id="dtnasc" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
-          <F label={idBloqueado ? '🔒 Data do exame' : 'Data do exame'}><input type="date" id="dtexame" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} defaultValue={dataLocalHoje()} disabled={idBloqueado} /></F>
+          {/* nº6: SEM defaultValue — com o default fixo em "hoje" o campo
+              nascia preenchido e `preencherExame()` (que só escreve campo
+              VAZIO) nunca sobrescrevia com a data real do exame salvo.
+              Vazio no mount → preencherExame cai em exame.dataExame, com
+              fallback pra dataLocalHoje() só quando o exame não tem data. */}
+          <F label={idBloqueado ? '🔒 Data do exame' : 'Data do exame'}><input type="date" id="dtexame" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
         </div>
         {/* E (17/05): convênio + solicitante editáveis MESMO em emitido,
             sem crédito. Identidade (nome/datas acima) segue travada. */}
@@ -445,10 +450,17 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
             onClick={() => {
               const cb = document.getElementById('wilkins-toggle') as HTMLInputElement;
               const fields = document.getElementById('wilkins-fields');
+              const icon = document.getElementById('wilkins-icon');
               if (cb && fields) {
                 cb.checked = !cb.checked;
                 fields.style.display = cb.checked ? 'grid' : 'none';
-                motorCalc();
+                if (icon) icon.textContent = cb.checked ? '☑' : '☐';
+                // nº15: dispara `change` no próprio checkbox (bubbles) em vez
+                // de chamar motorCalc() direto — o listener delegado do
+                // #laudo-sidebar (page.tsx) pega o evento, marca dirty (a
+                // franquia de Wilkins agora PERSISTE em `coletarMedidas`) e
+                // recalcula pela mesma via de qualquer outro campo.
+                cb.dispatchEvent(new Event('change', { bubbles: true }));
               }
             }}
             className="flex items-center gap-2 mt-2 mb-1 cursor-pointer text-[10px] font-semibold text-[#6B7280] hover:text-[#1E3A5F] transition">
@@ -582,7 +594,15 @@ function Sec({ id, title, children, defaultOpen, collapsed, single }: { id: stri
         {title}
         <span className="ml-auto text-[#6B7280] text-[15px]">{open ? '▾' : '▸'}</span>
       </button>
-      {open && <div className={`grid ${single ? 'grid-cols-1' : 'grid-cols-2'} gap-x-3 gap-y-[7px] px-5 py-2.5`}>{children}</div>}
+      {/* nº4: filhos SEMPRE montados, só `hidden` (Tailwind Preflight faz
+          `[hidden]{display:none!important}` — vence a classe `grid`, então
+          o visual/comportamento fica idêntico ao antigo unmount condicional).
+          Antes, fechar a seção DESMONTAVA os inputs (não controlados — sem
+          `value`/state React) e apagava o que o médico tinha digitado ali;
+          `coletarMedidas()` por id também perdia essas medidas ao salvar com
+          a seção fechada (Sistólica/Segmentar nascem `collapsed`). Mantidos
+          montados, os valores sobrevivem a abrir/fechar e entram no save. */}
+      <div hidden={!open} className={`grid ${single ? 'grid-cols-1' : 'grid-cols-2'} gap-x-3 gap-y-[7px] px-5 py-2.5`}>{children}</div>
     </div>
   );
 }
