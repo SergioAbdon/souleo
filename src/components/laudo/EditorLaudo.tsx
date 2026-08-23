@@ -11,6 +11,7 @@ import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import Placeholder from '@tiptap/extension-placeholder';
 import { useImperativeHandle, forwardRef, useRef, useState, useEffect } from 'react';
+import { linhasAchados, linhasConclusoes } from '@/lib/laudo-linhas';
 
 // ── Toolbar ──
 function Toolbar({ editor, onAddFrase }: { editor: Editor | null; onAddFrase?: () => void }) {
@@ -136,40 +137,12 @@ const EditorLaudo = forwardRef<EditorLaudoRef, Props>(({ placeholder, onAddFrase
       return html;
     },
 
-    getAchadosLines: () => {
-      if (!editor) return [];
-      const div = document.createElement('div');
-      div.innerHTML = editor.getHTML();
-      const lines: string[] = [];
-      const h3 = div.querySelector('h3');
-      let node = div.firstChild;
-      while (node) {
-        if (node === h3) break;
-        if (node instanceof HTMLElement && (node.tagName === 'P' || node.tagName === 'LI')) {
-          const text = node.textContent?.trim();
-          if (text) lines.push(text);
-        }
-        node = node.nextSibling;
-      }
-      return lines;
-    },
-
-    getConclusoesLines: () => {
-      if (!editor) return [];
-      const div = document.createElement('div');
-      div.innerHTML = editor.getHTML();
-      const lines: string[] = [];
-      const h3 = div.querySelector('h3');
-      if (!h3) return [];
-      const ol = h3.nextElementSibling;
-      if (ol) {
-        ol.querySelectorAll('li').forEach(li => {
-          const text = li.textContent?.trim();
-          if (text) lines.push(text);
-        });
-      }
-      return lines;
-    },
+    // Extração PURA (laudo-linhas.ts, testada em tests/unit): o walker de
+    // primeiro nível que havia aqui não enxergava lista com marcadores /
+    // numerada da toolbar nem conclusão digitada depois do <ol> — e o que
+    // o merge não lê, a regeneração do motor apaga (S5-T2 fix, Imp-5).
+    getAchadosLines: () => (editor ? linhasAchados(editor.getHTML()) : []),
+    getConclusoesLines: () => (editor ? linhasConclusoes(editor.getHTML()) : []),
 
     setContent: (html: string) => {
       if (!editor || editor.isDestroyed) return;

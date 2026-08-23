@@ -16,6 +16,22 @@ const AORTA = 'Aorta com dimensões normais.';
 const IM = 'Insuficiência mitral de grau discreto.';
 const MANUAL = 'Janela acústica limitada.';
 
+// Frases REAIS do motor (src/senna90/conclusoes/index.ts e achados/*.ts) —
+// os pares adversariais do review S5-T2 (Critical 3) usam estas strings.
+const IM_LEVE = 'Insuficiência Mitral leve.';
+const IM_LEVE_MOD = 'Insuficiência Mitral leve a moderada.';
+const IA_LEVE = 'Insuficiência Aórtica leve.';
+const IT_LEVE = 'Insuficiência Tricúspide leve.';
+const EAO_LEVE = 'Estenose Aórtica Leve.';
+const EMI_LEVE = 'Estenose Mitral Leve.';
+const DISF_VE = 'Disfunção sistólica do ventrículo esquerdo.';
+const DISF_VD = 'Disfunção sistólica do ventrículo direito.';
+const DISF_BIV = 'Disfunção sistólica biventricular.';
+const DISF_VE_DISC = 'Disfunção sistólica do ventrículo esquerdo, discreta.';
+const DISF_VE_MOD = 'Disfunção sistólica do ventrículo esquerdo, moderada.';
+const HIP_CONC = 'Hipertrofia concêntrica do ventrículo esquerdo.';
+const HIP_EXC = 'Hipertrofia excêntrica do ventrículo esquerdo.';
+
 describe('mesclarLinhas — sem edição do médico', () => {
   test('(d) atuais ≡ prevGer → devolve novaGer inteira', () => {
     const prev = [VE_LEVE, AE];
@@ -169,6 +185,63 @@ describe('mesclarLinhas — conclusões e listas vazias', () => {
   });
 });
 
+// ── Fixes do review S5-T2 ──────────────────────────────────────────
+// Cada teste aqui reproduz um achado do revisor com as frases REAIS do
+// motor. Errar = frase de outra válvula/ventrículo apagada em silêncio.
+
+describe('heurística NÃO casa estruturas diferentes (Critical 3)', () => {
+  test('(4b) conclusão AÓRTICA do médico sobrevive quando o motor muda a MITRAL', () => {
+    const out = mesclarLinhas([IM_LEVE], [IM_LEVE_MOD], [IA_LEVE]);
+    assert.ok(out.includes(IA_LEVE), 'conclusão do médico (aórtica) não pode sumir');
+    assert.ok(out.includes(IM_LEVE_MOD), 'conclusão nova do motor (mitral) tem de entrar');
+  });
+
+  test('(4c) linha do VD escrita pelo médico sobrevive à mudança da linha do VE', () => {
+    const out = mesclarLinhas([DISF_VE], [DISF_BIV], [DISF_VD]);
+    assert.ok(out.includes(DISF_VD), 'linha do ventrículo direito não pode sumir');
+    assert.ok(out.includes(DISF_BIV));
+  });
+
+  test('(4f) VE e VD não se confundem: sem apagar o VD e sem 2 graus do mesmo VE', () => {
+    const out = mesclarLinhas([DISF_VE], [DISF_VE_MOD], [DISF_VD, DISF_VE_DISC]);
+    assert.deepEqual(out, [DISF_VD, DISF_VE_MOD]);
+  });
+
+  test('mitral × aórtica × tricúspide nunca são o mesmo slot', () => {
+    assert.deepEqual(mesclarLinhas([IM_LEVE], [IM_LEVE], [IT_LEVE]), [IT_LEVE]);
+    assert.deepEqual(mesclarLinhas([EAO_LEVE], [EAO_LEVE], [EMI_LEVE]), [EMI_LEVE]);
+  });
+
+  test('hipertrofia concêntrica × excêntrica não são o mesmo slot', () => {
+    const out = mesclarLinhas([HIP_CONC], [HIP_CONC], [HIP_EXC]);
+    assert.deepEqual(out, [HIP_EXC], 'o que o médico escreveu fica; o motor não sobrescreve');
+  });
+
+  test('mudança de GRAU na mesma válvula continua casando (o caso de uso)', () => {
+    const out = mesclarLinhas([IM_LEVE, AE], [IM_LEVE_MOD, AE], [IM_LEVE, AE, MANUAL]);
+    assert.deepEqual(out, [IM_LEVE_MOD, AE, MANUAL]);
+  });
+});
+
+describe('editor vazio não apaga o laudo (Critical 2)', () => {
+  test('atuais vazio com prev cheio → geração nova inteira', () => {
+    assert.deepEqual(mesclarLinhas([VE_LEVE, AE], [VE_LEVE, AE], []), [VE_LEVE, AE]);
+    assert.deepEqual(mesclarLinhas([VE_LEVE, AE], [VE_MOD, AE], []), [VE_MOD, AE]);
+  });
+});
+
+describe('dedup não engole linha legitimamente repetida (Important 4)', () => {
+  test('linha repetida sobrevive quando OUTRA linha foi editada', () => {
+    const prev = [VE_LEVE, AE, AE];
+    assert.deepEqual(mesclarLinhas(prev, [...prev], [VE_EDIT, AE, AE]), [VE_EDIT, AE, AE]);
+  });
+
+  test('linha manual igual a uma linha do motor não reposiciona a do motor', () => {
+    const prev = [VE_LEVE, AE];
+    assert.deepEqual(mesclarLinhas(prev, [...prev], [AE, VE_LEVE, AE]), [VE_LEVE, AE]);
+  });
+});
+
 describe('colapsarWilkins — bloco renderizado no editor volta a ser sentinela', () => {
   const SENT = '__WILKINS__{"mob":2,"esp":2,"sub":1,"cal":1,"sc":6,"concFrase":"Favorável."}';
   const RENDER = [
@@ -184,6 +257,11 @@ describe('colapsarWilkins — bloco renderizado no editor volta a ser sentinela'
 
   test('sem sentinela no motor, o bloco renderizado some (score foi apagado)', () => {
     assert.deepEqual(colapsarWilkins([VE_LEVE, ...RENDER, AE], [VE_LEVE, AE]), [VE_LEVE, AE]);
+  });
+
+  test('(imp6) frase do médico no meio do bloco não duplica a sentinela', () => {
+    const partido = [RENDER[0], RENDER[1], MANUAL, RENDER[3]];
+    assert.deepEqual(colapsarWilkins(partido, [SENT]), [SENT, MANUAL]);
   });
 
   test('(p) merge não duplica o bloco de Wilkins quando o motor regenera', () => {

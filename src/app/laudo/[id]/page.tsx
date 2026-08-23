@@ -193,6 +193,12 @@ export default function LaudoPage() {
     textoRestauradoRef.current = false;
     prevGerAchados.current = null;
     prevGerConclusoes.current = null;
+    // O editor remonta pela `key={exameId}` (ver <EditorLaudo/> lá embaixo).
+    // Junto com ele morrem as duas coisas que carregariam texto do paciente
+    // anterior pro laudo novo: o HTML ainda na fila e a dirty-flag (que faria
+    // o autosave gravar o laudo de A dentro do exame de B).
+    pendingHtml.current = null;
+    dirtyRef.current = false;
     const unsub = onSnapshot(
       doc(db, 'workspaces', workspace.id, 'exames', exameId),
       (snap) => {
@@ -409,8 +415,13 @@ export default function LaudoPage() {
               // mesmo (idempotente), o que não casa é do médico e FICA.
               const prevA = prevGerAchados.current ?? (atuaisA?.length ? r.achados : null);
               const prevC = prevGerConclusoes.current ?? (atuaisC?.length ? r.conclusoes : null);
-              const mescladoA = prevA && atuaisA ? mesclarLinhas(prevA, r.achados, atuaisA) : r.achados;
-              const mescladoC = prevC && atuaisC ? mesclarLinhas(prevC, r.conclusoes, atuaisC) : r.conclusoes;
+              // `?.length`, NÃO `atuaisA` (Critical 2 do review): `[]` é
+              // truthy — editor montado e vazio virava "o médico apagou tudo"
+              // e o merge devolvia [], apagando o laudo inteiro. Editor vazio
+              // = nada a preservar → a geração nova manda. (`mesclarLinhas`
+              // repete o guard na raiz, pra qualquer outro chamador.)
+              const mescladoA = prevA && atuaisA?.length ? mesclarLinhas(prevA, r.achados, atuaisA) : r.achados;
+              const mescladoC = prevC && atuaisC?.length ? mesclarLinhas(prevC, r.conclusoes, atuaisC) : r.conclusoes;
               prevGerAchados.current = r.achados;
               prevGerConclusoes.current = r.conclusoes;
               // Passa pelo `_onLaudoGerado` de propósito: é lá que a sentinela
@@ -1441,6 +1452,14 @@ ${imagensPdfHtml}
         sigB64={sigB64}
         editorLaudo={
           <EditorLaudo
+            // `key` por exame (S5-T2 fix, Critical 1 do review): navegar
+            // /laudo/A → /laudo/B NÃO desmonta esta página, e o editor
+            // continuava exibindo o texto do paciente A. Com `prevGer`
+            // zerado no reset por exame, o merge tratava esse texto como
+            // "frases manuais do médico" e as preservava DENTRO do laudo do
+            // paciente B (escondendo os achados do B). Trocar a key remonta
+            // o TipTap vazio: o merge passa a ver [] e a geração do B manda.
+            key={exameId}
             ref={editorRef}
             placeholder="Achados e conclusões do exame..."
             onDirty={() => { dirtyRef.current = true; }}

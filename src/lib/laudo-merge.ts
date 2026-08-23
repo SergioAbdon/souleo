@@ -24,31 +24,65 @@
 /** Limiar da heurística de "mesma linha, texto diferente". */
 const LIMIAR = 0.6;
 
-/** Tokens normalizados (minúsculas, sem acento, sem pontuação). */
-function tokens(linha: string): Set<string> {
-  return new Set(
-    (linha || '')
-      .normalize('NFD')
-      .replace(/\p{Diacritic}/gu, '')
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter(Boolean),
-  );
+/** Tokens normalizados (minúsculas, sem acento, sem pontuação), EM ORDEM. */
+function tokens(linha: string): string[] {
+  return (linha || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
 }
 
 /**
- * Semelhança entre duas linhas = tokens em comum / tamanho da maior.
+ * Palavras que nomeiam ESTRUTURA (válvula, câmara, lado). Se duas linhas
+ * discordam em qualquer uma delas, falam de coisas diferentes — por mais
+ * parecido que seja o resto da frase. Foi o buraco do review (Critical 3):
+ * "Insuficiência Mitral leve." × "Insuficiência Aórtica leve." pontuava
+ * 0.667 e "…ventrículo esquerdo." × "…ventrículo direito." 0.800, ambos
+ * ACIMA do par legítimo "leve" × "leve a moderada" (0.600).
+ */
+const ESTRUTURA = new Set([
+  'esquerdo', 'esquerda', 'direito', 'direita', 'biventricular',
+  'mitral', 'aortica', 'aortico', 'tricuspide', 'pulmonar',
+]);
+
+function estruturas(toks: string[]): Set<string> {
+  return new Set(toks.filter((t) => ESTRUTURA.has(t)));
+}
+
+/**
+ * Semelhança entre duas linhas = tokens em comum / tamanho da maior, com
+ * DOIS portões antes: as frases do motor abrem pelo sujeito ("Ventrículo
+ * esquerdo…", "Insuficiência Mitral…"), então
+ *   1. as duas primeiras palavras têm de bater, e
+ *   2. as palavras de estrutura/lado têm de ser as mesmas.
+ * Sem os portões o merge trocava a conclusão de uma válvula pela de outra.
  *
- * ponytail: heurística de saco de palavras — barata e suficiente pras
- * frases do motor (mudam 1-2 palavras: "leve"→"moderado", "58"→"62").
- * Limite conhecido: reescrita grande da linha pelo médico deixa de casar e
- * vira linha manual (texto preservado, só não sofre override do motor).
- * Upgrade, se doer: diff word-level (levenshtein por palavra).
+ * ponytail: heurística de saco de palavras com dois portões — barata e
+ * suficiente pras frases do motor (mudam 1-2 palavras: "leve"→"moderado").
+ * Limites conhecidos, os DOIS na direção segura (a linha vira "manual": o
+ * texto do médico FICA, só deixa de sofrer override do motor):
+ *   · médico reescreve o começo da frase ("O ventrículo…") → não casa mais;
+ *   · motor troca a 2a palavra ("Hipertrofia concêntrica" → "excêntrica")
+ *     numa linha JÁ editada → as duas versões convivem no laudo.
+ * O que NÃO acontece mais: apagar frase do médico casando anatomias
+ * diferentes. Upgrade, se doer: diff word-level (levenshtein por palavra).
  */
 function semelhanca(a: string, b: string): number {
-  const ta = tokens(a);
-  const tb = tokens(b);
-  if (ta.size === 0 || tb.size === 0) return 0;
+  const la = tokens(a);
+  const lb = tokens(b);
+  if (la.length === 0 || lb.length === 0) return 0;
+  // Portão 1 — mesmo sujeito (as 2 primeiras palavras).
+  if (la[0] !== lb[0] || (la[1] || '') !== (lb[1] || '')) return 0;
+  // Portão 2 — mesma estrutura/lado.
+  const ea = estruturas(la);
+  const eb = estruturas(lb);
+  if (ea.size !== eb.size) return 0;
+  for (const t of ea) if (!eb.has(t)) return 0;
+
+  const ta = new Set(la);
+  const tb = new Set(lb);
   let comuns = 0;
   for (const t of ta) if (tb.has(t)) comuns++;
   return comuns / Math.max(ta.size, tb.size);
@@ -153,14 +187,15 @@ function ehWilkinsRenderizado(linha: string): boolean {
 export function colapsarWilkins(atuais: string[], doMotor: string[]): string[] {
   const sentinela = (doMotor || []).find((l) => typeof l === 'string' && l.startsWith('__WILKINS__'));
   const out: string[] = [];
-  let dentro = false;
+  // No MÁXIMO uma sentinela por chamada: se o médico escreveu uma frase no
+  // meio do bloco renderizado, o bloco vira dois pedaços — emitir uma
+  // sentinela por pedaço duplicaria o escore de Wilkins no laudo.
+  let emitida = false;
   for (const linha of atuais || []) {
     if (ehWilkinsRenderizado(linha)) {
-      if (!dentro && sentinela) out.push(sentinela);
-      dentro = true;
+      if (!emitida && sentinela) { out.push(sentinela); emitida = true; }
       continue;
     }
-    dentro = false;
     out.push(linha);
   }
   return out;
@@ -184,6 +219,12 @@ export function mesclarLinhas(prevGer: string[], novaGer: string[], atuais: stri
   // Fast path: médico não tocou em nada → a geração nova inteira.
   if (atu.length === prev.length && atu.every((l, k) => l === prev[k])) return [...nova];
 
+  // Editor vazio com geração conhecida: NÃO é "o médico apagou tudo" — é o
+  // editor que ainda não montou, ou um Ctrl+A/Del. Mesclar aqui devolveria
+  // [] (todo slot pareceria deletado) e apagaria o laudo inteiro. Não há o
+  // que preservar → a geração nova manda. (Critical 2 do review.)
+  if (prev.length > 0 && atu.length === 0) return [...nova];
+
   // 1) O que o médico fez com cada slot do motor.
   const estado = new Map<number, { editada: boolean; texto: string }>();
   const manuais: Array<{ texto: string; ancora: number | null }> = [];
@@ -200,10 +241,15 @@ export function mesclarLinhas(prevGer: string[], novaGer: string[], atuais: stri
 
   // 2) Saída na ordem do motor.
   const out: string[] = [];
-  // Linha repetida em laudo é sempre erro de merge (médico escreveu a frase
-  // que o motor passou a gerar sozinho) — nunca intenção.
-  const push = (t: string) => { if (!out.includes(t)) out.push(t); };
-  const despejar = (chave: number | null) => { for (const man of manuais) if (man.ancora === chave) push(man.texto); };
+  const push = (t: string) => out.push(t);
+  // Linha que o médico digitou e o motor PASSOU A GERAR sozinho sai uma vez
+  // só, na posição do motor. É o único caso de duplicata que o merge cria —
+  // dedup global (o que havia antes) engolia linha legitimamente repetida
+  // do próprio motor (Important 4 do review).
+  const doMotor = new Set(nova);
+  const despejar = (chave: number | null) => {
+    for (const man of manuais) if (man.ancora === chave && !doMotor.has(man.texto)) push(man.texto);
+  };
 
   despejar(null); // manuais antes de qualquer linha do motor
   for (const [p, n] of alinhar(prev, nova)) {
