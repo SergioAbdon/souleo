@@ -69,6 +69,21 @@ export default function LaudoPage() {
   const [reedicaoAtiva, setReedicaoAtiva] = useState(false);
   const editorRef = useRef<EditorLaudoRef>(null);
   const pendingHtml = useRef<string | null>(null);
+  // Texto restaurado sobrevive à 1a geração do Senna90 (S5-T1 fix, achado
+  // CRITICAL do revisor): setado quando `preencherExame()` restaura laudoHtml
+  // (rascunho local aceito OU exame.laudoHtml) em `pendingHtml`. O `sc()` da
+  // carga inicial (motorInicializar → calcFn → dispararSenna90 debounce
+  // 300ms → _onLaudoGerado → setContent INCONDICIONAL) sobrescrevia esse
+  // texto restaurado antes do médico digitar uma letra. A PRIMEIRA rodada de
+  // sc() pós-restauração pula o disparo do Senna90 (motor antigo calcFn()
+  // continua rodando normal — tabela/derivados intactos); do próximo input
+  // em diante o fluxo volta ao normal.
+  const textoRestauradoRef = useRef(false);
+  // Corrida autosave × emissão (S5-T1 fix, achado IMPORTANT do revisor):
+  // true durante handleEmitir — o tick do autosave (60s) não salva por cima
+  // de uma emissão em curso. Task 7 reusa este mesmo ref pro guard de duplo
+  // clique no botão emitir.
+  const emitindoRef = useRef(false);
   // Dirty flag (S5-T1): setada pelo listener delegado do #laudo-sidebar
   // (medidas) e pelo onDirty do EditorLaudo (achados/conclusões). Autosave
   // e beforeunload leem este ref — zerado só em salvamento COM sucesso.
@@ -239,7 +254,7 @@ export default function LaudoPage() {
   // Zera dirtyRef só em sucesso — falha (offline) tenta de novo no próximo tick.
   useEffect(() => {
     const interval = setInterval(async () => {
-      if (emitido || !dirtyRef.current) return;
+      if (emitido || !dirtyRef.current || emitindoRef.current) return;
       const ok = await salvarLaudo('andamento', { laudoHtml: editorRef.current?.getHTML() ?? '' });
       if (ok) dirtyRef.current = false;
     }, 60_000);
@@ -366,8 +381,18 @@ export default function LaudoPage() {
             const sc = () => {
               try { calcFn(); } catch (e) { console.warn('calc:', e); }
               // Migração Senna90: flag ON → preenche o vazio dos achados.
+              // Achado CRITICAL (revisor S5-T1): a 1a rodada pós-restauração
+              // NÃO dispara o Senna90 — senão o setContent incondicional de
+              // `_onLaudoGerado` sobrescreve o laudoHtml restaurado (rascunho
+              // aceito ou exame.laudoHtml) antes do médico tocar em nada.
+              // calcFn() já rodou acima (tabela/derivados intactos); a partir
+              // do próximo input o fluxo volta ao normal.
               if (senna90Primario()) {
-                try { dispararSenna90(); } catch { /* não bloquear */ }
+                if (textoRestauradoRef.current) {
+                  textoRestauradoRef.current = false;
+                } else {
+                  try { dispararSenna90(); } catch { /* não bloquear */ }
+                }
               }
               // Shadow mode (Fase 5): invisível, server-side
               if (shadowModeAtivo()) {
@@ -506,7 +531,13 @@ export default function LaudoPage() {
     if (fonte.medidas) {
       Object.entries(fonte.medidas).forEach(([id, val]) => { if (val) setVal(id, val); });
     }
-    if (fonte.laudoHtml) pendingHtml.current = fonte.laudoHtml;
+    if (fonte.laudoHtml) {
+      pendingHtml.current = fonte.laudoHtml;
+      // Marca restauração (cobre os DOIS caminhos: rascunho aceito e
+      // exame.laudoHtml — `decidirFontePreenchimento` já resolveu qual).
+      // Ver comentário no `sc()` de motorInicializar (achado CRITICAL).
+      textoRestauradoRef.current = true;
+    }
 
     // nº8: identificação SEMPRE preenchida a partir do exame (fallback se medidas não tiver)
     const idCampos: [string, string][] = [
@@ -759,6 +790,12 @@ export default function LaudoPage() {
     // antes de incluir as páginas extras de imagens
     setImagensIncluidasNoPdf(incluirImagens);
 
+    // Corrida autosave × emissão (achado IMPORTANT do revisor): sobe o guard
+    // ANTES do corpo assíncrono — o tick de 60s não pode salvar por cima de
+    // uma emissão em curso. `finally` garante reset mesmo em erro/return
+    // precoce (rede, plano sem saldo, etc).
+    emitindoRef.current = true;
+    try {
     const medidas = coletarMedidas();
     const achados = coletarAchados();
     const conclusoes = coletarConclusoes();
@@ -858,6 +895,9 @@ export default function LaudoPage() {
       console.warn('PDF gen error:', resultado.pdfErro);
     } else {
       toast('Laudo emitido e assinado');
+    }
+    } finally {
+      emitindoRef.current = false;
     }
   }
 
