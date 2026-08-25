@@ -88,11 +88,40 @@ const IDENTIFICACAO_NAO_ZERADA_SEMPRE = {
 // falha se a entrada ficar pra trás sem uso, forçando a limpeza completa).
 const IDS_EXTINTOS = ['b24_diast'];
 
+// Contagem TOTAL (revisão S5-T11 fix, Finding 2): (4)/(4b) só olham os ids
+// DENTRO de `campos`/`camposNum`/`camposSel` — o sync handler b24↔b24_diast
+// (page.tsx:651-659) referencia o id fora dos 3 arrays rastreados e fica
+// invisível pra eles; removê-lo de UM dos 2 arrays (limpeza parcial) também
+// passava batido, porque a união dos arrays ainda continha a outra ocorrência.
+// Esta contagem é sobre o ARQUIVO INTEIRO (`b24_diast` cru, comentários
+// inclusos de propósito — captura os 2 comentários que citam o id em
+// page.tsx:651-652 também) — qualquer mudança (parcial ou total) precisa
+// tocar este número conscientemente. Hoje: 2 comentários + 2 no sync handler
+// (linhas 657/659) + 1 em `campos` (905) + 1 em `camposNum` (1678) = 6.
+const B24_DIAST_TOTAL_REFS_ATUAL = 6;
+
+function contarRefsB24Diast() {
+  return (pageSrc.match(/b24_diast/g) || []).length;
+}
+
 // ── Asserções ────────────────────────────────────────────────────────────
 
 describe('Contrato da Ponte tela↔motor (D7) — os 3 arquivos concordam nos ids', () => {
   const jsxIds = idsJsx();
   const adapterIds = idsAdapter();
+
+  test('(0) piso de sanidade das extrações — nenhuma pode esvaziar em silêncio (senão (1)-(4) passam vazias, sem checar nada)', () => {
+    // Pisos abaixo da contagem real de hoje mas bem acima de zero — cortam
+    // qualquer regressão da regex de extração (aspas trocadas, id virar
+    // template literal, etc.) que zeraria o Set/array sem quebrar a sintaxe.
+    // Contagens reais hoje: jsxIds=96, adapterIds=67, campos=67, camposNum=39,
+    // camposSel=24 (ajustar o piso — nunca o alvo — se encolherem de verdade).
+    assert.ok(jsxIds.size >= 80, `idsJsx() extraiu só ${jsxIds.size} ids (esperado >= 80, hoje real: 96) — regex de extração quebrou?`);
+    assert.ok(adapterIds.size >= 50, `idsAdapter() extraiu só ${adapterIds.size} ids (esperado >= 50, hoje real: 67) — regex de extração quebrou?`);
+    assert.ok(camposColetar.length >= 50, `campos (coletarMedidas) extraiu só ${camposColetar.length} ids (esperado >= 50, hoje real: 67) — regex de extração quebrou?`);
+    assert.ok(camposNum.length >= 25, `camposNum extraiu só ${camposNum.length} ids (esperado >= 25, hoje real: 39) — regex de extração quebrou?`);
+    assert.ok(camposSel.length >= 15, `camposSel extraiu só ${camposSel.length} ids (esperado >= 15, hoje real: 24) — regex de extração quebrou?`);
+  });
 
   test('(1) todo id que o adapter lê EXISTE no JSX de SidebarLaudo.tsx', () => {
     const faltando = [...adapterIds].filter(id => !jsxIds.has(id));
@@ -136,11 +165,26 @@ describe('Contrato da Ponte tela↔motor (D7) — os 3 arquivos concordam nos id
     assert.deepEqual(foraDaAllowlist, [], `id extinto (sem elemento JSX) referenciado sem allowlist: ${foraDaAllowlist.join(', ')}`);
   });
 
-  test('(4b) allowlist de extintos não fica pra trás: cada entrada precisa continuar extinta E ainda referenciada em algum lugar (senão Task 13 já limpou — remover a entrada)', () => {
-    const todasRefs = new Set([...camposColetar, ...camposNum, ...camposSel]);
+  test('(4b) allowlist de extintos não fica pra trás: cada entrada precisa continuar extinta E ainda referenciada em ALGUM lugar do arquivo (não só nos 3 arrays rastreados — senão Task 13 já limpou tudo, inclusive o sync handler, e é hora de remover a entrada)', () => {
     for (const id of IDS_EXTINTOS) {
       assert.ok(!jsxIds.has(id), `'${id}' está na allowlist de extintos mas REAPARECEU na JSX — investigar (duplicidade de id?) e remover da allowlist`);
-      assert.ok(todasRefs.has(id), `'${id}' está na allowlist de extintos mas não é mais referenciado em coletarMedidas/limparCampos — Task 13 já limpou, remover esta entrada da allowlist`);
     }
+    // Contagem no ARQUIVO INTEIRO (não só campos/camposNum/camposSel): pega o
+    // sync handler b24↔b24_diast (fora dos arrays rastreados) e qualquer
+    // remoção parcial/assimétrica entre os 2 arrays — se caísse a 0 aqui,
+    // Task 13 já limpou tudo e esta allowlist ficou pra trás.
+    assert.ok(contarRefsB24Diast() > 0, `'b24_diast' não tem mais NENHUMA referência em page.tsx (nem nos arrays, nem no sync handler) — Task 13 já limpou, remover 'b24_diast' de IDS_EXTINTOS e apagar o teste (4c)`);
+  });
+
+  test('(4c) contagem TOTAL de referências a b24_diast em page.tsx (arquivo inteiro, não só os arrays rastreados) — pega o sync handler invisível a (4)/(4b) e qualquer remoção parcial/assimétrica entre os 2 arrays', () => {
+    const atual = contarRefsB24Diast();
+    assert.equal(
+      atual,
+      B24_DIAST_TOTAL_REFS_ATUAL,
+      `contagem de 'b24_diast' em page.tsx era ${B24_DIAST_TOTAL_REFS_ATUAL}, agora é ${atual} — ` +
+      'limpeza em andamento (parcial ou total)? Se foi um ajuste deliberado, atualize ' +
+      'B24_DIAST_TOTAL_REFS_ATUAL para o novo número; se chegou a 0, a Task 13 terminou — ' +
+      "remova 'b24_diast' de IDS_EXTINTOS e apague os testes (4c) e o trecho de (4b) referente a ele.",
+    );
   });
 });
