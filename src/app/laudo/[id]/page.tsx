@@ -1769,7 +1769,6 @@ ${imagensPdfHtml}
         readOnlyMotor={emitido}
         exameOrigem={exame?.origem as string || ''}
         exameCpf={exame?.cpf as string || ''}
-        feegowPacienteId={exame?.feegowPacienteId as string | number | null || null}
         exameAcc={exame?.acc as string || ''}
         onCorrigirAdmin={handleCorrigirLaudo}
         wsId={workspace?.id}

@@ -48,7 +48,6 @@ type Props = {
   readOnlyMotor?: boolean;
   exameOrigem?: string;
   exameCpf?: string;
-  feegowPacienteId?: string | number | null;
   exameAcc?: string;
   /** Salvar correção administrativa (convênio/solicitante) — sem crédito (Phase E). */
   onCorrigirAdmin?: () => void;
@@ -58,7 +57,7 @@ type Props = {
   onToast?: (msg: string) => void;
 };
 
-export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, onImportarDicom, dicomLoading, dicomImportado, ortancAtivo, totalMedidasDicom, totalImagensDicom, onAbrirGaleria, emitido, modoEmitido, readOnlyIdentificacao, readOnlyMotor, exameOrigem, exameCpf, feegowPacienteId, exameAcc, onCorrigirAdmin, wsId, onToast }: Props) {
+export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, onImportarDicom, dicomLoading, dicomImportado, ortancAtivo, totalMedidasDicom, totalImagensDicom, onAbrirGaleria, emitido, modoEmitido, readOnlyIdentificacao, readOnlyMotor, exameOrigem, exameCpf, exameAcc, onCorrigirAdmin, wsId, onToast }: Props) {
   const [idDesbloqueado, setIdDesbloqueado] = useState(false);
   const [motorDesbloqueado, setMotorDesbloqueado] = useState(false);
   // Detectar quando readOnlyMotor muda de true→false (médico desbloqueou)
@@ -107,33 +106,32 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
 
   async function handleDesbloquearId() {
     // Se veio do Feegow, buscar dados atualizados antes de desbloquear
-    if (exameOrigem === 'FEEGOW' && (feegowPacienteId || exameCpf)) {
-      // S5-T9: sem wsId o workspace ainda não carregou (janela transitória
-      // do mount — o mesmo `workspace?.id` usado em todo o resto de
-      // page.tsx). Não é falha do Feegow, então NÃO é o mesmo caso do
-      // toast abaixo — pula a consulta em silêncio e segue pro confirm().
+    if (exameOrigem === 'FEEGOW' && exameCpf) {
+      // S5-T9 fix: action=paciente foi removida do switch GET de /api/feegow
+      // em 18/08 (commit b2c7e00, "confirmado morto") — só buscar_cpf segue
+      // viva. Manter aquele branch aqui devolvia sempre 400 (agora que a
+      // auth passa o gate 401) e o toast de erro disparava em todo
+      // desbloqueio vindo do Feegow, mascarando o caso real de falha.
+      //
+      // Sem wsId o workspace ainda não carregou (janela transitória do
+      // mount — o mesmo `workspace?.id` usado em todo o resto de page.tsx).
+      // Não é falha do Feegow, então NÃO é o mesmo caso do toast abaixo —
+      // pula a consulta em silêncio e segue pro confirm().
       if (!wsId) {
         console.warn('handleDesbloquearId: sem wsId (workspace ainda não carregado), pulando consulta Feegow');
       } else {
         setFeegowLoading(true);
         try {
-          let url = '';
-          if (feegowPacienteId) {
-            url = `/api/feegow?action=paciente&id=${feegowPacienteId}&wsId=${wsId}`;
-          } else if (exameCpf) {
-            url = `/api/feegow?action=buscar_cpf&cpf=${exameCpf}&wsId=${wsId}`;
-          }
+          const url = `/api/feegow?action=buscar_cpf&cpf=${exameCpf}&wsId=${wsId}`;
+          const token = await auth.currentUser?.getIdToken();
+          const res = await fetch(url, { headers: { Authorization: `Bearer ${token || ''}` } });
+          if (!res.ok) {
+            onToast?.('Feegow indisponível — confira manualmente');
+          } else {
+            const data = await res.json();
+            const pac = data?.paciente;
 
-          if (url) {
-            const token = await auth.currentUser?.getIdToken();
-            const res = await fetch(url, { headers: { Authorization: `Bearer ${token || ''}` } });
-            if (!res.ok) {
-              onToast?.('Feegow indisponível — confira manualmente');
-            } else {
-              const data = await res.json();
-              const pac = feegowPacienteId ? data?.data?.content : data?.paciente;
-
-              if (pac) {
+            if (pac) {
                 const nomeFeegow = (pac.nome || '').toUpperCase();
                 const nomeAtual = (document.getElementById('nome') as HTMLInputElement)?.value?.toUpperCase() || '';
 
@@ -169,7 +167,6 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
                 }
               }
             }
-          }
         } catch (e) {
           console.warn('Erro ao buscar Feegow:', e);
           onToast?.('Feegow indisponível — confira manualmente');
