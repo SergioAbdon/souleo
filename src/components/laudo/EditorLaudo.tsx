@@ -14,7 +14,7 @@ import { useImperativeHandle, forwardRef, useRef, useState, useEffect } from 're
 import { linhasAchados, linhasConclusoes } from '@/lib/laudo-linhas';
 
 // ── Toolbar ──
-function Toolbar({ editor, onAddFrase }: { editor: Editor | null; onAddFrase?: () => void }) {
+function Toolbar({ editor, onAddFrase, editable }: { editor: Editor | null; onAddFrase?: () => void; editable: boolean }) {
   const [, forceUpdate] = useState(0);
 
   useEffect(() => {
@@ -25,6 +25,14 @@ function Toolbar({ editor, onAddFrase }: { editor: Editor | null; onAddFrase?: (
   }, [editor]);
 
   if (!editor) return null;
+  // S5-T6: os botões chamam `editor.chain()...run()` — dispatch PROGRAMÁTICO,
+  // que `editable:false` do ProseMirror NÃO intercepta (só bloqueia digitação/
+  // gesto nativo do usuário no DOM). Sem isto, Negrito/Lista/Desfazer/Banco de
+  // Frases reescreveriam um laudo assinado mesmo com o editor "read-only" —
+  // mesmo furo que os botões do Wilkins/diastólica tinham na sidebar (T4).
+  // Esconder a barra inteira segue o mesmo padrão de `#modo-edicao` (CSS
+  // .laudo-locked em page.tsx): a UI de edição some, não fica cinza clicável.
+  if (!editable) return null;
 
   const btn = (active: boolean) =>
     `px-1.5 py-0.5 rounded text-[11px] cursor-pointer transition ${active ? 'bg-[#1E3A5F] text-white' : 'text-gray-500 hover:bg-gray-100'}`;
@@ -72,13 +80,26 @@ type Props = {
   // via `setContent` (gate `settingContent` abaixo, `emitUpdate:false`
   // também evitaria o disparo). Task 2 reusa este mesmo mecanismo.
   onDirty?: () => void;
+  /**
+   * S5-T6: trava única do emitido — texto do laudo assinado também não
+   * edita mais (antes só o CSS/disabled da sidebar travavam; o editor
+   * ficava de fora). `editor.commands.setContent` (usado pra restaurar o
+   * HTML salvo e pro Senna90 recalcular) NÃO passa pelo `editable` do
+   * ProseMirror — esse prop só bloqueia entrada do USUÁRIO (digitação,
+   * teclado, DOM); dispatch programático continua funcionando com
+   * `editable:false`. Confirmado em @tiptap/core/commands/setContent.ts
+   * e Editor.ts (Editable extension só liga o `editable` do EditorView).
+   * @default true
+   */
+  editable?: boolean;
 };
 
-const EditorLaudo = forwardRef<EditorLaudoRef, Props>(({ placeholder, onAddFrase, onDirty }, ref) => {
+const EditorLaudo = forwardRef<EditorLaudoRef, Props>(({ placeholder, onAddFrase, onDirty, editable = true }, ref) => {
   const settingContent = useRef(false);
 
   const editor = useEditor({
     immediatelyRender: false,
+    editable,
     extensions: [
       StarterKit.configure({
         bulletList: { keepMarks: true },
@@ -98,6 +119,10 @@ const EditorLaudo = forwardRef<EditorLaudoRef, Props>(({ placeholder, onAddFrase
       if (!settingContent.current) onDirty?.();
     },
   });
+
+  useEffect(() => {
+    editor?.setEditable(editable);
+  }, [editor, editable]);
 
   useImperativeHandle(ref, () => ({
     getHTML: () => editor?.getHTML() || '',
@@ -160,7 +185,7 @@ const EditorLaudo = forwardRef<EditorLaudoRef, Props>(({ placeholder, onAddFrase
 
   return (
     <div>
-      <Toolbar editor={editor} onAddFrase={onAddFrase} />
+      <Toolbar editor={editor} onAddFrase={onAddFrase} editable={editable} />
       <EditorContent editor={editor} />
     </div>
   );

@@ -67,33 +67,33 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
   const [feegowLoading, setFeegowLoading] = useState(false);
   const idBloqueado = readOnlyIdentificacao && !idDesbloqueado;
   const motorBloqueado = !!(readOnlyMotor && !motorDesbloqueado);
-  const mb = motorBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : '';
 
-  // Bloquear/desbloquear campos do motor quando estado muda
+  // S5-T6: trava única do emitido. `motorBloqueado` já funde readOnlyMotor +
+  // motorDesbloqueado num só booleano — um campo por vez, sem branch
+  // separado pra bloquear/desbloquear (o disabled=false de antes rodava só
+  // se motorDesbloqueado fosse true; aqui é sempre o valor atual do lock,
+  // resultado idêntico). CSS (.laudo-locked em page.tsx, MESMA lista de
+  // exceção) trava mouse+visual; isto trava teclado (Tab/setas não
+  // respeitam pointer-events — achado do review S5-T3, M1) — dois
+  // mecanismos, um só dono de QUAIS campos: a lista `livres` abaixo.
+  // nome/dtnasc/dtexame pertencem à trava de IDENTIFICAÇÃO (disabled já
+  // controlado via idBloqueado no JSX — mexer aqui brigaria com o React).
+  // convenio/solicitante ficam sempre editáveis (correção administrativa
+  // sem crédito, T5). wk-mob/wk-esp/wk-cal/wk-sub (Wilkins) não têm mais
+  // isenção — mesmo furo do M1 se o painel já estivesse aberto ao emitir.
   useEffect(() => {
     const timer = setTimeout(() => {
       const sidebar = document.getElementById('laudo-sidebar');
       if (!sidebar) return;
-      const ignorar = ['nome', 'dtnasc', 'dtexame', 'convenio', 'solicitante', 'wk-mob', 'wk-esp', 'wk-cal', 'wk-sub', 'wilkins-toggle'];
+      const livres = ['nome', 'dtnasc', 'dtexame', 'convenio', 'solicitante'];
       const campos = sidebar.querySelectorAll('input:not(.hidden), select:not(.hidden)') as NodeListOf<HTMLInputElement | HTMLSelectElement>;
-      if (motorBloqueado) {
-        // Bloquear todos os campos do motor
-        campos.forEach(el => {
-          if (ignorar.includes(el.id)) return;
-          el.disabled = true;
-          el.classList.add('bg-gray-100', 'text-gray-400', 'cursor-not-allowed');
-        });
-      } else if (motorDesbloqueado) {
-        // Só desbloqueia se foi explicitamente desbloqueado (evita interferir na montagem)
-        campos.forEach(el => {
-          if (ignorar.includes(el.id)) return;
-          el.disabled = false;
-          el.classList.remove('bg-gray-100', 'text-gray-400', 'cursor-not-allowed');
-        });
-      }
+      campos.forEach(el => {
+        if (livres.includes(el.id)) return;
+        el.disabled = motorBloqueado;
+      });
     }, 800);
     return () => clearTimeout(timer);
-  }, [motorBloqueado, motorDesbloqueado]);
+  }, [motorBloqueado]);
 
   async function handleDesbloquearId() {
     // Se veio do Feegow, buscar dados atualizados antes de desbloquear

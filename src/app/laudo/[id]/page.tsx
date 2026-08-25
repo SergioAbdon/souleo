@@ -1627,6 +1627,10 @@ ${imagensPdfHtml}
             key={exameId}
             ref={editorRef}
             placeholder="Achados e conclusões do exame..."
+            // S5-T6: trava única do emitido chega no texto — `setContent`
+            // (restauração/regen do motor) continua funcionando com
+            // editable:false (ver comentário na prop em EditorLaudo.tsx).
+            editable={!emitido}
             onDirty={() => { dirtyRef.current = true; }}
             onAddFrase={() => {
               const w = window as unknown as Record<string, unknown>;
@@ -1753,7 +1757,12 @@ ${imagensPdfHtml}
         .btn-undo,.btn-redo{background:none;border:1px solid #E5E7EB;color:#6B7280;font-size:12px;padding:2px 8px;border-radius:4px;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;transition:all .12s;}
         .btn-undo:hover,.btn-redo:hover{background:#EFF6FF;border-color:#2563EB;color:#2563EB;}
         #params-tbody td{border:0.5px solid #ccc;padding:2px 5px;}
-        .laudo-locked #laudo-sidebar input,.laudo-locked #laudo-sidebar select,.laudo-locked #laudo-sidebar textarea{pointer-events:none;opacity:.6;background:#f1f5f9;}
+        /* S5-T6: trava única do emitido. CSS trava mouse+visual de TODO
+           campo do motor; convênio/solicitante ficam de fora (correção
+           administrativa sem crédito, T5 — sempre editáveis). Mesma
+           exceção (mesmos 2 ids) no disabled-setter de SidebarLaudo.tsx —
+           é a lista viva, não duplicar id aqui sem duplicar lá. */
+        .laudo-locked #laudo-sidebar input:not(#convenio):not(#solicitante),.laudo-locked #laudo-sidebar select:not(#convenio):not(#solicitante),.laudo-locked #laudo-sidebar textarea{pointer-events:none;opacity:.6;background:#f1f5f9;}
         .laudo-locked #laudo-sidebar .section-btn{pointer-events:none;opacity:.5;}
         .laudo-locked #modo-edicao{display:none;}
       `}</style>
