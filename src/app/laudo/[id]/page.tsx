@@ -1095,7 +1095,7 @@ export default function LaudoPage() {
       const r = await res.json();
       if (!r.ok) {
         toast(r.error === 'reemitido_durante_correcao'
-          ? 'Correção salva, mas o laudo foi reemitido agora — o PDF novo já sai com o dado corrigido.'
+          ? 'O laudo foi reemitido agora — a reemissão usa os dados da tela e pode ter desfeito esta correção. Confira e refaça se preciso.'
           : 'Erro ao salvar correção. Tente novamente.');
         return;
       }

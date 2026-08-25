@@ -151,8 +151,9 @@ export async function POST(req: NextRequest) {
       });
     } catch { /* log nao pode quebrar a correcao */ }
 
-    // Campos JÁ gravados; só o PDF não saiu — o médico reemite (e a reemissão
-    // leva o convênio corrigido, que agora está no doc).
+    // Campos JÁ gravados; só o PDF não saiu. ATENÇÃO: a reemissão que ganhou a
+    // corrida grava os dados da TELA do médico (emitir update dadosFinais) e
+    // pode ter sobrescrito esta correção — os clientes avisam pra conferir.
     if (reemitido) {
       return NextResponse.json(
         { ok: false, error: 'reemitido_durante_correcao', pdfDesatualizado: true },
