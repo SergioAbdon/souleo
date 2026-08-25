@@ -118,4 +118,8 @@ describe('idadeLabel', () => {
   test('sem data de nascimento -> string vazia (quem decide o travessao e a tela)', () => {
     assert.equal(idadeLabel(undefined, '2026-08-25'), '');
   });
+  test('sem data do exame -> string vazia, nunca a idade de hoje (paridade motor)', () => {
+    assert.equal(idadeLabel('1964-03-12'), '');
+    assert.equal(idadeLabel('1964-03-12', ''), '');
+  });
 });

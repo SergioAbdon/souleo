@@ -61,6 +61,9 @@ export function calcIdade(dtnasc?: string, ateData?: string): number | null {
  * nascimento devolve '' (a moldura/tela é que decide o travessão).
  */
 export function idadeLabel(dtnasc?: string, ateData?: string): string {
+  // Sem data do exame o motor imprime '—' (não a idade de hoje) — os 2
+  // call-sites do laudo passam ateData; '' deixa o travessão pro chamador.
+  if (!dtnasc || !ateData) return '';
   const i = calcIdade(dtnasc, ateData);
   if (i === null) return '';
   return `${i} ${i > 1 ? 'anos' : 'ano'}`;

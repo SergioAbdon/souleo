@@ -420,7 +420,6 @@ function LaudoPageInner() {
     w.escH = (s: string) => { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; };
     w.showToast = (msg: string) => { const el = document.createElement('div'); el.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:99999;background:#1E293B;color:#fff;padding:10px 20px;border-radius:9px;font-size:13px;font-weight:600;font-family:IBM Plex Sans,sans-serif;box-shadow:0 4px 20px rgba(0,0,0,.3);'; el.textContent = msg; document.body.appendChild(el); setTimeout(() => el.remove(), 3000); };
     w.hexToRgb = (h: string) => { if (!h) return [30, 58, 95]; h = h.replace('#', ''); const n = parseInt(h, 16); return [n >> 16, (n >> 8) & 255, n & 255]; };
-    w.calcIdade = (dn: string, de?: string) => { if (!dn) return ''; const a = new Date(de || new Date()), b = new Date(dn); let i = a.getFullYear() - b.getFullYear(); if (a.getMonth() < b.getMonth() || (a.getMonth() === b.getMonth() && a.getDate() < b.getDate())) i--; return i; };
     w.uid = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 8);
     w.tog = (id: string) => { const el = document.getElementById(id); if (el) el.classList.toggle('collapsed'); };
     // alertaIT e setDiastModo wrappers serão aplicados após o motor carregar (ver script.onload)
