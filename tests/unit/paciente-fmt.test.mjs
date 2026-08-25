@@ -3,7 +3,7 @@
 // tinha teste antes de virar lib compartilhada.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { maskCpf, formatCpf, fmtData, calcIdade } from '../../src/lib/paciente-fmt.ts';
+import { maskCpf, formatCpf, fmtData, calcIdade, idadeLabel } from '../../src/lib/paciente-fmt.ts';
 
 describe('maskCpf', () => {
   test('mostra so os 2 ultimos digitos', () => {
@@ -84,5 +84,38 @@ describe('calcIdade', () => {
   test('data de nascimento no futuro -> null', () => {
     const dtnasc = dtnascAnosAtras(-1, 0);
     assert.equal(calcIdade(dtnasc), null);
+  });
+
+  // S5-T10 fix (I1): a idade do LAUDO é a da data do exame — reemitir anos
+  // depois nao pode envelhecer o paciente no papel assinado.
+  test('ateData: aniversario ja passou naquela data -> idade cheia', () => {
+    assert.equal(calcIdade('1964-03-12', '2026-08-25'), 62);
+  });
+  test('ateData: aniversario ainda nao tinha chegado -> um a menos', () => {
+    assert.equal(calcIdade('1964-03-12', '2026-01-10'), 61);
+  });
+  test('ateData no proprio aniversario -> idade cheia', () => {
+    assert.equal(calcIdade('1964-03-12', '2026-03-12'), 62);
+  });
+  test('ateData invalida -> cai em hoje (nao quebra)', () => {
+    assert.equal(calcIdade(dtnascAnosAtras(30, -1), 'nao-e-uma-data'), 30);
+  });
+  test('sem ateData -> hoje, como sempre foi (ficha do paciente intacta)', () => {
+    assert.equal(calcIdade(dtnascAnosAtras(30, -1)), 30);
+  });
+});
+
+describe('idadeLabel', () => {
+  test('plural como o motor: >1 ano vira "anos"', () => {
+    assert.equal(idadeLabel('1964-03-12', '2026-08-25'), '62 anos');
+  });
+  test('1 ano no singular (motorv8mp4: a > 1 ? anos : ano)', () => {
+    assert.equal(idadeLabel('2025-03-12', '2026-08-25'), '1 ano');
+  });
+  test('lactente: 0 ano', () => {
+    assert.equal(idadeLabel('2026-03-12', '2026-08-25'), '0 ano');
+  });
+  test('sem data de nascimento -> string vazia (quem decide o travessao e a tela)', () => {
+    assert.equal(idadeLabel(undefined, '2026-08-25'), '');
   });
 });

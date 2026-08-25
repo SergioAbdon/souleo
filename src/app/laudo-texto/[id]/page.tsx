@@ -19,7 +19,7 @@ import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
 import MolduraA4 from '@/components/laudo/MolduraA4';
 import { gerarPdfHtmlTexto, fmtCep, fmtTel } from '@/lib/pdf-texto';
-import { calcIdade, fmtData } from '@/lib/paciente-fmt';
+import { idadeLabel, fmtData } from '@/lib/paciente-fmt';
 
 export default function LaudoTextoPage() {
   const params = useParams();
@@ -41,7 +41,8 @@ export default function LaudoTextoPage() {
   const sigTexto = profile
     ? `${profile.nome || ''}\n${especialidade}\nCRM/${profile.ufCrm || ''} ${profile.crm || ''}`
     : '';
-  const idade = calcIdade(exame?.pacienteDtnasc as string | undefined);
+  // Idade NA DATA DO EXAME (paridade com o motor) — ver paciente-fmt.
+  const idade = idadeLabel(exame?.pacienteDtnasc as string | undefined, exame?.dataExame as string | undefined);
   const clinicaEnd = fmtCep((workspace?.endereco as string) || '');
   // 2º telefone do local entrava no rodapé do motor e sumia no laudo-texto —
   // uma folha só, mesmo rodapé (S5-T10).
@@ -74,6 +75,10 @@ export default function LaudoTextoPage() {
       // Validação de modalidade: exame de motor não pode usar rota /laudo-texto.
       // `modalidadeDe` (S5-T10) é o mesmo despacho da Worklist/ficha — doc do
       // catálogo sem `modalidade` não cai mais em 'motor' se for carótidas.
+      // Aperta de propósito (review M5): antes, tipo COM doc mas SEM
+      // `modalidade` ficava aqui; agora segue a mesma resolução da Worklist e
+      // da ficha — um só veredito de modalidade no produto inteiro. Tipo
+      // desconhecido (`t === null`) continua não sendo expulso da tela.
       if (t && modalidadeDe(t, tipoId) !== 'texto') {
         router.replace('/laudo/' + exameId);
         return;
@@ -246,7 +251,7 @@ export default function LaudoTextoPage() {
           identificacao={[
             [
               { label: 'NOME', valor: (exame?.pacienteNome as string) || '', flex: 2 },
-              { label: 'IDADE', valor: idade === null ? '' : `${idade} anos` },
+              { label: 'IDADE', valor: idade },
               { label: 'DATA DE NASCIMENTO', valor: fmtData(exame?.pacienteDtnasc as string | undefined) },
             ],
             [

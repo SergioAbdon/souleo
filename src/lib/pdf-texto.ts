@@ -6,7 +6,7 @@
 // (`montarPdfMoldura`). O shell duplicado morreu aqui.
 // ══════════════════════════════════════════════════════════════════
 import { montarPdfMoldura } from './pdf-moldura';
-import { calcIdade, fmtData } from './paciente-fmt';
+import { idadeLabel, fmtData } from './paciente-fmt';
 
 export type ArgsPdfTexto = {
   p1: string;
@@ -50,7 +50,9 @@ export function fmtCep(end: string): string {
 export function gerarPdfHtmlTexto(args: ArgsPdfTexto): string {
   const { p1, clinicaNome, tituloExame, identificacao: id, htmlCorpo, assinatura } = args;
   const especialidade = (assinatura.especialidade || '').replace(/\\/g, ' e ').replace(/\//g, ' e ');
-  const idade = calcIdade(id.nasc);
+  // Idade NA DATA DO EXAME (como o motor) — nunca a de hoje: reemitir
+  // um laudo antigo não pode mudar a idade impressa (S5-T10 fix / I1).
+  const idade = idadeLabel(id.nasc, id.dataExame);
 
   // Estilos do corpo do TipTap — o resto do CSS é da moldura.
   const cssCorpo = [
@@ -66,13 +68,13 @@ export function gerarPdfHtmlTexto(args: ArgsPdfTexto): string {
     titulo: tituloExame,
     identificacao: [
       [
-        { label: 'NOME', valor: id.nome, flex: 2 },
-        { label: 'IDADE', valor: idade === null ? '' : `${idade} anos` },
+        { label: 'NOME', valor: id.nome || '—', flex: 2 },
+        { label: 'IDADE', valor: idade || '—' },
         { label: 'DATA DE NASCIMENTO', valor: fmtData(id.nasc) },
       ],
       [
-        { label: 'CONVÊNIO', valor: id.convenio || '' },
-        { label: 'MÉDICO SOLICITANTE', valor: id.solicitante || '' },
+        { label: 'CONVÊNIO', valor: id.convenio || '—' },
+        { label: 'MÉDICO SOLICITANTE', valor: id.solicitante || '—' },
         { label: 'DATA DO EXAME', valor: fmtData(id.dataExame) },
       ],
     ],

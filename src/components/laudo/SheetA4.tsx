@@ -1,3 +1,4 @@
+'use client';
 // ══════════════════════════════════════════════════════════════════
 // SOULEO · Folha A4 do Laudo (motor) — hoje só o CORPO do eco.
 // Cabeçalho, identificação e rodapé saíram daqui pra MolduraA4 (S5-T10/D6),

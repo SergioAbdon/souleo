@@ -34,14 +34,34 @@ export function fmtData(d?: string): string {
   return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : d;
 }
 
-/** Idade em anos completos a partir de uma data yyyy-mm-dd. */
-export function calcIdade(dtnasc?: string): number | null {
+/**
+ * Idade em anos completos a partir de uma data yyyy-mm-dd.
+ *
+ * `ateData` (yyyy-mm-dd) fixa a data de referência — é a idade NA DATA DO
+ * EXAME, que é o que vai no laudo: um laudo reimpresso/reemitido anos depois
+ * não pode envelhecer o paciente no papel assinado (S5-T10 fix / achado I1).
+ * Sem `ateData` (ou com data inválida) cai em hoje — comportamento de sempre,
+ * que a ficha do paciente e a lista continuam usando.
+ */
+export function calcIdade(dtnasc?: string, ateData?: string): number | null {
   if (!dtnasc) return null;
   const nasc = new Date(dtnasc + 'T00:00:00');
   if (isNaN(nasc.getTime())) return null;
-  const hoje = new Date();
-  let idade = hoje.getFullYear() - nasc.getFullYear();
-  const aniversarioAno = new Date(hoje.getFullYear(), nasc.getMonth(), nasc.getDate());
-  if (hoje < aniversarioAno) idade--;
+  const ref = ateData ? new Date(ateData + 'T00:00:00') : new Date();
+  if (isNaN(ref.getTime())) return calcIdade(dtnasc);
+  let idade = ref.getFullYear() - nasc.getFullYear();
+  const aniversarioAno = new Date(ref.getFullYear(), nasc.getMonth(), nasc.getDate());
+  if (ref < aniversarioAno) idade--;
   return idade >= 0 ? idade : null;
+}
+
+/**
+ * Idade como o motor escreve no laudo: `62 anos`, `1 ano`, `0 ano`
+ * (`motorv8mp4.js:1109-1115` — `a > 1 ? 'anos' : 'ano'`). Sem data de
+ * nascimento devolve '' (a moldura/tela é que decide o travessão).
+ */
+export function idadeLabel(dtnasc?: string, ateData?: string): string {
+  const i = calcIdade(dtnasc, ateData);
+  if (i === null) return '';
+  return `${i} ${i > 1 ? 'anos' : 'ano'}`;
 }

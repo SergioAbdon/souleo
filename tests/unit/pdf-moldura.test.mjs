@@ -13,6 +13,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { montarPdfMoldura } from '../../src/lib/pdf-moldura.ts';
 import { substituirCamposAdministrativos } from '../../src/lib/correcao-admin.ts';
+import { gerarPdfHtmlTexto } from '../../src/lib/pdf-texto.ts';
 
 // ── Padrão-ouro 1: template do MOTOR, copiado verbatim (pré-T10) ──
 function legadoMotor(v) {
@@ -156,7 +157,10 @@ const CHEIO = {
 const VAZIO = {
   ...CHEIO,
   logoB64: '', clinicaSlogan: '', telCompleto: '', sigB64: '', imagensPdfHtml: '',
-  outConv: '—', outSolic: '—',
+  // Campos de identificação VAZIOS de verdade (review M3): a moldura interpola
+  // cru, igual ao legado. Se alguém puser um `|| '—'` lá dentro, estes 2 campos
+  // divergem e o teste quebra — que é o ponto.
+  outConv: '', outSolic: '',
 };
 
 describe('montarPdfMoldura — igualdade byte-a-byte com o template legado', () => {
@@ -316,13 +320,39 @@ describe('montarPdfMoldura — texto livre', () => {
 });
 
 describe('montarPdfMoldura — campos e âncoras', () => {
-  test('campo vazio vira travessão (mesma convenção da correção admin)', () => {
+  test('valor entra CRU — o travessão é responsabilidade do chamador (M3)', () => {
     const html = montarPdfMoldura({
       titulo: 'T',
       identificacao: [[{ label: 'CONVÊNIO', valor: '' }]],
       corpoHtml: '', cfg: { p1: '#000', clinicaNome: 'X', sigTexto: '' },
     });
-    assert.ok(html.includes('>CONVÊNIO</span><span style="display:block;font-size:8.5pt;font-weight:500;">—</span>'));
+    assert.ok(html.includes('>CONVÊNIO</span><span style="display:block;font-size:8.5pt;font-weight:500;"></span>'));
+  });
+
+  test('quem defaulta é o chamador: o PDF de texto ainda imprime — no campo vazio', () => {
+    const html = gerarPdfHtmlTexto({
+      p1: '#000', clinicaNome: 'X', tituloExame: 'T',
+      identificacao: { nome: '', convenio: '', solicitante: '' },
+      htmlCorpo: '<p>x</p>', assinatura: { nome: 'Dr. Y' },
+    });
+    for (const rotulo of ['NOME', 'IDADE', 'CONVÊNIO', 'MÉDICO SOLICITANTE', 'DATA DE NASCIMENTO', 'DATA DO EXAME']) {
+      assert.ok(
+        html.includes(`>${rotulo}</span><span style="display:block;font-size:8.5pt;font-weight:500;">—</span>`),
+        `campo ${rotulo} deveria cair no travessão`,
+      );
+    }
+  });
+
+  test('IDADE do PDF de texto é a da DATA DO EXAME, não a de hoje (I1)', () => {
+    const args = {
+      p1: '#000', clinicaNome: 'X', tituloExame: 'T',
+      identificacao: { nome: 'A', nasc: '1964-03-12', dataExame: '2026-01-10' },
+      htmlCorpo: '', assinatura: { nome: 'Dr. Y' },
+    };
+    assert.ok(gerarPdfHtmlTexto(args).includes('>IDADE</span><span style="display:block;font-size:8.5pt;font-weight:500;">61 anos</span>'));
+    // Mesmo paciente, exame do ano seguinte (já passou do aniversário): 62.
+    const depois = { ...args, identificacao: { ...args.identificacao, dataExame: '2026-08-25' } };
+    assert.ok(gerarPdfHtmlTexto(depois).includes('>IDADE</span><span style="display:block;font-size:8.5pt;font-weight:500;">62 anos</span>'));
   });
 
   test('a correção administrativa ainda acha as âncoras no HTML da moldura', () => {

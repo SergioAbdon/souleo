@@ -40,8 +40,12 @@ export type ArgsMoldura = {
   cfg: CfgMoldura;
 };
 
+// Valor entra CRU, como nos dois templates legados: o travessão de campo
+// vazio é do chamador (o motor lê os `#out-*` já com `|| '—'`, o pdf-texto
+// defaulta na hora de montar). Um `|| '—'` aqui divergiria do legado —
+// invisível hoje e mentiroso no dia em que um chamador parasse de defaultar.
 function campo(c: CampoId, p1: string): string {
-  return `<div style="flex:${c.flex ?? 1}"><span style="display:block;font-size:5.5pt;font-weight:600;color:${p1};text-transform:uppercase;">${c.label}</span><span style="display:block;font-size:8.5pt;font-weight:500;">${c.valor || '—'}</span></div>`;
+  return `<div style="flex:${c.flex ?? 1}"><span style="display:block;font-size:5.5pt;font-weight:600;color:${p1};text-transform:uppercase;">${c.label}</span><span style="display:block;font-size:8.5pt;font-weight:500;">${c.valor}</span></div>`;
 }
 
 export function montarPdfMoldura(a: ArgsMoldura): string {
