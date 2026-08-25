@@ -18,13 +18,11 @@ function motorCalc() { motorCall('calc'); }
 
 type Props = {
   clinicaNome: string;
-  medicoNome: string;
   medicoInfo: string;
   onVoltar: () => void;
   onSalvarEmitir: () => void;
   onLimpar: () => void;
   onImportarDicom?: () => void;
-  dicomLoading?: boolean;
   dicomImportado?: boolean;
   ortancAtivo?: boolean;
   /**
@@ -57,7 +55,7 @@ type Props = {
   onToast?: (msg: string) => void;
 };
 
-export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, onImportarDicom, dicomLoading, dicomImportado, ortancAtivo, totalMedidasDicom, totalImagensDicom, onAbrirGaleria, emitido, modoEmitido, readOnlyIdentificacao, readOnlyMotor, exameOrigem, exameCpf, exameAcc, onCorrigirAdmin, wsId, onToast }: Props) {
+export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, onImportarDicom, dicomImportado, ortancAtivo, totalMedidasDicom, totalImagensDicom, onAbrirGaleria, emitido, modoEmitido, readOnlyIdentificacao, readOnlyMotor, exameOrigem, exameCpf, exameAcc, onCorrigirAdmin, wsId, onToast }: Props) {
   const [idDesbloqueado, setIdDesbloqueado] = useState(false);
   const [motorDesbloqueado, setMotorDesbloqueado] = useState(false);
   // Detectar quando readOnlyMotor muda de true→false (médico desbloqueou)
@@ -213,7 +211,7 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
               return (
                 <button
                   onClick={onImportarDicom}
-                  disabled={dicomLoading || dicomImportado || !temMedidas}
+                  disabled={dicomImportado || !temMedidas}
                   title={
                     dicomImportado
                       ? 'Medidas já importadas'
@@ -228,7 +226,7 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
                         ? 'bg-purple-600 text-white hover:bg-purple-700'
                         : 'bg-gray-200 text-gray-500'
                   } disabled:opacity-50`}>
-                  {dicomLoading ? '⏳' : dicomImportado ? '✅ Importado' : temMedidas ? `📡 Importar (${totalMedidasDicom})` : '📡 Importar'}
+                  {dicomImportado ? '✅ Importado' : temMedidas ? `📡 Importar (${totalMedidasDicom})` : '📡 Importar'}
                 </button>
               );
             })()}

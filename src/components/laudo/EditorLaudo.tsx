@@ -63,7 +63,6 @@ function Toolbar({ editor, onAddFrase, editable }: { editor: Editor | null; onAd
 // ── Ref exposto ──
 export type EditorLaudoRef = {
   getHTML: () => string;
-  getText: () => string;
   getAchadosHTML: () => string;
   getConclusoesHTML: () => string;
   getAchadosLines: () => string[];
@@ -131,7 +130,6 @@ const EditorLaudo = forwardRef<EditorLaudoRef, Props>(({ placeholder, onAddFrase
 
   useImperativeHandle(ref, () => ({
     getHTML: () => editor?.getHTML() || '',
-    getText: () => editor?.getText() || '',
 
     // Separar achados e conclusões do HTML unificado
     getAchadosHTML: () => {

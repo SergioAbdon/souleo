@@ -66,7 +66,6 @@ function LaudoPageInner() {
   const [exame, setExame] = useState<Record<string, unknown> | null>(null);
   const [popupOpen, setPopupOpen] = useState(false);
   const [emitido, setEmitido] = useState(false);
-  const [dicomLoading, setDicomLoading] = useState(false);
   const [dicomImportado, setDicomImportado] = useState(false);
   // Estado da galeria DICOM (modal full-screen com thumbnails + lightbox).
   // Adicionada em 14/05/2026 — médico consegue ver as imagens dentro do laudo.
@@ -467,16 +466,19 @@ function LaudoPageInner() {
     };
 
     // v3: carregar motor com retry e error handling
+    // S5-T12: cache-bust (`?v=${Date.now()}`) só no RETRY — a 1a carga usa a
+    // URL crua (cache do navegador vale) e só perde o cache quando a 1a
+    // tentativa falhou de verdade (s.onerror).
     let retryCount = 0;
-    function carregarScript() {
+    function carregarScript(retry = false) {
       const s = document.createElement('script');
-      s.src = `/motor/motorv8mp4.js?v=${Date.now()}`; // cache bust no retry
+      s.src = retry ? `/motor/motorv8mp4.js?v=${Date.now()}` : '/motor/motorv8mp4.js';
       s.onerror = () => {
         try { document.body.removeChild(s); } catch {}
         if (retryCount < 1) {
           retryCount++;
           console.warn('Motor: falha ao carregar, tentando novamente...');
-          setTimeout(carregarScript, 2000);
+          setTimeout(() => carregarScript(true), 2000);
         } else {
           console.error('Motor: falha definitiva apos retry');
           setMotorErro(true);
@@ -486,7 +488,6 @@ function LaudoPageInner() {
       document.body.appendChild(s);
     }
 
-    const script = { remove: () => {} }; // ref pra cleanup
     function motorInicializar() {
       setMotorLoaded(true);
       setTimeout(() => {
@@ -647,21 +648,6 @@ function LaudoPageInner() {
               };
               sidebar.addEventListener('input', onInputOrChange);
               sidebar.addEventListener('change', onInputOrChange);
-
-              // Sincronização b24 (Câmaras) ↔ b24_diast (Diastólica) — também
-              // via delegation (pra cobrir caso b24_diast ainda não existir):
-              const onB24Sync = (e: Event) => {
-                const t = e.target as HTMLInputElement | null;
-                if (!t || t.tagName !== 'INPUT') return;
-                if (t.id === 'b24') {
-                  const d = document.getElementById('b24_diast') as HTMLInputElement | null;
-                  if (d) d.value = t.value;
-                } else if (t.id === 'b24_diast') {
-                  const d = document.getElementById('b24') as HTMLInputElement | null;
-                  if (d) d.value = t.value;
-                }
-              };
-              sidebar.addEventListener('input', onB24Sync);
             }
 
             // fix (S5-T7 review, P1 — pré-existente desde ae71447, achado na
@@ -828,7 +814,16 @@ function LaudoPageInner() {
         laudoHtml: exame.laudoHtml as string | undefined,
       });
       if (fonte.medidas) {
-        Object.entries(fonte.medidas).forEach(([id, val]) => { if (val) setVal(id, val); });
+        Object.entries(fonte.medidas).forEach(([id, val]) => {
+          if (!val) return;
+          // legado (S5-T12): a chave antiga da Diastólica foi unificada com
+          // 'b24' (SidebarLaudo.tsx:422, Contrato da Ponte D7 — teste
+          // contrato-ponte-ids.test.mjs pina esta referência em 1). Exames
+          // salvos ANTES da unificação ainda têm a chave extinta em
+          // `medidas`; sem este redirecionamento o valor ficaria órfão (não
+          // sobra elemento no DOM pro setVal escrever).
+          setVal(id === 'b24_diast' ? 'b24' : id, val);
+        });
         // S5-T3: `setVal` só escreve `.value` — o Senna90 já lê o select
         // direto do DOM (não depende disso pro texto sair certo), mas sem
         // isto o painel manual restaurado ficaria invisível (parecendo que
@@ -902,7 +897,7 @@ function LaudoPageInner() {
     // medidas.convenio e os dois divergiam. Load usa o fallback do topo.
     const campos = ['nome', 'dtnasc', 'dtexame', 'solicitante', 'sexo', 'ritmo', 'peso', 'altura',
       'b7', 'b8', 'b9', 'b10', 'b11', 'b12', 'b13', 'b28', 'b29', 'b24', 'b25',
-      'b19', 'b20', 'b21', 'b22', 'b23', 'b24_diast', 'b37', 'b38', 'b54', 'b32', 'b33', 'gls_ve', 'gls_vd', 'lars',
+      'b19', 'b20', 'b21', 'b22', 'b23', 'b37', 'b38', 'b54', 'b32', 'b33', 'gls_ve', 'gls_vd', 'lars',
       'b34', 'b35', 'b34t', 'b36', 'b39', 'b40', 'b39p', 'b40p', 'psmap',
       'b41', 'b42', 'b45', 'b46', 'b47', 'b46t', 'b47t', 'b50', 'b51', 'b52', 'b50p',
       'b55', 'b56', 'b57', 'b58', 'b59', 'b60', 'b61', 'b62', 'wk-mob', 'wk-esp', 'wk-cal', 'wk-sub',
@@ -1623,12 +1618,10 @@ Valores de referência: ASE/EACVI 2015; ASE 2025.
     toast('Word (.docx) baixado!');
   }
 
+  // S5-T12: delega pro `window.showToast` (mesmo cssText — instalado no
+  // efeito "Carregar motor", page.tsx:~421) em vez de duplicar o markup aqui.
   function toast(msg: string) {
-    const el = document.createElement('div');
-    el.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:99999;background:#1E293B;color:#fff;padding:10px 20px;border-radius:9px;font-size:13px;font-weight:600;font-family:IBM Plex Sans,sans-serif;box-shadow:0 4px 20px rgba(0,0,0,.3);';
-    el.textContent = msg;
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), 3000);
+    (window as unknown as { showToast?: (msg: string) => void }).showToast?.(msg);
   }
 
   // Formatar telefone: 9130854000 → (91) 3085-4000
@@ -1675,7 +1668,7 @@ Valores de referência: ASE/EACVI 2015; ASE 2025.
     const camposNum = [
       'peso','altura',
       'b7','b8','b9','b10','b11','b12','b13','b28','b29',
-      'b19','b20','b21','b22','b23','b24','b24_diast','b25','lars',
+      'b19','b20','b21','b22','b23','b24','b25','lars',
       'b54','b33','gls_ve','gls_vd',
       'b45','b46','b47','b50','b51','b52','b46t','b47t','b50p',
       'psmap','b37',
@@ -1750,13 +1743,11 @@ Valores de referência: ASE/EACVI 2015; ASE 2025.
       )}
       <SidebarLaudo
         clinicaNome={clinicaNome}
-        medicoNome={profile?.nome as string || ''}
         medicoInfo={medicoInfo}
         onVoltar={handleVoltar}
         onSalvarEmitir={handleSalvarEmitir}
         onLimpar={handleLimpar}
         onImportarDicom={handleImportarDicom}
-        dicomLoading={dicomLoading}
         dicomImportado={dicomImportado}
         ortancAtivo={!!workspace?.ortancAtivo}
         totalMedidasDicom={schemaAntigo ? totalMedidasBrutas : inputsImportaveis.length}
@@ -1859,12 +1850,6 @@ Valores de referência: ASE/EACVI 2015; ASE 2025.
       <style jsx global>{`
         .sf{width:100%;border:1.5px solid #E5E7EB;border-radius:5px;padding:5px 7px;font-size:12px;font-family:'IBM Plex Sans',sans-serif;color:#111827;background:#fff;transition:border-color .15s;}
         .sf:focus{outline:none;border-color:#1E3A5F;}
-        #achados-body .linha-wrapper{display:flex;align-items:flex-start;gap:6px;padding:2px 0;border-bottom:1px solid #f1f5f9;margin:0;}
-        #achados-body textarea{flex:1;border:none;resize:none;font-size:8.5pt;font-family:'IBM Plex Sans',sans-serif;line-height:1.5;padding:1px 3px;overflow:hidden;min-width:0;}
-        #achados-body textarea:focus{background:#FFFBEB;border-radius:2px;outline:none;}
-        #conclusao-list li{display:flex;align-items:flex-start;gap:6px;padding:3px 0;border-bottom:1px solid #f1f5f9;}
-        .conclusao-text{flex:1;font-weight:500;font-size:8pt;line-height:1.5;outline:none;}
-        .conclusao-text:focus{background:#FFFBEB;border-radius:2px;}
 
         /* ── TipTap: heading CONCLUSÃO dentro do editor ── */
         .tiptap h3{background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;margin:8px -8px 4px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
@@ -1884,14 +1869,11 @@ Valores de referência: ASE/EACVI 2015; ASE 2025.
         .btn-add-top:hover{background:#EFF6FF;border-color:#2563EB;}
 
         /* ── Drag & drop visual feedback ── */
-        .linha-wrapper.dragging,.conc-wrapper.dragging{opacity:.4;background:#DBEAFE;}
-        .linha-wrapper.drag-over,.conc-wrapper.drag-over{border-top:2px solid #2563EB;}
-        .linha-wrapper{position:relative;}
+        .conc-wrapper.dragging{opacity:.4;background:#DBEAFE;}
+        .conc-wrapper.drag-over{border-top:2px solid #2563EB;}
         .conc-wrapper{position:relative;}
 
         /* ── Hover: mostrar botões só ao passar o mouse ── */
-        .linha-wrapper .btn-rm,.linha-wrapper .btn-plus-inline,.linha-wrapper .drag-handle{opacity:0;transition:opacity .15s;}
-        .linha-wrapper:hover .btn-rm,.linha-wrapper:hover .btn-plus-inline,.linha-wrapper:hover .drag-handle{opacity:.6;}
         .conc-wrapper .btn-rm,.conc-wrapper .drag-handle{opacity:0;transition:opacity .15s;}
         .conc-wrapper:hover .btn-rm,.conc-wrapper:hover .drag-handle{opacity:.6;}
 

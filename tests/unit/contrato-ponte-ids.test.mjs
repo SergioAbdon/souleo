@@ -81,24 +81,29 @@ const IDENTIFICACAO_NAO_ZERADA_SEMPRE = {
 // zera sexo normalmente (camposSel) e a exceção não se aplica a ele.
 
 // (4) ids extintos: sem elemento na JSX, mas ainda referenciados em page.tsx.
-// b24_diast foi unificado com b24 (comentário SidebarLaudo.tsx:422) — dead id
-// em 3 lugares (coletarMedidas, limparCampos, sync handler b24↔b24_diast em
-// page.tsx:~651-659). Fica na allowlist até a Task 13 REMOVER as 3
-// referências — quando remover, REMOVER esta entrada também (o teste abaixo
-// falha se a entrada ficar pra trás sem uso, forçando a limpeza completa).
-const IDS_EXTINTOS = ['b24_diast'];
+// b24_diast foi unificado com b24 (comentário SidebarLaudo.tsx:422). A S5-T12
+// REMOVEU as 3 referências vivas nas listas/sync handler (coletarMedidas,
+// camposNum, o listener b24↔b24_diast) — nenhuma sobra dentro de
+// `campos`/`camposNum`/`camposSel`, então a allowlist fica vazia (não
+// apagada: é o lugar certo pra registrar o PRÓXIMO id extinto, se algum
+// surgir). A única referência que sobrou no arquivo é INTENCIONAL — ver
+// B24_DIAST_TOTAL_REFS_ATUAL abaixo — e por isso não entra aqui: (4)/(4b) só
+// enxergam os 3 arrays rastreados, e o mapeamento legado vive fora deles.
+const IDS_EXTINTOS = [];
 
-// Contagem TOTAL (revisão S5-T11 fix, Finding 2): (4)/(4b) só olham os ids
-// DENTRO de `campos`/`camposNum`/`camposSel` — o sync handler b24↔b24_diast
-// (page.tsx:651-659) referencia o id fora dos 3 arrays rastreados e fica
-// invisível pra eles; removê-lo de UM dos 2 arrays (limpeza parcial) também
-// passava batido, porque a união dos arrays ainda continha a outra ocorrência.
-// Esta contagem é sobre o ARQUIVO INTEIRO (`b24_diast` cru, comentários
-// inclusos de propósito — captura os 2 comentários que citam o id em
-// page.tsx:651-652 também) — qualquer mudança (parcial ou total) precisa
-// tocar este número conscientemente. Hoje: 2 comentários + 2 no sync handler
-// (linhas 657/659) + 1 em `campos` (905) + 1 em `camposNum` (1678) = 6.
-const B24_DIAST_TOTAL_REFS_ATUAL = 6;
+// Contagem TOTAL (revisão S5-T11 fix, Finding 2; zerada e repactuada na
+// S5-T12): (4)/(4b) só olham os ids DENTRO de `campos`/`camposNum`/
+// `camposSel` — não pegam um mapeamento solto no meio do código. Depois da
+// limpeza da T12 (listas + sync handler removidos), a ÚNICA referência que
+// sobra no arquivo é DELIBERADA: o mapeamento legado em `preencherExame`
+// (chave antiga da Diastólica → 'b24', pra exames salvos ANTES da
+// unificação com b24 continuarem carregando o valor — comentário ao lado
+// do `setVal` cita este teste). Pino em 1 de propósito: se cair pra 0, o
+// mapeamento legado foi removido (ok se for deliberado — depreciar suporte a
+// exames pré-unificação — apagar este teste e IDS_EXTINTOS já não muda,
+// pois já está vazio); se subir, alguma referência nova apareceu no arquivo
+// — investigar antes de só atualizar o número.
+const B24_DIAST_TOTAL_REFS_ATUAL = 1;
 
 function contarRefsB24Diast() {
   return (pageSrc.match(/b24_diast/g) || []).length;
@@ -114,12 +119,13 @@ describe('Contrato da Ponte tela↔motor (D7) — os 3 arquivos concordam nos id
     // Pisos abaixo da contagem real de hoje mas bem acima de zero — cortam
     // qualquer regressão da regex de extração (aspas trocadas, id virar
     // template literal, etc.) que zeraria o Set/array sem quebrar a sintaxe.
-    // Contagens reais hoje: jsxIds=96, adapterIds=67, campos=67, camposNum=39,
+    // Contagens reais hoje (pós S5-T12, que tirou 'b24_diast' de campos e
+    // camposNum): jsxIds=96, adapterIds=67, campos=66, camposNum=38,
     // camposSel=24 (ajustar o piso — nunca o alvo — se encolherem de verdade).
     assert.ok(jsxIds.size >= 80, `idsJsx() extraiu só ${jsxIds.size} ids (esperado >= 80, hoje real: 96) — regex de extração quebrou?`);
     assert.ok(adapterIds.size >= 50, `idsAdapter() extraiu só ${adapterIds.size} ids (esperado >= 50, hoje real: 67) — regex de extração quebrou?`);
-    assert.ok(camposColetar.length >= 50, `campos (coletarMedidas) extraiu só ${camposColetar.length} ids (esperado >= 50, hoje real: 67) — regex de extração quebrou?`);
-    assert.ok(camposNum.length >= 25, `camposNum extraiu só ${camposNum.length} ids (esperado >= 25, hoje real: 39) — regex de extração quebrou?`);
+    assert.ok(camposColetar.length >= 50, `campos (coletarMedidas) extraiu só ${camposColetar.length} ids (esperado >= 50, hoje real: 66) — regex de extração quebrou?`);
+    assert.ok(camposNum.length >= 25, `camposNum extraiu só ${camposNum.length} ids (esperado >= 25, hoje real: 38) — regex de extração quebrou?`);
     assert.ok(camposSel.length >= 15, `camposSel extraiu só ${camposSel.length} ids (esperado >= 15, hoje real: 24) — regex de extração quebrou?`);
   });
 
@@ -158,33 +164,32 @@ describe('Contrato da Ponte tela↔motor (D7) — os 3 arquivos concordam nos id
     }
   });
 
-  test('(4) nenhuma referência a id extinto fora da allowlist (b24_diast até a Task 13)', () => {
+  test('(4) nenhuma referência a id extinto fora da allowlist', () => {
     const todasRefs = new Set([...camposColetar, ...camposNum, ...camposSel]);
     const extintasReferenciadas = [...todasRefs].filter(id => !jsxIds.has(id));
     const foraDaAllowlist = extintasReferenciadas.filter(id => !IDS_EXTINTOS.includes(id));
     assert.deepEqual(foraDaAllowlist, [], `id extinto (sem elemento JSX) referenciado sem allowlist: ${foraDaAllowlist.join(', ')}`);
   });
 
-  test('(4b) allowlist de extintos não fica pra trás: cada entrada precisa continuar extinta E ainda referenciada em ALGUM lugar do arquivo (não só nos 3 arrays rastreados — senão Task 13 já limpou tudo, inclusive o sync handler, e é hora de remover a entrada)', () => {
+  test('(4b) allowlist de extintos não fica pra trás: cada entrada precisa continuar extinta E ainda referenciada em ALGUM lugar do arquivo (não só nos 3 arrays rastreados)', () => {
+    // Hoje IDS_EXTINTOS está vazia (S5-T12 limpou o único id que morava
+    // aqui, 'b24_diast' — ver (4c)) — o loop abaixo é um no-op até o
+    // próximo id extinto entrar na allowlist. Fica pronto pra reuso.
     for (const id of IDS_EXTINTOS) {
       assert.ok(!jsxIds.has(id), `'${id}' está na allowlist de extintos mas REAPARECEU na JSX — investigar (duplicidade de id?) e remover da allowlist`);
     }
-    // Contagem no ARQUIVO INTEIRO (não só campos/camposNum/camposSel): pega o
-    // sync handler b24↔b24_diast (fora dos arrays rastreados) e qualquer
-    // remoção parcial/assimétrica entre os 2 arrays — se caísse a 0 aqui,
-    // Task 13 já limpou tudo e esta allowlist ficou pra trás.
-    assert.ok(contarRefsB24Diast() > 0, `'b24_diast' não tem mais NENHUMA referência em page.tsx (nem nos arrays, nem no sync handler) — Task 13 já limpou, remover 'b24_diast' de IDS_EXTINTOS e apagar o teste (4c)`);
   });
 
-  test('(4c) contagem TOTAL de referências a b24_diast em page.tsx (arquivo inteiro, não só os arrays rastreados) — pega o sync handler invisível a (4)/(4b) e qualquer remoção parcial/assimétrica entre os 2 arrays', () => {
+  test('(4c) contagem TOTAL de referências a b24_diast em page.tsx (arquivo inteiro, não só os arrays rastreados) — pina a ÚNICA referência intencional que sobrou (o mapeamento legado em preencherExame)', () => {
     const atual = contarRefsB24Diast();
     assert.equal(
       atual,
       B24_DIAST_TOTAL_REFS_ATUAL,
       `contagem de 'b24_diast' em page.tsx era ${B24_DIAST_TOTAL_REFS_ATUAL}, agora é ${atual} — ` +
-      'limpeza em andamento (parcial ou total)? Se foi um ajuste deliberado, atualize ' +
-      'B24_DIAST_TOTAL_REFS_ATUAL para o novo número; se chegou a 0, a Task 13 terminou — ' +
-      "remova 'b24_diast' de IDS_EXTINTOS e apague os testes (4c) e o trecho de (4b) referente a ele.",
+      'mudança deliberada (ex.: aposentar o mapeamento legado, contagem cai pra 0) ou ' +
+      'referência nova apareceu por engano (contagem sobe)? Se foi deliberado, atualize ' +
+      'B24_DIAST_TOTAL_REFS_ATUAL para o novo número; se chegou a 0, o suporte a exames ' +
+      "pré-unificação acabou — pode apagar este teste e a linha do mapeamento em preencherExame.",
     );
   });
 });
