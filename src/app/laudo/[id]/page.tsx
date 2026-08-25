@@ -38,6 +38,7 @@ import { senna90Primario } from '@/lib/primary-engine-flag';
 import { calcularSenna90, criarDebounce } from '@/lib/senna90-bridge';
 import { montarLaudoHtml } from '@/lib/senna90-render';
 import { mesclarLinhas } from '@/lib/laudo-merge';
+import { checkboxParaMedida, medidaParaChecked } from '@/lib/checkbox-codec';
 
 export default function LaudoPage() {
   const params = useParams();
@@ -486,15 +487,17 @@ export default function LaudoPage() {
 
             // FIX 12/05/2026: Event delegation no container, NÃO em cada input.
             //
-            // Bug antigo: querySelectorAll só pegava inputs das seções ABERTAS no
-            // momento do load (Válvulas e Contratilidade começam fechadas — seus
-            // inputs nem existiam no DOM). Quando o médico abria essas seções e
-            // digitava, calc() não rodava → frases não apareciam.
+            // Bug antigo (HISTÓRICO — corrigido pelo nº4/S5-T4, `Sec` agora monta
+            // os filhos SEMPRE e só alterna `hidden`): querySelectorAll só pegava
+            // inputs das seções ABERTAS no momento do load (Sistólica e Segmentar
+            // começam fechadas — seus inputs nem existiam no DOM). Quando o médico
+            // abria essas seções e digitava, calc() não rodava → frases não apareciam.
             //
-            // Solução: um único listener no #laudo-sidebar (sempre presente).
-            // Eventos `input`/`change` borbulham (bubble) pro container, e
-            // checamos o target. Funciona pra inputs adicionados depois (seções
-            // expandidas, auto-fill DICOM futuro, etc).
+            // Solução (ainda vale, motivo diferente hoje): um único listener no
+            // #laudo-sidebar (sempre presente). Eventos `input`/`change` borbulham
+            // (bubble) pro container, e checamos o target. Funciona pra inputs
+            // adicionados depois (auto-fill DICOM, importação SR, etc.) sem
+            // precisar re-anexar listener por campo.
             const sidebar = document.getElementById('laudo-sidebar');
             if (sidebar) {
               const onInputOrChange = (e: Event) => {
@@ -690,7 +693,7 @@ export default function LaudoPage() {
     // o check E reabre o painel (senão o escore salvo fica invisível até o
     // médico clicar de novo, e a próxima edição de medida o apagaria).
     if (el instanceof HTMLInputElement && el.type === 'checkbox') {
-      el.checked = val === '1';
+      el.checked = medidaParaChecked(val);
       if (el.id === 'wilkins-toggle') {
         const fields = document.getElementById('wilkins-fields');
         if (fields) fields.style.display = el.checked ? 'grid' : 'none';
@@ -722,7 +725,8 @@ export default function LaudoPage() {
       const el = document.getElementById(id) as HTMLInputElement | null;
       if (!el) return;
       // Checkbox não tem `.value` significativo — grava '1'/'0' (setVal sabe ler de volta).
-      m[id] = el.type === 'checkbox' ? (el.checked ? '1' : '0') : (el.value || '');
+      // Codec extraído/testado em `src/lib/checkbox-codec.ts` (M4, revisão S5-T4).
+      m[id] = el.type === 'checkbox' ? checkboxParaMedida(el.checked) : (el.value || '');
     });
     return m;
   }
@@ -1464,9 +1468,12 @@ ${imagensPdfHtml}
   }
 
   /**
-   * Zera os campos do motor pelos IDs conhecidos (não depende de a seção
-   * estar aberta/fechada no DOM — `Sec` só monta children com `open=true`;
-   * mesma motivação do fix de event-delegation).
+   * Zera os campos do motor pelos IDs conhecidos por id — funciona com a
+   * seção aberta ou fechada (desde nº4/S5-T4, `Sec` monta os filhos SEMPRE e
+   * só alterna `hidden`; getElementById por id nunca dependeu do container
+   * estar visível, então esta função nunca teve o problema que o
+   * event-delegation acima corrigiu — mas antes do nº4 uma seção fechada
+   * podia nem ter o input no DOM pra zerar).
    *
    * Dois chamadores: o botão "Limpar" (com `confirm`, acima) e a TROCA de
    * exame (S5-T2 fix3). A wave 2 tinha escrito uma segunda limpeza a partir
@@ -1523,6 +1530,12 @@ ${imagensPdfHtml}
     setVal('diast-manual-sel', '-1');
     const setDiastModoFn = (window as unknown as Record<string, unknown>).setDiastModo as ((m: string) => void) | undefined;
     if (setDiastModoFn) setDiastModoFn('auto');
+    // M1 (review S5-T4): mesma classe de bug do Wilkins/diastólica acima —
+    // zerar `b40p` não esconde `#field-psmap` (quem faz isso é `refluxoPulmonar()`,
+    // só chamado pelo onChange do próprio select). Sem isto o campo fica
+    // visível e vazio depois de "Limpar".
+    const refluxoPulmonarFn = (window as unknown as Record<string, unknown>).refluxoPulmonar as (() => void) | undefined;
+    if (refluxoPulmonarFn) refluxoPulmonarFn();
     if (trocaDeExame) {
       // Identificação do paciente ANTERIOR: `preencherExame()` só escreve
       // campo vazio (`if (el && !el.value && val)`), então sem zerar aqui o

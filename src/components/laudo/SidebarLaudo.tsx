@@ -448,6 +448,14 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
           {/* Wilkins Score — abaixo da área mitral */}
           <button type="button"
             onClick={() => {
+              // I1 (review S5-T4): botão não tem `.section-btn`/`disabled` —
+              // sem este guard, clicar aqui num laudo EMITIDO disparava
+              // `change` → Senna90 → `setContent`, reescrevendo o texto do
+              // laudo assinado. `motorBloqueado` é o mesmo lock que trava
+              // todo o resto do motor; reabre sozinho quando o médico faz a
+              // reedição clínica (motorDesbloqueado vira true, ver useEffect
+              // acima) — simétrico, sem tela nova.
+              if (motorBloqueado) return;
               const cb = document.getElementById('wilkins-toggle') as HTMLInputElement;
               const fields = document.getElementById('wilkins-fields');
               const icon = document.getElementById('wilkins-icon');
