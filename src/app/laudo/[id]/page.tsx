@@ -17,7 +17,7 @@ import { dataLocalHoje } from '@/lib/utils';
 // gerarESalvarPdf legado removido — emissao + PDF agora sao server-side em /api/emitir
 import SidebarLaudo from '@/components/laudo/SidebarLaudo';
 import SheetA4 from '@/components/laudo/SheetA4';
-import DicomGallery, { buscarUrlsAssinadas } from '@/components/laudo/DicomGallery';
+import DicomGallery, { buscarUrlsAssinadas, renderPaginas } from '@/components/laudo/DicomGallery';
 import DicomSrImport from '@/components/laudo/DicomSrImport';
 import { normalizarParaImport, prefixoArquivoPorTipo, isSchemaAntigo, InputImport, MedidaSr, MapaSr, SR_TO_MOTOR } from '@/lib/dicom-sr-mapping';
 import { carregarPerfilAparelho } from '@/lib/perfil-aparelho';
@@ -41,6 +41,7 @@ import { mesclarLinhas } from '@/lib/laudo-merge';
 import { checkboxParaMedida, medidaParaChecked } from '@/lib/checkbox-codec';
 import { TIPOS_LAUDO_PADRAO, modalidadeDe, type TipoLaudo } from '@/lib/tipos-laudo';
 import { montarPdfMoldura } from '@/lib/pdf-moldura';
+import { montarParamsHtml } from '@/lib/pdf-params';
 
 // nº16 (S5-T7): remount limpo por exame. Antes o componente NÃO desmontava
 // ao navegar /laudo/A → /laudo/B (mesma rota, só o param muda) — todo o
@@ -1333,6 +1334,20 @@ function LaudoPageInner() {
     return editorRef.current?.getConclusoesHTML() || '';
   }
 
+  // ── Raspagem única da tabela de parâmetros (S5-T13) ──
+  // Usada por gerarPdfHtml/handleCopiarFormatado (via montarParamsHtml,
+  // pdf-params.ts) e por handleCopiarTexto/handleBaixarWord (direto —
+  // formatação própria de cada um, não é HTML de tabela). `textContent`
+  // (não innerHTML): o motor só escreve texto puro em cada `<td>`, nunca
+  // markup aninhado — ver pdf-params.ts sobre o porquê disso ser seguro.
+  function lerParamsDoDOM(): string[][] {
+    const rows: string[][] = [];
+    document.querySelectorAll('#params-tbody tr').forEach((tr) => {
+      rows.push(Array.from(tr.querySelectorAll('td')).map((td) => td.textContent || ''));
+    });
+    return rows;
+  }
+
   // ── Gerar HTML do PDF a partir do DOM ──
   // `incluirImagensParam` (decisão 15/05/2026): se passado, sobrescreve
   // o state `imagensIncluidasNoPdf` — usado pelo handleEmitir() que recebe
@@ -1344,35 +1359,10 @@ function LaudoPageInner() {
     // Nome do arquivo dinâmico por tipoExame
     const nomeArq = prefixoArquivoPorTipo(exame?.tipoExame as string | undefined) + ' ' + nome.trim().toUpperCase();
 
-    // Coletar tabela de parâmetros — reconstruir do DOM com larguras fixas
-    const rows = document.querySelectorAll('#params-tbody tr');
-    let paramsRows = '';
-    rows.forEach(tr => {
-      let rowHTML = '<tr>';
-      tr.querySelectorAll('td').forEach((td, idx) => {
-        const divider = idx === 4 ? `border-left:2px solid ${p1};` : '';
-        rowHTML += `<td style="border:0.5px solid #ccc;padding:2px 5px;${divider}">${td.innerHTML}</td>`;
-      });
-      rowHTML += '</tr>';
-      paramsRows += rowHTML;
-    });
-
-    const paramsHTML = `<table style="border-collapse:collapse;width:100%;font-size:7.5pt;table-layout:fixed;">
-<colgroup><col style="width:22%"/><col style="width:8%"/><col style="width:6%"/><col style="width:14%"/><col style="width:22%"/><col style="width:8%"/><col style="width:6%"/><col style="width:14%"/></colgroup>
-<thead><tr>
-<th style="background:${p1}!important;color:#fff;padding:2px 5px;font-weight:600;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">Parâmetro</th>
-<th style="background:${p1}!important;color:#fff;padding:2px 5px;font-weight:600;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">Valor</th>
-<th style="background:${p1}!important;color:#fff;padding:2px 5px;font-weight:600;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">Unid.</th>
-<th style="background:${p1}!important;color:#fff;padding:2px 5px;font-weight:600;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">Referência</th>
-<th style="background:${p1}!important;color:#fff;padding:2px 5px;font-weight:600;text-align:left;border-left:2px solid #fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;">Parâmetro</th>
-<th style="background:${p1}!important;color:#fff;padding:2px 5px;font-weight:600;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">Valor</th>
-<th style="background:${p1}!important;color:#fff;padding:2px 5px;font-weight:600;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">Unid.</th>
-<th style="background:${p1}!important;color:#fff;padding:2px 5px;font-weight:600;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">Referência</th>
-</tr></thead><tbody>${paramsRows}</tbody></table>
-<div style="font-size:5.5pt;color:#888;line-height:1.4;padding:2px 4px;border-top:0.5px solid #ddd;">
-DDVE= Diâmetro diastólico do VE. DSVE= Diâmetro sistólico do VE. VE= Ventrículo esquerdo. VD= Ventrículo direito.<br/>
-Valores de referência: ASE/EACVI 2015; ASE 2025.
-</div>`;
+    // Tabela de parâmetros — raspagem e montagem de HTML compartilhadas
+    // com handleCopiarFormatado() (S5-T13): mesmas rows, cabeçalho/rodapé
+    // do PDF via opts.pdf=true (ver pdf-params.ts).
+    const paramsHTML = montarParamsHtml(lerParamsDoDOM(), p1, { pdf: true });
 
     // Comentários e Conclusão — usar HTML do TipTap se disponível
     const achadosHTMLContent = getAchadosHTML();
@@ -1399,31 +1389,26 @@ Valores de referência: ASE/EACVI 2015; ASE 2025.
     //  - Fix CSS: `minmax(0, 1fr)` + `min-height: 0` força 4 linhas mesmo
     //    se imagem (aspect 4:3) tentar empurrar pra mais (bug 14/05 saía 6/pg)
     //  - Pulado se imagensIncluidasNoPdf=false (toggle no PopupSalvarEmitir)
+    // S5-T13: as páginas em si (grid 2×4, padding de slots vazios) vêm de
+    // `renderPaginas()` (DicomGallery.tsx) — mesma função que o botão
+    // "Imprimir Seleção" da galeria usa. Reconciliação da deriva S4: essa
+    // função usava classes/wording levemente diferentes (`.dicom-pg`/<h2>/
+    // "Imagens —") da cópia que já vivia na galeria (`.pagina`/<h1>/
+    // "Imagens DICOM —"); a versão da galeria é o padrão-ouro (ver relatório
+    // da task). O CSS aqui só re-branda com a cor da clínica (p1) e usa
+    // page-break-before (a folha do laudo já terminou antes desta seção).
     let imagensPdfHtml = '';
     if (incluirImagens && imagensSelecionadasPdf.length > 0) {
-      const POR_PG = 8;
-      const totPgs = Math.ceil(imagensSelecionadasPdf.length / POR_PG);
       const tipoLabel = (exame?.tipoExame as string | undefined) || '';
-      const pgsHtml = Array.from({ length: totPgs }, (_, pgIdx) => {
-        const slice = imagensSelecionadasPdf.slice(pgIdx * POR_PG, (pgIdx + 1) * POR_PG);
-        // Pad pra ter SEMPRE 8 slots por página (decisão 15/05/2026)
-        const padded = [...slice];
-        while (padded.length < POR_PG) padded.push('');
-        const slots = padded.map((url, i) => {
-          if (!url) return '<div class="dicom-slot dicom-slot-vazio"></div>';
-          const num = pgIdx * POR_PG + i + 1;
-          return `<div class="dicom-slot"><img src="${url}" alt="Imagem ${num}" /><span class="num">${num}</span></div>`;
-        }).join('');
-        return `<div class="dicom-pg"><h2>📸 Imagens — ${outNome}${tipoLabel ? ` · ${tipoLabel}` : ''} (página ${pgIdx + 1} de ${totPgs})</h2><div class="dicom-grid">${slots}</div></div>`;
-      }).join('');
+      const pgsHtml = renderPaginas(imagensSelecionadasPdf, outNome, tipoLabel);
       imagensPdfHtml = `<style>
-.dicom-pg{page-break-before:always;display:flex;flex-direction:column;height:calc(100vh - 16mm);padding:8mm;font-family:"IBM Plex Sans",sans-serif;}
-.dicom-pg h2{font-size:11pt;font-weight:700;color:${p1};margin-bottom:3mm;padding-bottom:2mm;border-bottom:1.5px solid ${p1};flex-shrink:0;}
-.dicom-grid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(4, minmax(0, 1fr));gap:3mm;min-height:0;}
-.dicom-slot{background:#000;border-radius:2px;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;min-height:0;}
-.dicom-slot-vazio{background:transparent;}
-.dicom-slot img{max-width:100%;max-height:100%;width:auto;height:auto;display:block;object-fit:contain;}
-.dicom-slot .num{position:absolute;bottom:2mm;right:2mm;background:rgba(0,0,0,.7);color:#fff;font-size:7.5pt;font-weight:600;padding:1mm 2mm;border-radius:2px;}
+.pagina{page-break-before:always;display:flex;flex-direction:column;height:calc(100vh - 16mm);padding:8mm;font-family:"IBM Plex Sans",sans-serif;}
+.pagina h1{font-size:11pt;font-weight:700;color:${p1};margin-bottom:3mm;padding-bottom:2mm;border-bottom:1.5px solid ${p1};flex-shrink:0;}
+.grid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(4, minmax(0, 1fr));gap:3mm;min-height:0;}
+.slot{background:#000;border-radius:2px;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;min-height:0;}
+.slot-vazio{background:transparent;}
+.slot img{max-width:100%;max-height:100%;width:auto;height:auto;display:block;object-fit:contain;}
+.slot .num{position:absolute;bottom:2mm;right:2mm;background:rgba(0,0,0,.7);color:#fff;font-size:7.5pt;font-weight:600;padding:1mm 2mm;border-radius:2px;}
 </style>${pgsHtml}`;
     }
 
@@ -1497,32 +1482,8 @@ Valores de referência: ASE/EACVI 2015; ASE 2025.
 
   // ── Copiar para Prontuário ──
   function handleCopiarFormatado() {
-    // Usar MESMO HTML do PDF — garantia de formatação idêntica
-    const rows = document.querySelectorAll('#params-tbody tr');
-    let paramsRows = '';
-    rows.forEach(tr => {
-      let rowHTML = '<tr>';
-      tr.querySelectorAll('td').forEach((td, idx) => {
-        const divider = idx === 4 ? `border-left:2px solid ${p1};` : '';
-        rowHTML += `<td style="border:0.5px solid #ccc;padding:2px 5px;${divider}">${td.innerHTML}</td>`;
-      });
-      rowHTML += '</tr>';
-      paramsRows += rowHTML;
-    });
-
-    const paramsHTML = `<table style="border-collapse:collapse;width:100%;font-size:7.5pt;table-layout:fixed;">
-<colgroup><col style="width:22%"/><col style="width:8%"/><col style="width:6%"/><col style="width:14%"/><col style="width:22%"/><col style="width:8%"/><col style="width:6%"/><col style="width:14%"/></colgroup>
-<thead><tr>
-<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;">Parâmetro</th>
-<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;">Valor</th>
-<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;">Unid.</th>
-<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;">Referência</th>
-<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;border-left:2px solid #fff;">Parâmetro</th>
-<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;">Valor</th>
-<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;">Unid.</th>
-<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;">Referência</th>
-</tr></thead><tbody>${paramsRows}</tbody></table>
-<div style="font-size:5.5pt;color:#888;padding:2px 4px;">Valores de referência: ASE/EACVI 2015; ASE 2025.</div>`;
+    // Mesma raspagem/montagem do PDF — só o opts.pdf muda (S5-T13).
+    const paramsHTML = montarParamsHtml(lerParamsDoDOM(), p1, { pdf: false });
 
     const achadosHTMLContent = getAchadosHTML();
     const concHTMLContent = getConclusoesHTML();
@@ -1561,13 +1522,11 @@ Valores de referência: ASE/EACVI 2015; ASE 2025.
     const conclusoes = coletarConclusoes().map((t, i) => `${i + 1}. ${t}`).join('\n');
 
     // Reconstruir tabela com alinhamento por tabulação
-    const rows = document.querySelectorAll('#params-tbody tr');
     let params = '';
-    rows.forEach(tr => {
-      const cells = tr.querySelectorAll('td');
+    lerParamsDoDOM().forEach((cells) => {
       if (cells.length >= 8) {
-        const left = `${(cells[0]?.textContent || '').padEnd(22)}${(cells[1]?.textContent || '').padStart(6)}  ${(cells[2]?.textContent || '').padEnd(4)}${(cells[3]?.textContent || '').padEnd(12)}`;
-        const right = `${(cells[4]?.textContent || '').padEnd(24)}${(cells[5]?.textContent || '').padStart(6)}  ${(cells[6]?.textContent || '').padEnd(6)}${cells[7]?.textContent || ''}`;
+        const left = `${(cells[0] || '').padEnd(22)}${(cells[1] || '').padStart(6)}  ${(cells[2] || '').padEnd(4)}${(cells[3] || '').padEnd(12)}`;
+        const right = `${(cells[4] || '').padEnd(24)}${(cells[5] || '').padStart(6)}  ${(cells[6] || '').padEnd(6)}${cells[7] || ''}`;
         params += `${left}  │  ${right}\n`;
       }
     });
@@ -1589,14 +1548,9 @@ Valores de referência: ASE/EACVI 2015; ASE 2025.
   }
 
   async function handleBaixarWord() {
-    const rows = document.querySelectorAll('#params-tbody tr');
-    const params: { cells: string[] }[] = [];
-    rows.forEach(tr => {
-      const cells = tr.querySelectorAll('td');
-      if (cells.length >= 8) {
-        params.push({ cells: Array.from(cells).map(c => c.textContent || '') });
-      }
-    });
+    const params: { cells: string[] }[] = lerParamsDoDOM()
+      .filter((cells) => cells.length >= 8)
+      .map((cells) => ({ cells }));
 
     const outNome = (document.getElementById('nome') as HTMLInputElement)?.value || 'PACIENTE';
     const outConv = (document.getElementById('convenio') as HTMLInputElement)?.value || '';
