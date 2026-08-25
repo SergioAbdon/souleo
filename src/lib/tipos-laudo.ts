@@ -16,6 +16,20 @@ export type TipoLaudo = {
   modeloTexto?: string; // modalidade 'texto' — HTML inicial do TipTap
 };
 
+// Modalidade EFETIVA de um tipo (S5-T10 c) — ponto único de despacho:
+// Worklist, ficha do paciente e as duas telas de laudo passam por aqui.
+// Doc do catálogo sem `modalidade` (gravado à mão, seed parcial) caía em
+// 'motor' pelo `|| 'motor'` que cada chamador repetia: carótidas abria o
+// motor de eco. Carótidas é texto livre por decisão (D6) — sem script de
+// migração, o default vale pra qualquer catálogo já semeado.
+export function modalidadeDe(
+  tipo: { modalidade?: ModalidadeLaudo } | null | undefined,
+  tipoId: string,
+): ModalidadeLaudo {
+  if (tipo?.modalidade) return tipo.modalidade;
+  return tipoId === 'doppler_carotidas' ? 'texto' : 'motor';
+}
+
 export const MODELO_CAROTIDAS = [
   '<h2>DOPPLER DE CARÓTIDAS E VERTEBRAIS</h2>',
   '<p><strong>Técnica:</strong> exame realizado com transdutor linear, em repouso, com análise bidimensional, Doppler colorido e espectral.</p>',

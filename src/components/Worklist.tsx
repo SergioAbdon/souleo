@@ -20,7 +20,7 @@ import { checkEmissao } from '@/lib/billing';
 import DicomGallery from '@/components/laudo/DicomGallery';
 import { podeEditarLaudo, podeRemoverDaFila, podeCorrigirAdministrativo, ehMedico } from '@/lib/permissoes';
 import StatusPill from '@/components/shell/StatusPill';
-import { TIPOS_LAUDO_PADRAO, type TipoLaudo } from '@/lib/tipos-laudo';
+import { TIPOS_LAUDO_PADRAO, modalidadeDe, type TipoLaudo } from '@/lib/tipos-laudo';
 import type { AcaoFeegow } from '@/lib/feegow-admin';
 
 // v3: helper pra enviar token Firebase nas chamadas Feegow
@@ -436,7 +436,8 @@ export default function Worklist() {
   // Despacha por modalidade do tipo de laudo (catálogo tiposLaudo, Sub-plano 3).
   // Tipo desconhecido/sem catálogo carregado ainda → fallback 'motor' (comportamento antigo).
   function editarLaudoEmitido(item: ExameItem) {
-    const modalidade = tiposMap[(item.tipoExame as string) || '']?.modalidade || 'motor';
+    const tipoId = (item.tipoExame as string) || '';
+    const modalidade = modalidadeDe(tiposMap[tipoId], tipoId);
     if (modalidade === 'pdf') {
       setAnexarPdf(item);
       return;
@@ -504,7 +505,8 @@ export default function Worklist() {
   // Dispatch por modalidade do tipo de laudo (catálogo tiposLaudo, Sub-plano 3).
   // Tipo desconhecido/sem catálogo carregado ainda → fallback 'motor' (comportamento antigo).
   async function abrirLaudo(item: ExameItem) {
-    const modalidade = tiposMap[(item.tipoExame as string) || '']?.modalidade || 'motor';
+    const tipoId = (item.tipoExame as string) || '';
+    const modalidade = modalidadeDe(tiposMap[tipoId], tipoId);
     if (modalidade === 'pdf') {
       // Ato do médico (mesma matriz do Laudar) — a rota /api/emitir também
       // recusa 403 nao_medico, isso aqui só evita a recepção abrir o modal à toa.

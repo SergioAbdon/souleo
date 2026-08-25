@@ -11,7 +11,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { saveExame } from '@/lib/firestore';
 import { db, auth } from '@/lib/firebase';
-import { doc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { dataLocalHoje } from '@/lib/utils';
 // v3: billing agora e server-side via /api/emitir
 // gerarESalvarPdf legado removido — emissao + PDF agora sao server-side em /api/emitir
@@ -39,6 +39,8 @@ import { calcularSenna90, criarDebounce } from '@/lib/senna90-bridge';
 import { montarLaudoHtml } from '@/lib/senna90-render';
 import { mesclarLinhas } from '@/lib/laudo-merge';
 import { checkboxParaMedida, medidaParaChecked } from '@/lib/checkbox-codec';
+import { TIPOS_LAUDO_PADRAO, modalidadeDe, type TipoLaudo } from '@/lib/tipos-laudo';
+import { montarPdfMoldura } from '@/lib/pdf-moldura';
 
 // nº16 (S5-T7): remount limpo por exame. Antes o componente NÃO desmontava
 // ao navegar /laudo/A → /laudo/B (mesma rota, só o param muda) — todo o
@@ -153,6 +155,9 @@ function LaudoPageInner() {
   // laudo, editável no cartão Integrações. Nasce no default embutido, então
   // falha de leitura NUNCA derruba a importação — só mantém a whitelist.
   const [perfilAparelho, setPerfilAparelho] = useState<MapaSr>(SR_TO_MOTOR);
+  // Tipo do exame no catálogo (S5-T10): dá o título impresso e diz se este
+  // exame é do motor mesmo — carótidas virou texto livre (D6).
+  const [tipo, setTipo] = useState<TipoLaudo | null>(null);
 
   const exameId = params.id as string;
   const p1 = (workspace?.corPrimaria as string) || '#8B1A1A';
@@ -175,6 +180,10 @@ function LaudoPageInner() {
     : '';
   const logoB64 = (workspace?.logoB64 as string) || '';
   const sigB64 = (profile?.sigB64 as string) || '';
+  // Título do exame (S5-T10 a): sai do catálogo em vez do literal
+  // "ECOCARDIOGRAMA TRANSTORÁCICO" que o transesofágico e o stress
+  // também estavam imprimindo. Fallback = o literal de sempre.
+  const tituloExame = (tipo?.nome || 'ECOCARDIOGRAMA TRANSTORÁCICO').toUpperCase();
 
   // Processar conteúdo pendente quando TipTap está pronto.
   //
@@ -199,6 +208,30 @@ function LaudoPageInner() {
     }, 300);
     return () => clearInterval(interval);
   }, []);
+
+  // Tipo do exame + guarda de modalidade (S5-T10 a, espelho de laudo-texto).
+  // Exame de modalidade 'texto' (carótidas) aberto aqui por link antigo/atalho
+  // ia parar no motor de eco — tabela de medidas e conclusões que não são
+  // desse exame. Só redireciona se AINDA NÃO foi emitido: carótidas já
+  // assinadas pelo motor continuam abrindo/reimprimindo onde nasceram.
+  const tipoId = (exame?.tipoExame as string) || '';
+  const jaEmitidoDoc = !!exame?.emitidoEm;
+  useEffect(() => {
+    if (!workspace?.id || !exame) return;
+    (async () => {
+      let t: TipoLaudo | null = null;
+      try {
+        const snap = await getDoc(doc(db, 'workspaces', workspace.id, 'tiposLaudo', tipoId));
+        if (snap.exists()) t = snap.data() as TipoLaudo;
+      } catch { /* fallback abaixo */ }
+      if (!t) t = TIPOS_LAUDO_PADRAO.find(x => x.id === tipoId) || null;
+      setTipo(t);
+      if (!jaEmitidoDoc && modalidadeDe(t, tipoId) === 'texto') router.replace('/laudo-texto/' + exameId);
+    })();
+    // `exame` fora das deps de propósito: o onSnapshot troca o objeto a cada
+    // gravação do Wader e isso re-leria o catálogo sem parar.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspace?.id, exameId, tipoId, jaEmitidoDoc, router]);
 
   // Perfil do aparelho — UMA leitura por workspace (não muda durante o laudo).
   useEffect(() => {
@@ -1400,73 +1433,39 @@ Valores de referência: ASE/EACVI 2015; ASE 2025.
 </style>${pgsHtml}`;
     }
 
-    return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>${nomeArq}</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<style>
-*{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:"IBM Plex Sans",sans-serif;font-size:8.5pt;color:#1a1a1a;}
-@page{size:A4;margin:0;}
-table.pl{width:100%;border-collapse:collapse;table-layout:fixed;}
-thead{display:table-header-group;}
-tfoot{display:table-footer-group;}
-thead td{padding:8mm 14mm 3mm;}
-tfoot td{padding:3mm 14mm 6mm;}
-tbody td.body-cell{padding:0 14mm 4mm;}
-ul{list-style:none;padding:0;margin:0;}
-</style></head><body>
-<table class="pl">
-<thead><tr><td>
-  <div style="padding-bottom:2mm;border-bottom:2.5px solid ${p1};margin-bottom:2mm;">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:-2px;">
-      ${logoB64 ? `<img src="${logoB64}" style="width:42px;height:42px;border-radius:5px;object-fit:contain;" alt="Logo"/>` : ''}
-      <div>
-        <div style="font-size:14pt;font-weight:700;color:${p1};white-space:nowrap;line-height:1.1;">${clinicaNome}</div>
-        ${clinicaSlogan ? `<div style="font-size:7.5pt;color:#888;margin-top:1px;">${clinicaSlogan}</div>` : ''}
-      </div>
-    </div>
-    <div style="font-size:10.5pt;font-weight:700;color:${p1};text-align:center;white-space:nowrap;letter-spacing:0.3px;">ECOCARDIOGRAMA TRANSTORÁCICO</div>
-  </div>
-  <div style="border:1px solid ${p1};border-radius:3px;padding:3px 6px;margin-bottom:2mm;">
-    <div style="display:flex;gap:8px;margin-bottom:2px;">
-      <div style="flex:2"><span style="display:block;font-size:5.5pt;font-weight:600;color:${p1};text-transform:uppercase;">NOME</span><span style="display:block;font-size:8.5pt;font-weight:500;">${outNome}</span></div>
-      <div style="flex:1"><span style="display:block;font-size:5.5pt;font-weight:600;color:${p1};text-transform:uppercase;">IDADE</span><span style="display:block;font-size:8.5pt;font-weight:500;">${outIdade}</span></div>
-      <div style="flex:1"><span style="display:block;font-size:5.5pt;font-weight:600;color:${p1};text-transform:uppercase;">DATA DE NASCIMENTO</span><span style="display:block;font-size:8.5pt;font-weight:500;">${outDtnasc}</span></div>
-    </div>
-    <div style="display:flex;gap:8px;">
-      <div style="flex:1"><span style="display:block;font-size:5.5pt;font-weight:600;color:${p1};text-transform:uppercase;">CONVÊNIO</span><span style="display:block;font-size:8.5pt;font-weight:500;">${outConv}</span></div>
-      <div style="flex:1"><span style="display:block;font-size:5.5pt;font-weight:600;color:${p1};text-transform:uppercase;">MÉDICO SOLICITANTE</span><span style="display:block;font-size:8.5pt;font-weight:500;">${outSolic}</span></div>
-      <div style="flex:1"><span style="display:block;font-size:5.5pt;font-weight:600;color:${p1};text-transform:uppercase;">DATA DO EXAME</span><span style="display:block;font-size:8.5pt;font-weight:500;">${outDtex}</span></div>
-    </div>
-  </div>
-</td></tr></thead>
-<tfoot><tr><td>
-  <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:10px;border-top:1.5px solid ${p1};padding-top:3mm;">
-    <div style="font-size:7pt;color:#444;line-height:1.6;">
-      <strong style="color:${p1};font-size:8pt;">${clinicaNome}</strong><br/>
-      ${clinicaEnd}<br/>
-      ${telCompleto ? '&#9742; ' + telCompleto : ''}
-    </div>
-    <div style="text-align:center;font-size:7pt;color:#444;">
-      ${sigB64 ? `<img src="${sigB64}" style="max-height:50px;max-width:180px;display:block;margin:10px auto 2px;object-fit:contain;" alt="Assinatura"/>` : ''}
-      <div style="width:180px;border-top:1px solid #333;margin:${sigB64 ? '2px' : '24px'} auto 3px;"></div>
-      <div style="font-size:7pt;white-space:pre-line;line-height:1.4;">${sigTexto}</div>
-    </div>
-  </div>
-  <div style="text-align:center;width:100%;margin-top:2mm;padding-top:1mm;border-top:0.5px solid #e0e0e0;font-size:6pt;color:#aaa;">
-    Laudo emitido com ajuda do <strong>LEO</strong> &middot; www.souleo.com.br
-  </div>
-</td></tr></tfoot>
-<tbody><tr><td class="body-cell">
-  <div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;-webkit-print-color-adjust:exact;print-color-adjust:exact;">MEDIDAS E PARÂMETROS</div>
-  <div style="border:1px solid #ddd;border-top:none;padding:0;">${paramsHTML}</div>
-  <div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;margin-top:3mm;-webkit-print-color-adjust:exact;print-color-adjust:exact;">COMENTÁRIOS</div>
-  <div style="border:1px solid #ddd;border-top:none;padding:4px 8px;"><ul>${achadosHTML}</ul></div>
-  <div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;margin-top:3mm;-webkit-print-color-adjust:exact;print-color-adjust:exact;">CONCLUSÃO</div>
-  <div style="border:1px solid #ddd;border-top:none;padding:4px 8px;"><ul>${concHTML}</ul></div>
-</td></tr></tbody>
-</table>
-${imagensPdfHtml}
-</body></html>`;
+    // S5-T10 (D6): a folha A4 é UMA só — `montarPdfMoldura` monta
+    // cabeçalho/identificação/rodapé pro motor e pro laudo-texto. Aqui só
+    // entra o que é do eco: título, os 6 campos e o corpo clínico.
+    // A saída é byte-a-byte a mesma de antes da extração
+    // (tests/unit/pdf-moldura.test.mjs guarda o template legado).
+    const corpoHtml = [
+      `<div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;-webkit-print-color-adjust:exact;print-color-adjust:exact;">MEDIDAS E PARÂMETROS</div>`,
+      `<div style="border:1px solid #ddd;border-top:none;padding:0;">${paramsHTML}</div>`,
+      `<div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;margin-top:3mm;-webkit-print-color-adjust:exact;print-color-adjust:exact;">COMENTÁRIOS</div>`,
+      `<div style="border:1px solid #ddd;border-top:none;padding:4px 8px;"><ul>${achadosHTML}</ul></div>`,
+      `<div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;margin-top:3mm;-webkit-print-color-adjust:exact;print-color-adjust:exact;">CONCLUSÃO</div>`,
+      `<div style="border:1px solid #ddd;border-top:none;padding:4px 8px;"><ul>${concHTML}</ul></div>`,
+    ].join('\n  ');
+
+    return montarPdfMoldura({
+      titulo: tituloExame,
+      tituloDoc: nomeArq,   // <title> = nome do arquivo, como sempre foi
+      identificacao: [
+        [
+          { label: 'NOME', valor: outNome, flex: 2 },
+          { label: 'IDADE', valor: outIdade },
+          { label: 'DATA DE NASCIMENTO', valor: outDtnasc },
+        ],
+        [
+          { label: 'CONVÊNIO', valor: outConv },
+          { label: 'MÉDICO SOLICITANTE', valor: outSolic },
+          { label: 'DATA DO EXAME', valor: outDtex },
+        ],
+      ],
+      corpoHtml,
+      htmlPosTabela: imagensPdfHtml,
+      cfg: { p1, clinicaNome, clinicaSlogan, clinicaEnd, clinicaTel: telCompleto, logoB64, sigB64, sigTexto },
+    });
   }
 
   // ── PDF via window.open ──
@@ -1793,6 +1792,7 @@ ${imagensPdfHtml}
         sigTexto={sigTexto}
         logoB64={logoB64}
         sigB64={sigB64}
+        titulo={tituloExame}
         editorLaudo={
           <EditorLaudo
             // `key` por exame (S5-T2 fix, Critical 1 do review): navegar

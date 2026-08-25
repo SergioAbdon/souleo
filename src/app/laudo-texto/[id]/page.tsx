@@ -14,10 +14,12 @@ import { getExame, saveExame } from '@/lib/firestore';
 import { auth, db } from '@/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { ehMedico } from '@/lib/permissoes';
-import { TIPOS_LAUDO_PADRAO, TipoLaudo } from '@/lib/tipos-laudo';
+import { TIPOS_LAUDO_PADRAO, TipoLaudo, modalidadeDe } from '@/lib/tipos-laudo';
 import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
-import { gerarPdfHtmlTexto } from '@/lib/pdf-texto';
+import MolduraA4 from '@/components/laudo/MolduraA4';
+import { gerarPdfHtmlTexto, fmtCep, fmtTel } from '@/lib/pdf-texto';
+import { calcIdade, fmtData } from '@/lib/paciente-fmt';
 
 export default function LaudoTextoPage() {
   const params = useParams();
@@ -31,6 +33,20 @@ export default function LaudoTextoPage() {
   const pendingHtml = useRef<string | null>(null);
 
   const exameId = params.id as string;
+  // Cabeçalho/rodapé da folha — mesmos dados que vão pro PDF (moldura única).
+  const p1 = (workspace?.corPrimaria as string) || '#8B1A1A';
+  const clinicaNome = (workspace?.nomeClinica as string) || 'Consultório';
+  const tituloExame = ((tipo?.nome as string) || (exame?.tipoExame as string) || 'LAUDO').toUpperCase();
+  const especialidade = ((profile?.especialidade as string) || '').replace(/\\/g, ' e ').replace(/\//g, ' e ');
+  const sigTexto = profile
+    ? `${profile.nome || ''}\n${especialidade}\nCRM/${profile.ufCrm || ''} ${profile.crm || ''}`
+    : '';
+  const idade = calcIdade(exame?.pacienteDtnasc as string | undefined);
+  const clinicaEnd = fmtCep((workspace?.endereco as string) || '');
+  // 2º telefone do local entrava no rodapé do motor e sumia no laudo-texto —
+  // uma folha só, mesmo rodapé (S5-T10).
+  const telCompleto = [fmtTel((workspace?.telefone as string) || ''), fmtTel((workspace?.telefone2 as string) || '')]
+    .filter(Boolean).join(' / ');
 
   // Guards em useEffect (padrão do shell — nada de setState no render).
   useEffect(() => {
@@ -55,8 +71,10 @@ export default function LaudoTextoPage() {
       } catch { /* fallback abaixo */ }
       if (!t) t = TIPOS_LAUDO_PADRAO.find(x => x.id === tipoId) || null;
       setTipo(t);
-      // Validação de modalidade: exame de motor não pode usar rota /laudo-texto
-      if (t && t.modalidade && t.modalidade !== 'texto') {
+      // Validação de modalidade: exame de motor não pode usar rota /laudo-texto.
+      // `modalidadeDe` (S5-T10) é o mesmo despacho da Worklist/ficha — doc do
+      // catálogo sem `modalidade` não cai mais em 'motor' se for carótidas.
+      if (t && modalidadeDe(t, tipoId) !== 'texto') {
         router.replace('/laudo/' + exameId);
         return;
       }
@@ -107,16 +125,13 @@ export default function LaudoTextoPage() {
     setEmitindo(true);
 
     const laudoTextoHtml = editorRef.current?.getHTML() || '';
-    const p1 = (workspace.corPrimaria as string) || '#8B1A1A';
-    const clinicaNome = (workspace.nomeClinica as string) || 'Consultório';
-    const tituloExame = ((tipo?.nome as string) || (exame.tipoExame as string) || 'LAUDO').toUpperCase();
 
     const pdfHtml = gerarPdfHtmlTexto({
       p1,
       clinicaNome,
       clinicaSlogan: (workspace.slogan as string) || '',
-      clinicaEnd: (workspace.endereco as string) || '',
-      clinicaTel: (workspace.telefone as string) || '',
+      clinicaEnd,
+      clinicaTel: telCompleto,
       logoB64: (workspace.logoB64 as string) || '',
       tituloExame,
       identificacao: {
@@ -215,11 +230,34 @@ export default function LaudoTextoPage() {
         </button>
       </div>
 
-      {/* Editor — folha única, sem motor de medidas */}
-      <div className="max-w-3xl mx-auto p-4 lg:p-6">
-        <div className="bg-card border border-borda rounded-xl p-5 lg:p-8 min-h-[60vh]">
+      {/* Editor dentro da MESMA folha A4 do motor (S5-T10/D6): o médico
+          escreve já vendo a moldura que vai sair no PDF. */}
+      <div className="bg-[#D8DEE8] overflow-auto p-5">
+        <MolduraA4
+          p1={p1}
+          clinicaNome={clinicaNome}
+          clinicaSlogan={(workspace?.slogan as string) || ''}
+          clinicaEnd={clinicaEnd}
+          clinicaTel={telCompleto}
+          sigTexto={sigTexto}
+          logoB64={(workspace?.logoB64 as string) || ''}
+          sigB64={(profile?.sigB64 as string) || ''}
+          titulo={tituloExame}
+          identificacao={[
+            [
+              { label: 'NOME', valor: (exame?.pacienteNome as string) || '', flex: 2 },
+              { label: 'IDADE', valor: idade === null ? '' : `${idade} anos` },
+              { label: 'DATA DE NASCIMENTO', valor: fmtData(exame?.pacienteDtnasc as string | undefined) },
+            ],
+            [
+              { label: 'CONVÊNIO', valor: (exame?.convenio as string) || '' },
+              { label: 'MÉDICO SOLICITANTE', valor: (exame?.solicitante as string) || '' },
+              { label: 'DATA DO EXAME', valor: fmtData(exame?.dataExame as string | undefined) },
+            ],
+          ]}
+        >
           <EditorLaudo ref={editorRef} placeholder="Digite o laudo…" />
-        </div>
+        </MolduraA4>
       </div>
     </div>
   );

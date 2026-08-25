@@ -17,7 +17,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getPaciente, getExames } from '@/lib/firestore';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, orderBy, query } from 'firebase/firestore';
-import { TIPOS_LAUDO_PADRAO, TipoLaudo } from '@/lib/tipos-laudo';
+import { TIPOS_LAUDO_PADRAO, TipoLaudo, modalidadeDe } from '@/lib/tipos-laudo';
 import { fmtData, calcIdade, formatCpf } from '@/lib/paciente-fmt';
 import PageHeader from '@/components/shell/PageHeader';
 import StatusPill, { statusConhecido } from '@/components/shell/StatusPill';
@@ -86,7 +86,8 @@ export default function FichaPacientePage() {
   const naoRealizadosTotal = exames.filter(e => e.status === 'nao-realizado').length;
 
   function abrirLaudo(item: Exame) {
-    const modalidade = tiposMap[(item.tipoExame as string) || '']?.modalidade || 'motor';
+    const tipoId = (item.tipoExame as string) || '';
+    const modalidade = modalidadeDe(tiposMap[tipoId], tipoId);
     router.push(modalidade === 'texto' ? '/laudo-texto/' + item.id : '/laudo/' + item.id);
   }
 
@@ -116,7 +117,8 @@ export default function FichaPacientePage() {
     // oferecer "Abrir laudo" aqui — /laudo/[id] é o motor de ECHO e não tem
     // guard de modalidade, abriria o motor errado num exame de ECG/Holter/etc.
     // Anexar o PDF é ação da Agenda (AnexarPdfModal); a ficha só aponta pra lá.
-    const modalidade = tiposMap[(item.tipoExame as string) || '']?.modalidade || 'motor';
+    const tipoIdAcao = (item.tipoExame as string) || '';
+    const modalidade = modalidadeDe(tiposMap[tipoIdAcao], tipoIdAcao);
     if (modalidade === 'pdf') {
       return <Link href="/agenda" className="text-xs text-p2 font-semibold hover:underline">Ver na Agenda</Link>;
     }
