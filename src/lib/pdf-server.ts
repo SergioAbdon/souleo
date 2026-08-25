@@ -64,6 +64,40 @@ export async function salvarPdfBuffer(
   return `https://storage.googleapis.com/${bucket.name}/${filePath}`;
 }
 
+// ── Snapshot do HTML do laudo (S5-T5 / D4) ──
+// O HTML que virou PDF fica congelado no Storage. É ele que a correção
+// administrativa reescreve (só convênio/solicitante) — em vez de confiar num
+// HTML mandado pelo cliente, que deixava reescrever o laudo assinado inteiro.
+// Path CANÔNICO por exameId: a leitura NÃO usa o campo `pdfHtmlPath` do doc
+// como caminho (o doc é editável pelo navegador — apontaria pro snapshot de
+// outro exame); o campo fica só como marca/auditoria.
+function pathSnapshotHtml(wsId: string, exameId: string): string {
+  return `laudos/${wsId}/${exameId}.html`;
+}
+
+// Nunca lança: emissão não pode falhar porque o snapshot falhou — o PDF é o
+// produto. Sem snapshot, a correção só grava os campos e avisa o médico.
+async function salvarSnapshotHtml(html: string, wsId: string, exameId: string): Promise<void> {
+  try {
+    const filePath = pathSnapshotHtml(wsId, exameId);
+    await getStorage().bucket().file(filePath).save(html, {
+      metadata: { contentType: 'text/html; charset=utf-8' },
+    });   // sem makePublic(): só o Admin SDK lê
+    await getFirestore().doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfHtmlPath: filePath });
+  } catch (e) {
+    console.error('snapshot HTML (nao-critico):', e);
+  }
+}
+
+export async function lerSnapshotHtml(wsId: string, exameId: string): Promise<string | null> {
+  try {
+    const [buf] = await getStorage().bucket().file(pathSnapshotHtml(wsId, exameId)).download();
+    return buf.toString('utf8');
+  } catch {
+    return null;   // emitido antigo (antes de 25/08) ou PDF anexado: não tem snapshot
+  }
+}
+
 // ── Gerar PDF via Puppeteer + upload Storage ──
 export async function gerarESalvarPdf(
   pdfHtml: string,
@@ -114,7 +148,11 @@ export async function gerarESalvarPdf(
     await browser.close();
     browser = null;
 
-    return await salvarPdfBuffer(Buffer.from(pdfBuffer), wsId, exameId, nomeArq);
+    const url = await salvarPdfBuffer(Buffer.from(pdfBuffer), wsId, exameId, nomeArq);
+    // Congela o HTML ORIGINAL (URLs canônicas, não as assinadas — signed URL
+    // expira). Depois do PDF salvo e sem poder derrubá-lo.
+    await salvarSnapshotHtml(pdfHtml, wsId, exameId);
+    return url;
   } finally {
     if (browser) {
       try { await browser.close(); } catch { /* */ }

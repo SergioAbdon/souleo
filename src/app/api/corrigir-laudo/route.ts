@@ -4,12 +4,20 @@
 // SEM transação de billing, SEM crédito. Regera o PDF.
 // Identidade (nome/CPF/datas) NÃO passa por aqui — segue travada.
 // Decidido c/ Dr. Sérgio 17/05 (Phase E).
+//
+// S5-T5 (D4, 25/08): a rota NÃO aceita mais `pdfHtml` do cliente. Aceitar
+// significava que, sob o pretexto de trocar o nome do convênio, qualquer
+// autor autenticado regravava o PDF assinado inteiro (medidas, conclusão,
+// assinatura) sem consumir crédito e sem passar pelo /api/emitir. Agora o
+// servidor carrega o SNAPSHOT do HTML emitido e troca só os 2 valores.
+// E recepção corrige convênio/solicitante — é dado de recepção, não ato médico.
 // ══════════════════════════════════════════════════════════════════
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
-import { gerarESalvarPdf } from '@/lib/pdf-server';
+import { gerarESalvarPdf, lerSnapshotHtml } from '@/lib/pdf-server';
 import { requireUid, adminDb } from '@/lib/auth-admin';
 import { resolverPapel, podeCorrigir } from '@/lib/exame-admin';
+import { substituirCamposAdministrativos, nomeArqDoPdfUrl } from '@/lib/correcao-admin';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -23,13 +31,11 @@ export async function POST(req: NextRequest) {
   }
   try {
     const body = await req.json();
-    const { wsId, exameId, convenio, solicitante, pdfHtml, nomeArq } = body as {
+    const { wsId, exameId, convenio, solicitante } = body as {
       wsId: string;
       exameId: string;
       convenio?: string;
       solicitante?: string;
-      pdfHtml?: string;
-      nomeArq?: string;
     };
 
     if (!wsId || !exameId) {
@@ -39,9 +45,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // So dono/medico do local corrigem dados administrativos (matriz §4).
+    // D4: dono, medico-autor E recepcao do local. Quem nao tem vinculo ativo
+    // (papel null) cai no podeCorrigir abaixo como 'sem_permissao'.
     const papel = await resolverPapel(dbAdmin, wsId, uid);
-    if (papel !== 'dono' && papel !== 'medico') {
+    if (!papel) {
       return NextResponse.json({ ok: false, error: 'sem_permissao' }, { status: 403 });
     }
 
@@ -61,6 +68,9 @@ export async function POST(req: NextRequest) {
         { status: decisao.motivo === 'nao_emitido' ? 409 : 403 },
       );
     }
+    // Correção NÃO é ato médico e não consome crédito: recepção corrige o
+    // convênio errado sem chamar o médico. Por isso nada aqui toca no
+    // conteúdo clínico — o HTML vem do snapshot, não do navegador.
 
     // Atualiza SÓ os 2 campos administrativos no TOPO (fonte única — Phase B).
     // NÃO toca emitidoEm/status/medidas/billing. Sem crédito.
@@ -70,18 +80,28 @@ export async function POST(req: NextRequest) {
       atualizadoEm: FieldValue.serverTimestamp(),
     });
 
-    // Regera o PDF (decisão Dr. Sérgio: o PDF tem que sair corrigido também,
-    // não só o banco). Não-crítico — a correção do dado já foi gravada.
+    // Regera o PDF a partir do SNAPSHOT congelado na emissão (decisão Dr.
+    // Sérgio: o PDF tem que sair corrigido também, não só o banco). Não-crítico
+    // — a correção do dado já foi gravada. Emitido antigo (sem snapshot) ou
+    // template sem os blocos-âncora: NÃO regera, avisa `pdfDesatualizado` e o
+    // médico reemite se quiser. Melhor PDF velho que PDF adulterado.
     let pdfUrl: string | null = null;
     let pdfErro: string | null = null;
-    if (pdfHtml && nomeArq) {
+    let pdfDesatualizado = false;
+    const snapshot = await lerSnapshotHtml(wsId, exameId);
+    const htmlCorrigido = snapshot && substituirCamposAdministrativos(snapshot, { convenio, solicitante });
+    if (htmlCorrigido) {
       try {
-        pdfUrl = await gerarESalvarPdf(pdfHtml, wsId, exameId, nomeArq);
+        // Mesmo nome de arquivo da emissão: regrava o MESMO objeto, o link já
+        // entregue ao paciente/convênio continua valendo.
+        pdfUrl = await gerarESalvarPdf(htmlCorrigido, wsId, exameId, nomeArqDoPdfUrl(antes.pdfUrl));
         await ref.update({ pdfUrl });
       } catch (e) {
         pdfErro = e instanceof Error ? e.message : 'erro_pdf';
         console.error('corrigir-laudo PDF error:', pdfErro);
       }
+    } else {
+      pdfDesatualizado = true;
     }
 
     // Auditoria (não-crítico) — mantém glosa/extrato confiáveis (de→para).
@@ -91,13 +111,15 @@ export async function POST(req: NextRequest) {
         wsId,
         exameId,
         medicoUid: uid,
+        papel,
         de: { convenio: antes.convenio ?? '', solicitante: antes.solicitante ?? '' },
         para: { convenio: convenio ?? '', solicitante: solicitante ?? '' },
+        pdfDesatualizado,
         ts: FieldValue.serverTimestamp(),
       });
     } catch { /* log nao pode quebrar a correcao */ }
 
-    return NextResponse.json({ ok: true, pdfUrl, pdfErro });
+    return NextResponse.json({ ok: true, pdfUrl, pdfErro, pdfDesatualizado });
   } catch (e) {
     console.error('API /corrigir-laudo error:', e);
     return NextResponse.json(

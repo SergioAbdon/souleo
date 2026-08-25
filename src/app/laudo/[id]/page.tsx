@@ -1073,26 +1073,32 @@ export default function LaudoPage() {
   // Identidade (nome/datas) NÃO entra aqui — segue travada/Desbloquear.
   async function handleCorrigirLaudo() {
     if (!workspace?.id || !exameId || !user?.uid) return;
+    // S5-T5: com reedição aberta a tela já não é o laudo emitido — corrigir
+    // aqui gravaria o convênio por cima de um laudo que ainda vai ser reemitido.
+    // Um fluxo por vez.
+    if (reedicaoAtiva) {
+      toast('Termine a reedição (emitir) ou saia sem salvar antes de corrigir');
+      return;
+    }
     const convenio = (document.getElementById('convenio') as HTMLInputElement)?.value || '';
     const solicitante = (document.getElementById('solicitante') as HTMLInputElement)?.value || '';
-    const nome = (document.getElementById('nome') as HTMLInputElement)?.value || 'PACIENTE';
-    const nomeArq = prefixoArquivoPorTipo(exame?.tipoExame as string | undefined) + ' ' + nome.trim().toUpperCase();
     toast('Salvando correção e regerando PDF...');
     try {
       const token = await user.getIdToken();
       const res = await fetch('/api/corrigir-laudo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          wsId: workspace.id, exameId, convenio, solicitante,
-          pdfHtml: gerarPdfHtml(true), nomeArq,
-        }),
+        // Sem pdfHtml (S5-T5): o servidor regera o PDF do snapshot congelado
+        // na emissão. O que sai daqui é só o dado administrativo.
+        body: JSON.stringify({ wsId: workspace.id, exameId, convenio, solicitante }),
       });
       const r = await res.json();
       if (!r.ok) { toast('Erro ao salvar correção. Tente novamente.'); return; }
       if (r.pdfUrl) {
         toast('Correção salva — PDF atualizado');
         window.open(r.pdfUrl, '_blank');
+      } else if (r.pdfDesatualizado) {
+        toast('Correção salva. Laudo antigo: o PDF continua com o dado velho — reemita para atualizá-lo.');
       } else {
         toast(r.pdfErro ? 'Correção salva. PDF falhou — tente "Imprimir".' : 'Correção salva.');
       }

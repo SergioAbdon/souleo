@@ -48,6 +48,13 @@ export function podeGerenciarMembros(papel: Papel | null | undefined): boolean {
 export function podeRemoverDaFila(papel: Papel | null | undefined): boolean {
   return papel === 'dono' || papel === 'medico';
 }
+// Correcao ADMINISTRATIVA de laudo emitido (convenio/solicitante) na Worklist:
+// dono e recepcao (S5-T5/D4). Nao e ato medico e nao consome credito — o
+// servidor troca so esses 2 campos no HTML congelado da emissao. O medico autor
+// nao precisa deste botao: ele corrige pela propria tela do laudo.
+export function podeCorrigirAdministrativo(papel: Papel | null | undefined): boolean {
+  return papel === 'dono' || papel === 'recepcao';
+}
 // Integracoes guardam credencial de sistema: so o dono (D5 da spec do Sub-plano 5).
 export function podeVerIntegracoes(papel: Papel | null | undefined): boolean {
   return papel === 'dono';
