@@ -1772,6 +1772,8 @@ ${imagensPdfHtml}
         feegowPacienteId={exame?.feegowPacienteId as string | number | null || null}
         exameAcc={exame?.acc as string || ''}
         onCorrigirAdmin={handleCorrigirLaudo}
+        wsId={workspace?.id}
+        onToast={toast}
         modoEmitido={
           <ModoEmitido
             onFinalizar={handleFinalizar}

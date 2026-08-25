@@ -6,6 +6,7 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { useState, useEffect, useRef, ReactNode } from 'react';
+import { auth } from '@/lib/firebase';
 
 // Helpers para chamar funções do motor (expostas em window.*)
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -51,9 +52,13 @@ type Props = {
   exameAcc?: string;
   /** Salvar correção administrativa (convênio/solicitante) — sem crédito (Phase E). */
   onCorrigirAdmin?: () => void;
+  /** Id do workspace (S5-T9) — /api/feegow exige pra resolver o papel do usuário. */
+  wsId?: string;
+  /** Feedback visível (toast) — reusa o toast já existente em page.tsx (S5-T9). */
+  onToast?: (msg: string) => void;
 };
 
-export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, onImportarDicom, dicomLoading, dicomImportado, ortancAtivo, totalMedidasDicom, totalImagensDicom, onAbrirGaleria, emitido, modoEmitido, readOnlyIdentificacao, readOnlyMotor, exameOrigem, exameCpf, feegowPacienteId, exameAcc, onCorrigirAdmin }: Props) {
+export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, onImportarDicom, dicomLoading, dicomImportado, ortancAtivo, totalMedidasDicom, totalImagensDicom, onAbrirGaleria, emitido, modoEmitido, readOnlyIdentificacao, readOnlyMotor, exameOrigem, exameCpf, feegowPacienteId, exameAcc, onCorrigirAdmin, wsId, onToast }: Props) {
   const [idDesbloqueado, setIdDesbloqueado] = useState(false);
   const [motorDesbloqueado, setMotorDesbloqueado] = useState(false);
   // Detectar quando readOnlyMotor muda de true→false (médico desbloqueou)
@@ -103,60 +108,74 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
   async function handleDesbloquearId() {
     // Se veio do Feegow, buscar dados atualizados antes de desbloquear
     if (exameOrigem === 'FEEGOW' && (feegowPacienteId || exameCpf)) {
-      setFeegowLoading(true);
-      try {
-        let url = '';
-        if (feegowPacienteId) {
-          url = `/api/feegow?action=paciente&id=${feegowPacienteId}`;
-        } else if (exameCpf) {
-          url = `/api/feegow?action=buscar_cpf&cpf=${exameCpf}`;
-        }
+      // S5-T9: sem wsId o workspace ainda não carregou (janela transitória
+      // do mount — o mesmo `workspace?.id` usado em todo o resto de
+      // page.tsx). Não é falha do Feegow, então NÃO é o mesmo caso do
+      // toast abaixo — pula a consulta em silêncio e segue pro confirm().
+      if (!wsId) {
+        console.warn('handleDesbloquearId: sem wsId (workspace ainda não carregado), pulando consulta Feegow');
+      } else {
+        setFeegowLoading(true);
+        try {
+          let url = '';
+          if (feegowPacienteId) {
+            url = `/api/feegow?action=paciente&id=${feegowPacienteId}&wsId=${wsId}`;
+          } else if (exameCpf) {
+            url = `/api/feegow?action=buscar_cpf&cpf=${exameCpf}&wsId=${wsId}`;
+          }
 
-        if (url) {
-          const res = await fetch(url);
-          const data = await res.json();
-          const pac = feegowPacienteId ? data?.data?.content : data?.paciente;
+          if (url) {
+            const token = await auth.currentUser?.getIdToken();
+            const res = await fetch(url, { headers: { Authorization: `Bearer ${token || ''}` } });
+            if (!res.ok) {
+              onToast?.('Feegow indisponível — confira manualmente');
+            } else {
+              const data = await res.json();
+              const pac = feegowPacienteId ? data?.data?.content : data?.paciente;
 
-          if (pac) {
-            const nomeFeegow = (pac.nome || '').toUpperCase();
-            const nomeAtual = (document.getElementById('nome') as HTMLInputElement)?.value?.toUpperCase() || '';
+              if (pac) {
+                const nomeFeegow = (pac.nome || '').toUpperCase();
+                const nomeAtual = (document.getElementById('nome') as HTMLInputElement)?.value?.toUpperCase() || '';
 
-            if (nomeFeegow && nomeFeegow !== nomeAtual) {
-              const atualizar = confirm(
-                `O Feegow mostra o nome atualizado:\n\n"${nomeFeegow}"\n\nNome atual no laudo:\n"${nomeAtual}"\n\nDeseja atualizar para o nome do Feegow?`
-              );
-              if (atualizar) {
-                const nomeEl = document.getElementById('nome') as HTMLInputElement;
-                if (nomeEl) {
-                  nomeEl.value = nomeFeegow;
-                  nomeEl.dispatchEvent(new Event('input', { bubbles: true }));
-                }
-                // Atualizar também nascimento e sexo se disponíveis
-                if (pac.dtnasc || pac.nascimento) {
-                  let dtnasc = pac.dtnasc || '';
-                  if (!dtnasc && pac.nascimento) {
-                    const p = pac.nascimento.split('-');
-                    if (p.length === 3) dtnasc = `${p[2]}-${p[1]}-${p[0]}`;
+                if (nomeFeegow && nomeFeegow !== nomeAtual) {
+                  const atualizar = confirm(
+                    `O Feegow mostra o nome atualizado:\n\n"${nomeFeegow}"\n\nNome atual no laudo:\n"${nomeAtual}"\n\nDeseja atualizar para o nome do Feegow?`
+                  );
+                  if (atualizar) {
+                    const nomeEl = document.getElementById('nome') as HTMLInputElement;
+                    if (nomeEl) {
+                      nomeEl.value = nomeFeegow;
+                      nomeEl.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                    // Atualizar também nascimento e sexo se disponíveis
+                    if (pac.dtnasc || pac.nascimento) {
+                      let dtnasc = pac.dtnasc || '';
+                      if (!dtnasc && pac.nascimento) {
+                        const p = pac.nascimento.split('-');
+                        if (p.length === 3) dtnasc = `${p[2]}-${p[1]}-${p[0]}`;
+                      }
+                      if (dtnasc) {
+                        const dtEl = document.getElementById('dtnasc') as HTMLInputElement;
+                        if (dtEl) { dtEl.value = dtnasc; dtEl.dispatchEvent(new Event('input', { bubbles: true })); }
+                      }
+                    }
+                    // nº24 (decisão Sergio): sexo é campo CLÍNICO — segue a
+                    // trava do MOTOR (readOnlyMotor), não a da identificação.
+                    // Este fluxo é o desbloqueio ADMINISTRATIVO (nome/data/
+                    // convênio, crédito de identificação); sexo NÃO entra aqui
+                    // mesmo vindo do Feegow — só a reedição clínica (motor
+                    // desbloqueado, outro crédito) pode mudá-lo.
                   }
-                  if (dtnasc) {
-                    const dtEl = document.getElementById('dtnasc') as HTMLInputElement;
-                    if (dtEl) { dtEl.value = dtnasc; dtEl.dispatchEvent(new Event('input', { bubbles: true })); }
-                  }
                 }
-                // nº24 (decisão Sergio): sexo é campo CLÍNICO — segue a
-                // trava do MOTOR (readOnlyMotor), não a da identificação.
-                // Este fluxo é o desbloqueio ADMINISTRATIVO (nome/data/
-                // convênio, crédito de identificação); sexo NÃO entra aqui
-                // mesmo vindo do Feegow — só a reedição clínica (motor
-                // desbloqueado, outro crédito) pode mudá-lo.
               }
             }
           }
+        } catch (e) {
+          console.warn('Erro ao buscar Feegow:', e);
+          onToast?.('Feegow indisponível — confira manualmente');
         }
-      } catch (e) {
-        console.warn('Erro ao buscar Feegow:', e);
+        setFeegowLoading(false);
       }
-      setFeegowLoading(false);
     }
 
     // Confirmar consumo de crédito
