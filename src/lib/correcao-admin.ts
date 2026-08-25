@@ -40,10 +40,24 @@ export function substituirCamposAdministrativos(
   return trocar(comConvenio, 'MÉDICO SOLICITANTE', campos.solicitante ?? '');
 }
 
+// Reemissão durante a correção (I4): o Puppeteer leva segundos; se o médico
+// reemitir nesse meio-tempo, a escrita da correção chega DEPOIS e devolve o
+// corpo clínico antigo com o convênio novo — PDF assinado ≠ banco. Compara o
+// selo de emissão lido no início com o do momento de publicar.
+function marcaEmissao(v: unknown): string {
+  const ts = v as { toMillis?: () => number } | null | undefined;
+  if (ts && typeof ts.toMillis === 'function') return String(ts.toMillis());
+  return v === null || v === undefined ? '' : JSON.stringify(v);
+}
+export function emissaoMudou(antes: unknown, agora: unknown): boolean {
+  return marcaEmissao(antes) !== marcaEmissao(agora);
+}
+
 // O PDF corrigido tem que REGRAVAR o mesmo objeto do Storage — o link já foi
-// para o paciente/convênio. O nome do arquivo sai da própria pdfUrl emitida
-// (`laudos/{wsId}/{nomeArq}.pdf`), não do cliente. Vazio → salvarPdfBuffer
-// cai no default `laudo_{exameId}`.
+// para o paciente/convênio. O nome do arquivo sai da URL que o PRÓPRIO
+// servidor acabou de montar na emissão (`laudos/{wsId}/{nomeArq}.pdf`) e vai
+// pra metadata do snapshot; nunca do doc do exame (editável pelo médico-autor)
+// nem do cliente. Vazio → salvarPdfBuffer cai no default `laudo_{exameId}`.
 export function nomeArqDoPdfUrl(pdfUrl: unknown): string {
   if (typeof pdfUrl !== 'string' || !pdfUrl.includes('/laudos/')) return '';
   const arquivo = pdfUrl.split('/laudos/')[1]?.split('/')[1]?.split('?')[0] ?? '';

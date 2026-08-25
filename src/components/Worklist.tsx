@@ -471,7 +471,10 @@ export default function Worklist() {
       if (!r.ok) {
         alert(r.error === 'nao_emitido' ? 'Este laudo não está emitido.'
           : r.error === 'sem_permissao' ? 'Você não tem permissão para corrigir aqui.'
+          : r.error === 'reemitido_durante_correcao'
+            ? 'Correção salva. O médico reemitiu o laudo neste instante — o PDF novo já sai com o dado corrigido.'
           : 'Não foi possível salvar a correção. Tente de novo.');
+        if (r.error === 'reemitido_durante_correcao') setCorrigirAdm(null);
         return;
       }
       alert(r.pdfDesatualizado

@@ -13,7 +13,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 // Ids interpolados no path do Admin SDK (workspaces/${wsId}, profissionais/${uid}):
 // um id com '/' remonta o path e escaparia da colecao. Duplicado de convite-server.ts
 // (arquivo sem import @/, testado direto por node --test).
-function idValido(s: unknown): s is string {
+export function idValido(s: unknown): s is string {
   return typeof s === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(s);
 }
 

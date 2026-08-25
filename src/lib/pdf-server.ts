@@ -8,6 +8,7 @@ import puppeteer, { type Browser } from 'puppeteer-core';
 import { getStorage } from 'firebase-admin/storage';
 import { getFirestore } from 'firebase-admin/firestore';
 import { assinarImagensExame, assinarUrlsNoHtml } from './imagens-dicom-admin';
+import { nomeArqDoPdfUrl } from './correcao-admin';
 
 // ── Resolver executável do Chrome (Vercel ou local) ──
 async function resolverExecutavel(): Promise<{ executablePath: string; args: string[]; headless: boolean }> {
@@ -71,17 +72,24 @@ export async function salvarPdfBuffer(
 // Path CANÔNICO por exameId: a leitura NÃO usa o campo `pdfHtmlPath` do doc
 // como caminho (o doc é editável pelo navegador — apontaria pro snapshot de
 // outro exame); o campo fica só como marca/auditoria.
+// Prefixo `laudos-html/` (fix I3): cai no DENY DEFAULT do storage.rules — o
+// laudo clínico completo não fica legível sem autenticação como fica em
+// `laudos/` (onde o PDF é público de propósito). Admin SDK bypassa a regra.
 function pathSnapshotHtml(wsId: string, exameId: string): string {
-  return `laudos/${wsId}/${exameId}.html`;
+  return `laudos-html/${wsId}/${exameId}.html`;
 }
 
 // Nunca lança: emissão não pode falhar porque o snapshot falhou — o PDF é o
 // produto. Sem snapshot, a correção só grava os campos e avisa o médico.
-async function salvarSnapshotHtml(html: string, wsId: string, exameId: string): Promise<void> {
+// `nomeArq` vai na metadata do OBJETO (Storage é admin-write-only): é o alvo
+// que a correção regrava. Guardar isso no doc do exame seria dar o volante
+// de volta ao cliente — o médico-autor pode editar o doc emitido e apontar
+// pro PDF de outro paciente (fix I1).
+async function salvarSnapshotHtml(html: string, wsId: string, exameId: string, nomeArq: string): Promise<void> {
   try {
     const filePath = pathSnapshotHtml(wsId, exameId);
     await getStorage().bucket().file(filePath).save(html, {
-      metadata: { contentType: 'text/html; charset=utf-8' },
+      metadata: { contentType: 'text/html; charset=utf-8', metadata: { nomeArq } },
     });   // sem makePublic(): só o Admin SDK lê
     await getFirestore().doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfHtmlPath: filePath });
   } catch (e) {
@@ -89,10 +97,15 @@ async function salvarSnapshotHtml(html: string, wsId: string, exameId: string): 
   }
 }
 
-export async function lerSnapshotHtml(wsId: string, exameId: string): Promise<string | null> {
+export async function lerSnapshotHtml(
+  wsId: string, exameId: string,
+): Promise<{ html: string; nomeArq: string } | null> {
   try {
-    const [buf] = await getStorage().bucket().file(pathSnapshotHtml(wsId, exameId)).download();
-    return buf.toString('utf8');
+    const file = getStorage().bucket().file(pathSnapshotHtml(wsId, exameId));
+    const [buf] = await file.download();
+    const [meta] = await file.getMetadata();
+    const nomeArq = meta.metadata?.nomeArq;
+    return { html: buf.toString('utf8'), nomeArq: typeof nomeArq === 'string' ? nomeArq : '' };
   } catch {
     return null;   // emitido antigo (antes de 25/08) ou PDF anexado: não tem snapshot
   }
@@ -103,8 +116,13 @@ export async function gerarESalvarPdf(
   pdfHtml: string,
   wsId: string,
   exameId: string,
-  nomeArq: string
-): Promise<string> {
+  nomeArq: string,
+  // Fix I4: última checagem ANTES de publicar o PDF. A correção usa para
+  // abortar se o exame foi REEMITIDO durante o Puppeteer — sem isso a escrita
+  // atrasada devolveria o corpo clínico antigo por cima do laudo novo.
+  // `false` → nada é escrito e a função devolve null.
+  podeSalvar?: () => Promise<boolean>,
+): Promise<string | null> {
   let browser: Browser | null = null;
   try {
     const { executablePath, args, headless } = await resolverExecutavel();
@@ -148,10 +166,14 @@ export async function gerarESalvarPdf(
     await browser.close();
     browser = null;
 
+    if (podeSalvar && !(await podeSalvar())) return null;
+
     const url = await salvarPdfBuffer(Buffer.from(pdfBuffer), wsId, exameId, nomeArq);
     // Congela o HTML ORIGINAL (URLs canônicas, não as assinadas — signed URL
-    // expira). Depois do PDF salvo e sem poder derrubá-lo.
-    await salvarSnapshotHtml(pdfHtml, wsId, exameId);
+    // expira) + o alvo real da escrita. Depois do PDF salvo e sem poder
+    // derrubá-lo. `nomeArqDoPdfUrl(url)` lê a URL que ESTE servidor acabou de
+    // montar — não há entrada de cliente aqui.
+    await salvarSnapshotHtml(pdfHtml, wsId, exameId, nomeArqDoPdfUrl(url));
     return url;
   } finally {
     if (browser) {

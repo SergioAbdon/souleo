@@ -16,8 +16,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { gerarESalvarPdf, lerSnapshotHtml } from '@/lib/pdf-server';
 import { requireUid, adminDb } from '@/lib/auth-admin';
-import { resolverPapel, podeCorrigir } from '@/lib/exame-admin';
-import { substituirCamposAdministrativos, nomeArqDoPdfUrl } from '@/lib/correcao-admin';
+import { resolverPapel, podeCorrigir, idValido } from '@/lib/exame-admin';
+import { substituirCamposAdministrativos, emissaoMudou } from '@/lib/correcao-admin';
+
+// Trust boundary: o corpo vem do navegador. Sem isto um `convenio` que não é
+// string era GRAVADO no exame (que alimenta extrato/glosa/PDF) e só depois
+// derrubava a rota em 500, com o campo já corrompido. Não é validação clínica
+// (19b) — é higiene de tipo/tamanho.
+const LIMITE_CAMPO = 120;
+function textoValido(v: unknown): v is string | undefined {
+  return v === undefined || v === null || typeof v === 'string';
+}
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -32,18 +41,25 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { wsId, exameId, convenio, solicitante } = body as {
-      wsId: string;
-      exameId: string;
-      convenio?: string;
-      solicitante?: string;
+      wsId: unknown;
+      exameId: unknown;
+      convenio?: unknown;
+      solicitante?: unknown;
     };
 
-    if (!wsId || !exameId) {
+    // Ids entram em path do Firestore e do Storage (`workspaces/${wsId}/...`):
+    // um id com '/' remonta o path. Mesma guarda do resto do servidor.
+    if (!idValido(wsId) || !idValido(exameId)) {
       return NextResponse.json(
         { ok: false, error: 'wsId e exameId sao obrigatorios' },
         { status: 400 },
       );
     }
+    if (!textoValido(convenio) || !textoValido(solicitante)) {
+      return NextResponse.json({ ok: false, error: 'campo_invalido' }, { status: 400 });
+    }
+    const conv = (convenio ?? '').slice(0, LIMITE_CAMPO);
+    const solic = (solicitante ?? '').slice(0, LIMITE_CAMPO);
 
     // D4: dono, medico-autor E recepcao do local. Quem nao tem vinculo ativo
     // (papel null) cai no podeCorrigir abaixo como 'sem_permissao'.
@@ -75,8 +91,8 @@ export async function POST(req: NextRequest) {
     // Atualiza SÓ os 2 campos administrativos no TOPO (fonte única — Phase B).
     // NÃO toca emitidoEm/status/medidas/billing. Sem crédito.
     await ref.update({
-      convenio: convenio ?? '',
-      solicitante: solicitante ?? '',
+      convenio: conv,
+      solicitante: solic,
       atualizadoEm: FieldValue.serverTimestamp(),
     });
 
@@ -88,17 +104,31 @@ export async function POST(req: NextRequest) {
     let pdfUrl: string | null = null;
     let pdfErro: string | null = null;
     let pdfDesatualizado = false;
+    let reemitido = false;
     const snapshot = await lerSnapshotHtml(wsId, exameId);
-    const htmlCorrigido = snapshot && substituirCamposAdministrativos(snapshot, { convenio, solicitante });
-    if (htmlCorrigido) {
+    const htmlCorrigido = snapshot && substituirCamposAdministrativos(snapshot.html, { convenio: conv, solicitante: solic });
+    if (htmlCorrigido && snapshot) {
       try {
         // Mesmo nome de arquivo da emissão: regrava o MESMO objeto, o link já
-        // entregue ao paciente/convênio continua valendo.
-        pdfUrl = await gerarESalvarPdf(htmlCorrigido, wsId, exameId, nomeArqDoPdfUrl(antes.pdfUrl));
-        await ref.update({ pdfUrl });
+        // entregue ao paciente/convênio continua valendo. O alvo vem da
+        // metadata do snapshot (servidor) — NUNCA de `antes.pdfUrl`, campo que
+        // o médico-autor pode reescrever no doc emitido e apontar pro PDF de
+        // outro paciente (fix I1).
+        pdfUrl = await gerarESalvarPdf(htmlCorrigido, wsId, exameId, snapshot.nomeArq, async () => {
+          // Fix I4: reemitiram enquanto o Puppeteer rodava? Então este PDF já
+          // nasceu velho — não publica.
+          const atual = await ref.get();
+          return !emissaoMudou(antes.emitidoEm, atual.data()?.emitidoEm);
+        });
+        if (pdfUrl === null) {
+          reemitido = true;
+          pdfDesatualizado = true;
+        } else {
+          await ref.update({ pdfUrl });
+        }
       } catch (e) {
-        pdfErro = e instanceof Error ? e.message : 'erro_pdf';
-        console.error('corrigir-laudo PDF error:', pdfErro);
+        pdfErro = 'erro_pdf';   // detalhe (bucket/path) só no log do servidor
+        console.error('corrigir-laudo PDF error:', e);
       }
     } else {
       pdfDesatualizado = true;
@@ -113,18 +143,25 @@ export async function POST(req: NextRequest) {
         medicoUid: uid,
         papel,
         de: { convenio: antes.convenio ?? '', solicitante: antes.solicitante ?? '' },
-        para: { convenio: convenio ?? '', solicitante: solicitante ?? '' },
+        para: { convenio: conv, solicitante: solic },
+        arquivoPdf: snapshot?.nomeArq ?? '',
         pdfDesatualizado,
+        reemitidoDurante: reemitido,
         ts: FieldValue.serverTimestamp(),
       });
     } catch { /* log nao pode quebrar a correcao */ }
 
+    // Campos JÁ gravados; só o PDF não saiu — o médico reemite (e a reemissão
+    // leva o convênio corrigido, que agora está no doc).
+    if (reemitido) {
+      return NextResponse.json(
+        { ok: false, error: 'reemitido_durante_correcao', pdfDesatualizado: true },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ ok: true, pdfUrl, pdfErro, pdfDesatualizado });
   } catch (e) {
-    console.error('API /corrigir-laudo error:', e);
-    return NextResponse.json(
-      { ok: false, error: (e as Error).message || 'Erro interno' },
-      { status: 500 },
-    );
+    console.error('API /corrigir-laudo error:', e);   // detalhe fica no servidor
+    return NextResponse.json({ ok: false, error: 'erro_interno' }, { status: 500 });
   }
 }

@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { resolverPapel, podeCorrigir } from '../../src/lib/exame-admin.ts';
-import { substituirCamposAdministrativos, nomeArqDoPdfUrl } from '../../src/lib/correcao-admin.ts';
+import { readFile } from 'node:fs/promises';
+import { substituirCamposAdministrativos, nomeArqDoPdfUrl, emissaoMudou } from '../../src/lib/correcao-admin.ts';
 
 let db;
 const CONTA = 'contaC', WS = 'wsC';
@@ -138,6 +139,42 @@ describe('substituirCamposAdministrativos (snapshot congelado)', () => {
     // so um dos dois blocos presente tambem nao serve
     const soConv = htmlLaudo('UNIMED', 'Dr. A').replace('MÉDICO SOLICITANTE', 'OUTRA COISA');
     assert.equal(substituirCamposAdministrativos(soConv, { convenio: 'X', solicitante: 'Y' }), null);
+  });
+});
+
+// S5-T5 fix / I1: o alvo da regravacao sai da metadata do snapshot (escrita
+// pelo servidor na emissao), NUNCA do doc do exame — `firestore.rules` deixa o
+// medico-autor reescrever o proprio exame emitido, e uma `pdfUrl` forjada
+// apontando pro PDF de outro paciente faria a correcao destruir o laudo alheio.
+describe('alvo do PDF corrigido nao vem do doc do exame (I1)', () => {
+  test('a rota nao le pdfUrl do doc; usa o nomeArq do snapshot', async () => {
+    const bruto = await readFile(new URL('../../src/app/api/corrigir-laudo/route.ts', import.meta.url), 'utf8');
+    const src = bruto.replace(/^\s*\/\/.*$/gm, '');   // comentarios citam o vetor de proposito
+    assert.ok(!/antes\.pdfUrl/.test(src), 'route.ts voltou a usar antes.pdfUrl como alvo do PDF');
+    assert.ok(!/nomeArqDoPdfUrl/.test(src), 'alvo do PDF nao pode ser derivado no request');
+    assert.ok(/gerarESalvarPdf\([^)]*snapshot\.nomeArq/.test(src), 'alvo do PDF tem que vir do snapshot');
+  });
+  test('snapshot sem metadata → string vazia (default laudo_{id}), nunca o doc', () => {
+    // lerSnapshotHtml normaliza metadata ausente para ''; salvarPdfBuffer cai
+    // no proprio default. Aqui garantimos que '' e um alvo valido e inofensivo.
+    assert.equal(nomeArqDoPdfUrl(undefined), '');
+  });
+});
+
+describe('emissaoMudou (CAS de reemissao durante a correcao — I4)', () => {
+  const ts = (ms) => ({ toMillis: () => ms });
+  test('mesmo selo de emissao → nao mudou', () => {
+    assert.equal(emissaoMudou(ts(1755000000000), ts(1755000000000)), false);
+  });
+  test('reemitiu durante o Puppeteer → mudou', () => {
+    assert.equal(emissaoMudou(ts(1755000000000), ts(1755000009999)), true);
+  });
+  test('sumiu / apareceu o selo → mudou', () => {
+    assert.equal(emissaoMudou(ts(1755000000000), undefined), true);
+    assert.equal(emissaoMudou(undefined, ts(1755000000000)), true);
+  });
+  test('sem selo dos dois lados → nao mudou (emitido legado)', () => {
+    assert.equal(emissaoMudou(undefined, null), false);
   });
 });
 

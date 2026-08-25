@@ -1093,7 +1093,12 @@ export default function LaudoPage() {
         body: JSON.stringify({ wsId: workspace.id, exameId, convenio, solicitante }),
       });
       const r = await res.json();
-      if (!r.ok) { toast('Erro ao salvar correção. Tente novamente.'); return; }
+      if (!r.ok) {
+        toast(r.error === 'reemitido_durante_correcao'
+          ? 'Correção salva, mas o laudo foi reemitido agora — o PDF novo já sai com o dado corrigido.'
+          : 'Erro ao salvar correção. Tente novamente.');
+        return;
+      }
       if (r.pdfUrl) {
         toast('Correção salva — PDF atualizado');
         window.open(r.pdfUrl, '_blank');
