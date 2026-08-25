@@ -536,6 +536,10 @@ function LaudoPageInner() {
             // shadow (comparação invisível, se ativo).
             const sc = () => {
               try { calcFn(); } catch (e) { console.warn('calc:', e); }
+              // nº13 (S5-T8): renderizarLaudo agora tem guards e não quebra
+              // antes de alertaIT() — mas religa aqui também pra cobrir os
+              // outros pontos de chamada de calcFn() que não passam por `sc`.
+              try { (window as unknown as { alertaIT?: () => void }).alertaIT?.(); } catch { /* não bloquear */ }
               // Migração Senna90: flag ON → preenche o vazio dos achados.
               // Achado CRITICAL (revisor S5-T1): a 1a rodada pós-restauração
               // NÃO dispara o Senna90 — senão o setContent incondicional de
