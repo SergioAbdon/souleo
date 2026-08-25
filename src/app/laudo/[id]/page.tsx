@@ -484,6 +484,13 @@ function LaudoPageInner() {
             // é mais a geração crua do motor — é ela mesclada com o que está
             // no editor agora. Regra em `src/lib/laudo-merge.ts` (25 testes).
             const dispararSenna90 = criarDebounce(300, async () => {
+              // fix (S5-T7 review, m5): mesmo guard de baixo, repetido ANTES
+              // do fetch — sem isto, uma instância já morta ainda gastava 1
+              // chamada de `/api/laudo/calcular` (rate limit 60/min
+              // compartilhado com a instância viva) só pra jogar o resultado
+              // fora depois do `await`. O guard pós-`await` continua
+              // necessário (o unmount pode acontecer DURANTE o fetch).
+              if (!vivoRef.current) return;
               const r = await calcularSenna90();
               // fix (S5-T7 review, C2): `criarDebounce` não expõe `cancel()`
               // — trocar de exame não cancela um timer já armado por esta
@@ -621,8 +628,35 @@ function LaudoPageInner() {
               sidebar.addEventListener('input', onB24Sync);
             }
 
-            preencherExame();
-            sc();
+            // fix (S5-T7 review, P1 — pré-existente desde ae71447, achado na
+            // onda de fechamento): este `preencherExame()` é DEAD CODE por
+            // construção — o efeito "Carregar motor" tem deps `[]`, então o
+            // `motorInicializar` aqui dentro fecha sobre o `exame` da
+            // PRIMEIRA renderização (sempre `null`, o Firestore ainda não
+            // respondeu). `preencherExame()` sempre entra no
+            // `if (!exame) return;` do topo e não faz nada — os dois
+            // chamadores REAIS (`[exameCarregadoId, motorLoaded]` mais
+            // abaixo, e o `change` sintético que ele mesmo dispara) já
+            // cobrem a carga com o `exame` de verdade.
+            //
+            // O `sc()` que vinha logo depois, porém, FAZIA algo — e o algo
+            // era ruim: disparava o Senna90 contra a sidebar ainda vazia
+            // (motor recém-carregado, nenhum dado preenchido) e gravava essa
+            // geração fantasma em `prevGerAchados`/`prevGerConclusoes`. Isso
+            // tirava de jogo o pseudo-prev da T2 (`prevGerAchados.current ??
+            // (...)`, só ativa quando o ref ainda é `null`) — a 1a geração
+            // REAL (na carga, com o rascunho restaurado, ou na 1a tecla do
+            // médico) passava a mesclar contra esse "estado conhecido" vazio
+            // em vez do pseudo-prev, e linhas editadas pelo médico saíam
+            // duplicadas (a dele + a nova do motor).
+            //
+            // Fix: `calcFn()` cru no lugar de `sc()` — preserva o único
+            // efeito colateral que tinha valor real (o motor legado
+            // populando `#params-tbody`/derivados assim que carrega, mesmo
+            // antes do exame chegar) sem disparar Senna90 nenhum daqui — logo
+            // sem gravar em `prevGer`. `preencherExame()` foi só apagado
+            // (no-op comprovado, ver acima).
+            try { calcFn(); } catch (e) { console.warn('calc:', e); }
           }
 
           // Override alertaIT — usar style.display em vez de classList.toggle
