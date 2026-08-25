@@ -119,6 +119,16 @@ function LaudoPageInner() {
   // `safeCalc()` preferir o wrapper completo sempre que ele já existir, e
   // cair pro `calc()` cru do window só como fallback (motor ainda subindo).
   const scRef = useRef<(() => void) | undefined>(undefined);
+  // Flag "esta instância ainda está montada" (S5-T7 fix, review C2+I1):
+  // duas execuções sobrevivem ao unmount sem cancelamento — o timer do
+  // debounce do Senna90 (`criarDebounce` não expõe `cancel()`) e o `onload`
+  // de um `<script>` do motor ainda em voo quando o médico troca de exame
+  // antes do motor terminar de subir. As duas, se deixadas rodar, escrevem
+  // no DOM/editor da instância NOVA usando o `editorRef`/timers da instância
+  // VELHA (já morta) — `vivoRef.current === false` faz as duas virarem no-op.
+  // Reset pra `true` no topo do efeito do motor (StrictMode em dev remonta
+  // o mesmo componente sem trocar de instância — precisa rearmar).
+  const vivoRef = useRef(true);
   // Dirty flag (S5-T1): setada pelo listener delegado do #laudo-sidebar
   // (medidas) e pelo onDirty do EditorLaudo (achados/conclusões). Autosave
   // e beforeunload leem este ref — zerado só em salvamento COM sucesso.
@@ -276,7 +286,15 @@ function LaudoPageInner() {
         // uma URL selecionada sumiu de `imagensDicom` (reprocesso/remap do
         // Wader), tira da seleção. NUNCA adiciona: se o médico desmarcou uma
         // imagem, uma snapshot nova não a marca de volta.
-        setImagensSelecionadasPdf((sel) => sel.filter((u) => todas.includes(u)));
+        // Guard `todas.length > 0` (review M1): uma snapshot com
+        // `imagensDicom` vazio (carga/transitório antes do Wader escrever)
+        // NÃO deve zerar a seleção pra sempre — `selecaoInicializada` já
+        // ficou `true` na 1a vez que houve imagem, então a inicialização não
+        // roda de novo pra repopular. A mesma regra do guard F1 de
+        // inicialização (vazio = "não vale nada ainda") vale aqui.
+        if (todas.length > 0) {
+          setImagensSelecionadasPdf((sel) => sel.filter((u) => todas.includes(u)));
+        }
       },
       (err) => console.warn('laudo onSnapshot:', err),
     );
@@ -364,6 +382,7 @@ function LaudoPageInner() {
   // Carregar motor
   useEffect(() => {
     if (motorLoaded) return;
+    vivoRef.current = true; // rearma (StrictMode dev remonta sem trocar de instância)
     const w = window as unknown as Record<string, unknown>;
     w.escH = (s: string) => { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; };
     w.showToast = (msg: string) => { const el = document.createElement('div'); el.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:99999;background:#1E293B;color:#fff;padding:10px 20px;border-radius:9px;font-size:13px;font-weight:600;font-family:IBM Plex Sans,sans-serif;box-shadow:0 4px 20px rgba(0,0,0,.3);'; el.textContent = msg; document.body.appendChild(el); setTimeout(() => el.remove(), 3000); };
@@ -439,6 +458,14 @@ function LaudoPageInner() {
     function motorInicializar() {
       setMotorLoaded(true);
       setTimeout(() => {
+        // fix (S5-T7 review, I1): troca de exame ANTES do motor terminar de
+        // subir — o `<script>` de A ainda em voo dispara `s.onload` (o
+        // closure de A) depois que B já montou. Sem este guard,
+        // `motorInicializar()` de A rodaria contra a sidebar de B (listeners
+        // duplicados, um deles sempre com `editorRef` morto → `setContent`
+        // cru a cada tecla, matando o merge em B pelo resto da sessão). A
+        // instância viva (B) já religa tudo sozinha no seu próprio efeito.
+        if (!vivoRef.current) return;
         try {
           const calcFn = (window as unknown as Record<string, unknown>).calc as (() => void) | undefined;
           if (calcFn) {
@@ -458,7 +485,16 @@ function LaudoPageInner() {
             // no editor agora. Regra em `src/lib/laudo-merge.ts` (25 testes).
             const dispararSenna90 = criarDebounce(300, async () => {
               const r = await calcularSenna90();
-              if (!r) return; // falha → fallback silencioso (motor antigo)
+              // fix (S5-T7 review, C2): `criarDebounce` não expõe `cancel()`
+              // — trocar de exame não cancela um timer já armado por esta
+              // instância. Se ele disparar depois do unmount, `editorRef`
+              // já é null (não vaza dados: a checagem de `ed` abaixo pula o
+              // merge) — mas sem este guard `onGer` ainda seria o handler DA
+              // INSTÂNCIA NOVA (reatribuído síncrono no mount dela) e faria
+              // `setContent` CRU (sem merge) de um laudo calculado com o DOM
+              // em branco (pré-`preencherExame` da instância nova) por cima
+              // do texto recém-restaurado do paciente novo.
+              if (!r || !vivoRef.current) return; // falha OU instância morta → no-op
               const ed = editorRef.current;
               // Editor ainda não montou: nada pra preservar, e o HTML vai
               // esperar em `pendingHtml`. Mesclar contra [] aqui APAGARIA o
@@ -547,7 +583,17 @@ function LaudoPageInner() {
                   const refluxoPulmonarFn = (window as unknown as Record<string, unknown>)
                     .refluxoPulmonar as (() => void) | undefined;
                   if (refluxoPulmonarFn) { try { refluxoPulmonarFn(); } catch { /* */ } }
-                  safeCalc();
+                  // fix (S5-T7 review, C1): motor CRU aqui, não `safeCalc()`.
+                  // Desde o nº12, `safeCalc()` é o wrapper `sc()` — que dispara
+                  // o Senna90 e CONSOME `textoRestauradoRef`. Este branch existe
+                  // exatamente pra NÃO fazer isso (comentário acima, nº23): os
+                  // dois chamadores de `preencherExame()` já rodam `sc()`/
+                  // `safeCalc()` logo depois deles mesmos — bastava revelar o
+                  // condicional PSMAP e recalcular os derivados legados.
+                  // Passar por `sc()` aqui consumia o guard ANTES da hora,
+                  // dobrando o Senna90 do fluxo de carga (T2 duplicava o laudo
+                  // ~1s após abrir um exame com `laudoHtml` salvo).
+                  try { calcFn(); } catch (e) { console.warn('calc:', e); }
                   return;
                 }
                 const tag = t.tagName;
@@ -588,7 +634,15 @@ function LaudoPageInner() {
           };
 
           // Wrap setDiastModo APÓS motor carregar (motor exporta window.setDiastModo)
-          const origSetDiastModo = (window as unknown as Record<string, unknown>).setDiastModo as ((m: string) => void) | undefined;
+          // fix (S5-T7 review, M2): remount por exame (nº16) roda este bloco
+          // de novo a cada troca — sem a marca abaixo, `origSetDiastModo`
+          // capturaria o WRAPPER da instância anterior (não o motor cru),
+          // empilhando 1 nível de closure por exame aberto na sessão.
+          // Idempotente (só repinta os mesmos botões), mas guarda a
+          // referência ORIGINAL uma única vez.
+          const wDiast = window as unknown as Record<string, unknown>;
+          if (!wDiast.__setDiastModoOrig) wDiast.__setDiastModoOrig = wDiast.setDiastModo;
+          const origSetDiastModo = wDiast.__setDiastModoOrig as ((m: string) => void) | undefined;
           (window as unknown as Record<string, unknown>).setDiastModo = (modo: string) => {
             if (origSetDiastModo) origSetDiastModo(modo);
             const btnAuto = document.getElementById('diast-btn-auto');
@@ -623,6 +677,11 @@ function LaudoPageInner() {
       carregarScript();
     }
     return () => {
+      // fix (S5-T7 review, C2+I1): mata o debounce órfão do Senna90 e o
+      // `onload` zumbi de um `<script>` ainda em voo (ver os dois guards
+      // acima) — a instância que está sendo desmontada não escreve mais
+      // nada, ponto.
+      vivoRef.current = false;
       try { document.querySelectorAll('script[src*="motorv8mp4"]').forEach(s => s.remove()); } catch {}
       // `_onLaudoGerado`/`_onInserirFrase` não sobrevivem ao exame que os
       // criou: se a página é desmontada de vez (sai do /laudo, não troca por
