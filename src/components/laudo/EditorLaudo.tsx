@@ -121,7 +121,12 @@ const EditorLaudo = forwardRef<EditorLaudoRef, Props>(({ placeholder, onAddFrase
   });
 
   useEffect(() => {
-    editor?.setEditable(editable);
+    // S5-T6 fix (review Important 1): `setEditable(editable, true)` (default)
+    // emite 'update' → dispara `onDirty` mesmo sem o médico ter tocado em
+    // nada (laudo aberto e nunca editado virava dirty sozinho ao montar,
+    // armando autosave 'andamento'+medicoUid e o aviso de saída). `false`
+    // aqui é silencioso — sem side-effect, só troca `options.editable`.
+    editor?.setEditable(editable, false);
   }, [editor, editable]);
 
   useImperativeHandle(ref, () => ({

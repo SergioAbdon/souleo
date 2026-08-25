@@ -1757,12 +1757,19 @@ ${imagensPdfHtml}
         .btn-undo,.btn-redo{background:none;border:1px solid #E5E7EB;color:#6B7280;font-size:12px;padding:2px 8px;border-radius:4px;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;transition:all .12s;}
         .btn-undo:hover,.btn-redo:hover{background:#EFF6FF;border-color:#2563EB;color:#2563EB;}
         #params-tbody td{border:0.5px solid #ccc;padding:2px 5px;}
-        /* S5-T6: trava única do emitido. CSS trava mouse+visual de TODO
+        /* S5-T6 fix (review Important 2): CSS trava mouse+visual de TODO
            campo do motor; convênio/solicitante ficam de fora (correção
-           administrativa sem crédito, T5 — sempre editáveis). Mesma
-           exceção (mesmos 2 ids) no disabled-setter de SidebarLaudo.tsx —
-           é a lista viva, não duplicar id aqui sem duplicar lá. */
-        .laudo-locked #laudo-sidebar input:not(#convenio):not(#solicitante),.laudo-locked #laudo-sidebar select:not(#convenio):not(#solicitante),.laudo-locked #laudo-sidebar textarea{pointer-events:none;opacity:.6;background:#f1f5f9;}
+           administrativa sem crédito, T5 — sempre editáveis) e nome/dtnasc/
+           dtexame TAMBÉM ficam de fora — são da trava de IDENTIFICAÇÃO
+           (idBloqueado, disabled nativo no JSX): sem esta exceção, o botão
+           "🔓 Desbloquear nome/datas" liberava o campo no React mas o CSS
+           continuava com pointer-events:none por cima (emitido ainda true —
+           desbloquear identificação não é a reedição clínica) — o
+           desbloqueio PAGO ficava morto pro mouse. Mesmos 5 ids no
+           disabled-setter de SidebarLaudo.tsx (a lista 'livres') — as duas
+           listas são o MESMO conjunto; teste unitário (laudo-trava-emitido)
+           trava isso comparando as duas, não repetir um id só de um lado. */
+        .laudo-locked #laudo-sidebar input:not(#convenio):not(#solicitante):not(#nome):not(#dtnasc):not(#dtexame),.laudo-locked #laudo-sidebar select:not(#convenio):not(#solicitante):not(#nome):not(#dtnasc):not(#dtexame),.laudo-locked #laudo-sidebar textarea:not(#convenio):not(#solicitante):not(#nome):not(#dtnasc):not(#dtexame){pointer-events:none;opacity:.6;background:#f1f5f9;}
         .laudo-locked #laudo-sidebar .section-btn{pointer-events:none;opacity:.5;}
         .laudo-locked #modo-edicao{display:none;}
       `}</style>

@@ -81,6 +81,11 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
   // convenio/solicitante ficam sempre editáveis (correção administrativa
   // sem crédito, T5). wk-mob/wk-esp/wk-cal/wk-sub (Wilkins) não têm mais
   // isenção — mesmo furo do M1 se o painel já estivesse aberto ao emitir.
+  //
+  // Review S5-T6 (Minor 3): os 800ms são padrão pré-existente, fora do
+  // escopo desta task — só o CSS trava na hora; nessa janela o teclado
+  // ainda alcança os campos do motor num laudo recém-emitido. Encurtar
+  // fica pra task futura.
   useEffect(() => {
     const timer = setTimeout(() => {
       const sidebar = document.getElementById('laudo-sidebar');
