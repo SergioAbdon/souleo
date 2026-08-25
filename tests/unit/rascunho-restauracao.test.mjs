@@ -3,7 +3,7 @@
 // nº9: recusar o rascunho local não o apaga — não há "remover" aqui.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { decidirFontePreenchimento } from '../../src/lib/rascunho-restauracao.ts';
+import { decidirFontePreenchimento, rascunhoExpirado, SETE_DIAS_MS } from '../../src/lib/rascunho-restauracao.ts';
 
 describe('decidirFontePreenchimento', () => {
   test('sem rascunho local → usa medidas/laudoHtml do exame', () => {
@@ -50,5 +50,42 @@ describe('decidirFontePreenchimento', () => {
       decidirFontePreenchimento({ medidas: { a: '1' } }, undefined, { medidas: { b: '2' } }).origem,
       'exame',
     );
+  });
+});
+
+// nº19-baixo (S5-T7): limpeza de rascunhos órfãos — decisão pura de expiração.
+describe('rascunhoExpirado', () => {
+  const agora = 1_700_000_000_000;
+
+  test('sem valor (chave sumiu no meio da iteração) → expirado', () => {
+    assert.equal(rascunhoExpirado(null, agora), true);
+  });
+
+  test('JSON corrompido → expirado (mesma política do catch original)', () => {
+    assert.equal(rascunhoExpirado('{not json', agora), true);
+  });
+
+  test('timestamp recente (dentro do limite) → não expirado', () => {
+    const raw = JSON.stringify({ timestamp: agora - 1000 });
+    assert.equal(rascunhoExpirado(raw, agora), false);
+  });
+
+  test('timestamp mais velho que 7 dias → expirado', () => {
+    const raw = JSON.stringify({ timestamp: agora - SETE_DIAS_MS - 1 });
+    assert.equal(rascunhoExpirado(raw, agora), true);
+  });
+
+  test('exatamente no limite (não passou de 7 dias) → não expirado', () => {
+    const raw = JSON.stringify({ timestamp: agora - SETE_DIAS_MS });
+    assert.equal(rascunhoExpirado(raw, agora), false);
+  });
+
+  test('sem timestamp no JSON → não expirado (nada pra comparar)', () => {
+    assert.equal(rascunhoExpirado(JSON.stringify({ medidas: {} }), agora), false);
+  });
+
+  test('limiteMs customizado é respeitado', () => {
+    const raw = JSON.stringify({ timestamp: agora - 100 });
+    assert.equal(rascunhoExpirado(raw, agora, 50), true);
   });
 });

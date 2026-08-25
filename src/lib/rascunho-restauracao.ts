@@ -45,3 +45,22 @@ export function decidirFontePreenchimento(
   }
   return { medidas: exame?.medidas, laudoHtml: exame?.laudoHtml || undefined, origem: 'exame' };
 }
+
+export const SETE_DIAS_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Decide se uma entrada `rascunho_*` do localStorage já expirou (S5-T7,
+ * nº19-baixo) — pura, só a decisão. `page.tsx` faz a iteração e o
+ * `removeItem` de verdade (efeito colateral fica lá, fora desta função).
+ * JSON corrompido também expira — mesma política do `catch` original:
+ * lixo no localStorage é removido, não fica acumulando pra sempre.
+ */
+export function rascunhoExpirado(rawValue: string | null, agora: number, limiteMs: number = SETE_DIAS_MS): boolean {
+  if (!rawValue) return true;
+  try {
+    const r = JSON.parse(rawValue);
+    return !!(r.timestamp && agora - r.timestamp > limiteMs);
+  } catch {
+    return true;
+  }
+}

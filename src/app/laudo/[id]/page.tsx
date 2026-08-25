@@ -22,7 +22,7 @@ import DicomSrImport from '@/components/laudo/DicomSrImport';
 import { normalizarParaImport, prefixoArquivoPorTipo, isSchemaAntigo, InputImport, MedidaSr, MapaSr, SR_TO_MOTOR } from '@/lib/dicom-sr-mapping';
 import { carregarPerfilAparelho } from '@/lib/perfil-aparelho';
 import { precisaConfirmarEmissao, SEM_SELECAO_PREFIXO } from '@/lib/emissao-guarda';
-import { decidirFontePreenchimento, type RascunhoLocal } from '@/lib/rascunho-restauracao';
+import { decidirFontePreenchimento, rascunhoExpirado, SETE_DIAS_MS, type RascunhoLocal } from '@/lib/rascunho-restauracao';
 import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
 import { gerarDocx } from '@/lib/exportDocx';
@@ -40,7 +40,22 @@ import { montarLaudoHtml } from '@/lib/senna90-render';
 import { mesclarLinhas } from '@/lib/laudo-merge';
 import { checkboxParaMedida, medidaParaChecked } from '@/lib/checkbox-codec';
 
+// nº16 (S5-T7): remount limpo por exame. Antes o componente NÃO desmontava
+// ao navegar /laudo/A → /laudo/B (mesma rota, só o param muda) — todo o
+// arsenal de resets manuais abaixo (exameAnteriorRef + limparCampos(true) +
+// prevGer/restauracao zerados no onSnapshot) existia só pra simular, à mão,
+// o que um remount de verdade faria de graça. Com a `key`, trocar de exame
+// desmonta `LaudoPageInner` inteira e monta outra: estados e refs nascem
+// zerados por construção. Os resets manuais continuam no código — inofensivos
+// (nunca mais disparam, porque `exameAnteriorRef.current` sempre nasce null
+// na instância nova) — e ficam como rede de segurança se um refactor futuro
+// tirar a `key` de novo.
 export default function LaudoPage() {
+  const params = useParams();
+  return <LaudoPageInner key={String(params.id)} />;
+}
+
+function LaudoPageInner() {
   const params = useParams();
   const router = useRouter();
   const { user, profile, workspace } = useAuth();
@@ -97,6 +112,13 @@ export default function LaudoPage() {
   // de uma emissão em curso. Task 7 reusa este mesmo ref pro guard de duplo
   // clique no botão emitir.
   const emitindoRef = useRef(false);
+  // Wrapper único do motor (S5-T7, nº12): `sc()` (declarado dentro de
+  // `motorInicializar`) é calc() + disparo do Senna90 + shadow mode — só
+  // existe DEPOIS do motor carregar. `safeCalc()` é chamado de fora (Limpar,
+  // preencherExame) antes disso ser garantido; guardar `sc` aqui deixa
+  // `safeCalc()` preferir o wrapper completo sempre que ele já existir, e
+  // cair pro `calc()` cru do window só como fallback (motor ainda subindo).
+  const scRef = useRef<(() => void) | undefined>(undefined);
   // Dirty flag (S5-T1): setada pelo listener delegado do #laudo-sidebar
   // (medidas) e pelo onDirty do EditorLaudo (achados/conclusões). Autosave
   // e beforeunload leem este ref — zerado só em salvamento COM sucesso.
@@ -239,16 +261,22 @@ export default function LaudoPage() {
         //    quando médico toggle alguma imagem (auto-save abaixo).
         // Já inicializada NÃO re-roda: a escolha do médico é soberana.
         const todas = (dados.imagensDicom as string[] | undefined) || [];
-        if (selecaoInicializada.current || todas.length === 0) return;
-        selecaoInicializada.current = true;
-        const salvas = dados.imagensSelecionadasPdf as string[] | undefined;
-        if (salvas && Array.isArray(salvas)) {
-          // Filtra URLs salvas que ainda existem em imagensDicom (defensivo
-          // contra remap/reprocessamento que mudou URLs)
-          setImagensSelecionadasPdf(salvas.filter((u) => todas.includes(u)));
-        } else {
-          setImagensSelecionadasPdf(todas.slice(0, 8));
+        if (!selecaoInicializada.current && todas.length > 0) {
+          selecaoInicializada.current = true;
+          const salvas = dados.imagensSelecionadasPdf as string[] | undefined;
+          if (salvas && Array.isArray(salvas)) {
+            // Filtra URLs salvas que ainda existem em imagensDicom (defensivo
+            // contra remap/reprocessamento que mudou URLs)
+            setImagensSelecionadasPdf(salvas.filter((u) => todas.includes(u)));
+          } else {
+            setImagensSelecionadasPdf(todas.slice(0, 8));
+          }
         }
+        // nº17 (S5-T7): poda a seleção em TODA snapshot (não só na 1a) — se
+        // uma URL selecionada sumiu de `imagensDicom` (reprocesso/remap do
+        // Wader), tira da seleção. NUNCA adiciona: se o médico desmarcou uma
+        // imagem, uma snapshot nova não a marca de volta.
+        setImagensSelecionadasPdf((sel) => sel.filter((u) => todas.includes(u)));
       },
       (err) => console.warn('laudo onSnapshot:', err),
     );
@@ -484,6 +512,9 @@ export default function LaudoPage() {
                 try { executarEReportar(exameId); } catch { /* não bloquear */ }
               }
             };
+            // nº12: publica o wrapper pra `safeCalc()` (fora deste escopo)
+            // preferir `sc` (calc + Senna90 + shadow) em vez do `calc()` cru.
+            scRef.current = sc;
 
             // FIX 12/05/2026: Event delegation no container, NÃO em cada input.
             //
@@ -579,14 +610,45 @@ export default function LaudoPage() {
       }, 500);
     }
 
-    carregarScript();
-    return () => { try { document.querySelectorAll('script[src*="motorv8mp4"]').forEach(s => s.remove()); } catch {} };
+    // nº21 (S5-T7): remount por exame (nº16) faz este efeito rodar de novo a
+    // cada troca. Remover a <script> do DOM (cleanup abaixo) NÃO desfaz a
+    // execução do IIFE — `window.calc` sobrevive ao unmount. Reinjetar de
+    // novo carregaria o motor inteiro outra vez à toa; se já existe, só
+    // rebind: `motorInicializar()` religa os listeners na sidebar NOVA (DOM
+    // fresco do remount) e reatribui `scRef.current`/`_onLaudoGerado` pros
+    // closures desta instância — sem repetir o script/retry.
+    if ((window as unknown as Record<string, unknown>).calc) {
+      motorInicializar();
+    } else {
+      carregarScript();
+    }
+    return () => {
+      try { document.querySelectorAll('script[src*="motorv8mp4"]').forEach(s => s.remove()); } catch {}
+      // `_onLaudoGerado`/`_onInserirFrase` não sobrevivem ao exame que os
+      // criou: se a página é desmontada de vez (sai do /laudo, não troca por
+      // outro exame), ninguém mais reatribui esses globais — sem o delete,
+      // ficariam apontando pro closure do exame antigo (editorRef já nulo)
+      // até o próximo /laudo montar. Deletar é defensivo: uma chamada tardia
+      // (ex.: timer de debounce do Senna90 ainda em voo) vira no-op silencioso
+      // em vez de escrever num editor que não existe mais.
+      const w = window as unknown as Record<string, unknown>;
+      delete w._onLaudoGerado;
+      delete w._onInserirFrase;
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // nº12 (S5-T7): prefere o wrapper `sc` (calc + Senna90 + shadow, montado em
+  // `scRef.current` por `motorInicializar`) — cai pro `calc()` cru do window
+  // só enquanto o motor ainda não terminou de subir (scRef ainda vazio).
+  // NB: NÃO escrito como `scRef.current?.() ?? calc()` — `sc()`/`calc()` são
+  // void (sempre retornam undefined), e `undefined ?? calc()` chamaria as
+  // DUAS toda vez que `scRef.current` já existisse (calc() rodaria 2x por
+  // tecla). O guard explícito abaixo chama só uma.
   function safeCalc() {
     if (motorErro) return; // v3: nao tentar calcular se motor falhou
     try {
+      if (scRef.current) { scRef.current(); return; }
       const c = (window as unknown as Record<string, unknown>).calc as (() => void);
       if (c) c();
       else if (motorLoaded) { console.warn('calc: funcao nao encontrada no window'); }
@@ -602,20 +664,20 @@ export default function LaudoPage() {
       restauracaoFeitaRef.current = true;
 
       // v3: limpar rascunhos orfaos (mais de 7 dias)
+      // nº19-baixo (S5-T7): `Object.keys(localStorage)` tira uma CÓPIA das
+      // chaves antes de iterar — o loop antigo (`for i < localStorage.length`)
+      // reindexava a cada `removeItem` (o storage encolhe e desloca os
+      // índices seguintes pra trás), pulando a chave seguinte à removida.
+      // Decisão de expiração é pura (`rascunhoExpirado`, testada em
+      // `rascunho-restauracao.test.mjs`) — só o `removeItem` fica aqui.
       try {
-        const SETE_DIAS = 7 * 24 * 60 * 60 * 1000;
         const agora = Date.now();
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key?.startsWith('rascunho_')) {
-            try {
-              const r = JSON.parse(localStorage.getItem(key) || '{}');
-              if (r.timestamp && agora - r.timestamp > SETE_DIAS) {
-                localStorage.removeItem(key);
-              }
-            } catch { localStorage.removeItem(key!); }
+        Object.keys(localStorage).forEach((key) => {
+          if (!key.startsWith('rascunho_')) return;
+          if (rascunhoExpirado(localStorage.getItem(key), agora, SETE_DIAS_MS)) {
+            localStorage.removeItem(key);
           }
-        }
+        });
       } catch { /* */ }
 
       // Rascunho local x exame do servidor: decisão pura em rascunho-restauracao.ts
@@ -929,6 +991,13 @@ export default function LaudoPage() {
 
   async function handleEmitir(incluirImagens: boolean = true) {
     if (!workspace?.id || !exameId || !user?.uid) return;
+    // nº11 (S5-T7): duplo-clique/duplo-submit — o guard de baixo (linha ~955)
+    // só sobe DEPOIS dos `confirm()` de pendência DICOM; sem pendência não há
+    // confirm bloqueando, e um segundo clique entre o primeiro clique e o
+    // primeiro `await` cairia aqui de novo. `emitindoRef` também é
+    // compartilhado com `handleCorrigirLaudo` — os dois fluxos gravam o
+    // mesmo laudo, um por vez.
+    if (emitindoRef.current) return;
     // Guarda de emissão (S4-T12): o Wader falhou ou ainda não trouxe as
     // imagens deste exame — emitir agora gera um PDF sem imagem nenhuma.
     // Decisão pura em `precisaConfirmarEmissao` (tem teste); aqui só o aviso.
@@ -1073,6 +1142,10 @@ export default function LaudoPage() {
   // Identidade (nome/datas) NÃO entra aqui — segue travada/Desbloquear.
   async function handleCorrigirLaudo() {
     if (!workspace?.id || !exameId || !user?.uid) return;
+    // nº11 (S5-T7): mesmo guard de `handleEmitir` — os dois fluxos gravam o
+    // mesmo laudo, um por vez (duplo-clique aqui, ou correção em cima de uma
+    // emissão em curso).
+    if (emitindoRef.current) return;
     // S5-T5: com reedição aberta a tela já não é o laudo emitido — corrigir
     // aqui gravaria o convênio por cima de um laudo que ainda vai ser reemitido.
     // Um fluxo por vez.
@@ -1083,6 +1156,7 @@ export default function LaudoPage() {
     const convenio = (document.getElementById('convenio') as HTMLInputElement)?.value || '';
     const solicitante = (document.getElementById('solicitante') as HTMLInputElement)?.value || '';
     toast('Salvando correção e regerando PDF...');
+    emitindoRef.current = true;
     try {
       const token = await user.getIdToken();
       const res = await fetch('/api/corrigir-laudo', {
@@ -1109,6 +1183,8 @@ export default function LaudoPage() {
       }
     } catch {
       toast('Erro de conexão ao salvar correção.');
+    } finally {
+      emitindoRef.current = false;
     }
   }
 
@@ -1476,6 +1552,10 @@ ${imagensPdfHtml}
   function handleLimpar() {
     if (!confirm('Limpar todos os campos?')) return;
     limparCampos();
+    // nº14-alto (S5 corr): "Limpar" zera as medidas mas deixava
+    // `dicomImportado` true — o botão "📡 Importar" continuava mostrando o
+    // selo de "já importado" mesmo com os campos todos vazios de novo.
+    setDicomImportado(false);
   }
 
   /**
