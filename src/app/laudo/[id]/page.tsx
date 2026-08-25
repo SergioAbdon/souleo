@@ -1534,8 +1534,10 @@ ${imagensPdfHtml}
     // zerar `b40p` não esconde `#field-psmap` (quem faz isso é `refluxoPulmonar()`,
     // só chamado pelo onChange do próprio select). Sem isto o campo fica
     // visível e vazio depois de "Limpar".
+    // try/catch: um throw aqui pularia a limpeza de identificação logo abaixo
+    // (o vazamento de paciente que este bloco existe pra impedir).
     const refluxoPulmonarFn = (window as unknown as Record<string, unknown>).refluxoPulmonar as (() => void) | undefined;
-    if (refluxoPulmonarFn) refluxoPulmonarFn();
+    try { if (refluxoPulmonarFn) refluxoPulmonarFn(); } catch { /* campo sempre montado; falha só estética */ }
     if (trocaDeExame) {
       // Identificação do paciente ANTERIOR: `preencherExame()` só escreve
       // campo vazio (`if (el && !el.value && val)`), então sem zerar aqui o
