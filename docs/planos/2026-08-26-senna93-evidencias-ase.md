@@ -46,3 +46,41 @@ quantificação de câmaras 2023-2025.
   seguir ACC/AHA e citar no rodapé).
 - Rodapé do PDF: citar POR DOMÍNIO (Lang 2015; Goldstein 2015; ACC/AHA 2022; WASE 2022;
   ASE 2025 coração direito; ASE/EACVI 2025 strain) — hoje credita errado.
+
+## Capítulo TC/RM e radiologia (pesquisa 2, 26/08)
+
+### Arco aórtico — veredito final da evidência
+- NENHUMA diretriz ou estudo normativo (ACC/AHA 2022, ESC 2014, Framingham/MESA/
+  Copenhagen) fornece tabela normal do arco médio por sexo/idade/ASC — nem em TC/RM.
+- Referência PRÁTICA citada no material ACC/AHA: teto ~40 mm ("aproximado, não
+  validado"). NÃO existe gradação leve/moderada/grave de arco em documento algum.
+- Aneurisma de arco: conceito genérico ≥1.5× o esperado; limiar de CIRURGIA
+  (isolado, assintomático, baixo risco): ≥55 mm (ACC/AHA 2022 e ESC 2014 concordam).
+- PROPOSTA evidence-based p/ Senna93 (mata as 3 réguas de casa): normal ≤40 ·
+  ">40 = dilatado" (referência prática, SEM graus) · ≥55 nota cirúrgica ·
+  arco dilatado ou mal visualizado → frase de angio-TC/RM.
+
+### Descendente
+- Referência prática: ~38 mm (faixa 35-39, ACC/AHA size summary).
+- Intervenção: ≥55 (TEVAR quando viável; ESC: ≥60 p/ cirurgia aberta sem TEVAR).
+
+### Técnica de medida (pro rodapé e pra comparação seriada)
+- Eco: leading-edge→leading-edge, telediástole, perpendicular ao fluxo (ASE 2015;
+  ACC/AHA 2022 Classe 2a) — exceção: ânulo inner-inner mesossístole.
+- TC/RM: inner-inner com gating (ACC/AHA Classe 1); outer-outer se parede espessa.
+- SEM fator de conversão oficial entre modalidades (~1-2 mm eco-LL vs TC-II;
+  2-4 mm vs O-O). Seriado: MESMA modalidade e método (ESC Classe I-C) — mudança
+  de 1-2 mm entre modalidades NÃO é crescimento.
+- TTE com aorta proximal dilatada ou arco/descendente mal vistos → angio-TC ou
+  angio-RM da aorta torácica INTEIRA (ACC/AHA 2a C-LD na definição inicial);
+  vigilância 6-12m e depois 6-24m se estável.
+
+## DECISÃO REGISTRADA (26/08, Sergio + concordância técnica)
+
+Nomenclatura aórtica do Senna93 segue **ACC/AHA 2022**: dilatação ≥40 · aneurisma
+≥45 (raiz/ascendente, adulto médio) · 50/55 = limiares cirúrgicos (nota de
+encaminhamento, não mudança de nome) · índice área/altura ≥10 cm²/m = sinalização
+de risco cirúrgico, não diagnóstico. Rodapé do PDF passa a citar por domínio:
+Lang 2015 · Goldstein 2015 · ACC/AHA 2022 · WASE 2022 · ASE 2025 (coração direito)
+· ASE/EACVI 2025 (strain). Laudos antigos: mudança de PALAVRA (ectasia→aneurisma
+em 45-49 mm), não de conduta — frase padrão de encaminhamento só nos ≥50.
