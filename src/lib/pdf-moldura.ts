@@ -77,8 +77,10 @@ export function montarPdfMoldura(a: ArgsMoldura): string {
   const clinicaSlogan = escaparHtml(a.cfg.clinicaSlogan || '');
   const clinicaEnd = escaparHtml(a.cfg.clinicaEnd || '');
   const telCompleto = escaparHtml(a.cfg.clinicaTel || '');
-  const logoB64 = a.cfg.logoB64 || '';
-  const sigB64 = a.cfg.sigB64 || '';
+  // Atributo src: escapar fecha o ultimo par de valores crus do arquivo.
+  // base64/data-uri legitimos nao contem &<>" — saida byte-identica.
+  const logoB64 = escaparHtml(a.cfg.logoB64 || '');
+  const sigB64 = escaparHtml(a.cfg.sigB64 || '');
 
   // Todas as linhas menos a última levam `margin-bottom:2px` — era assim nos
   // dois templates originais (1ª linha com, 2ª sem).
