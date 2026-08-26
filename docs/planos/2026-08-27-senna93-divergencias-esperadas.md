@@ -5,3 +5,5 @@ divergência que case com estas linhas como esperada; qualquer outra é achado.
 | Task | Domínio | O que mudou | Spec |
 |---|---|---|---|
 | F1-T1 | Aorta | Raiz ♀≥66a: corte 37→38 (WASE) · aneurisma raiz/asc ≥50→≥45 (ACC/AHA 2022) · arco: 3 réguas → ≤40 normal/>40 dilatado sem graus · notaCirurgica ≥50/≥55 · alerta AORTA_SEM_IDADE novo | §2.2 |
+| F1-T2 | Aorta | "Ectasia"→"Dilatação" nas frases · nota cirúrgica ≥50/≥55 nova · frase angio-TC/RM nova (arco dilatado ou 'nv') | §2.2 |
+| F1-T2 | Aorta | Aneurisma 45-49 passou a carregar índice cm²/m no achado e "com critérios de maior gravidade" na conclusão (I1 da revisão T1 — antes o índice sumia nessa faixa) | §2.2 |

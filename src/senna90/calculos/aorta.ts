@@ -5,11 +5,11 @@
 // - Roman MJ, Devereux RB et al. AJC 1989; 64: 507-512 (raiz <40 vs ≥40)
 // - Devereux RB et al. AJC 2012; 110: 1189-1194 (Strong Heart Study)
 //
-// Sistema de classificação por Desvio-Padrão (Z-score):
-// - Z ≤ 2: normal
-// - Z 2-3: ectasia leve
-// - Z 3-4: ectasia moderada
-// - Z > 4: ectasia importante
+// Z-score / fallback abaixo (classificarRaizAo) sobrevivem só como REDE DE
+// SEGURANÇA da raiz quando o exame não traz idade — seus graus internos
+// ('leve'/'moderada'/'importante') não viram texto de laudo desde a F1.
+// A régua clínica em vigor é a de tiers normal/dilatacao/aneurisma da
+// segunda metade deste arquivo (ACC/AHA 2022 + WASE 2022, Senna93 §2.2).
 //
 // Fallback (sem ASC): limites fixos por sexo (ASE 2015)
 // ══════════════════════════════════════════════════════════════════

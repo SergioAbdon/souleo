@@ -160,7 +160,7 @@ export const casosBordas: CasoTeste[] = [
   },
   {
     id: 'B10',
-    descricao: 'Aorta ascendente 50mm → aneurisma (spec 16/05/2026, ≥50mm)',
+    descricao: 'Aorta ascendente 50mm → aneurisma + nota cirúrgica ≥50 (ACC/AHA 2022)',
     inputs: (() => {
       const m = pacienteSaudavelM();
       m.camaras.aoAscendente = 50;
@@ -171,10 +171,49 @@ export const casosBordas: CasoTeste[] = [
         'Dilatação aneurismática',
         'aorta ascendente',
         'medindo 50 mm',
+        'Diâmetro ≥ 50 mm: sugere-se avaliação cirúrgica especializada (ACC/AHA 2022).',
       ],
       conclusoes: [
-        'Aneurisma da aorta ascendente.',
+        // índice 50 mm / 1,75 m ≈ 11,2 cm²/m ⇒ qualificador de gravidade (F1-T2, I1)
+        'Aneurisma da aorta ascendente, com critérios de maior gravidade.',
       ],
+    },
+  },
+  {
+    id: 'B11',
+    descricao: 'Raiz 46mm ♂50a → aneurisma 45-49 mantém índice cm²/m no achado (F1-T2)',
+    inputs: (() => {
+      const m = pacienteSaudavelM();
+      m.identificacao.pacienteDtnasc = '1976-01-01'; // 50 anos no exame
+      m.camaras.raizAo = 46;
+      return m;
+    })(),
+    esperado: {
+      achados: [
+        'Dilatação aneurismática da Raiz aórtica, ',
+        'cm²/m (valores acima de 10 cm²/m sugerem maior gravidade).',
+      ],
+      // 45-49 não tem nota cirúrgica (só ≥ 50)
+      achadosNaoPresentes: ['sugere-se avaliação cirúrgica'],
+      conclusoes: ['Aneurisma da Raiz aórtica'],
+    },
+  },
+  {
+    id: 'B12',
+    descricao: 'Arco 42mm → "dilatado" sem graus + frase de angio-TC/RM (decisão do arco 26/08)',
+    inputs: (() => {
+      const m = pacienteSaudavelM();
+      m.camaras.arcoAo = 42;
+      return m;
+    })(),
+    esperado: {
+      achados: [
+        'Arco aórtico dilatado, medindo 42 mm.',
+        'Sugere-se complementação com angiotomografia ou angiorressonância da aorta torácica para avaliação completa.',
+      ],
+      achadosNaoPresentes: ['sugere-se avaliação cirúrgica'],
+      conclusoes: ['Dilatação do arco aórtico.'],
+      conclusoesNaoPresentes: ['Aneurisma do arco'],
     },
   },
 ];

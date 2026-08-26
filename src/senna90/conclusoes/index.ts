@@ -135,15 +135,12 @@ function concHP(b23: number | null, b38: '' | 'S'): string {
 }
 
 /**
- * concAorta — combina segmentos alterados
- * 1 segmento: "Ectasia X da Y."
- * 2-3 segmentos: "Ectasia da aorta (X, Y e Z)."
- */
-/**
- * concAorta — uma frase por segmento alterado (spec 16/05/2026).
- * "Ectasia/Aneurisma da [segmento]" (+ ", com critérios de maior
- * gravidade" se índice cm²/m ≥ 10 — só raiz/asc). Múltiplos segmentos
- * = frases concatenadas no mesmo item. (Antes: "Ectasia X da aorta (...)".)
+ * concAorta — uma frase por segmento alterado (spec 16/05/2026, régua
+ * ACC/AHA 2022 da F1). "Dilatação/Aneurisma da [segmento]" (+ ", com
+ * critérios de maior gravidade" se índice cm²/m ≥ 10 — só raiz/asc, nas
+ * DUAS faixas, I1 da revisão da T1). O arco só tem "Dilatação do arco
+ * aórtico." (nunca aneurisma). Múltiplos segmentos = frases concatenadas
+ * no mesmo item.
  */
 function concAorta(d: any): string {
   if (!d.sexo) return '';
@@ -151,26 +148,30 @@ function concAorta(d: any): string {
 
   if (d.b7) {
     const r = tierRaizAo(d.b7, d.sexo, d.asc, d.idade, d.altura);
-    if (r.tier === 'aneurisma') out.push('Aneurisma da Raiz aórtica.');
-    else if (r.tier === 'dilatacao') {
+    if (r.tier === 'aneurisma') {
       out.push(r.graveIndice
-        ? 'Ectasia da Raiz aórtica, com critérios de maior gravidade.'
-        : 'Ectasia da Raiz aórtica.');
+        ? 'Aneurisma da Raiz aórtica, com critérios de maior gravidade.'
+        : 'Aneurisma da Raiz aórtica.');
+    } else if (r.tier === 'dilatacao') {
+      out.push(r.graveIndice
+        ? 'Dilatação da Raiz aórtica, com critérios de maior gravidade.'
+        : 'Dilatação da Raiz aórtica.');
     }
   }
   if (d.b28) {
     const r = tierAoAscendente(d.b28, d.sexo, d.asc, d.altura);
-    if (r.tier === 'aneurisma') out.push('Aneurisma da aorta ascendente.');
-    else if (r.tier === 'dilatacao') {
+    if (r.tier === 'aneurisma') {
       out.push(r.graveIndice
-        ? 'Ectasia da aorta ascendente, com critérios de maior gravidade.'
-        : 'Ectasia da aorta ascendente.');
+        ? 'Aneurisma da aorta ascendente, com critérios de maior gravidade.'
+        : 'Aneurisma da aorta ascendente.');
+    } else if (r.tier === 'dilatacao') {
+      out.push(r.graveIndice
+        ? 'Dilatação da aorta ascendente, com critérios de maior gravidade.'
+        : 'Dilatação da aorta ascendente.');
     }
   }
   if (d.b29) {
-    const r = tierArcoAo(d.b29);
-    if (r.tier === 'aneurisma') out.push('Aneurisma do arco aórtico.');
-    else if (r.tier === 'dilatacao') out.push('Ectasia do arco aórtico.');
+    if (tierArcoAo(d.b29).tier === 'dilatacao') out.push('Dilatação do arco aórtico.');
   }
 
   return out.join(' ');

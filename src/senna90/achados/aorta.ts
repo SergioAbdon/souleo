@@ -3,11 +3,13 @@
 // ══════════════════════════════════════════════════════════════════
 // docs/decisoes/2026-05-16-spec-aorta.md
 //
-// Tiers: normal / ectasia / aneurisma (tierRaizAo/Asc/Arco em calculos).
+// Tiers: normal / dilatacao / aneurisma (tierRaizAo/Asc/Arco em calculos),
+// régua ACC/AHA 2022 + WASE 2022 (Senna93 §2.2) — "ectasia leve/moderada/
+// importante" morreu na F1; o arco nunca é "aneurisma".
 // COMENTÁRIOS:
 //   • Raiz : SEM "medindo XX mm" (já vai no quadro de parâmetros).
-//            ectasia → índice cm²/m no texto. aneurisma → só "Dilatação
-//            aneurismática da Raiz aórtica."
+//            índice cm²/m no texto em dilatação E em aneurisma (quando há
+//            altura). ≥ 50 mm acrescenta a nota de avaliação cirúrgica.
 //   • Asc  : COM "medindo XX mm" + índice cm²/m (espelha a raiz).
 //   • Arco : COM "medindo XX mm", SEM índice (não validado p/ arco).
 // Frase "com dimensões normais" PRESERVADA (decisão 07/05/2026).
@@ -22,6 +24,10 @@ import {
 } from '../calculos/aorta';
 
 const NOTA_INDICE = '(valores acima de 10 cm²/m sugerem maior gravidade)';
+const NOTA_CIRURGICA_RAIZ_ASC =
+  ' Diâmetro ≥ 50 mm: sugere-se avaliação cirúrgica especializada (ACC/AHA 2022).';
+const NOTA_CIRURGICA_ARCO =
+  ' Diâmetro ≥ 55 mm: sugere-se avaliação cirúrgica especializada (ACC/AHA 2022).';
 
 function fmtIdx(idx: number): string {
   return idx.toFixed(1).replace('.', ',');
@@ -32,32 +38,54 @@ function fmtMM(mm: number): string {
 
 // ── COMENTÁRIOS por segmento ──
 
-/** Raiz: sem "medindo" (já no quadro). Índice no texto da ectasia. */
+// I1 da revisão da T1: com aneurisma ≥45, o índice NÃO pode sumir do texto na
+// faixa 45-49 (índice = sinalização de risco cirúrgico, spec §2.2). O ramo de
+// aneurisma passa a carregar o índice quando disponível.
+function sufixoIndice(r: SegmentoAortaResult): string {
+  return r.indiceCm2m !== null ? `, ${fmtIdx(r.indiceCm2m)} cm²/m ${NOTA_INDICE}` : '';
+}
+
+/** Raiz: sem "medindo" (já no quadro). Índice no texto da dilatação e do aneurisma. */
 function comentarioRaiz(r: SegmentoAortaResult): string {
-  if (r.tier === 'aneurisma') return 'Dilatação aneurismática da Raiz aórtica.';
-  if (r.indiceCm2m !== null) {
-    return `Ectasia da Raiz aórtica, ${fmtIdx(r.indiceCm2m)} cm²/m ${NOTA_INDICE}.`;
+  if (r.tier === 'aneurisma') {
+    return `Dilatação aneurismática da Raiz aórtica${sufixoIndice(r)}.`
+      + (r.notaCirurgica ? NOTA_CIRURGICA_RAIZ_ASC : '');
   }
-  return 'Ectasia da Raiz aórtica.';
+  if (r.indiceCm2m !== null) {
+    return `Dilatação da Raiz aórtica, ${fmtIdx(r.indiceCm2m)} cm²/m ${NOTA_INDICE}.`;
+  }
+  return 'Dilatação da Raiz aórtica.';
 }
 
 /** Ascendente: COM "medindo XX mm" + índice. */
 function comentarioAsc(r: SegmentoAortaResult): string {
   if (r.tier === 'aneurisma') {
-    return `Dilatação aneurismática da aorta ascendente medindo ${fmtMM(r.medidaMM)} mm.`;
+    return `Dilatação aneurismática da aorta ascendente medindo ${fmtMM(r.medidaMM)} mm${sufixoIndice(r)}.`
+      + (r.notaCirurgica ? NOTA_CIRURGICA_RAIZ_ASC : '');
   }
   if (r.indiceCm2m !== null) {
-    return `Ectasia da aorta ascendente medindo ${fmtMM(r.medidaMM)} mm, ${fmtIdx(r.indiceCm2m)} cm²/m ${NOTA_INDICE}.`;
+    return `Dilatação da aorta ascendente medindo ${fmtMM(r.medidaMM)} mm, ${fmtIdx(r.indiceCm2m)} cm²/m ${NOTA_INDICE}.`;
   }
-  return `Ectasia da aorta ascendente medindo ${fmtMM(r.medidaMM)} mm.`;
+  return `Dilatação da aorta ascendente medindo ${fmtMM(r.medidaMM)} mm.`;
 }
 
-/** Arco: COM "medindo XX mm", SEM índice. */
+/** Arco: COM "medindo XX mm", SEM índice, SEM tier de aneurisma. */
 function comentarioArco(r: SegmentoAortaResult): string {
-  if (r.tier === 'aneurisma') {
-    return `Dilatação aneurismática do arco aórtico medindo ${fmtMM(r.medidaMM)} mm.`;
+  return `Arco aórtico dilatado, medindo ${fmtMM(r.medidaMM)} mm.`
+    + (r.notaCirurgica ? NOTA_CIRURGICA_ARCO : '');
+}
+
+/**
+ * Frase de imagem complementar (decisão do arco, 26/08): arco DILATADO ou
+ * NÃO VISUALIZADO ('nv') → recomendar angio-TC/RM da aorta torácica inteira.
+ * Emitida uma única vez, depois de jPlacas.
+ */
+export function jAortaAngioTC(b29: number | null, b42: '' | 's' | 'nv', sexo: Sexo): string {
+  const dilatado = !!sexo && !!b29 && tierArcoAo(b29).tier === 'dilatacao';
+  if (dilatado || b42 === 'nv') {
+    return 'Sugere-se complementação com angiotomografia ou angiorressonância da aorta torácica para avaliação completa.';
   }
-  return `Ectasia do arco aórtico medindo ${fmtMM(r.medidaMM)} mm.`;
+  return '';
 }
 
 // ── Helper: combinação dos segmentos NORMAIS (preservado 07/05/2026) ──

@@ -44,6 +44,9 @@ describe('Senna93 aorta — tierRaizAo (WASE sexo+idade; aneurisma ≥45)', () =
     assert.equal(tier(tierRaizAo(38, 'F', null, 70, null)), 'normal');
     assert.equal(tier(tierRaizAo(39, 'F', null, 70, null)), 'dilatacao');
   });
+  test('♀ 70a: 37 normal (era dilatação com o corte antigo 37)', () => {
+    assert.equal(tier(tierRaizAo(37, 'F', null, 70, null)), 'normal');
+  });
   test('aneurisma absoluto é 45 (44 dilatacao · 45 aneurisma)', () => {
     assert.equal(tier(tierRaizAo(44, 'M', null, 30, null)), 'dilatacao');
     assert.equal(tier(tierRaizAo(45, 'M', null, 30, null)), 'aneurisma');
@@ -53,6 +56,10 @@ describe('Senna93 aorta — tierRaizAo (WASE sexo+idade; aneurisma ≥45)', () =
     assert.equal(tierRaizAo(49, 'M', null, 30, null).notaCirurgica, false);
     assert.equal(tierRaizAo(50, 'M', null, 30, null).notaCirurgica, true);
     assert.equal(tierAoAscendente(50, 'M', null, null).notaCirurgica, true);
+  });
+  test('49 e 50 são AMBOS aneurisma — 50 só acrescenta a nota cirúrgica', () => {
+    assert.equal(tier(tierRaizAo(49, 'M', null, 30, null)), 'aneurisma');
+    assert.equal(tier(tierRaizAo(50, 'M', null, 30, null)), 'aneurisma');
   });
   test('sexo vazio conta como homem (nº24/C8 — a F2 revisita)', () => {
     assert.equal(tier(tierRaizAo(39, '', null, 50, null)), 'normal');
