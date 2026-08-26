@@ -314,3 +314,50 @@ wader **104** · `tsc` e `build` limpos. (Fase 0 SOBE o unit; cada fase registra
 
 Tudo que NÃO está nesta lista segue a Seção 2 sem consulta (evidências fechadas ou recomendação
 técnica da tabela 1-a-1 aceita pelo mandato de 26/08).
+
+---
+
+## 8. Adendo — consulta de velocidade/arquitetura (tríade, 27/08)
+
+Pergunta do Sergio: melhorias de velocidade e arquitetura pra emissão. Tríade consultada
+(Codex segurança · Ruflo arquitetura · Ponytail simplicidade), pareceres convergentes.
+
+**Fato verificado 27/08:** o repo GitHub (SergioAbdon/souleo) é PÚBLICO e
+`public/motor/motorv8mp4.js` é servido aberto em produção — todo o fonte do Senna90 já é
+copiável hoje. A decisão de 16/05 "motor no servidor = proteção de IP" (docstring do
+`senna90-bridge.ts`) está anulada na prática. Proteção real = **tornar o repo privado**
+(decisão do Sergio, independente desta esteira; não apaga clones passados, estanca o futuro).
+
+**P1 — cálculo do Senna93 no navegador (fim do round-trip por edição):**
+- Veredito unânime: correto e viável (motor já é TS puro, isomórfico; não bifurca fonte;
+  medidas do paciente DEIXAM de viajar — ganho de privacidade; mata também o rate-limit
+  60/min que hoje pode bloquear 2 médicos atrás do mesmo IP de clínica).
+- **NÃO entra na F3** (Ruflo: mistura "quem lê" com "onde produz" sob o mesmo checkpoint;
+  Ponytail: não anexar em alicerce que ainda não nasceu). Vira **ADR próprio pós-virada**
+  ("F6"/follow-up nomeado), quando a sombra já provou equivalência.
+- Pré-requisito barato que ENTRA na F0: **teste de pureza** — falha se qualquer import
+  node-only entrar no grafo de `calcular()` (hoje é acidente de convenção, vira contrato).
+
+**P2 — trocar Puppeteer por @react-pdf/renderer:**
+- Veredito unânime: **pós-virada, nunca dentro da esteira**. react-pdf não renderiza HTML —
+  exigiria reconstruir a MolduraA4 como segunda implementação (desfaz a unificação da S5)
+  sobre o documento assinado, sem caminho de replay equivalente ao snapshot de laudos-html/.
+  Quando for: esteira própria com PDFs golden + rollback pro Puppeteer. Spike isolado
+  (1 tipo de laudo, fora do /api/emitir) é aceitável se o Sergio quiser ver antes.
+- **Remendos baratos pro tempo do Emitir, sem trocar gerador** (mini-task própria, fora
+  desta esteira, autorização do Sergio): fixar região da function junto do Storage/Firestore
+  (1 linha) + reusar a instância do Chromium entre invocações (variável de módulo, sem
+  launch/close por chamada).
+
+**Ajustes incorporados ao plano:**
+- F0 += teste de pureza do motor (acima).
+- F3 += smokes assertáveis SEPARADOS pra identificação (#out-*) e params-tbody (commit
+  único mantido, mas falha aponta qual superfície quebrou) += carimbo de proveniência na
+  emissão (qual motor/flag gerou o PDF — auditoria e rollback durante o corte).
+
+**Follow-ups de segurança registrados (fora da esteira; Sergio prioriza):**
+1. Trava de idempotência no `/api/emitir` — reemissão cobrar é política registrada, mas
+   duplo-POST concorrente/retry cobra 2× (só guard de tela hoje). CONFIRMADO no código.
+2. Allowlist de recursos externos no HTML que vai ao Puppeteer (hoje carrega qualquer URL).
+3. PDF público por URL = decisão de produto de 14/05 MANTIDA (discordância do Codex
+   registrada; HTML já é privado desde a S5).
