@@ -84,3 +84,13 @@ de risco cirúrgico, não diagnóstico. Rodapé do PDF passa a citar por domíni
 Lang 2015 · Goldstein 2015 · ACC/AHA 2022 · WASE 2022 · ASE 2025 (coração direito)
 · ASE/EACVI 2025 (strain). Laudos antigos: mudança de PALAVRA (ectasia→aneurisma
 em 45-49 mm), não de conduta — frase padrão de encaminhamento só nos ≥50.
+
+## DECISÃO DO ARCO (26/08, Sergio): ACEITA a proposta evidence-based
+Normal ≤40 · >40 "dilatado" SEM graus · ≥55 nota cirúrgica · dilatado/mal
+visualizado → frase de angio-TC/RM da aorta torácica inteira. As 3 réguas de
+casa morrem. Com isto, TODAS as decisões clínicas do Senna93 estão tomadas:
+FE 52/54 · TAPSE 17 (ASE 2025) · GLS 3 faixas (ASE/EACVI 2025) · raiz WASE
+38/40/41♂ 35/36/38♀ · ascendente 38/35 · aorta ACC/AHA 40/45/50-55 · índice
+10 cm²/m=risco cirúrgico · arco 40/55 · LAVI 34/41/48 · b59-61 Senna90 ·
+rodapé por domínio. Linhas técnicas da tabela-1a1 seguem as recomendações
+registradas (veto pontual do Sergio sempre possível antes da task).
