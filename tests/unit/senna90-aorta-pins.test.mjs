@@ -1,10 +1,13 @@
 // ══════════════════════════════════════════════════════════════════
-// Senna93 F0-T3 (spec §3 C10): a aorta tinha 11 de 19 fórmulas sem
-// teste (arco 100% descoberto, índice cm²/m nunca exercido, WASE
-// nunca discriminado). Estes pins gravam o comportamento DE HOJE.
-// BASELINE pré-F1 — a F1 muda estes pins deliberadamente (spec §2.2):
-// arco vira ≤40/>40 sem sexo, aneurisma raiz/asc vira ≥45, raiz ♀>65
-// vira 38. NÃO "corrigir" valores aqui; só fotografar.
+// Senna93 F1-T1 (spec §2.2): a régua da aorta agora é ACC/AHA 2022 +
+// WASE 2022. Estes pins gravam o comportamento NOVO:
+//   • raiz/asc: dilatação < 45 · ANEURISMA ≥ 45 · nota cirúrgica ≥ 50
+//   • arco: ≤40 normal · >40 dilatado (sem sexo, sem graus, nunca
+//     "aneurisma") · nota cirúrgica ≥ 55
+//   • raiz ♀ ≥66 anos: corte 38 (WASE cru 37,5 arredonda)
+// Os pins pré-F1 (ectasia / aneurisma ≥50 / arco ACR-ACRIN) foram
+// substituídos deliberadamente — ver
+// docs/planos/2026-08-27-senna93-divergencias-esperadas.md.
 // ══════════════════════════════════════════════════════════════════
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,73 +17,82 @@ import {
 
 const tier = (r) => r.tier;
 
-describe('BASELINE aorta pré-F1 — tierRaizAo (WASE sexo+idade; aneurisma ≥50)', () => {
+describe('Senna93 aorta — tierRaizAo (WASE sexo+idade; aneurisma ≥45)', () => {
   // ♂: 38/40/41 por faixa (≤40 · 41-65 · ≥66) — fronteira exata é normal (corte é >)
-  test('♂ 30a: 38 normal · 39 ectasia', () => {
+  test('♂ 30a: 38 normal · 39 dilatacao', () => {
     assert.equal(tier(tierRaizAo(38, 'M', null, 30, null)), 'normal');
-    assert.equal(tier(tierRaizAo(39, 'M', null, 30, null)), 'ectasia');
+    assert.equal(tier(tierRaizAo(39, 'M', null, 30, null)), 'dilatacao');
   });
-  test('♂ 50a: 40 normal · 41 ectasia', () => {
+  test('♂ 50a: 40 normal · 41 dilatacao', () => {
     assert.equal(tier(tierRaizAo(40, 'M', null, 50, null)), 'normal');
-    assert.equal(tier(tierRaizAo(41, 'M', null, 50, null)), 'ectasia');
+    assert.equal(tier(tierRaizAo(41, 'M', null, 50, null)), 'dilatacao');
   });
-  test('♂ 70a: 41 normal · 42 ectasia', () => {
+  test('♂ 70a: 41 normal · 42 dilatacao', () => {
     assert.equal(tier(tierRaizAo(41, 'M', null, 70, null)), 'normal');
-    assert.equal(tier(tierRaizAo(42, 'M', null, 70, null)), 'ectasia');
+    assert.equal(tier(tierRaizAo(42, 'M', null, 70, null)), 'dilatacao');
   });
-  // ♀: 35/36/37 — ATENÇÃO: a F1 muda a faixa ≥66 pra 38 (WASE cru 37,5)
-  test('♀ 30a: 35 normal · 36 ectasia', () => {
+  // ♀: 35/36/38 — a faixa ≥66 é 38 (WASE cru 37,5) desde a F1
+  test('♀ 30a: 35 normal · 36 dilatacao', () => {
     assert.equal(tier(tierRaizAo(35, 'F', null, 30, null)), 'normal');
-    assert.equal(tier(tierRaizAo(36, 'F', null, 30, null)), 'ectasia');
+    assert.equal(tier(tierRaizAo(36, 'F', null, 30, null)), 'dilatacao');
   });
-  test('♀ 50a: 36 normal · 37 ectasia', () => {
+  test('♀ 50a: 36 normal · 37 dilatacao', () => {
     assert.equal(tier(tierRaizAo(36, 'F', null, 50, null)), 'normal');
-    assert.equal(tier(tierRaizAo(37, 'F', null, 50, null)), 'ectasia');
+    assert.equal(tier(tierRaizAo(37, 'F', null, 50, null)), 'dilatacao');
   });
-  test('♀ 70a: 37 normal · 38 ectasia  // F1 → corte vira 38', () => {
-    assert.equal(tier(tierRaizAo(37, 'F', null, 70, null)), 'normal');
-    assert.equal(tier(tierRaizAo(38, 'F', null, 70, null)), 'ectasia');
+  test('♀ 70a: 38 normal · 39 dilatacao (corte WASE 38)', () => {
+    assert.equal(tier(tierRaizAo(38, 'F', null, 70, null)), 'normal');
+    assert.equal(tier(tierRaizAo(39, 'F', null, 70, null)), 'dilatacao');
   });
-  test('aneurisma absoluto HOJE é 50 (49 ectasia · 50 aneurisma)  // F1 → 45', () => {
-    assert.equal(tier(tierRaizAo(49, 'M', null, 30, null)), 'ectasia');
-    assert.equal(tier(tierRaizAo(50, 'M', null, 30, null)), 'aneurisma');
+  test('aneurisma absoluto é 45 (44 dilatacao · 45 aneurisma)', () => {
+    assert.equal(tier(tierRaizAo(44, 'M', null, 30, null)), 'dilatacao');
+    assert.equal(tier(tierRaizAo(45, 'M', null, 30, null)), 'aneurisma');
   });
-  test('sexo vazio conta como homem (nº24/C8 — a F1/F2 revisita)', () => {
+  test('nota cirúrgica raiz/asc: false em 45-49 · true em ≥50', () => {
+    assert.equal(tierRaizAo(45, 'M', null, 30, null).notaCirurgica, false);
+    assert.equal(tierRaizAo(49, 'M', null, 30, null).notaCirurgica, false);
+    assert.equal(tierRaizAo(50, 'M', null, 30, null).notaCirurgica, true);
+    assert.equal(tierAoAscendente(50, 'M', null, null).notaCirurgica, true);
+  });
+  test('sexo vazio conta como homem (nº24/C8 — a F2 revisita)', () => {
     assert.equal(tier(tierRaizAo(39, '', null, 50, null)), 'normal');
   });
   test('idade null → rede de segurança Z-score (asc presente) segue ativa', () => {
     // ♂ asc 1.8: previsto = 1.92 + 0.74×1.8 = 3.252 cm, SD 0.19 →
-    // 40 mm ⇒ z=(4.0−3.252)/0.19≈3.9 ⇒ acima do normal ⇒ ectasia
-    assert.equal(tier(tierRaizAo(40, 'M', 1.8, null, null)), 'ectasia');
+    // 40 mm ⇒ z=(4.0−3.252)/0.19≈3.9 ⇒ acima do normal ⇒ dilatacao
+    assert.equal(tier(tierRaizAo(40, 'M', 1.8, null, null)), 'dilatacao');
   });
 });
 
-describe('BASELINE aorta pré-F1 — tierAoAscendente (Chamber 38/35; aneurisma ≥50)', () => {
-  test('♂: 38 normal · 39 ectasia · 50 aneurisma', () => {
+describe('Senna93 aorta — tierAoAscendente (Chamber 38/35; aneurisma ≥45)', () => {
+  test('♂: 38 normal · 39 dilatacao · 45 aneurisma', () => {
     assert.equal(tier(tierAoAscendente(38, 'M', null, null)), 'normal');
-    assert.equal(tier(tierAoAscendente(39, 'M', null, null)), 'ectasia');
+    assert.equal(tier(tierAoAscendente(39, 'M', null, null)), 'dilatacao');
+    assert.equal(tier(tierAoAscendente(45, 'M', null, null)), 'aneurisma');
     assert.equal(tier(tierAoAscendente(50, 'M', null, null)), 'aneurisma');
   });
-  test('♀: 35 normal · 36 ectasia', () => {
+  test('♀: 35 normal · 36 dilatacao', () => {
     assert.equal(tier(tierAoAscendente(35, 'F', null, null)), 'normal');
-    assert.equal(tier(tierAoAscendente(36, 'F', null, null)), 'ectasia');
+    assert.equal(tier(tierAoAscendente(36, 'F', null, null)), 'dilatacao');
   });
 });
 
-describe('BASELINE aorta pré-F1 — tierArcoAo (ACR/ACRIN 35/32 · 44/41)  // F1 → ≤40/>40 sem sexo', () => {
-  test('♂: 35 normal · 36 ectasia · 43 ectasia · 44 aneurisma', () => {
-    assert.equal(tier(tierArcoAo(35, 'M')), 'normal');
-    assert.equal(tier(tierArcoAo(36, 'M')), 'ectasia');
-    assert.equal(tier(tierArcoAo(43, 'M')), 'ectasia');
-    assert.equal(tier(tierArcoAo(44, 'M')), 'aneurisma');
+describe('Senna93 aorta — tierArcoAo (≤40 normal · >40 dilatado, sem sexo)', () => {
+  test('40 normal · 41 dilatacao (mesma régua p/ ♂ e ♀)', () => {
+    assert.equal(tier(tierArcoAo(40)), 'normal');
+    assert.equal(tier(tierArcoAo(41)), 'dilatacao');
   });
-  test('♀: 32 normal · 33 ectasia · 41 aneurisma', () => {
-    assert.equal(tier(tierArcoAo(32, 'F')), 'normal');
-    assert.equal(tier(tierArcoAo(33, 'F')), 'ectasia');
-    assert.equal(tier(tierArcoAo(41, 'F')), 'aneurisma');
+  test('nota cirúrgica do arco: 54 sem nota · 55 com nota', () => {
+    assert.equal(tierArcoAo(54).notaCirurgica, false);
+    assert.equal(tierArcoAo(55).notaCirurgica, true);
+  });
+  test('arco NUNCA é aneurisma (sem tabela de normal)', () => {
+    for (const mm of [41, 44, 50, 55, 70]) {
+      assert.notEqual(tier(tierArcoAo(mm)), 'aneurisma', `arco ${mm} mm`);
+    }
   });
   test('arco nunca tem índice', () => {
-    const r = tierArcoAo(45, 'M');
+    const r = tierArcoAo(45);
     assert.equal(r.indiceCm2m, null);
     assert.equal(r.graveIndice, false);
   });

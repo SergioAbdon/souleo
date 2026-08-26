@@ -93,6 +93,17 @@ function gerarAlertas(m: MedidasEcoTT): AlertaUI[] {
     });
   }
 
+  // Raiz aórtica medida sem data de nascimento → classificação cai no Z-score
+  // (rede de segurança). O Senna93 AVISA em vez de escolher em silêncio (spec A7).
+  if (m.camaras.raizAo && m.camaras.raizAo > 0
+      && calcIdade(m.identificacao.pacienteDtnasc, m.identificacao.dataExame) === null) {
+    alertas.push({
+      tipo: 'AORTA_SEM_IDADE',
+      campo: 'dtnasc',
+      mensagem: 'Raiz aórtica medida sem data de nascimento — referência por idade indisponível (usando previsão por superfície corporal).',
+    });
+  }
+
   return alertas;
 }
 

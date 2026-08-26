@@ -2,7 +2,7 @@
 // visual") não verificava nada (inventário Senna90 §7/#79). Estes 4
 // casos pinam os DOIS alertas estruturados do motor.
 import type { CasoTeste } from '../runner';
-import { medidasVazias } from '../helpers';
+import { medidasVazias, pacienteSaudavelM } from '../helpers';
 
 function comIT(psap: number | null): CasoTeste['inputs'] {
   const m = medidasVazias();
@@ -41,5 +41,25 @@ export const casosAlertas: CasoTeste[] = [
     descricao: 'Refluxo pulmonar COM PMAP → sem alerta',
     inputs: comRefluxoPulm(22),
     esperado: { alertasNaoPresentes: ['REFLUXO_PULM_SEM_PMAP'] },
+  },
+  {
+    id: 'AL05',
+    descricao: 'Raiz aórtica sem data de nascimento → alerta AORTA_SEM_IDADE',
+    inputs: (() => {
+      const m = medidasVazias();   // sem dtnasc/dataExame → idade null
+      m.camaras.raizAo = 34;
+      return m;
+    })(),
+    esperado: { alertas: ['AORTA_SEM_IDADE'] },
+  },
+  {
+    id: 'AL06',
+    descricao: 'Raiz aórtica COM idade calculável → sem alerta',
+    inputs: (() => {
+      const m = pacienteSaudavelM(); // dtnasc + dataExame preenchidos
+      m.camaras.raizAo = 34;
+      return m;
+    })(),
+    esperado: { alertasNaoPresentes: ['AORTA_SEM_IDADE'] },
   },
 ];

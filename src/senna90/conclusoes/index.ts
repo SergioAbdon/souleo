@@ -152,7 +152,7 @@ function concAorta(d: any): string {
   if (d.b7) {
     const r = tierRaizAo(d.b7, d.sexo, d.asc, d.idade, d.altura);
     if (r.tier === 'aneurisma') out.push('Aneurisma da Raiz aórtica.');
-    else if (r.tier === 'ectasia') {
+    else if (r.tier === 'dilatacao') {
       out.push(r.graveIndice
         ? 'Ectasia da Raiz aórtica, com critérios de maior gravidade.'
         : 'Ectasia da Raiz aórtica.');
@@ -161,16 +161,16 @@ function concAorta(d: any): string {
   if (d.b28) {
     const r = tierAoAscendente(d.b28, d.sexo, d.asc, d.altura);
     if (r.tier === 'aneurisma') out.push('Aneurisma da aorta ascendente.');
-    else if (r.tier === 'ectasia') {
+    else if (r.tier === 'dilatacao') {
       out.push(r.graveIndice
         ? 'Ectasia da aorta ascendente, com critérios de maior gravidade.'
         : 'Ectasia da aorta ascendente.');
     }
   }
   if (d.b29) {
-    const r = tierArcoAo(d.b29, d.sexo);
+    const r = tierArcoAo(d.b29);
     if (r.tier === 'aneurisma') out.push('Aneurisma do arco aórtico.');
-    else if (r.tier === 'ectasia') out.push('Ectasia do arco aórtico.');
+    else if (r.tier === 'dilatacao') out.push('Ectasia do arco aórtico.');
   }
 
   return out.join(' ');
