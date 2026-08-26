@@ -8,6 +8,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { calcular } from '../../src/senna90/motor.ts';
 import { medidasVazias } from '../../src/senna90/tests/helpers.ts';
+import { faixaGLSve } from '../../src/senna90/achados/strain.ts';
 
 const temQueIncluir = (lista, trecho) =>
   assert.ok(lista.some((s) => s.includes(trecho)),
@@ -16,12 +17,21 @@ const naoPodeIncluir = (lista, trecho) =>
   assert.ok(!lista.some((s) => s.includes(trecho)),
     `trecho proibido "${trecho}" presente em: ${JSON.stringify(lista, null, 1)}`);
 
-describe('BASELINE TAPSE pré-F1 (F0-T5) — texto diz "VR ≥ 20 mm"  // F1 → "> 17"', () => {
-  test('TAPSE 18 com VD preservado: sufixo com o VR ERRADO atual', () => {
+describe('F1-T4 TAPSE — texto diz "VR > 17 mm" (ASE 2025)', () => {
+  test('TAPSE 18 com VD preservado: sufixo com o VR corrigido', () => {
     const m = medidasVazias();
     m.sistolica.tapse = 18;
     const r = calcular(m);
-    temQueIncluir(r.achados, 'TAPSE= 18 mm (VR ≥ 20 mm)');
+    temQueIncluir(r.achados, 'TAPSE= 18 mm (VR > 17 mm)');
+  });
+});
+
+describe('F1-T4 GLS VE — fronteira exata da faixa (18/16)', () => {
+  test('faixaGLSve(-18) === normal (fronteira superior)', () => {
+    assert.equal(faixaGLSve(-18), 'normal');
+  });
+  test('faixaGLSve(-16) === limitrofe (fronteira inferior)', () => {
+    assert.equal(faixaGLSve(-16), 'limitrofe');
   });
 });
 

@@ -15,7 +15,7 @@ import type { GrauRefluxo } from '../types';
  * - Se b32 vazio + sem b33: "Função preservada."
  */
 export function jVD_sistolica(b32: GrauRefluxo, b33: number | null): string {
-  const t = b33 !== null ? ` TAPSE= ${b33} mm (VR ≥ 20 mm).` : '.';
+  const t = b33 !== null ? ` TAPSE= ${b33} mm (VR > 17 mm).` : '.';
 
   if (b32 === 'L') return `Disfunção sistólica de grau leve do ventrículo direito${t}`;
   if (b32 === 'LM') return `Disfunção sistólica de grau leve a moderado do ventrículo direito${t}`;
@@ -24,7 +24,7 @@ export function jVD_sistolica(b32: GrauRefluxo, b33: number | null): string {
   if (b32 === 'I') return `Disfunção sistólica de grau importante do ventrículo direito${t}`;
 
   if (!b32 && b33 !== null && b33 > 0) {
-    return `Função sistólica do ventrículo direito preservada. TAPSE= ${b33} mm (VR ≥ 20 mm).`;
+    return `Função sistólica do ventrículo direito preservada. TAPSE= ${b33} mm (VR > 17 mm).`;
   }
   return 'Função sistólica do ventrículo direito preservada.';
 }
