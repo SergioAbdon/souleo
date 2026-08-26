@@ -14,6 +14,8 @@ import assert from 'node:assert/strict';
 import { montarPdfMoldura } from '../../src/lib/pdf-moldura.ts';
 import { substituirCamposAdministrativos } from '../../src/lib/correcao-admin.ts';
 import { gerarPdfHtmlTexto } from '../../src/lib/pdf-texto.ts';
+import fs from 'node:fs';
+import path from 'node:path';
 
 // ── Padrão-ouro 1: template do MOTOR, copiado verbatim (pré-T10) ──
 function legadoMotor(v) {
@@ -397,6 +399,39 @@ describe('montarPdfMoldura — campos e âncoras', () => {
     });
     assert.ok(!html.includes('<img src=x'), 'tag do payload chegou crua no HTML do PDF');
     assert.ok(html.includes('&lt;img src=x onerror=&quot;'), 'o valor tem que aparecer escapado, visível como texto');
+  });
+
+  // Fix2 do I4 (re-review): o MESMO valor chegava cru por outros 3 sumidouros.
+  // `tituloDoc` = nomeArq = `#nome`; `titulo` = nome do tipo no catálogo (dono
+  // não-médico grava) ou `exame.tipoExame` (whitelist da recepção).
+  test('<title> do documento sai escapado (tituloDoc vem do nome do paciente)', () => {
+    const html = montarPdfMoldura({
+      titulo: 'T', tituloDoc: '</title><iframe src="https://evil"></iframe>',
+      identificacao: [[{ label: 'NOME', valor: 'A' }]], corpoHtml: '',
+      cfg: { p1: '#000', clinicaNome: 'X', sigTexto: '' },
+    });
+    assert.ok(!html.includes('<iframe'), 'payload fechou o <title> e escapou pro documento');
+    assert.ok(html.includes('&lt;/title&gt;&lt;iframe'));
+  });
+
+  test('faixa do título sai escapada (tipo do catálogo / tipoExame)', () => {
+    const html = montarPdfMoldura({
+      titulo: '<div style="position:fixed;inset:0">LAUDO FALSO</div>',
+      identificacao: [[{ label: 'NOME', valor: 'A' }]], corpoHtml: '',
+      cfg: { p1: '#000', clinicaNome: 'X', sigTexto: '' },
+    });
+    assert.ok(!html.includes('<div style="position:fixed'), 'markup sem JS desfigura o PDF assinado');
+    assert.ok(html.includes('&lt;div style=&quot;position:fixed'));
+  });
+
+  test('cabeçalho das páginas de imagem (renderPaginas) escapa nome/tipo', () => {
+    // DicomGallery.tsx é componente React (não sobe no node --test): asserção
+    // fonte-lendo, mesma técnica de contrato-ponte-ids/laudo-trava-emitido.
+    const src = fs.readFileSync(
+      path.join(import.meta.dirname, '..', '..', 'src', 'components', 'laudo', 'DicomGallery.tsx'), 'utf8',
+    );
+    assert.match(src, /const cabec = escaparHtml\(\[pacienteNome, tipoExame\]/,
+      'o <h1> das páginas de imagem entra no PDF assinado — nome/tipo têm que estar escapados');
   });
 
   test('nome da clínica e assinatura também são escapados (cadastro do local/perfil)', () => {

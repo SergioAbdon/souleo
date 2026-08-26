@@ -86,12 +86,27 @@ describe('trava única do emitido — CSS e disabled-setter concordam', () => {
   });
 
   // ── Tríade final (I1/I2): laudo assinado não volta pra rascunho ──
-  test('salvarLaudo recusa gravar em exame com emitidoEm (autosave e "Salvar rascunho" não des-emitem)', () => {
+  test('salvarLaudo recusa gravar em documento fechado (autosave e "Salvar rascunho" não des-emitem)', () => {
     const corpo = pageSrc.split('async function salvarLaudo(')[1] || '';
-    assert.ok(/if \(jaEmitidoDoc\) return false;/.test(corpo.slice(0, 1600)),
-      'salvarLaudo tem que sair cedo quando o DOC já tem emitidoEm (não o state `emitido`)');
-    assert.match(pageSrc, /if \(emitido \|\| jaEmitidoDoc \|\| !dirtyRef\.current/,
-      'o gate do autosave tem que olhar o doc (jaEmitidoDoc), não só o state que handleDesbloquear zera');
+    assert.ok(/if \(docFechado\) return false;/.test(corpo.slice(0, 1800)),
+      'salvarLaudo tem que sair cedo quando o DOC está fechado (não pelo state `emitido`, que handleDesbloquear zera)');
+    assert.match(pageSrc, /if \(emitido \|\| docFechado \|\| !dirtyRef\.current/,
+      'o gate do autosave tem que olhar o doc, não só o state');
+  });
+
+  // fix2/n1: `transferirExame` mantém `emitidoEm` e devolve o exame pra
+  // 'andamento' — gatear por `emitidoEm` deixava o médico que RECEBEU o laudo
+  // (justamente pra refazê-lo) sem autosave e sem rascunho de servidor.
+  test('o gate é o STATUS do doc: transferido volta a salvar, cancelado continua travado', () => {
+    assert.match(pageSrc, /const docFechado = \['emitido', 'cancelado'\]\.includes/);
+    assert.ok(!/const docFechado = !!exame\?\.emitidoEm/.test(pageSrc));
+    // transferirExame: status volta pra 'andamento' e emitidoEm FICA — é isso
+    // que torna `emitidoEm` o predicado errado pra este gate.
+    const adminSrc = fs.readFileSync(path.join(root, 'src', 'lib', 'exame-admin.ts'), 'utf8');
+    const transf = adminSrc.split('export async function transferirExame')[1] || '';
+    assert.match(transf, /status: 'andamento'/);
+    assert.ok(!/emitidoEm/.test(transf.split('return { ok: true }')[0]),
+      'se a transferência passar a limpar emitidoEm, este gate pode voltar a ser por emitidoEm');
   });
 
   test('a emissão grava o laudoHtml assinado no doc (tela do emitido = PDF)', () => {

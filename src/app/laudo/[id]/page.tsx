@@ -230,6 +230,13 @@ function LaudoPageInner() {
   // assinadas pelo motor continuam abrindo/reimprimindo onde nasceram.
   const tipoId = (exame?.tipoExame as string) || '';
   const jaEmitidoDoc = !!exame?.emitidoEm;
+  // Documento FECHADO pro rascunho (gate de `salvarLaudo`, fix2/n1). Não é
+  // `emitidoEm`: `transferirExame` devolve o consumo, apaga o `pdfUrl` e põe
+  // `status:'andamento'`, mas MANTÉM o `emitidoEm` — o médico que recebeu o
+  // laudo justamente pra refazê-lo ficaria sem autosave e sem rascunho de
+  // servidor. Cancelado entra na lista porque salvar gravaria
+  // `status:'andamento'` e ressuscitaria o exame na fila.
+  const docFechado = ['emitido', 'cancelado'].includes((exame?.status as string) || '');
   useEffect(() => {
     if (!workspace?.id || !exame) return;
     (async () => {
@@ -416,19 +423,19 @@ function LaudoPageInner() {
   //
   // Tríade final (I1): o gate é o `emitido` do STATE, e `handleDesbloquear()`
   // o zera pra abrir a reedição — 60s depois o tick gravava `status:
-  // 'andamento'` num laudo ASSINADO. `jaEmitidoDoc` (o `emitidoEm` do DOC)
+  // 'andamento'` num laudo ASSINADO. `docFechado` (o STATUS do DOC)
   // entra no gate E nas deps, pra o intervalo re-armar com o valor fresco
   // quando a snapshot chega. A trava de verdade está em `salvarLaudo` — este
   // gate só evita a chamada à toa.
   useEffect(() => {
     const interval = setInterval(async () => {
-      if (emitido || jaEmitidoDoc || !dirtyRef.current || emitindoRef.current) return;
+      if (emitido || docFechado || !dirtyRef.current || emitindoRef.current) return;
       const ok = await salvarLaudo('andamento', { laudoHtml: editorRef.current?.getHTML() ?? '' });
       if (ok) dirtyRef.current = false;
     }, 60_000);
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [emitido, jaEmitidoDoc]);
+  }, [emitido, docFechado]);
 
   // beforeunload (S5-T1): avisa se há mudança não salva e o laudo não foi
   // emitido — emitido é documento fechado, não há o que perder ao sair.
@@ -994,15 +1001,16 @@ function LaudoPageInner() {
     if (!workspace?.id || !exameId || !user?.uid) return false;
     // Laudo ASSINADO não volta pra rascunho por save (tríade final, I1). Os
     // dois chamadores (autosave de 60s e "Salvar rascunho") gravam
-    // `status:'andamento'`; num exame com `emitidoEm` isso DES-EMITE o laudo:
+    // `status:'andamento'`; num exame EMITIDO isso o DES-EMITE:
     // a correção administrativa passa a responder 409 `nao_emitido`, o exame
     // some das listas de emitido e não pode mais ser cancelado/estornado — e
     // contradiz a promessa da própria tela (`handleVoltar`: "o laudo emitido
     // original continua valendo, a edição não reemitida será PERDIDA"). Na
     // reedição o único caminho que persiste é reemitir (`/api/emitir`), que
     // grava tudo junto e cobra o crédito. Plano B local (localStorage) segue
-    // valendo — quem grava é `handleRascunho`, fora daqui.
-    if (jaEmitidoDoc) return false;
+    // valendo — quem grava é `handleRascunho`, fora daqui. Cancelado entra no
+    // mesmo gate (salvar o ressuscitaria); TRANSFERIDO não — ver `docFechado`.
+    if (docFechado) return false;
     // medicoUid no save: assume o exame orfao (cadastrado pela recepcao) no
     // primeiro salvamento. Se ja e o autor, reenvia o mesmo valor (intacto
     // permite); se o autor e OUTRO medico, a regra nega — como deve.
@@ -1168,13 +1176,13 @@ function LaudoPageInner() {
       }));
     } catch { /* */ }
     dirtyRef.current = false;
-    // Laudo já emitido: `salvarLaudo` recusa de propósito (I1) — o rascunho
-    // fica só local e o médico precisa REEMITIR pra valer. Dizer "sem
-    // conexão" aqui seria mentira.
+    // Documento fechado (emitido/cancelado): `salvarLaudo` recusa de propósito
+    // (I1) — o rascunho fica só local e o médico precisa REEMITIR pra valer.
+    // Dizer "sem conexão" aqui seria mentira.
     toast(okServer
       ? 'Rascunho salvo'
-      : jaEmitidoDoc
-        ? 'Laudo já emitido — rascunho guardado só neste navegador. Reemita para valer.'
+      : docFechado
+        ? 'Laudo fechado — rascunho guardado só neste navegador. Reemita para valer.'
         : 'Rascunho salvo só neste navegador (sem conexão)');
   }
 

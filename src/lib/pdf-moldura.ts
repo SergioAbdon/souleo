@@ -89,7 +89,15 @@ ${linha.map((c) => '      ' + campo(c, p1)).join('\n')}
     </div>`;
   }).join('\n');
 
-  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>${a.tituloDoc ?? a.titulo}</title>
+  // Título também é texto do cliente (fix2 do I4): `tituloDoc` vem do nome do
+  // paciente (`#nome` → nomeArq) e `titulo` do catálogo de tipos / do
+  // `tipoExame` do exame — os dois graváveis por quem NÃO assina laudo
+  // (recepção/dono não-médico). `</title><iframe …>` fecha o elemento; e sem
+  // JS nenhum, um `<div style="position:fixed…">` desfigura o PDF assinado.
+  const tituloEsc = escaparHtml(a.titulo);
+  const tituloDocEsc = escaparHtml(a.tituloDoc ?? a.titulo);
+
+  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>${tituloDocEsc}</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -113,7 +121,7 @@ ${a.cssExtra ? a.cssExtra + '\n' : ''}</style></head><body>
         ${clinicaSlogan ? `<div style="font-size:7.5pt;color:#888;margin-top:1px;">${clinicaSlogan}</div>` : ''}
       </div>
     </div>
-    <div style="font-size:10.5pt;font-weight:700;color:${p1};text-align:center;white-space:nowrap;letter-spacing:0.3px;">${a.titulo}</div>
+    <div style="font-size:10.5pt;font-weight:700;color:${p1};text-align:center;white-space:nowrap;letter-spacing:0.3px;">${tituloEsc}</div>
   </div>
   <div style="border:1px solid ${p1};border-radius:3px;padding:3px 6px;margin-bottom:2mm;">
 ${idHtml}
