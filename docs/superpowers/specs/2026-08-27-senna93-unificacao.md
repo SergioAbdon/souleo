@@ -116,7 +116,7 @@ aceita); raiz com VR "≤ N mm" por sexo+idade (WASE); ascendente "≤38/≤35";
 
 | Item | Decisão | Ref |
 |---|---|---|
-| E/e' na FA | **>14** (ramo FA); sinusal continua >15 | ASE 2016 (recomendação da linha A18 aceita) |
+| E/e' na FA | **mantém >15** — CORRIGIDO 27/08 na leitura da F1: o docblock de `calculos/diastologia.ts` registra decisão explícita do Sergio ("E/e' septal isolado: >15, não >14 — esse é pra média septal+lateral"; "antes FA usava >14, agora >15 também"). Decisão documentada vence a recomendação da tabela A18. Vira item de veto **V12** | decisão Sergio registrada no código |
 | Dados insuficientes (sinusal) | exige **≥2 campos avaliados**; abaixo, silêncio (Senna90 vence A19 — falso normal morre) | — |
 | Linha de números (j22) | monta só os campos preenchidos nos DOIS ramos (a lógica do j22FA vale pro sinusal) — mata "Relação E/A= ; " (B8) | — |
 | Detector de divergência manual | comparação por **chave exata** (índice), não `includes` — Grau I deixa de ser substring de Grau III (B6) | — |
@@ -311,6 +311,9 @@ wader **104** · `tsc` e `build` limpos. (Fase 0 SOBE o unit; cada fase registra
 | V9 | Wilkins espessura 2/3 (B11) | corrigir pro artigo original | manter textos atuais |
 | V10 | Palavra "VIDE" (C4) | mantém "VIDE" (estruturado por dentro) | texto claro ("não medido — DSVE ausente") |
 | V11 | Índice cm²/m no arco (A4) | NÃO (sem base em diretriz) | incluir |
+| V12 | E/e' na FA (A18) | mantém >15 (decisão sua documentada no código: E/e' SEPTAL isolado) | mudar pra >14 (ASE 2016, régua da média) |
+| V13 | Textos novos da F1 (nota cirúrgica ≥50/≥55, frase angio-TC/RM, faixa limítrofe do GLS, esclerose aórtica) | redação proposta no plano da F1, revisada por você no teste ao vivo da fase | reescrever qualquer um |
+| V14 | Degraus de fronteira exata (B17: "leve a moderado" só no valor exato) | MANTIDOS nos campos em mm (semântica deliberada do V6); só o feT (float) vira banda na granularidade do truncamento (A13) | converter tudo pra faixas contínuas |
 
 Tudo que NÃO está nesta lista segue a Seção 2 sem consulta (evidências fechadas ou recomendação
 técnica da tabela 1-a-1 aceita pelo mandato de 26/08).
