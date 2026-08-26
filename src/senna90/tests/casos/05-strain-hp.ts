@@ -8,7 +8,7 @@ import { pacienteSaudavelM } from '../helpers';
 export const casosStrainHP: CasoTeste[] = [
   {
     id: 'ST01',
-    descricao: 'GLS VE preservado (-22%) — texto VR atualizado pra -20%',
+    descricao: 'GLS VE normal (-22%) — faixa normal ASE/EACVI 2025 (|GLS| ≥ 18)',
     inputs: (() => {
       const m = pacienteSaudavelM();
       m.sistolica.glsVE = -22;
@@ -16,7 +16,7 @@ export const casosStrainHP: CasoTeste[] = [
     })(),
     esperado: {
       achados: [
-        'Strain global longitudinal do ventrículo esquerdo pelo speckle tracking de -22% (VR ≥ -20%).',
+        'Strain global longitudinal do ventrículo esquerdo pelo speckle tracking de -22% (VR ≤ -18%).',
       ],
       conclusoes: [
         'Função sistólica global do ventrículo esquerdo preservada, confirmada pelo strain longitudinal',
@@ -25,7 +25,7 @@ export const casosStrainHP: CasoTeste[] = [
   },
   {
     id: 'ST02',
-    descricao: 'GLS VE reduzido (-15%) — sugestivo de disfunção subclínica',
+    descricao: 'GLS VE reduzido (-15%, |GLS| < 16) — sugestivo de disfunção subclínica',
     inputs: (() => {
       const m = pacienteSaudavelM();
       m.sistolica.glsVE = -15;
@@ -33,7 +33,7 @@ export const casosStrainHP: CasoTeste[] = [
     })(),
     esperado: {
       achados: [
-        'Strain global longitudinal do ventrículo esquerdo reduzido pelo speckle tracking de -15% (VR ≥ -20%).',
+        'Strain global longitudinal do ventrículo esquerdo reduzido pelo speckle tracking de -15% (VR ≤ -18%).',
       ],
       conclusoes: [
         'Função sistólica preservada com strain longitudinal reduzido',
@@ -43,16 +43,39 @@ export const casosStrainHP: CasoTeste[] = [
   },
   {
     id: 'ST03',
-    descricao: 'GLS VE -19% — agora reduzido (cutoff -20%)',
+    descricao: 'GLS VE -19% — NORMAL nas duas pontas (fim da contradição B1)',
     inputs: (() => {
       const m = pacienteSaudavelM();
       m.sistolica.glsVE = -19;
       return m;
     })(),
     esperado: {
-      // Com cutoff -20%, -19% agora é REDUZIDO (no motor antigo era preservado)
+      // ASE/EACVI 2025: |−19| ≥ 18 = normal. Achado e conclusão saem da MESMA
+      // faixa (faixaGLSve) — antes o achado dizia "reduzido" (corte |20|) e a
+      // conclusão dizia "preservada" (corte |18|) no mesmo laudo.
       achados: [
-        'Strain global longitudinal do ventrículo esquerdo reduzido',
+        'Strain global longitudinal do ventrículo esquerdo pelo speckle tracking de -19% (VR ≤ -18%).',
+      ],
+      achadosNaoPresentes: ['ventrículo esquerdo reduzido'],
+      conclusoes: [
+        'Função sistólica global do ventrículo esquerdo preservada, confirmada pelo strain longitudinal',
+      ],
+    },
+  },
+  {
+    id: 'ST03B',
+    descricao: 'GLS VE -17% — faixa limítrofe nova (16 a 18) nas duas pontas',
+    inputs: (() => {
+      const m = pacienteSaudavelM();
+      m.sistolica.glsVE = -17;
+      return m;
+    })(),
+    esperado: {
+      achados: [
+        'Strain global longitudinal do ventrículo esquerdo no limite inferior da normalidade (faixa -18 a -16%) pelo speckle tracking de -17%.',
+      ],
+      conclusoes: [
+        'Função sistólica global do ventrículo esquerdo preservada, com strain longitudinal no limite inferior da normalidade (-17%).',
       ],
     },
   },

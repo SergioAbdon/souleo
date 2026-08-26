@@ -1,8 +1,8 @@
 // ══════════════════════════════════════════════════════════════════
 // Senna93 F0-T5 (spec §3 C10): TAPSE/GLS-conclusão/LAVI-bandas/RAVI
-// sem pin. BASELINE pré-F1 — inclui pins de CONTRADIÇÕES conhecidas
-// (B1: GLS −19 é "reduzido" no achado e "preservada" na conclusão),
-// fotografadas de propósito: o diff da F1 mostra a cura.
+// sem pin. BASELINE pré-F1 + os blocos já curados pela F1 (marcados
+// F1-Tn). A fotografia da contradição B1 (GLS −19 "reduzido" no achado e
+// "preservada" na conclusão) foi substituída pelo bloco F1-T3.
 // ══════════════════════════════════════════════════════════════════
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -25,23 +25,44 @@ describe('BASELINE TAPSE pré-F1 (F0-T5) — texto diz "VR ≥ 20 mm"  // F1 →
   });
 });
 
-describe('BASELINE GLS VE pré-F1 — contradição B1 fotografada  // F1 → 3 faixas −18/−16', () => {
-  test('GLS −19: achado "reduzido" (corte |20|) E conclusão "preservada" (corte |18|) no MESMO laudo', () => {
+// ══════════════════════════════════════════════════════════════════
+// F1-T3 — GLS VE em 3 faixas (ASE/EACVI 2025): normal |≥18| · limítrofe
+// 16–18 · reduzido <16. NÃO é baseline: é o comportamento NOVO. A
+// contradição B1 (achado |20| × conclusão |18|) MORREU — faixaGLSve é a
+// única fonte, achado e conclusão saem sempre da MESMA faixa.
+// ══════════════════════════════════════════════════════════════════
+describe('F1-T3 GLS VE — 3 faixas com fonte única (B1 extinta)', () => {
+  // ddve 50 / dsve 30 → feT 0.7038 = FE preservada (pré-condição da concStrainVE)
+  const laudoGLS = (gls) => {
     const m = medidasVazias();
-    m.camaras.ddve = 50; m.camaras.dsve = 30;   // FE preservada p/ ativar concStrainVE
+    m.camaras.ddve = 50; m.camaras.dsve = 30;
     m.gerais.sexo = 'M';
-    m.sistolica.glsVE = -19;
-    const r = calcular(m);
-    temQueIncluir(r.achados, 'reduzido');            // strain.ts: |−19| < 20
-    temQueIncluir(r.conclusoes, 'preservada');       // conclusoes: |−19| ≥ 18
+    m.sistolica.glsVE = gls;
+    return calcular(m);
+  };
+  test('GLS −19: NORMAL nas duas pontas (era "reduzido" no achado e "preservada" na conclusão)', () => {
+    const r = laudoGLS(-19);
+    temQueIncluir(r.achados, 'speckle tracking de -19% (VR ≤ -18%).');
+    naoPodeIncluir(r.achados, 'ventrículo esquerdo reduzido');
+    temQueIncluir(r.conclusoes, 'preservada, confirmada pelo strain longitudinal (-19%).');
+  });
+  test('GLS −17: LIMÍTROFE nas duas pontas (faixa nova)', () => {
+    const r = laudoGLS(-17);
+    temQueIncluir(r.achados, 'no limite inferior da normalidade (faixa -18 a -16%) pelo speckle tracking de -17%.');
+    naoPodeIncluir(r.achados, 'ventrículo esquerdo reduzido');
+    temQueIncluir(r.conclusoes, 'preservada, com strain longitudinal no limite inferior da normalidade (-17%).');
+    naoPodeIncluir(r.conclusoes, 'subclínica');
+  });
+  test('GLS −15: REDUZIDO no achado e "subclínica" na conclusão', () => {
+    const r = laudoGLS(-15);
+    temQueIncluir(r.achados, 'ventrículo esquerdo reduzido pelo speckle tracking de -15% (VR ≤ -18%).');
+    temQueIncluir(r.conclusoes, 'strain longitudinal reduzido (-15%), sugestivo de disfunção subclínica.');
   });
   test('GLS −21: normal nas duas pontas', () => {
-    const m = medidasVazias();
-    m.camaras.ddve = 50; m.camaras.dsve = 30; m.gerais.sexo = 'M';
-    m.sistolica.glsVE = -21;
-    const r = calcular(m);
-    temQueIncluir(r.achados, '(VR ≥ -20%)');
-    naoPodeIncluir(r.achados, 'reduzido');
+    const r = laudoGLS(-21);
+    temQueIncluir(r.achados, 'speckle tracking de -21% (VR ≤ -18%).');
+    naoPodeIncluir(r.achados, 'ventrículo esquerdo reduzido');
+    temQueIncluir(r.conclusoes, 'preservada, confirmada pelo strain longitudinal (-21%).');
   });
 });
 

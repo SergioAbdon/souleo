@@ -35,6 +35,7 @@ import {
   tierArcoAo,
 } from '../calculos/aorta';
 import { getDiastModo } from '../achados/index';
+import { faixaGLSve } from '../achados/strain';
 
 // Estado manual diastologia (referenciado do mesmo state em achados/index.ts)
 let _diastManualSelecaoConcl = -1;
@@ -177,22 +178,20 @@ function concAorta(d: any): string {
   return out.join(' ');
 }
 
-/** concStrainVE — 3 cenários (FE pres+normal, FE pres+reduzido, FE reduz) */
+/** concStrainVE — FE reduzida · FE pres+normal · FE pres+limítrofe · FE pres+reduzido
+ *  Classificação do GLS vem de faixaGLSve (mesma fonte do achado — F1-T3, mata B1). */
 function concStrainVE(d: any): string {
   if (d.glsVE === null) return '';
-  const abs = Math.abs(d.glsVE);
+  const faixa = faixaGLSve(d.glsVE);
   const feLimS = d.sexo === 'M' ? 52 : 54;
   let fePreservada = true;
   if (d.b54 !== null) fePreservada = d.b54 >= feLimS;
   else if (d.feT !== null) fePreservada = d.feT >= 1 ? d.feT >= feLimS : d.feT >= feLimS / 100;
 
-  if (fePreservada && abs >= 18) {
-    return `Função sistólica global do ventrículo esquerdo preservada, confirmada pelo strain longitudinal (${d.glsVE}%).`;
-  }
-  if (fePreservada && abs < 18) {
-    return `Função sistólica preservada com strain longitudinal reduzido (${d.glsVE}%), sugestivo de disfunção subclínica.`;
-  }
-  return `Disfunção sistólica do ventrículo esquerdo, com strain longitudinal de ${d.glsVE}%.`;
+  if (!fePreservada) return `Disfunção sistólica do ventrículo esquerdo, com strain longitudinal de ${d.glsVE}%.`;
+  if (faixa === 'normal') return `Função sistólica global do ventrículo esquerdo preservada, confirmada pelo strain longitudinal (${d.glsVE}%).`;
+  if (faixa === 'limitrofe') return `Função sistólica global do ventrículo esquerdo preservada, com strain longitudinal no limite inferior da normalidade (${d.glsVE}%).`;
+  return `Função sistólica preservada com strain longitudinal reduzido (${d.glsVE}%), sugestivo de disfunção subclínica.`;
 }
 
 /** concStrainVD — silencia se VD já alterado */

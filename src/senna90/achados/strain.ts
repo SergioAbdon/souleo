@@ -1,24 +1,29 @@
 // ══════════════════════════════════════════════════════════════════
 // LEO Senna90 — Achados: Strain (Speckle Tracking)
 // ══════════════════════════════════════════════════════════════════
-// Funções: jGLSve, jGLSvd, jLARS
+// Funções: faixaGLSve, jGLSve, jGLSvd, jLARS
 //
-// ATUALIZADO: GLS VE cutoff -18% → -20% (consenso EACVI/ASE 2024)
-// (decisão Dr. Sérgio em 2026-05-03)
+// ATUALIZADO (Senna93 F1-T3): GLS VE deixa de ser binário |20| e passa a
+// 3 faixas ASE/EACVI 2025 (normal ≥18 · limítrofe 16-18 · reduzido <16).
+// `faixaGLSve` é a ÚNICA fonte de classificação — achado E conclusão.
 //
 // Aparecem apenas se valor preenchido (em branco = não realizado).
 // ══════════════════════════════════════════════════════════════════
 
-/**
- * jGLSve — GLS Global do VE
- * ATUALIZADO: cutoff -20% (era -18% no motor antigo)
- * Texto VR também atualizado: "VR ≥ -20%" (era "VR ≥ -18%")
- */
+/** ASE/EACVI 2025 (spec Senna93 §2.1): normal |GLS| ≥ 18 · limítrofe 16–18 · anormal < 16. */
+export function faixaGLSve(gls: number): 'normal' | 'limitrofe' | 'reduzido' {
+  const abs = Math.abs(gls);
+  if (abs >= 18) return 'normal';
+  if (abs >= 16) return 'limitrofe';
+  return 'reduzido';
+}
+
 export function jGLSve(glsVE: number | null): string {
   if (glsVE === null) return '';
-  const abs = Math.abs(glsVE);
-  if (abs >= 20) return `Strain global longitudinal do ventrículo esquerdo pelo speckle tracking de ${glsVE}% (VR ≥ -20%).`;
-  return `Strain global longitudinal do ventrículo esquerdo reduzido pelo speckle tracking de ${glsVE}% (VR ≥ -20%).`;
+  const faixa = faixaGLSve(glsVE);
+  if (faixa === 'normal') return `Strain global longitudinal do ventrículo esquerdo pelo speckle tracking de ${glsVE}% (VR ≤ -18%).`;
+  if (faixa === 'limitrofe') return `Strain global longitudinal do ventrículo esquerdo no limite inferior da normalidade (faixa -18 a -16%) pelo speckle tracking de ${glsVE}%.`;
+  return `Strain global longitudinal do ventrículo esquerdo reduzido pelo speckle tracking de ${glsVE}% (VR ≤ -18%).`;
 }
 
 /**
