@@ -43,6 +43,8 @@ export default function LaudoTextoPage() {
     : '';
   // Idade NA DATA DO EXAME (paridade com o motor) — ver paciente-fmt.
   const idade = idadeLabel(exame?.pacienteDtnasc as string | undefined, exame?.dataExame as string | undefined);
+  // Laudo já assinado (doc, não estado de tela): trava o "Salvar rascunho".
+  const emitidoDoc = (exame?.status as string) === 'emitido' || !!exame?.emitidoEm;
   const clinicaEnd = fmtCep((workspace?.endereco as string) || '');
   // 2º telefone do local entrava no rodapé do motor e sumia no laudo-texto —
   // uma folha só, mesmo rodapé (S5-T10).
@@ -109,6 +111,14 @@ export default function LaudoTextoPage() {
 
   async function handleSalvarRascunho() {
     if (!workspace?.id || !user?.uid) return;
+    // Laudo ASSINADO não volta pra rascunho (tríade final, I6): este save
+    // grava `status:'andamento'` — num emitido isso des-emite em 1 clique
+    // (correção administrativa passa a dar 409, some das listas de emitido,
+    // não dá mais pra cancelar/estornar). O caminho de mudar um laudo emitido
+    // aqui é REEMITIR (botão ao lado, consome 1 franquia) — por isso o editor
+    // continua editável, só o "Salvar rascunho" some. Guard além do
+    // `disabled` do botão: estado pode chegar depois do render.
+    if (emitidoDoc) { toast('Laudo já emitido — use "Reemitir" para alterar'); return; }
     setSalvando(true);
     const ok = await saveExame(workspace.id, {
       id: exameId,
@@ -225,7 +235,8 @@ export default function LaudoTextoPage() {
             {exame?.acc ? ` · ACC ${exame.acc as string}` : ''}
           </div>
         </div>
-        <button onClick={handleSalvarRascunho} disabled={salvando || emitindo}
+        <button onClick={handleSalvarRascunho} disabled={salvando || emitindo || emitidoDoc}
+          title={emitidoDoc ? 'Laudo emitido — para alterar, use "Reemitir"' : undefined}
           className="shrink-0 px-3 py-1.5 rounded-lg border border-borda bg-card text-ink text-xs font-semibold hover:bg-surface disabled:opacity-50 cursor-pointer">
           {salvando ? 'Salvando…' : 'Salvar rascunho'}
         </button>

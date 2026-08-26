@@ -5,7 +5,7 @@
 // IDs DOM idênticos ao motor (b7-b62, gls_ve, gls_vd, lars, etc.)
 // ══════════════════════════════════════════════════════════════════
 
-import { useState, useEffect, useRef, ReactNode } from 'react';
+import { useState, useEffect, ReactNode } from 'react';
 import { auth } from '@/lib/firebase';
 
 // Helpers para chamar funções do motor (expostas em window.*)
@@ -57,24 +57,22 @@ type Props = {
 
 export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, onImportarDicom, dicomImportado, ortancAtivo, totalMedidasDicom, totalImagensDicom, onAbrirGaleria, emitido, modoEmitido, readOnlyIdentificacao, readOnlyMotor, exameOrigem, exameCpf, exameAcc, onCorrigirAdmin, wsId, onToast }: Props) {
   const [idDesbloqueado, setIdDesbloqueado] = useState(false);
-  const [motorDesbloqueado, setMotorDesbloqueado] = useState(false);
-  // Detectar quando readOnlyMotor muda de true→false (médico desbloqueou)
-  const prevReadOnlyMotor = useRef(readOnlyMotor);
-  useEffect(() => {
-    if (prevReadOnlyMotor.current && !readOnlyMotor) {
-      setMotorDesbloqueado(true);
-    }
-    prevReadOnlyMotor.current = readOnlyMotor;
-  }, [readOnlyMotor]);
   const [feegowLoading, setFeegowLoading] = useState(false);
   const idBloqueado = readOnlyIdentificacao && !idDesbloqueado;
-  const motorBloqueado = !!(readOnlyMotor && !motorDesbloqueado);
+  // Trava do motor: UM dono só (tríade final, C1). Existia aqui um latch
+  // (latch local) que subia pra true no 1º desbloqueio e NUNCA voltava:
+  // depois de desbloquear → editar → REEMITIR na mesma montagem, o CSS
+  // (`.laudo-locked`, dono `emitido` em page.tsx) travava de novo mas este
+  // booleano continuava false — o laudo recém-assinado seguia editável por
+  // Tab/setas e os 3 guards de onClick (Wilkins, Automático/Manual) voltavam
+  // a reescrever o laudo emitido. `readOnlyMotor={emitido}` já é o estado
+  // vivo do lock (handleDesbloquear zera, handleEmitir levanta) — derivar
+  // outro estado daqui era duplicar o dono.
+  const motorBloqueado = !!readOnlyMotor;
 
-  // S5-T6: trava única do emitido. `motorBloqueado` já funde readOnlyMotor +
-  // motorDesbloqueado num só booleano — um campo por vez, sem branch
-  // separado pra bloquear/desbloquear (o disabled=false de antes rodava só
-  // se motorDesbloqueado fosse true; aqui é sempre o valor atual do lock,
-  // resultado idêntico). CSS (.laudo-locked em page.tsx, MESMA lista de
+  // S5-T6: trava única do emitido. Um campo por vez, sem branch separado pra
+  // bloquear/desbloquear — `el.disabled = motorBloqueado` é sempre o valor
+  // atual do lock, nos dois sentidos. CSS (.laudo-locked em page.tsx, MESMA lista de
   // exceção) trava mouse+visual; isto trava teclado (Tab/setas não
   // respeitam pointer-events — achado do review S5-T3, M1) — dois
   // mecanismos, um só dono de QUAIS campos: a lista `livres` abaixo.
@@ -476,8 +474,8 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
               // `change` → Senna90 → `setContent`, reescrevendo o texto do
               // laudo assinado. `motorBloqueado` é o mesmo lock que trava
               // todo o resto do motor; reabre sozinho quando o médico faz a
-              // reedição clínica (motorDesbloqueado vira true, ver useEffect
-              // acima) — simétrico, sem tela nova.
+              // reedição clínica (`readOnlyMotor` volta a false) e FECHA de
+              // novo na reemissão — simétrico, sem tela nova.
               if (motorBloqueado) return;
               const cb = document.getElementById('wilkins-toggle') as HTMLInputElement;
               const fields = document.getElementById('wilkins-fields');

@@ -66,4 +66,47 @@ describe('trava única do emitido — CSS e disabled-setter concordam', () => {
     );
     assert.match(editorSrc, /editor\?\.setEditable\(editable,\s*false\)/);
   });
+
+  // ── Tríade final (ARQ-C1): o QUANDO da trava também tem dono único ──
+  // O T6 unificou QUAIS campos; o gatilho continuou duplicado: um latch
+  // `motorDesbloqueado` em SidebarLaudo que subia no 1º desbloqueio e nunca
+  // voltava. Depois de desbloquear → editar → REEMITIR na mesma montagem, o
+  // CSS travava (dono: `emitido` da page) e o disabled-setter + os 3 guards
+  // de onClick continuavam abertos — laudo assinado editável por Tab/setas.
+  test('o gatilho da trava do motor é UM só: motorBloqueado = readOnlyMotor (sem latch derivado)', () => {
+    assert.match(sidebarSrc, /const motorBloqueado = !!readOnlyMotor;/,
+      'motorBloqueado tem que derivar direto de readOnlyMotor — sem estado intermediário');
+    assert.ok(!/motorDesbloqueado/.test(sidebarSrc),
+      'latch motorDesbloqueado voltou: ele não reseta na reemissão e reabre o laudo assinado');
+  });
+
+  test('page.tsx é a dona do lock: CSS e readOnlyMotor leem o MESMO `emitido`', () => {
+    assert.match(pageSrc, /emitido \? 'laudo-locked' : ''/);
+    assert.match(pageSrc, /readOnlyMotor=\{emitido\}/);
+  });
+
+  // ── Tríade final (I1/I2): laudo assinado não volta pra rascunho ──
+  test('salvarLaudo recusa gravar em exame com emitidoEm (autosave e "Salvar rascunho" não des-emitem)', () => {
+    const corpo = pageSrc.split('async function salvarLaudo(')[1] || '';
+    assert.ok(/if \(jaEmitidoDoc\) return false;/.test(corpo.slice(0, 1600)),
+      'salvarLaudo tem que sair cedo quando o DOC já tem emitidoEm (não o state `emitido`)');
+    assert.match(pageSrc, /if \(emitido \|\| jaEmitidoDoc \|\| !dirtyRef\.current/,
+      'o gate do autosave tem que olhar o doc (jaEmitidoDoc), não só o state que handleDesbloquear zera');
+  });
+
+  test('a emissão grava o laudoHtml assinado no doc (tela do emitido = PDF)', () => {
+    const bloco = pageSrc.split('const dadosFinais = {')[1]?.split('};')[0] || '';
+    assert.match(bloco, /laudoHtml: editorRef\.current\?\.getHTML\(\) \?\? ''/,
+      'sem laudoHtml em dadosFinais o emitido reabre com o último autosave, não com o texto assinado');
+  });
+
+  // ── Tríade final (I6): /laudo-texto tinha o mesmo furo, sem timer ──
+  test('/laudo-texto: "Salvar rascunho" desabilitado (e guardado) em laudo emitido', () => {
+    const textoSrc = fs.readFileSync(
+      path.join(root, 'src', 'app', 'laudo-texto', '[id]', 'page.tsx'), 'utf8',
+    );
+    assert.match(textoSrc, /disabled=\{salvando \|\| emitindo \|\| emitidoDoc\}/);
+    assert.match(textoSrc, /if \(emitidoDoc\) \{ toast\(/,
+      'guard no handler além do disabled — o exame chega depois do primeiro render');
+  });
 });

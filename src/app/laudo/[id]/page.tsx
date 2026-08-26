@@ -42,6 +42,8 @@ import { checkboxParaMedida, medidaParaChecked } from '@/lib/checkbox-codec';
 import { TIPOS_LAUDO_PADRAO, modalidadeDe, type TipoLaudo } from '@/lib/tipos-laudo';
 import { montarPdfMoldura } from '@/lib/pdf-moldura';
 import { montarParamsHtml } from '@/lib/pdf-params';
+// Tabela de critérios do escore de Wilkins — fonte única (ver renderWilkinsHtml).
+import { WK_DESC } from '@/senna90/achados/wilkins';
 
 // nº16 (S5-T7): remount limpo por exame. Antes o componente NÃO desmontava
 // ao navegar /laudo/A → /laudo/B (mesma rota, só o param muda) — todo o
@@ -57,6 +59,15 @@ export default function LaudoPage() {
   const params = useParams();
   return <LaudoPageInner key={String(params.id)} />;
 }
+
+// Campos canônicos SÓ no topo do exame (fonte única) — nunca dentro de
+// `medidas`. `convenio` saiu em 16/05; os outros cinco saíram na tríade final
+// da S5 (I5): a recepção corrige `solicitante`/`pacienteNome` pelo caminho
+// oficial (T5) e a cópia velha em `medidas` repovoava o campo na abertura,
+// desfazendo a correção na próxima gravação. `coletarMedidas` não grava mais
+// nenhum deles; `preencherExame` ignora os que ainda existem em exames
+// antigos (leitura tolerante, sem migração).
+const SO_DO_TOPO = new Set(['nome', 'dtnasc', 'dtexame', 'convenio', 'solicitante', 'sexo']);
 
 function LaudoPageInner() {
   const params = useParams();
@@ -377,11 +388,21 @@ function LaudoPageInner() {
   // de B, `textoRestauradoRef` armado antes do `sc()` (fluxo da T1 intacto).
   const exameCarregadoId = (exame?.id as string) || '';
   useEffect(() => {
-    if (exameCarregadoId && motorLoaded) {
-      setTimeout(() => {
-        try { preencherExame(); safeCalc(); } catch (e) { console.warn('preencher:', e); }
-      }, 500);
-    }
+    if (!exameCarregadoId || !motorLoaded) return;
+    // Timer órfão (tríade final, C1): sem cleanup + sem `vivoRef`, trocar de
+    // exame DENTRO desta janela de 500ms fazia o callback de A rodar contra o
+    // DOM vivo de B — `idCampos` escrevia nome/dtnasc/dtexame/convênio/
+    // solicitante/sexo do paciente A nos campos (vazios) de B, e o
+    // preenchimento legítimo de B não corrige (só escreve campo vazio). Daí
+    // pro doc e pro PDF assinado de B é `coletarIdentificacao()`. Mesmo par
+    // de guardas dos outros dois órfãos fechados na T7 (debounce do Senna90 e
+    // `onload` do <script>): cancela o timer no unmount E ignora o disparo
+    // tardio se a instância já morreu.
+    const t = setTimeout(() => {
+      if (!vivoRef.current) return;
+      try { preencherExame(); safeCalc(); } catch (e) { console.warn('preencher:', e); }
+    }, 500);
+    return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exameCarregadoId, motorLoaded]);
 
@@ -389,15 +410,22 @@ function LaudoPageInner() {
   // último save, grava no servidor. NUNCA roda com laudo emitido (travado/
   // assinado — editar aqui não é o fluxo, é reedição via handleDesbloquear).
   // Zera dirtyRef só em sucesso — falha (offline) tenta de novo no próximo tick.
+  //
+  // Tríade final (I1): o gate é o `emitido` do STATE, e `handleDesbloquear()`
+  // o zera pra abrir a reedição — 60s depois o tick gravava `status:
+  // 'andamento'` num laudo ASSINADO. `jaEmitidoDoc` (o `emitidoEm` do DOC)
+  // entra no gate E nas deps, pra o intervalo re-armar com o valor fresco
+  // quando a snapshot chega. A trava de verdade está em `salvarLaudo` — este
+  // gate só evita a chamada à toa.
   useEffect(() => {
     const interval = setInterval(async () => {
-      if (emitido || !dirtyRef.current || emitindoRef.current) return;
+      if (emitido || jaEmitidoDoc || !dirtyRef.current || emitindoRef.current) return;
       const ok = await salvarLaudo('andamento', { laudoHtml: editorRef.current?.getHTML() ?? '' });
       if (ok) dirtyRef.current = false;
     }, 60_000);
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [emitido]);
+  }, [emitido, jaEmitidoDoc]);
 
   // beforeunload (S5-T1): avisa se há mudança não salva e o laudo não foi
   // emitido — emitido é documento fechado, não há o que perder ao sair.
@@ -426,18 +454,22 @@ function LaudoPageInner() {
 
     // Callbacks TipTap — motor chama estes ao renderizar achados/conclusões
     // Motor gera laudo completo → envia para TipTap
-    const WK_DESC: Record<string, string[]> = {
-      mob: ['Normal','Boa mobilidade da valva, com restrição apenas na ponta do folheto','Redução da mobilidade na porção média e na base dos folhetos','Mobilidade somente na base dos folhetos','Nenhum ou mínimo movimento dos folhetos'],
-      esp: ['Normal','Espessura valvar próxima do normal (4–5 mm)','Grande espessamento nas margens do folheto','Espessamento de todo o folheto (5–8 mm)','Grande espessamento de todo o folheto (>8–10 mm)'],
-      sub: ['Normal','Espessamento mínimo da corda tendínea logo abaixo da valva','Espessamento da corda até terço proximal','Espessamento da corda até terço distal','Extenso espessamento e encurtamento de toda corda até músculo papilar'],
-      cal: ['Sem calcificação','Uma única área de calcificação','Calcificações nas margens dos folhetos','Calcificações extensivas à porção média do folheto','Extensa calcificação em todo o folheto'],
-    };
+    //
+    // WK_DESC vem do Senna90 (tríade final, ARQ-I1): a tabela de critérios de
+    // Wilkins existia DUAS vezes verbatim — a cópia viva aqui e o export de
+    // `senna90/achados/wilkins.ts` sem consumidor nenhum. Arrumar a redação
+    // "onde ela mora" não mudava nada no laudo. Import só de dado puro (o
+    // senna90 segue intocável). Os RÓTULOS ficam aqui e são o outro lado do
+    // contrato de 4 pontas: `RENDER_WILKINS` (laudo-merge.ts) colapsa o bloco
+    // renderizado casando exatamente estes textos — renomear um só de um lado
+    // duplica o escore de Wilkins dentro do laudo assinado. Amarrado em
+    // tests/unit/contrato-ponte-ids.test.mjs (8).
     const WK_LABELS: Record<string, string> = { mob: 'Mobilidade do folheto', esp: 'Espessamento valvar', sub: 'Espessamento subvalvar', cal: 'Calcificação valvar' };
 
     function renderWilkinsHtml(json: string): string {
       const d = JSON.parse(json);
       let html = '<p><strong>Escore Ecocardiográfico de Wilkins &amp; Block:</strong></p>';
-      for (const key of ['mob', 'esp', 'sub', 'cal']) {
+      for (const key of ['mob', 'esp', 'sub', 'cal'] as (keyof typeof WK_DESC)[]) {
         const val = d[key] as number;
         if (val > 0) {
           html += `<p>• <strong>${WK_LABELS[key]}</strong> (${val} pts): ${WK_DESC[key][val]}</p>`;
@@ -817,6 +849,14 @@ function LaudoPageInner() {
       if (fonte.medidas) {
         Object.entries(fonte.medidas).forEach(([id, val]) => {
           if (!val) return;
+          // Identificação NUNCA vem de `medidas` (tríade final, I5): exames
+          // antigos têm nome/dtnasc/dtexame/solicitante/sexo duplicados lá
+          // dentro (hoje `coletarMedidas` não grava mais nenhum deles). As
+          // medidas entram ANTES da identificação canônica e sem guarda de
+          // campo vazio — o valor velho vencia o do topo do exame e a próxima
+          // gravação/reemissão desfazia, em silêncio, a correção
+          // administrativa da recepção (T5). Tolerância de leitura = ignorar.
+          if (SO_DO_TOPO.has(id)) return;
           // legado (S5-T12): a chave antiga da Diastólica foi unificada com
           // 'b24' (SidebarLaudo.tsx:422, Contrato da Ponte D7 — teste
           // contrato-ponte-ids.test.mjs pina esta referência em 1). Exames
@@ -893,10 +933,13 @@ function LaudoPageInner() {
   }
 
   function coletarMedidas(): Record<string, string> {
-    // 'convenio' REMOVIDO daqui (fonte única 16/05): convênio é canônico só
-    // no topo do exame (lido por Worklist/Extrato). Antes era duplicado em
-    // medidas.convenio e os dois divergiam. Load usa o fallback do topo.
-    const campos = ['nome', 'dtnasc', 'dtexame', 'solicitante', 'sexo', 'ritmo', 'peso', 'altura',
+    // Identificação REMOVIDA daqui (fonte única): `convenio` saiu em 16/05 e
+    // `nome`/`dtnasc`/`dtexame`/`solicitante`/`sexo` na tríade final da S5
+    // (I5) — todos são canônicos no TOPO do exame (`coletarIdentificacao`,
+    // lido por Worklist/Extrato/PDF). Duplicados em `medidas`, a cópia velha
+    // vencia na abertura e desfazia a correção administrativa da recepção.
+    // Ver `SO_DO_TOPO` (topo do arquivo) e o filtro em `preencherExame`.
+    const campos = ['ritmo', 'peso', 'altura',
       'b7', 'b8', 'b9', 'b10', 'b11', 'b12', 'b13', 'b28', 'b29', 'b24', 'b25',
       'b19', 'b20', 'b21', 'b22', 'b23', 'b37', 'b38', 'b54', 'b32', 'b33', 'gls_ve', 'gls_vd', 'lars',
       'b34', 'b35', 'b34t', 'b36', 'b39', 'b40', 'b39p', 'b40p', 'psmap',
@@ -946,6 +989,17 @@ function LaudoPageInner() {
   /** Save centralizado — medidas + identificação sempre juntos */
   async function salvarLaudo(status: 'rascunho' | 'andamento', extras?: Record<string, unknown>) {
     if (!workspace?.id || !exameId || !user?.uid) return false;
+    // Laudo ASSINADO não volta pra rascunho por save (tríade final, I1). Os
+    // dois chamadores (autosave de 60s e "Salvar rascunho") gravam
+    // `status:'andamento'`; num exame com `emitidoEm` isso DES-EMITE o laudo:
+    // a correção administrativa passa a responder 409 `nao_emitido`, o exame
+    // some das listas de emitido e não pode mais ser cancelado/estornado — e
+    // contradiz a promessa da própria tela (`handleVoltar`: "o laudo emitido
+    // original continua valendo, a edição não reemitida será PERDIDA"). Na
+    // reedição o único caminho que persiste é reemitir (`/api/emitir`), que
+    // grava tudo junto e cobra o crédito. Plano B local (localStorage) segue
+    // valendo — quem grava é `handleRascunho`, fora daqui.
+    if (jaEmitidoDoc) return false;
     // medicoUid no save: assume o exame orfao (cadastrado pela recepcao) no
     // primeiro salvamento. Se ja e o autor, reenvia o mesmo valor (intacto
     // permite); se o autor e OUTRO medico, a regra nega — como deve.
@@ -1111,7 +1165,14 @@ function LaudoPageInner() {
       }));
     } catch { /* */ }
     dirtyRef.current = false;
-    toast(okServer ? 'Rascunho salvo' : 'Rascunho salvo só neste navegador (sem conexão)');
+    // Laudo já emitido: `salvarLaudo` recusa de propósito (I1) — o rascunho
+    // fica só local e o médico precisa REEMITIR pra valer. Dizer "sem
+    // conexão" aqui seria mentira.
+    toast(okServer
+      ? 'Rascunho salvo'
+      : jaEmitidoDoc
+        ? 'Laudo já emitido — rascunho guardado só neste navegador. Reemita para valer.'
+        : 'Rascunho salvo só neste navegador (sem conexão)');
   }
 
   async function handleEmitir(incluirImagens: boolean = true) {
@@ -1158,6 +1219,12 @@ function LaudoPageInner() {
 
     const dadosFinais = {
       medidas, achados, conclusoes,
+      // Texto ASSINADO no doc (tríade final, I2): `laudoHtml` só era gravado
+      // pelo rascunho/autosave, então reabrir um emitido restaurava o último
+      // autosave (até 60s ANTES da emissão) em vez do texto que foi pro PDF —
+      // "Imprimir"/"Copiar"/"Word" da tela do emitido divergiam do laudo que
+      // o paciente tem na mão. Mesma fonte que o PDF usa (o editor agora).
+      laudoHtml: editorRef.current?.getHTML() ?? '',
       ...identificacao,
       cfgSnapshot: { clinica: clinicaNome, slogan: clinicaSlogan, localEnd: clinicaEnd, localTel: clinicaTel, medNome: profile?.nome, medCrm: profile?.crm, medUf: profile?.ufCrm, p1 },
       // nº5: pacienteNome NÃO reentra aqui — `...identificacao` (acima) já
