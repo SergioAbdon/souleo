@@ -18,9 +18,9 @@ import { soAdministrativos } from '@/lib/campos-exame';
 import { useRouter } from 'next/navigation';
 import { checkEmissao } from '@/lib/billing';
 import DicomGallery from '@/components/laudo/DicomGallery';
-import { podeEditarLaudo, podeRemoverDaFila, ehMedico } from '@/lib/permissoes';
+import { podeEditarLaudo, podeRemoverDaFila, podeCorrigirAdministrativo, ehMedico } from '@/lib/permissoes';
 import StatusPill from '@/components/shell/StatusPill';
-import { TIPOS_LAUDO_PADRAO, type TipoLaudo } from '@/lib/tipos-laudo';
+import { TIPOS_LAUDO_PADRAO, modalidadeDe, type TipoLaudo } from '@/lib/tipos-laudo';
 import type { AcaoFeegow } from '@/lib/feegow-admin';
 
 // v3: helper pra enviar token Firebase nas chamadas Feegow
@@ -60,6 +60,12 @@ export default function Worklist() {
   const [agora, setAgora] = useState(new Date());
   const [modalPac, setModalPac] = useState(false);
   const [anexarPdf, setAnexarPdf] = useState<ExameItem | null>(null);
+  // Correção administrativa de laudo emitido (S5-T5/D4) — recepção troca
+  // convênio/solicitante sem médico, sem crédito e sem tocar no laudo.
+  const [corrigirAdm, setCorrigirAdm] = useState<ExameItem | null>(null);
+  const [admConvenio, setAdmConvenio] = useState('');
+  const [admSolicitante, setAdmSolicitante] = useState('');
+  const [admSalvando, setAdmSalvando] = useState(false);
   const [editPacId, setEditPacId] = useState<string | null>(null);
   const [editExameId, setEditExameId] = useState<string | null>(null);
 
@@ -430,7 +436,8 @@ export default function Worklist() {
   // Despacha por modalidade do tipo de laudo (catálogo tiposLaudo, Sub-plano 3).
   // Tipo desconhecido/sem catálogo carregado ainda → fallback 'motor' (comportamento antigo).
   function editarLaudoEmitido(item: ExameItem) {
-    const modalidade = tiposMap[(item.tipoExame as string) || '']?.modalidade || 'motor';
+    const tipoId = (item.tipoExame as string) || '';
+    const modalidade = modalidadeDe(tiposMap[tipoId], tipoId);
     if (modalidade === 'pdf') {
       setAnexarPdf(item);
       return;
@@ -439,6 +446,47 @@ export default function Worklist() {
       router.push('/laudo-texto/' + item.id);
     } else {
       router.push('/laudo/' + item.id);
+    }
+  }
+
+  // ── Correção administrativa (S5-T5/D4) ──
+  // Mesma rota da tela do laudo: o servidor reescreve SÓ convênio/solicitante
+  // no HTML congelado da emissão e regera o PDF. Sem crédito, sem médico.
+  function abrirCorrecaoAdm(item: ExameItem) {
+    setAdmConvenio((item.convenio as string) || '');
+    setAdmSolicitante((item.solicitante as string) || '');
+    setCorrigirAdm(item);
+  }
+
+  async function salvarCorrecaoAdm() {
+    if (!corrigirAdm || !workspace?.id || admSalvando) return;
+    setAdmSalvando(true);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/corrigir-laudo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
+        body: JSON.stringify({ wsId: workspace.id, exameId: corrigirAdm.id, convenio: admConvenio, solicitante: admSolicitante }),
+      });
+      const r = await res.json();
+      if (!r.ok) {
+        alert(r.error === 'nao_emitido' ? 'Este laudo não está emitido.'
+          : r.error === 'sem_permissao' ? 'Você não tem permissão para corrigir aqui.'
+          : r.error === 'reemitido_durante_correcao'
+            ? 'O médico reemitiu o laudo neste instante — a reemissão usa os dados da tela dele e pode ter desfeito esta correção. Confira o laudo novo e refaça se preciso.'
+          : 'Não foi possível salvar a correção. Tente de novo.');
+        if (r.error === 'reemitido_durante_correcao') setCorrigirAdm(null);
+        return;
+      }
+      alert(r.pdfDesatualizado
+        ? 'Correção salva. Este laudo é antigo: o PDF continua com o dado anterior — peça ao médico para reemitir se precisar do PDF corrigido.'
+        : r.pdfErro ? 'Correção salva. O PDF falhou ao ser regerado — tente imprimir de novo mais tarde.'
+        : 'Correção salva — PDF atualizado.');
+      setCorrigirAdm(null);
+    } catch {
+      alert('Erro de conexão ao salvar a correção.');
+    } finally {
+      setAdmSalvando(false);
     }
   }
 
@@ -457,7 +505,8 @@ export default function Worklist() {
   // Dispatch por modalidade do tipo de laudo (catálogo tiposLaudo, Sub-plano 3).
   // Tipo desconhecido/sem catálogo carregado ainda → fallback 'motor' (comportamento antigo).
   async function abrirLaudo(item: ExameItem) {
-    const modalidade = tiposMap[(item.tipoExame as string) || '']?.modalidade || 'motor';
+    const tipoId = (item.tipoExame as string) || '';
+    const modalidade = modalidadeDe(tiposMap[tipoId], tipoId);
     if (modalidade === 'pdf') {
       // Ato do médico (mesma matriz do Laudar) — a rota /api/emitir também
       // recusa 403 nao_medico, isso aqui só evita a recepção abrir o modal à toa.
@@ -698,6 +747,12 @@ export default function Worklist() {
                             {podeEditarLaudo(profile, item, user?.uid || '') && (
                               <Btn cor="amber" onClick={() => editarLaudoEmitido(item)}>✏️ Editar</Btn>
                             )}
+                            {/* Correção administrativa (S5-T5/D4): convênio errado
+                                é erro de recepção — ela corrige sem chamar o médico,
+                                sem crédito e sem encostar no corpo do laudo. */}
+                            {podeCorrigirAdministrativo(papel) && (
+                              <Btn cor="gray" onClick={() => abrirCorrecaoAdm(item)}>✏️ convênio/solicitante</Btn>
+                            )}
                             <Btn cor="gray" onClick={() => imprimirPdf(item.id)}>🖨️ Imprimir</Btn>
                           </>
                         );
@@ -728,6 +783,44 @@ export default function Worklist() {
           </table>
         </div>
       </div>
+
+      {/* Modal Correção administrativa (S5-T5/D4) — só os 2 campos que a
+          recepção pode mexer em laudo emitido. Nome/CPF/datas continuam no
+          fluxo clínico (Editar → reemitir). */}
+      {corrigirAdm && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => !admSalvando && setCorrigirAdm(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="bg-p1 text-white px-5 py-3 rounded-t-xl">
+              <h2 className="font-bold text-sm">✏️ Corrigir convênio / solicitante</h2>
+            </div>
+            <div className="p-5 space-y-3">
+              <p className="text-xs text-gray-500">
+                {(corrigirAdm.pacienteNome as string) || '—'} · laudo emitido. O texto do laudo não muda — só estes dois campos, no PDF e na cobrança.
+              </p>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Convênio</label>
+                <input type="text" value={admConvenio} onChange={e => setAdmConvenio(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Médico solicitante</label>
+                <input type="text" value={admSolicitante} onChange={e => setAdmSolicitante(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 px-5 pb-5">
+              <button onClick={() => setCorrigirAdm(null)} disabled={admSalvando}
+                className="px-4 py-2 rounded-lg text-sm font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-50">
+                Cancelar
+              </button>
+              <button onClick={salvarCorrecaoAdm} disabled={admSalvando}
+                className="px-4 py-2 rounded-lg text-sm font-semibold bg-p2 text-white hover:bg-blue-700 disabled:opacity-50">
+                {admSalvando ? 'Salvando...' : 'Salvar correção'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Paciente */}
       {modalPac && (

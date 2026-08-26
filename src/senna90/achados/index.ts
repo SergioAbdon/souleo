@@ -58,7 +58,7 @@ let _diastManualSelecao = -1;
 let _diastManualTextoLivre = '';
 
 export function setDiastModo(modo: 'auto' | 'manual') { _diastModo = modo; }
-export function setDiastManual(idx: number) { _diastManualSelecao = idx; }
+export function setDiastManual(idx: number) { _diastManualSelecao = Math.trunc(idx); }
 export function setDiastTextoLivre(txt: string) { _diastManualTextoLivre = txt; }
 export function getDiastModo() { return _diastModo; }
 

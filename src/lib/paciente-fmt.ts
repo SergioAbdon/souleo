@@ -34,14 +34,53 @@ export function fmtData(d?: string): string {
   return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : d;
 }
 
-/** Idade em anos completos a partir de uma data yyyy-mm-dd. */
-export function calcIdade(dtnasc?: string): number | null {
+/**
+ * Idade em anos completos a partir de uma data yyyy-mm-dd.
+ *
+ * `ateData` (yyyy-mm-dd) fixa a data de referência — é a idade NA DATA DO
+ * EXAME, que é o que vai no laudo: um laudo reimpresso/reemitido anos depois
+ * não pode envelhecer o paciente no papel assinado (S5-T10 fix / achado I1).
+ * Sem `ateData` (ou com data inválida) cai em hoje — comportamento de sempre,
+ * que a ficha do paciente e a lista continuam usando.
+ */
+export function calcIdade(dtnasc?: string, ateData?: string): number | null {
   if (!dtnasc) return null;
   const nasc = new Date(dtnasc + 'T00:00:00');
   if (isNaN(nasc.getTime())) return null;
-  const hoje = new Date();
-  let idade = hoje.getFullYear() - nasc.getFullYear();
-  const aniversarioAno = new Date(hoje.getFullYear(), nasc.getMonth(), nasc.getDate());
-  if (hoje < aniversarioAno) idade--;
+  const ref = ateData ? new Date(ateData + 'T00:00:00') : new Date();
+  if (isNaN(ref.getTime())) return calcIdade(dtnasc);
+  let idade = ref.getFullYear() - nasc.getFullYear();
+  const aniversarioAno = new Date(ref.getFullYear(), nasc.getMonth(), nasc.getDate());
+  if (ref < aniversarioAno) idade--;
   return idade >= 0 ? idade : null;
+}
+
+/**
+ * Idade como o motor escreve no laudo: `62 anos`, `1 ano`, `0 ano`
+ * (`motorv8mp4.js:1109-1115` — `a > 1 ? 'anos' : 'ano'`). Sem data de
+ * nascimento devolve '' (a moldura/tela é que decide o travessão).
+ */
+export function idadeLabel(dtnasc?: string, ateData?: string): string {
+  // Sem data do exame o motor imprime '—' (não a idade de hoje) — os 2
+  // call-sites do laudo passam ateData; '' deixa o travessão pro chamador.
+  if (!dtnasc || !ateData) return '';
+  const i = calcIdade(dtnasc, ateData);
+  if (i === null) return '';
+  return `${i} ${i > 1 ? 'anos' : 'ano'}`;
+}
+
+/**
+ * Telefone do local: 9130854000 → (91) 3085-4000 (10 ou 11 dígitos; qualquer
+ * outra coisa volta como veio).
+ */
+export function fmtTel(t: string): string {
+  const d = t.replace(/\D/g, '');
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return t;
+}
+
+/** CEP dentro do endereço do local: 66023700 → 66023-700. */
+export function fmtCep(end: string): string {
+  return end.replace(/(\d{5})(\d{3})/, '$1-$2');
 }

@@ -11,6 +11,7 @@ import { validarPdfBase64 } from '@/lib/pdf-validacao';
 import { resolverAssinatura } from '@/lib/billing-admin';
 import { adminDb, requireUid } from '@/lib/auth-admin';
 import { resolverPapel } from '@/lib/exame-admin';
+import { prefixoArquivoPorTipo } from '@/lib/dicom-sr-mapping';
 
 // ── Config Next.js ──
 export const runtime = 'nodejs';
@@ -30,14 +31,13 @@ export async function POST(req: NextRequest) {
   const dbAdmin = adminDb();
   try {
     const body = await req.json();
-    const { wsId, exameId, dadosFinais, medicoUid, pdfHtml, pdfBase64, nomeArq } = body as {
+    const { wsId, exameId, dadosFinais, medicoUid, pdfHtml, pdfBase64 } = body as {
       wsId: string;
       exameId: string;
       dadosFinais: Record<string, unknown>;
       medicoUid: string;
       pdfHtml?: string;
       pdfBase64?: string;
-      nomeArq?: string;
     };
 
     if (!wsId || !exameId || !medicoUid) {
@@ -47,16 +47,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Nome do arquivo do PDF: DERIVADO NO SERVIDOR (S5-T14, fix I3/ARQ-I2).
+    // Antes vinha no corpo da requisicao — o cliente escolhia a chave do
+    // objeto do documento legal, e a /api/corrigir-laudo (irma, dona do
+    // proprio alvo desde a T5) tinha modelo de confianca oposto no mesmo
+    // bucket. Deriva do que o servidor acabou de gravar no exame; o path
+    // ainda leva o exameId (pdf-path.ts), entao nome repetido nao colide.
+    const nomeArq = `${prefixoArquivoPorTipo((dadosFinais?.tipoExame as string) || '')} ${String(dadosFinais?.pacienteNome || '').trim().toUpperCase()}`.trim();
+
     // PDF anexado (modalidade 'pdf', Task 5): valida ANTES da transacao de
     // billing abaixo — nao debita franquia de um upload invalido.
     let pdfAnexadoBuf: Buffer | null = null;
     if (pdfBase64) {
-      if (!nomeArq) {
-        return NextResponse.json(
-          { ok: false, motivo: 'sem_nome_arquivo' },
-          { status: 400 }
-        );
-      }
       const validacao = validarPdfBase64(pdfBase64);
       if (!validacao.ok) {
         return NextResponse.json({ ok: false, motivo: validacao.motivo }, { status: validacao.status });
@@ -186,7 +188,7 @@ export async function POST(req: NextRequest) {
     // ledger e log num lugar so (decisao: anexo CONSOME franquia, 15/08/2026).
     let pdfUrl: string | null = null;
     let pdfErro: string | null = null;
-    if (pdfAnexadoBuf && nomeArq) {
+    if (pdfAnexadoBuf) {
       try {
         pdfUrl = await salvarPdfBuffer(pdfAnexadoBuf, wsId, exameId, nomeArq);
         await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfUrl });
@@ -194,7 +196,7 @@ export async function POST(req: NextRequest) {
         pdfErro = e instanceof Error ? e.message : 'erro_pdf';
         console.error('PDF anexo save error:', pdfErro);
       }
-    } else if (pdfHtml && nomeArq) {
+    } else if (pdfHtml) {
       try {
         pdfUrl = await gerarESalvarPdf(pdfHtml, wsId, exameId, nomeArq);
         // Salvar pdfUrl no exame

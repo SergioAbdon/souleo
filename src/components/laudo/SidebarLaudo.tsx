@@ -5,8 +5,8 @@
 // IDs DOM idênticos ao motor (b7-b62, gls_ve, gls_vd, lars, etc.)
 // ══════════════════════════════════════════════════════════════════
 
-import { useState, useEffect, useRef, ReactNode } from 'react';
-import { dataLocalHoje } from '@/lib/utils';
+import { useState, useEffect, ReactNode } from 'react';
+import { auth } from '@/lib/firebase';
 
 // Helpers para chamar funções do motor (expostas em window.*)
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -18,13 +18,11 @@ function motorCalc() { motorCall('calc'); }
 
 type Props = {
   clinicaNome: string;
-  medicoNome: string;
   medicoInfo: string;
   onVoltar: () => void;
   onSalvarEmitir: () => void;
   onLimpar: () => void;
   onImportarDicom?: () => void;
-  dicomLoading?: boolean;
   dicomImportado?: boolean;
   ortancAtivo?: boolean;
   /**
@@ -48,110 +46,129 @@ type Props = {
   readOnlyMotor?: boolean;
   exameOrigem?: string;
   exameCpf?: string;
-  feegowPacienteId?: string | number | null;
   exameAcc?: string;
   /** Salvar correção administrativa (convênio/solicitante) — sem crédito (Phase E). */
   onCorrigirAdmin?: () => void;
+  /** Id do workspace (S5-T9) — /api/feegow exige pra resolver o papel do usuário. */
+  wsId?: string;
+  /** Feedback visível (toast) — reusa o toast já existente em page.tsx (S5-T9). */
+  onToast?: (msg: string) => void;
 };
 
-export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, onImportarDicom, dicomLoading, dicomImportado, ortancAtivo, totalMedidasDicom, totalImagensDicom, onAbrirGaleria, emitido, modoEmitido, readOnlyIdentificacao, readOnlyMotor, exameOrigem, exameCpf, feegowPacienteId, exameAcc, onCorrigirAdmin }: Props) {
+export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, onImportarDicom, dicomImportado, ortancAtivo, totalMedidasDicom, totalImagensDicom, onAbrirGaleria, emitido, modoEmitido, readOnlyIdentificacao, readOnlyMotor, exameOrigem, exameCpf, exameAcc, onCorrigirAdmin, wsId, onToast }: Props) {
   const [idDesbloqueado, setIdDesbloqueado] = useState(false);
-  const [motorDesbloqueado, setMotorDesbloqueado] = useState(false);
-  // Detectar quando readOnlyMotor muda de true→false (médico desbloqueou)
-  const prevReadOnlyMotor = useRef(readOnlyMotor);
-  useEffect(() => {
-    if (prevReadOnlyMotor.current && !readOnlyMotor) {
-      setMotorDesbloqueado(true);
-    }
-    prevReadOnlyMotor.current = readOnlyMotor;
-  }, [readOnlyMotor]);
   const [feegowLoading, setFeegowLoading] = useState(false);
   const idBloqueado = readOnlyIdentificacao && !idDesbloqueado;
-  const motorBloqueado = !!(readOnlyMotor && !motorDesbloqueado);
-  const mb = motorBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : '';
+  // Trava do motor: UM dono só (tríade final, C1). Existia aqui um latch
+  // (latch local) que subia pra true no 1º desbloqueio e NUNCA voltava:
+  // depois de desbloquear → editar → REEMITIR na mesma montagem, o CSS
+  // (`.laudo-locked`, dono `emitido` em page.tsx) travava de novo mas este
+  // booleano continuava false — o laudo recém-assinado seguia editável por
+  // Tab/setas e os 3 guards de onClick (Wilkins, Automático/Manual) voltavam
+  // a reescrever o laudo emitido. `readOnlyMotor={emitido}` já é o estado
+  // vivo do lock (handleDesbloquear zera, handleEmitir levanta) — derivar
+  // outro estado daqui era duplicar o dono.
+  const motorBloqueado = !!readOnlyMotor;
 
-  // Bloquear/desbloquear campos do motor quando estado muda
+  // S5-T6: trava única do emitido. Um campo por vez, sem branch separado pra
+  // bloquear/desbloquear — `el.disabled = motorBloqueado` é sempre o valor
+  // atual do lock, nos dois sentidos. CSS (.laudo-locked em page.tsx, MESMA lista de
+  // exceção) trava mouse+visual; isto trava teclado (Tab/setas não
+  // respeitam pointer-events — achado do review S5-T3, M1) — dois
+  // mecanismos, um só dono de QUAIS campos: a lista `livres` abaixo.
+  // nome/dtnasc/dtexame pertencem à trava de IDENTIFICAÇÃO (disabled já
+  // controlado via idBloqueado no JSX — mexer aqui brigaria com o React).
+  // convenio/solicitante ficam sempre editáveis (correção administrativa
+  // sem crédito, T5). wk-mob/wk-esp/wk-cal/wk-sub (Wilkins) não têm mais
+  // isenção — mesmo furo do M1 se o painel já estivesse aberto ao emitir.
+  //
+  // Review S5-T6 (Minor 3): os 800ms são padrão pré-existente, fora do
+  // escopo desta task — só o CSS trava na hora; nessa janela o teclado
+  // ainda alcança os campos do motor num laudo recém-emitido. Encurtar
+  // fica pra task futura.
   useEffect(() => {
     const timer = setTimeout(() => {
       const sidebar = document.getElementById('laudo-sidebar');
       if (!sidebar) return;
-      const ignorar = ['nome', 'dtnasc', 'dtexame', 'convenio', 'solicitante', 'wk-mob', 'wk-esp', 'wk-cal', 'wk-sub', 'wilkins-toggle', 'diast-manual-sel'];
+      const livres = ['nome', 'dtnasc', 'dtexame', 'convenio', 'solicitante'];
       const campos = sidebar.querySelectorAll('input:not(.hidden), select:not(.hidden)') as NodeListOf<HTMLInputElement | HTMLSelectElement>;
-      if (motorBloqueado) {
-        // Bloquear todos os campos do motor
-        campos.forEach(el => {
-          if (ignorar.includes(el.id)) return;
-          el.disabled = true;
-          el.classList.add('bg-gray-100', 'text-gray-400', 'cursor-not-allowed');
-        });
-      } else if (motorDesbloqueado) {
-        // Só desbloqueia se foi explicitamente desbloqueado (evita interferir na montagem)
-        campos.forEach(el => {
-          if (ignorar.includes(el.id)) return;
-          el.disabled = false;
-          el.classList.remove('bg-gray-100', 'text-gray-400', 'cursor-not-allowed');
-        });
-      }
+      campos.forEach(el => {
+        if (livres.includes(el.id)) return;
+        el.disabled = motorBloqueado;
+      });
     }, 800);
     return () => clearTimeout(timer);
-  }, [motorBloqueado, motorDesbloqueado]);
+  }, [motorBloqueado]);
 
   async function handleDesbloquearId() {
     // Se veio do Feegow, buscar dados atualizados antes de desbloquear
-    if (exameOrigem === 'FEEGOW' && (feegowPacienteId || exameCpf)) {
-      setFeegowLoading(true);
-      try {
-        let url = '';
-        if (feegowPacienteId) {
-          url = `/api/feegow?action=paciente&id=${feegowPacienteId}`;
-        } else if (exameCpf) {
-          url = `/api/feegow?action=buscar_cpf&cpf=${exameCpf}`;
-        }
+    if (exameOrigem === 'FEEGOW' && exameCpf) {
+      // S5-T9 fix: action=paciente foi removida do switch GET de /api/feegow
+      // em 18/08 (commit b2c7e00, "confirmado morto") — só buscar_cpf segue
+      // viva. Manter aquele branch aqui devolvia sempre 400 (agora que a
+      // auth passa o gate 401) e o toast de erro disparava em todo
+      // desbloqueio vindo do Feegow, mascarando o caso real de falha.
+      //
+      // Sem wsId o workspace ainda não carregou (janela transitória do
+      // mount — o mesmo `workspace?.id` usado em todo o resto de page.tsx).
+      // Não é falha do Feegow, então NÃO é o mesmo caso do toast abaixo —
+      // pula a consulta em silêncio e segue pro confirm().
+      if (!wsId) {
+        console.warn('handleDesbloquearId: sem wsId (workspace ainda não carregado), pulando consulta Feegow');
+      } else {
+        setFeegowLoading(true);
+        try {
+          const url = `/api/feegow?action=buscar_cpf&cpf=${exameCpf}&wsId=${wsId}`;
+          const token = await auth.currentUser?.getIdToken();
+          const res = await fetch(url, { headers: { Authorization: `Bearer ${token || ''}` } });
+          if (!res.ok) {
+            onToast?.('Feegow indisponível — confira manualmente');
+          } else {
+            const data = await res.json();
+            const pac = data?.paciente;
 
-        if (url) {
-          const res = await fetch(url);
-          const data = await res.json();
-          const pac = feegowPacienteId ? data?.data?.content : data?.paciente;
+            if (pac) {
+                const nomeFeegow = (pac.nome || '').toUpperCase();
+                const nomeAtual = (document.getElementById('nome') as HTMLInputElement)?.value?.toUpperCase() || '';
 
-          if (pac) {
-            const nomeFeegow = (pac.nome || '').toUpperCase();
-            const nomeAtual = (document.getElementById('nome') as HTMLInputElement)?.value?.toUpperCase() || '';
-
-            if (nomeFeegow && nomeFeegow !== nomeAtual) {
-              const atualizar = confirm(
-                `O Feegow mostra o nome atualizado:\n\n"${nomeFeegow}"\n\nNome atual no laudo:\n"${nomeAtual}"\n\nDeseja atualizar para o nome do Feegow?`
-              );
-              if (atualizar) {
-                const nomeEl = document.getElementById('nome') as HTMLInputElement;
-                if (nomeEl) {
-                  nomeEl.value = nomeFeegow;
-                  nomeEl.dispatchEvent(new Event('input', { bubbles: true }));
-                }
-                // Atualizar também nascimento e sexo se disponíveis
-                if (pac.dtnasc || pac.nascimento) {
-                  let dtnasc = pac.dtnasc || '';
-                  if (!dtnasc && pac.nascimento) {
-                    const p = pac.nascimento.split('-');
-                    if (p.length === 3) dtnasc = `${p[2]}-${p[1]}-${p[0]}`;
+                if (nomeFeegow && nomeFeegow !== nomeAtual) {
+                  const atualizar = confirm(
+                    `O Feegow mostra o nome atualizado:\n\n"${nomeFeegow}"\n\nNome atual no laudo:\n"${nomeAtual}"\n\nDeseja atualizar para o nome do Feegow?`
+                  );
+                  if (atualizar) {
+                    const nomeEl = document.getElementById('nome') as HTMLInputElement;
+                    if (nomeEl) {
+                      nomeEl.value = nomeFeegow;
+                      nomeEl.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                    // Atualizar também nascimento e sexo se disponíveis
+                    if (pac.dtnasc || pac.nascimento) {
+                      let dtnasc = pac.dtnasc || '';
+                      if (!dtnasc && pac.nascimento) {
+                        const p = pac.nascimento.split('-');
+                        if (p.length === 3) dtnasc = `${p[2]}-${p[1]}-${p[0]}`;
+                      }
+                      if (dtnasc) {
+                        const dtEl = document.getElementById('dtnasc') as HTMLInputElement;
+                        if (dtEl) { dtEl.value = dtnasc; dtEl.dispatchEvent(new Event('input', { bubbles: true })); }
+                      }
+                    }
+                    // nº24 (decisão Sergio): sexo é campo CLÍNICO — segue a
+                    // trava do MOTOR (readOnlyMotor), não a da identificação.
+                    // Este fluxo é o desbloqueio ADMINISTRATIVO (nome/data/
+                    // convênio, crédito de identificação); sexo NÃO entra aqui
+                    // mesmo vindo do Feegow — só a reedição clínica (motor
+                    // desbloqueado, outro crédito) pode mudá-lo.
                   }
-                  if (dtnasc) {
-                    const dtEl = document.getElementById('dtnasc') as HTMLInputElement;
-                    if (dtEl) { dtEl.value = dtnasc; dtEl.dispatchEvent(new Event('input', { bubbles: true })); }
-                  }
-                }
-                if (pac.sexo) {
-                  const sexVal = pac.sexo === 'Masculino' ? 'M' : pac.sexo === 'Feminino' ? 'F' : pac.sexo;
-                  const sexEl = document.getElementById('sexo') as HTMLSelectElement;
-                  if (sexEl) { sexEl.value = sexVal; sexEl.dispatchEvent(new Event('change', { bubbles: true })); }
                 }
               }
             }
-          }
+        } catch (e) {
+          console.warn('Erro ao buscar Feegow:', e);
+          onToast?.('Feegow indisponível — confira manualmente');
         }
-      } catch (e) {
-        console.warn('Erro ao buscar Feegow:', e);
+        setFeegowLoading(false);
       }
-      setFeegowLoading(false);
     }
 
     // Confirmar consumo de crédito
@@ -192,7 +209,7 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
               return (
                 <button
                   onClick={onImportarDicom}
-                  disabled={dicomLoading || dicomImportado || !temMedidas}
+                  disabled={dicomImportado || !temMedidas}
                   title={
                     dicomImportado
                       ? 'Medidas já importadas'
@@ -207,7 +224,7 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
                         ? 'bg-purple-600 text-white hover:bg-purple-700'
                         : 'bg-gray-200 text-gray-500'
                   } disabled:opacity-50`}>
-                  {dicomLoading ? '⏳' : dicomImportado ? '✅ Importado' : temMedidas ? `📡 Importar (${totalMedidasDicom})` : '📡 Importar'}
+                  {dicomImportado ? '✅ Importado' : temMedidas ? `📡 Importar (${totalMedidasDicom})` : '📡 Importar'}
                 </button>
               );
             })()}
@@ -299,7 +316,12 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
         <F label={idBloqueado ? '🔒 Nome completo' : 'Nome completo'}><input type="text" id="nome" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
         <div className="grid grid-cols-2 gap-x-3 gap-y-[7px] mt-[7px]">
           <F label={idBloqueado ? '🔒 Data de nascimento' : 'Data de nascimento'}><input type="date" id="dtnasc" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
-          <F label={idBloqueado ? '🔒 Data do exame' : 'Data do exame'}><input type="date" id="dtexame" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} defaultValue={dataLocalHoje()} disabled={idBloqueado} /></F>
+          {/* nº6: SEM defaultValue — com o default fixo em "hoje" o campo
+              nascia preenchido e `preencherExame()` (que só escreve campo
+              VAZIO) nunca sobrescrevia com a data real do exame salvo.
+              Vazio no mount → preencherExame cai em exame.dataExame, com
+              fallback pra dataLocalHoje() só quando o exame não tem data. */}
+          <F label={idBloqueado ? '🔒 Data do exame' : 'Data do exame'}><input type="date" id="dtexame" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
         </div>
         {/* E (17/05): convênio + solicitante editáveis MESMO em emitido,
             sem crédito. Identidade (nome/datas acima) segue travada. */}
@@ -353,12 +375,23 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
         <div className="col-span-2 mb-1">
           <div className="flex items-center gap-1.5 bg-[#F3F4F6] rounded-md p-1">
             <button type="button" id="diast-btn-auto"
-              onClick={() => { motorCall('setDiastModo', 'auto'); motorCalc(); }}
+              onClick={() => {
+                // Laudo emitido: botão fora do .laudo-locked (não é input nem
+                // .section-btn) — sem este guard o dispatch reescreveria o
+                // texto do laudo assinado (mesmo furo do toggle Wilkins).
+                if (motorBloqueado) return;
+                // S5-T3: sem zerar o select, o Senna90 (que lê #diast-manual-sel
+                // direto do DOM) continuaria achando que o modo é manual mesmo
+                // depois de clicar "Automático".
+                const sel = document.getElementById('diast-manual-sel') as HTMLSelectElement | null;
+                if (sel) { sel.value = '-1'; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+                motorCall('setDiastModo', 'auto'); motorCalc();
+              }}
               className="flex-1 text-[10px] font-semibold py-1 rounded transition bg-[#1E3A5F] text-white">
               Automático
             </button>
             <button type="button" id="diast-btn-manual"
-              onClick={() => { motorCall('setDiastModo', 'manual'); motorCalc(); }}
+              onClick={() => { if (motorBloqueado) return; motorCall('setDiastModo', 'manual'); motorCalc(); }}
               className="flex-1 text-[10px] font-semibold py-1 rounded transition bg-transparent text-[#6B7280] hover:bg-white">
               Manual
             </button>
@@ -436,12 +469,27 @@ export default function SidebarLaudo({ clinicaNome, medicoNome, medicoInfo, onVo
           {/* Wilkins Score — abaixo da área mitral */}
           <button type="button"
             onClick={() => {
+              // I1 (review S5-T4): botão não tem `.section-btn`/`disabled` —
+              // sem este guard, clicar aqui num laudo EMITIDO disparava
+              // `change` → Senna90 → `setContent`, reescrevendo o texto do
+              // laudo assinado. `motorBloqueado` é o mesmo lock que trava
+              // todo o resto do motor; reabre sozinho quando o médico faz a
+              // reedição clínica (`readOnlyMotor` volta a false) e FECHA de
+              // novo na reemissão — simétrico, sem tela nova.
+              if (motorBloqueado) return;
               const cb = document.getElementById('wilkins-toggle') as HTMLInputElement;
               const fields = document.getElementById('wilkins-fields');
+              const icon = document.getElementById('wilkins-icon');
               if (cb && fields) {
                 cb.checked = !cb.checked;
                 fields.style.display = cb.checked ? 'grid' : 'none';
-                motorCalc();
+                if (icon) icon.textContent = cb.checked ? '☑' : '☐';
+                // nº15: dispara `change` no próprio checkbox (bubbles) em vez
+                // de chamar motorCalc() direto — o listener delegado do
+                // #laudo-sidebar (page.tsx) pega o evento, marca dirty (a
+                // franquia de Wilkins agora PERSISTE em `coletarMedidas`) e
+                // recalcula pela mesma via de qualquer outro campo.
+                cb.dispatchEvent(new Event('change', { bubbles: true }));
               }
             }}
             className="flex items-center gap-2 mt-2 mb-1 cursor-pointer text-[10px] font-semibold text-[#6B7280] hover:text-[#1E3A5F] transition">
@@ -575,7 +623,15 @@ function Sec({ id, title, children, defaultOpen, collapsed, single }: { id: stri
         {title}
         <span className="ml-auto text-[#6B7280] text-[15px]">{open ? '▾' : '▸'}</span>
       </button>
-      {open && <div className={`grid ${single ? 'grid-cols-1' : 'grid-cols-2'} gap-x-3 gap-y-[7px] px-5 py-2.5`}>{children}</div>}
+      {/* nº4: filhos SEMPRE montados, só `hidden` (Tailwind Preflight faz
+          `[hidden]{display:none!important}` — vence a classe `grid`, então
+          o visual/comportamento fica idêntico ao antigo unmount condicional).
+          Antes, fechar a seção DESMONTAVA os inputs (não controlados — sem
+          `value`/state React) e apagava o que o médico tinha digitado ali;
+          `coletarMedidas()` por id também perdia essas medidas ao salvar com
+          a seção fechada (Sistólica/Segmentar nascem `collapsed`). Mantidos
+          montados, os valores sobrevivem a abrir/fechar e entram no save. */}
+      <div hidden={!open} className={`grid ${single ? 'grid-cols-1' : 'grid-cols-2'} gap-x-3 gap-y-[7px] px-5 py-2.5`}>{children}</div>
     </div>
   );
 }

@@ -26,12 +26,10 @@ type Props = {
 export function PopupSalvarEmitir({ open, onClose, onRascunho, onEmitir, totalImagensSelecionadas = 0 }: Props) {
   // Toggle do checkbox — marcado por default quando há imagens
   const [incluirImagens, setIncluirImagens] = useState(true);
-
-  // Reset quando o popup abre
-  if (open && totalImagensSelecionadas === 0 && incluirImagens) {
-    // (sem imagens: força false pra não passar true por engano)
-    setIncluirImagens(false);
-  }
+  // S5-T12: valor derivado (sem setState-no-render) — sem imagens pra
+  // selecionar, o efetivo é sempre false, mesmo que `incluirImagens` (o
+  // toggle memorizado) ainda esteja true de uma sessão anterior.
+  const incluirEfetivo = totalImagensSelecionadas > 0 && incluirImagens;
 
   if (!open) return null;
   return (
@@ -66,13 +64,13 @@ export function PopupSalvarEmitir({ open, onClose, onRascunho, onEmitir, totalIm
               <div className="text-[11px] text-[#6B7280] mt-0.5">Salva e continua editando</div>
             </div>
           </button>
-          <button onClick={() => onEmitir(incluirImagens)}
+          <button onClick={() => onEmitir(incluirEfetivo)}
             className="flex items-center gap-3.5 p-3.5 rounded-[10px] border-[1.5px] border-[#059669] bg-white cursor-pointer text-left hover:border-[#059669] hover:bg-[#059669]/[.06] transition">
             <span className="text-[22px]">✅</span>
             <div>
               <div className="text-[13px] font-bold text-[#059669]">Emitir Laudo</div>
               <div className="text-[11px] text-[#6B7280] mt-0.5">
-                {totalImagensSelecionadas > 0 && incluirImagens
+                {incluirEfetivo
                   ? `Finaliza, assina e inclui ${totalImagensSelecionadas} imagens`
                   : 'Finaliza e assina o laudo'}
               </div>

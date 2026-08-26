@@ -1,11 +1,14 @@
 'use client';
 // ══════════════════════════════════════════════════════════════════
-// SOULEO · Folha A4 do Laudo — Tradução fiel do preview-motor.html
-// Cabeçalho 2 linhas + Identificação + Parâmetros + Comentários + Conclusão + Rodapé + Selo LEO
-// IDs DOM idênticos ao motor: out-nome, out-idade, params-tbody, achados-body, conclusao-list
+// SOULEO · Folha A4 do Laudo (motor) — hoje só o CORPO do eco.
+// Cabeçalho, identificação e rodapé saíram daqui pra MolduraA4 (S5-T10/D6),
+// a mesma moldura que o laudo-texto usa — e espelho do PDF (pdf-moldura.ts).
+// IDs DOM idênticos ao motor: out-nome, out-idade, params-tbody,
+// achados-body, conclusao-list (os #out-* vivem na MolduraA4).
 // ══════════════════════════════════════════════════════════════════
 
 import { ReactNode } from 'react';
+import MolduraA4 from './MolduraA4';
 
 type Props = {
   p1: string;
@@ -16,51 +19,40 @@ type Props = {
   sigTexto: string;
   logoB64?: string;
   sigB64?: string;
+  titulo?: string;
   editorLaudo?: ReactNode;
 };
 
-export default function SheetA4({ p1, clinicaNome, clinicaSlogan, clinicaEnd, clinicaTel, sigTexto, logoB64, sigB64, editorLaudo }: Props) {
+export default function SheetA4({ p1, clinicaNome, clinicaSlogan, clinicaEnd, clinicaTel, sigTexto, logoB64, sigB64, titulo, editorLaudo }: Props) {
   const result = <>
     <div className="bg-[#D8DEE8] overflow-y-auto p-5 flex-1">
       <p className="text-[10px] text-[#6B7280] font-semibold uppercase tracking-wider mb-3 text-center">
         Pré-visualização — edite os textos diretamente no laudo
       </p>
 
-      <div id="laudo-sheet" className="bg-white mx-auto shadow-[0_4px_20px_rgba(0,0,0,.15)]"
-        style={{ width: '210mm', minHeight: '297mm', padding: '30px 40px', fontSize: '9pt', fontFamily: "'IBM Plex Sans', sans-serif", color: '#1a1a1a' }}>
-
-        {/* ═══ CABEÇALHO — 2 linhas ═══ */}
-        <div className="pb-[7px] mb-2" style={{ borderBottom: `2.5px solid ${p1}` }}>
-          <div className="flex items-center gap-2.5" style={{ marginBottom: '-2px' }}>
-            {logoB64 && <img src={logoB64} alt="Logo" className="w-[42px] h-[42px] rounded-[5px] object-contain" />}
-            <div>
-              <span className="block font-bold whitespace-nowrap" style={{ fontSize: '14pt', color: p1, letterSpacing: '-0.3px', lineHeight: 1.1 }}>
-                {clinicaNome}
-              </span>
-              {clinicaSlogan && (
-                <span className="block text-[#888]" style={{ fontSize: '7.5pt', marginTop: '1px' }}>{clinicaSlogan}</span>
-              )}
-            </div>
-          </div>
-          <div id="laudo-titulo-exame" className="font-bold text-center whitespace-nowrap" style={{ fontSize: '10.5pt', color: p1, letterSpacing: '0.3px' }}>
-            ECOCARDIOGRAMA TRANSTORÁCICO
-          </div>
-        </div>
-
-        {/* ═══ IDENTIFICAÇÃO ═══ */}
-        <div className="rounded-[3px] mb-3" style={{ border: `1px solid ${p1}`, padding: '4px 8px' }}>
-          <div className="flex gap-2 mb-[3px]">
-            <IdCell label="NOME" id="out-nome" p1={p1} flex={2}>—</IdCell>
-            <IdCell label="IDADE" id="out-idade" p1={p1}>—</IdCell>
-            <IdCell label="DATA DE NASCIMENTO" id="out-dtnasc" p1={p1}>—</IdCell>
-          </div>
-          <div className="flex gap-2">
-            <IdCell label="CONVÊNIO" id="out-convenio" p1={p1}>—</IdCell>
-            <IdCell label="MÉDICO SOLICITANTE" id="out-solicitante" p1={p1}>—</IdCell>
-            <IdCell label="DATA DO EXAME" id="out-dtexame" p1={p1}>—</IdCell>
-          </div>
-        </div>
-
+      <MolduraA4
+        p1={p1}
+        clinicaNome={clinicaNome}
+        clinicaSlogan={clinicaSlogan}
+        clinicaEnd={clinicaEnd}
+        clinicaTel={clinicaTel}
+        sigTexto={sigTexto}
+        logoB64={logoB64}
+        sigB64={sigB64}
+        titulo={titulo || 'ECOCARDIOGRAMA TRANSTORÁCICO'}
+        identificacao={[
+          [
+            { label: 'NOME', id: 'out-nome', flex: 2 },
+            { label: 'IDADE', id: 'out-idade' },
+            { label: 'DATA DE NASCIMENTO', id: 'out-dtnasc' },
+          ],
+          [
+            { label: 'CONVÊNIO', id: 'out-convenio' },
+            { label: 'MÉDICO SOLICITANTE', id: 'out-solicitante' },
+            { label: 'DATA DO EXAME', id: 'out-dtexame' },
+          ],
+        ]}
+      >
         {/* ═══ MEDIDAS E PARÂMETROS ═══ */}
         <SectionTitle p1={p1}>MEDIDAS E PARÂMETROS</SectionTitle>
         <div className="border border-[#ddd] border-t-0 p-0">
@@ -90,26 +82,7 @@ export default function SheetA4({ p1, clinicaNome, clinicaSlogan, clinicaEnd, cl
         <div id="editor-laudo-container" className="border border-[#ddd] border-t-0 px-2 py-1">
           {editorLaudo}
         </div>
-
-        {/* ═══ RODAPÉ ═══ */}
-        <div className="flex justify-between items-end gap-2.5 mt-4 pt-[3mm]" style={{ borderTop: `1.5px solid ${p1}` }}>
-          <div className="leading-relaxed" style={{ fontSize: '6.8pt', color: '#888' }}>
-            <strong style={{ color: p1, fontSize: '8pt' }}>{clinicaNome}</strong><br />
-            {clinicaEnd}<br />
-            {clinicaTel && <>☎ {clinicaTel}</>}
-          </div>
-          <div className="text-center shrink-0" style={{ fontSize: '7pt', color: '#444' }}>
-            {sigB64 && <img src={sigB64} alt="Assinatura" className="block mx-auto" style={{ maxHeight: '50px', maxWidth: '180px', objectFit: 'contain', margin: '10px auto 2px' }} />}
-            <div className="mx-auto mb-[3px]" style={{ borderTop: '1px solid #333', width: '180px', marginTop: sigB64 ? '2px' : '24px' }} />
-            <div className="whitespace-pre-line" style={{ lineHeight: 1.4 }}>{sigTexto}</div>
-          </div>
-        </div>
-
-        {/* ═══ SELO LEO ═══ */}
-        <div className="text-center mt-1.5 pt-1" style={{ borderTop: '0.5px solid #e0e0e0', fontSize: '6pt', color: '#aaa', letterSpacing: '0.3px' }}>
-          Laudo emitido com ajuda do <strong>LEO</strong> · www.souleo.com.br
-        </div>
-      </div>
+      </MolduraA4>
     </div>
 
     {/* ═══ MODAL BANCO DE FRASES ═══ */}
@@ -142,15 +115,6 @@ export default function SheetA4({ p1, clinicaNome, clinicaSlogan, clinicaEnd, cl
 }
 
 // ── Componentes internos ──
-
-function IdCell({ label, id, p1, children, flex }: { label: string; id: string; p1: string; children: React.ReactNode; flex?: number }) {
-  return (
-    <div style={{ flex: flex || 1 }}>
-      <span className="block font-semibold uppercase" style={{ fontSize: '5.5pt', color: p1, letterSpacing: '0.3px' }}>{label}</span>
-      <span id={id} className="block font-medium" style={{ fontSize: '9pt' }}>{children}</span>
-    </div>
-  );
-}
 
 function SectionTitle({ p1, children, mt }: { p1: string; children: React.ReactNode; mt?: boolean }) {
   return (

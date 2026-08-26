@@ -27,8 +27,11 @@ type Props = {
   pacienteNome?: string;
   /**
    * Callback ao confirmar importação. Recebe as URLs selecionadas
-   * (subset de `inputs`). Caller (page.tsx) chama
-   * `window.importarDICOM({ measurements })` com esses valores.
+   * (subset de `inputs`). Caller (page.tsx) é `handleConfirmarImportSr`,
+   * que seta o `.value` de cada input do motor direto no DOM + dispatch
+   * de `input` (bubbles) — NÃO passa por `window.importarDICOM` (removido
+   * do motor no S5-T8: mapeamento LOINC→campo estava podre e sem
+   * call-sites vivos).
    */
   onImportar: (selecionados: InputImport[]) => void;
   /**

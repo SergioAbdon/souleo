@@ -13,7 +13,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 // Ids interpolados no path do Admin SDK (workspaces/${wsId}, profissionais/${uid}):
 // um id com '/' remonta o path e escaparia da colecao. Duplicado de convite-server.ts
 // (arquivo sem import @/, testado direto por node --test).
-function idValido(s: unknown): s is string {
+export function idValido(s: unknown): s is string {
   return typeof s === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(s);
 }
 
@@ -61,13 +61,17 @@ export async function ehMedicoDeVerdade(db: Firestore, uid: string): Promise<boo
   return (p.data()?.tipoPerfil ?? 'medico') === 'medico';
 }
 
-// /api/corrigir-laudo: correcao administrativa e SO de laudo EMITIDO; dono
-// corrige qualquer um, medico so os seus (autor), exame sem autor pode ser
-// assumido. Puro/testavel — a rota resolve papel antes (recepcao/forasteiro ja
-// barrados) e mapeia o motivo em HTTP (nao_emitido→409, nao_e_autor→403).
+// /api/corrigir-laudo: correcao administrativa e SO de laudo EMITIDO; dono e
+// RECEPCAO corrigem qualquer um, medico so os seus (autor), exame sem autor
+// pode ser assumido. Puro/testavel — a rota resolve papel antes e mapeia o
+// motivo em HTTP (nao_emitido→409, nao_e_autor/sem_permissao→403).
+// S5-T5/D4: recepcao entrou. Convenio e solicitante sao dado de recepcao —
+// trocar o nome do plano nao e ato medico, nao gera credito e nao encosta no
+// corpo clinico (o servidor reescreve so esses 2 campos do snapshot).
 export function podeCorrigir(
   papel: Papel, antesStatus: unknown, antesMedicoUid: unknown, uid: string,
 ): { ok: boolean; motivo?: string } {
+  if (!papel) return { ok: false, motivo: 'sem_permissao' };
   if (antesStatus !== 'emitido') return { ok: false, motivo: 'nao_emitido' };
   if (papel === 'medico' && antesMedicoUid && antesMedicoUid !== uid) {
     return { ok: false, motivo: 'nao_e_autor' };

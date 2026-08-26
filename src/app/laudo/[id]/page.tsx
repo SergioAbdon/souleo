@@ -11,17 +11,18 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { saveExame } from '@/lib/firestore';
 import { db, auth } from '@/lib/firebase';
-import { doc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { dataLocalHoje } from '@/lib/utils';
 // v3: billing agora e server-side via /api/emitir
 // gerarESalvarPdf legado removido — emissao + PDF agora sao server-side em /api/emitir
 import SidebarLaudo from '@/components/laudo/SidebarLaudo';
 import SheetA4 from '@/components/laudo/SheetA4';
-import DicomGallery, { buscarUrlsAssinadas } from '@/components/laudo/DicomGallery';
+import DicomGallery, { buscarUrlsAssinadas, renderPaginas } from '@/components/laudo/DicomGallery';
 import DicomSrImport from '@/components/laudo/DicomSrImport';
 import { normalizarParaImport, prefixoArquivoPorTipo, isSchemaAntigo, InputImport, MedidaSr, MapaSr, SR_TO_MOTOR } from '@/lib/dicom-sr-mapping';
 import { carregarPerfilAparelho } from '@/lib/perfil-aparelho';
 import { precisaConfirmarEmissao, SEM_SELECAO_PREFIXO } from '@/lib/emissao-guarda';
+import { decidirFontePreenchimento, rascunhoExpirado, SETE_DIAS_MS, type RascunhoLocal } from '@/lib/rascunho-restauracao';
 import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
 import { gerarDocx } from '@/lib/exportDocx';
@@ -36,8 +37,42 @@ import { executarEReportar, shadowModeAtivo } from '@/lib/shadow-runner';
 import { senna90Primario } from '@/lib/primary-engine-flag';
 import { calcularSenna90, criarDebounce } from '@/lib/senna90-bridge';
 import { montarLaudoHtml } from '@/lib/senna90-render';
+import { mesclarLinhas } from '@/lib/laudo-merge';
+import { checkboxParaMedida, medidaParaChecked } from '@/lib/checkbox-codec';
+import { TIPOS_LAUDO_PADRAO, modalidadeDe, type TipoLaudo } from '@/lib/tipos-laudo';
+import { montarPdfMoldura } from '@/lib/pdf-moldura';
+import { montarParamsHtml } from '@/lib/pdf-params';
+// Tabela de critérios do escore de Wilkins — fonte única (ver renderWilkinsHtml).
+import { WK_DESC } from '@/senna90/achados/wilkins';
+// Telefone/CEP do local: a cópia privada daqui virou uma só em paciente-fmt
+// (ARQ-I6) — o laudo-texto formatava os MESMOS campos com uma segunda cópia.
+import { fmtTel, fmtCep } from '@/lib/paciente-fmt';
 
+// nº16 (S5-T7): remount limpo por exame. Antes o componente NÃO desmontava
+// ao navegar /laudo/A → /laudo/B (mesma rota, só o param muda) — todo o
+// arsenal de resets manuais abaixo (exameAnteriorRef + limparCampos(true) +
+// prevGer/restauracao zerados no onSnapshot) existia só pra simular, à mão,
+// o que um remount de verdade faria de graça. Com a `key`, trocar de exame
+// desmonta `LaudoPageInner` inteira e monta outra: estados e refs nascem
+// zerados por construção. Os resets manuais continuam no código — inofensivos
+// (nunca mais disparam, porque `exameAnteriorRef.current` sempre nasce null
+// na instância nova) — e ficam como rede de segurança se um refactor futuro
+// tirar a `key` de novo.
 export default function LaudoPage() {
+  const params = useParams();
+  return <LaudoPageInner key={String(params.id)} />;
+}
+
+// Campos canônicos SÓ no topo do exame (fonte única) — nunca dentro de
+// `medidas`. `convenio` saiu em 16/05; os outros cinco saíram na tríade final
+// da S5 (I5): a recepção corrige `solicitante`/`pacienteNome` pelo caminho
+// oficial (T5) e a cópia velha em `medidas` repovoava o campo na abertura,
+// desfazendo a correção na próxima gravação. `coletarMedidas` não grava mais
+// nenhum deles; `preencherExame` ignora os que ainda existem em exames
+// antigos (leitura tolerante, sem migração).
+const SO_DO_TOPO = new Set(['nome', 'dtnasc', 'dtexame', 'convenio', 'solicitante', 'sexo']);
+
+function LaudoPageInner() {
   const params = useParams();
   const router = useRouter();
   const { user, profile, workspace } = useAuth();
@@ -46,7 +81,6 @@ export default function LaudoPage() {
   const [exame, setExame] = useState<Record<string, unknown> | null>(null);
   const [popupOpen, setPopupOpen] = useState(false);
   const [emitido, setEmitido] = useState(false);
-  const [dicomLoading, setDicomLoading] = useState(false);
   const [dicomImportado, setDicomImportado] = useState(false);
   // Estado da galeria DICOM (modal full-screen com thumbnails + lightbox).
   // Adicionada em 14/05/2026 — médico consegue ver as imagens dentro do laudo.
@@ -68,9 +102,64 @@ export default function LaudoPage() {
   const [reedicaoAtiva, setReedicaoAtiva] = useState(false);
   const editorRef = useRef<EditorLaudoRef>(null);
   const pendingHtml = useRef<string | null>(null);
+  // Texto restaurado sobrevive à 1a geração do Senna90 (S5-T1 fix, achado
+  // CRITICAL do revisor): setado quando `preencherExame()` restaura laudoHtml
+  // (rascunho local aceito OU exame.laudoHtml) em `pendingHtml`. O `sc()` da
+  // carga inicial (motorInicializar → calcFn → dispararSenna90 debounce
+  // 300ms → _onLaudoGerado → setContent INCONDICIONAL) sobrescrevia esse
+  // texto restaurado antes do médico digitar uma letra. A PRIMEIRA rodada de
+  // sc() pós-restauração pula o disparo do Senna90 (motor antigo calcFn()
+  // continua rodando normal — tabela/derivados intactos); do próximo input
+  // em diante o fluxo volta ao normal.
+  const textoRestauradoRef = useRef(false);
+  // Restauração roda só 1x (S5-T1 fix2, achado do re-review): `preencherExame()`
+  // é chamado DUAS vezes na carga — 1x dentro de motorInicializar (~444) e 1x no
+  // useEffect [exameCarregado, motorLoaded] (~245, 500ms depois), duplicidade
+  // pré-existente. Sem este guard, a 2a chamada re-arma `textoRestauradoRef`
+  // depois que a 1a `sc()` já tinha consumido — engolindo a próxima edição
+  // genuína do médico — e o `confirm()` do rascunho podia aparecer 2×. O
+  // preenchimento de medidas/identificação (idempotente, só escreve campo
+  // vazio) continua rodando nas duas chamadas. Task 7 traz o remount por
+  // exame que zera os refs — quando isso existir, este guard volta a fazer
+  // sentido reavaliar junto.
+  const restauracaoFeitaRef = useRef(false);
+  // Corrida autosave × emissão (S5-T1 fix, achado IMPORTANT do revisor):
+  // true durante handleEmitir — o tick do autosave (60s) não salva por cima
+  // de uma emissão em curso. Task 7 reusa este mesmo ref pro guard de duplo
+  // clique no botão emitir.
+  const emitindoRef = useRef(false);
+  // Wrapper único do motor (S5-T7, nº12): `sc()` (declarado dentro de
+  // `motorInicializar`) é calc() + disparo do Senna90 + shadow mode — só
+  // existe DEPOIS do motor carregar. `safeCalc()` é chamado de fora (Limpar,
+  // preencherExame) antes disso ser garantido; guardar `sc` aqui deixa
+  // `safeCalc()` preferir o wrapper completo sempre que ele já existir, e
+  // cair pro `calc()` cru do window só como fallback (motor ainda subindo).
+  const scRef = useRef<(() => void) | undefined>(undefined);
+  // Flag "esta instância ainda está montada" (S5-T7 fix, review C2+I1):
+  // duas execuções sobrevivem ao unmount sem cancelamento — o timer do
+  // debounce do Senna90 (`criarDebounce` não expõe `cancel()`) e o `onload`
+  // de um `<script>` do motor ainda em voo quando o médico troca de exame
+  // antes do motor terminar de subir. As duas, se deixadas rodar, escrevem
+  // no DOM/editor da instância NOVA usando o `editorRef`/timers da instância
+  // VELHA (já morta) — `vivoRef.current === false` faz as duas virarem no-op.
+  // Reset pra `true` no topo do efeito do motor (StrictMode em dev remonta
+  // o mesmo componente sem trocar de instância — precisa rearmar).
+  const vivoRef = useRef(true);
+  // Dirty flag (S5-T1): setada pelo listener delegado do #laudo-sidebar
+  // (medidas) e pelo onDirty do EditorLaudo (achados/conclusões). Autosave
+  // e beforeunload leem este ref — zerado só em salvamento COM sucesso.
+  const dirtyRef = useRef(false);
+  // Última geração do motor por bloco (S5-T2): é o "estado conhecido" contra
+  // o qual o merge por linha decide o que o médico mexeu. `null` = ainda não
+  // houve geração neste exame (ver o pseudo-prev em `dispararSenna90`).
+  const prevGerAchados = useRef<string[] | null>(null);
+  const prevGerConclusoes = useRef<string[] | null>(null);
   // Tela viva (S4-T12): o listener do exame roda a cada gravação do Wader;
   // este guard marca a PRIMEIRA snapshot (a única que inicializa `emitido`).
   const primeiraSnapshot = useRef(true);
+  // Último exame que a página preencheu — distingue carga inicial de TROCA de
+  // exame no bloco de reset (S5-T2 fix2).
+  const exameAnteriorRef = useRef<string | null>(null);
   // Guard SEPARADO da seleção de imagens (FIX F1, S4-T12 fix): a seleção só
   // pode ser inicializada na primeira snapshot QUE JÁ TEM imagens. Amarrada
   // ao guard acima, o médico que abrisse o laudo antes do Wader terminar
@@ -80,6 +169,9 @@ export default function LaudoPage() {
   // laudo, editável no cartão Integrações. Nasce no default embutido, então
   // falha de leitura NUNCA derruba a importação — só mantém a whitelist.
   const [perfilAparelho, setPerfilAparelho] = useState<MapaSr>(SR_TO_MOTOR);
+  // Tipo do exame no catálogo (S5-T10): dá o título impresso e diz se este
+  // exame é do motor mesmo — carótidas virou texto livre (D6).
+  const [tipo, setTipo] = useState<TipoLaudo | null>(null);
 
   const exameId = params.id as string;
   const p1 = (workspace?.corPrimaria as string) || '#8B1A1A';
@@ -102,6 +194,10 @@ export default function LaudoPage() {
     : '';
   const logoB64 = (workspace?.logoB64 as string) || '';
   const sigB64 = (profile?.sigB64 as string) || '';
+  // Título do exame (S5-T10 a): sai do catálogo em vez do literal
+  // "ECOCARDIOGRAMA TRANSTORÁCICO" que o transesofágico e o stress
+  // também estavam imprimindo. Fallback = o literal de sempre.
+  const tituloExame = (tipo?.nome || 'ECOCARDIOGRAMA TRANSTORÁCICO').toUpperCase();
 
   // Processar conteúdo pendente quando TipTap está pronto.
   //
@@ -127,6 +223,37 @@ export default function LaudoPage() {
     return () => clearInterval(interval);
   }, []);
 
+  // Tipo do exame + guarda de modalidade (S5-T10 a, espelho de laudo-texto).
+  // Exame de modalidade 'texto' (carótidas) aberto aqui por link antigo/atalho
+  // ia parar no motor de eco — tabela de medidas e conclusões que não são
+  // desse exame. Só redireciona se AINDA NÃO foi emitido: carótidas já
+  // assinadas pelo motor continuam abrindo/reimprimindo onde nasceram.
+  const tipoId = (exame?.tipoExame as string) || '';
+  const jaEmitidoDoc = !!exame?.emitidoEm;
+  // Documento FECHADO pro rascunho (gate de `salvarLaudo`, fix2/n1). Não é
+  // `emitidoEm`: `transferirExame` devolve o consumo, apaga o `pdfUrl` e põe
+  // `status:'andamento'`, mas MANTÉM o `emitidoEm` — o médico que recebeu o
+  // laudo justamente pra refazê-lo ficaria sem autosave e sem rascunho de
+  // servidor. Cancelado entra na lista porque salvar gravaria
+  // `status:'andamento'` e ressuscitaria o exame na fila.
+  const docFechado = ['emitido', 'cancelado'].includes((exame?.status as string) || '');
+  useEffect(() => {
+    if (!workspace?.id || !exame) return;
+    (async () => {
+      let t: TipoLaudo | null = null;
+      try {
+        const snap = await getDoc(doc(db, 'workspaces', workspace.id, 'tiposLaudo', tipoId));
+        if (snap.exists()) t = snap.data() as TipoLaudo;
+      } catch { /* fallback abaixo */ }
+      if (!t) t = TIPOS_LAUDO_PADRAO.find(x => x.id === tipoId) || null;
+      setTipo(t);
+      if (!jaEmitidoDoc && modalidadeDe(t, tipoId) === 'texto') router.replace('/laudo-texto/' + exameId);
+    })();
+    // `exame` fora das deps de propósito: o onSnapshot troca o objeto a cada
+    // gravação do Wader e isso re-leria o catálogo sem parar.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspace?.id, exameId, tipoId, jaEmitidoDoc, router]);
+
   // Perfil do aparelho — UMA leitura por workspace (não muda durante o laudo).
   useEffect(() => {
     if (!workspace?.id) return;
@@ -149,6 +276,31 @@ export default function LaudoPage() {
     // paciente anterior. Zerar aqui é o mesmo escopo do onSnapshot.
     primeiraSnapshot.current = true;
     selecaoInicializada.current = false;
+    // Restauração e merge também são POR EXAME (S5-T2, nota pendente da T1):
+    // navegar laudo→laudo sem desmontar levava o texto do paciente anterior
+    // como "geração conhecida" — o merge protegeria frases do laudo errado.
+    restauracaoFeitaRef.current = false;
+    textoRestauradoRef.current = false;
+    prevGerAchados.current = null;
+    prevGerConclusoes.current = null;
+    // O editor remonta pela `key={exameId}` (ver <EditorLaudo/> lá embaixo).
+    // Junto com ele morrem as duas coisas que carregariam texto do paciente
+    // anterior pro laudo novo: o HTML ainda na fila e a dirty-flag (que faria
+    // o autosave gravar o laudo de A dentro do exame de B).
+    pendingHtml.current = null;
+    dirtyRef.current = false;
+    // Sidebar limpa na TROCA de exame (nunca na carga: os selects nascem com
+    // default do HTML e zerar aqui mudaria o 1o laudo). Sem isso, campo que o
+    // exame novo não sobrescreve fica com o dado do paciente anterior — e o
+    // Senna90 fabrica o laudo de B com os dados de A. É a MESMA limpeza do
+    // botão "Limpar" (`limparCampos`), que já reseta select por
+    // `selectedIndex` e desmarca checkbox — `wilkins-toggle` ligado no
+    // paciente A fazia o laudo de B sair com "0 pontos, favorável para
+    // valvuloplastia mitral percutânea".
+    if (exameAnteriorRef.current && exameAnteriorRef.current !== exameId) {
+      limparCampos(true);
+    }
+    exameAnteriorRef.current = exameId;
     const unsub = onSnapshot(
       doc(db, 'workspaces', workspace.id, 'exames', exameId),
       (snap) => {
@@ -173,20 +325,37 @@ export default function LaudoPage() {
         //    quando médico toggle alguma imagem (auto-save abaixo).
         // Já inicializada NÃO re-roda: a escolha do médico é soberana.
         const todas = (dados.imagensDicom as string[] | undefined) || [];
-        if (selecaoInicializada.current || todas.length === 0) return;
-        selecaoInicializada.current = true;
-        const salvas = dados.imagensSelecionadasPdf as string[] | undefined;
-        if (salvas && Array.isArray(salvas)) {
-          // Filtra URLs salvas que ainda existem em imagensDicom (defensivo
-          // contra remap/reprocessamento que mudou URLs)
-          setImagensSelecionadasPdf(salvas.filter((u) => todas.includes(u)));
-        } else {
-          setImagensSelecionadasPdf(todas.slice(0, 8));
+        if (!selecaoInicializada.current && todas.length > 0) {
+          selecaoInicializada.current = true;
+          const salvas = dados.imagensSelecionadasPdf as string[] | undefined;
+          if (salvas && Array.isArray(salvas)) {
+            // Filtra URLs salvas que ainda existem em imagensDicom (defensivo
+            // contra remap/reprocessamento que mudou URLs)
+            setImagensSelecionadasPdf(salvas.filter((u) => todas.includes(u)));
+          } else {
+            setImagensSelecionadasPdf(todas.slice(0, 8));
+          }
+        }
+        // nº17 (S5-T7): poda a seleção em TODA snapshot (não só na 1a) — se
+        // uma URL selecionada sumiu de `imagensDicom` (reprocesso/remap do
+        // Wader), tira da seleção. NUNCA adiciona: se o médico desmarcou uma
+        // imagem, uma snapshot nova não a marca de volta.
+        // Guard `todas.length > 0` (review M1): uma snapshot com
+        // `imagensDicom` vazio (carga/transitório antes do Wader escrever)
+        // NÃO deve zerar a seleção pra sempre — `selecaoInicializada` já
+        // ficou `true` na 1a vez que houve imagem, então a inicialização não
+        // roda de novo pra repopular. A mesma regra do guard F1 de
+        // inicialização (vazio = "não vale nada ainda") vale aqui.
+        if (todas.length > 0) {
+          setImagensSelecionadasPdf((sel) => sel.filter((u) => todas.includes(u)));
         }
       },
       (err) => console.warn('laudo onSnapshot:', err),
     );
     return () => unsub();
+  // `limparCampos` é declaração de função da própria página (estável, mexe só
+  // no DOM): entrar como dep re-assinaria o onSnapshot a cada render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspace?.id, exameId]);
 
   /**
@@ -213,47 +382,104 @@ export default function LaudoPage() {
 
   // Preencher quando exame + motor prontos.
   //
-  // Dep é `exameCarregado` (boolean), NÃO o objeto `exame`: com a tela viva
+  // Dep é o ID do exame CARREGADO, NÃO o objeto `exame`: com a tela viva
   // (onSnapshot acima) o objeto muda a cada gravação do Wader. Se o efeito
   // seguisse o objeto, `preencherExame()` jogaria as medidas salvas por cima
   // do que o médico está digitando — e reabriria o prompt "Rascunho salvo…"
-  // no meio do laudo. Preenchimento é carga inicial: roda uma vez.
-  const exameCarregado = !!exame;
+  // no meio do laudo. O ID só muda quando é OUTRO exame.
+  //
+  // Por que o ID do exame carregado e não `exameId` da rota (S5-T2 fix2):
+  // navegar /laudo/A → /laudo/B troca `exameId` na hora, mas `exame` só vira
+  // B quando a snapshot chega. Seguir a rota rodaria `preencherExame()` com o
+  // closure de A — re-preenchendo a sidebar com A e jogando o laudoHtml de A
+  // em `pendingHtml`, ou seja, trazendo de volta o vazamento que a `key` do
+  // editor acabou de fechar. Seguindo `exame.id`, o preenchimento só roda
+  // quando os dados do exame novo já estão em mãos: sidebar de B, rascunho
+  // de B, `textoRestauradoRef` armado antes do `sc()` (fluxo da T1 intacto).
+  const exameCarregadoId = (exame?.id as string) || '';
   useEffect(() => {
-    if (exameCarregado && motorLoaded) {
-      setTimeout(() => {
-        try { preencherExame(); safeCalc(); } catch (e) { console.warn('preencher:', e); }
-      }, 500);
-    }
+    if (!exameCarregadoId || !motorLoaded) return;
+    // Timer órfão (tríade final, C1): sem cleanup + sem `vivoRef`, trocar de
+    // exame DENTRO desta janela de 500ms fazia o callback de A rodar contra o
+    // DOM vivo de B — `idCampos` escrevia nome/dtnasc/dtexame/convênio/
+    // solicitante/sexo do paciente A nos campos (vazios) de B, e o
+    // preenchimento legítimo de B não corrige (só escreve campo vazio). Daí
+    // pro doc e pro PDF assinado de B é `coletarIdentificacao()`. Mesmo par
+    // de guardas dos outros dois órfãos fechados na T7 (debounce do Senna90 e
+    // `onload` do <script>): cancela o timer no unmount E ignora o disparo
+    // tardio se a instância já morreu.
+    const t = setTimeout(() => {
+      if (!vivoRef.current) return;
+      try { preencherExame(); safeCalc(); } catch (e) { console.warn('preencher:', e); }
+    }, 500);
+    return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exameCarregado, motorLoaded]);
+  }, [exameCarregadoId, motorLoaded]);
+
+  // Autosave (S5-T1): a cada 60s, se houve mudança real (dirtyRef) desde o
+  // último save, grava no servidor. NUNCA roda com laudo emitido (travado/
+  // assinado — editar aqui não é o fluxo, é reedição via handleDesbloquear).
+  // Zera dirtyRef só em sucesso — falha (offline) tenta de novo no próximo tick.
+  //
+  // Tríade final (I1): o gate é o `emitido` do STATE, e `handleDesbloquear()`
+  // o zera pra abrir a reedição — 60s depois o tick gravava `status:
+  // 'andamento'` num laudo ASSINADO. `docFechado` (o STATUS do DOC)
+  // entra no gate E nas deps, pra o intervalo re-armar com o valor fresco
+  // quando a snapshot chega. A trava de verdade está em `salvarLaudo` — este
+  // gate só evita a chamada à toa.
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      if (emitido || docFechado || !dirtyRef.current || emitindoRef.current) return;
+      const ok = await salvarLaudo('andamento', { laudoHtml: editorRef.current?.getHTML() ?? '' });
+      if (ok) dirtyRef.current = false;
+    }, 60_000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emitido, docFechado]);
+
+  // beforeunload (S5-T1): avisa se há mudança não salva e o laudo não foi
+  // emitido — emitido é documento fechado, não há o que perder ao sair.
+  useEffect(() => {
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      if (dirtyRef.current && !emitido) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [emitido]);
 
   // Carregar motor
   useEffect(() => {
     if (motorLoaded) return;
+    vivoRef.current = true; // rearma (StrictMode dev remonta sem trocar de instância)
     const w = window as unknown as Record<string, unknown>;
     w.escH = (s: string) => { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; };
     w.showToast = (msg: string) => { const el = document.createElement('div'); el.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:99999;background:#1E293B;color:#fff;padding:10px 20px;border-radius:9px;font-size:13px;font-weight:600;font-family:IBM Plex Sans,sans-serif;box-shadow:0 4px 20px rgba(0,0,0,.3);'; el.textContent = msg; document.body.appendChild(el); setTimeout(() => el.remove(), 3000); };
     w.hexToRgb = (h: string) => { if (!h) return [30, 58, 95]; h = h.replace('#', ''); const n = parseInt(h, 16); return [n >> 16, (n >> 8) & 255, n & 255]; };
-    w.calcIdade = (dn: string, de?: string) => { if (!dn) return ''; const a = new Date(de || new Date()), b = new Date(dn); let i = a.getFullYear() - b.getFullYear(); if (a.getMonth() < b.getMonth() || (a.getMonth() === b.getMonth() && a.getDate() < b.getDate())) i--; return i; };
     w.uid = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 8);
     w.tog = (id: string) => { const el = document.getElementById(id); if (el) el.classList.toggle('collapsed'); };
     // alertaIT e setDiastModo wrappers serão aplicados após o motor carregar (ver script.onload)
 
     // Callbacks TipTap — motor chama estes ao renderizar achados/conclusões
     // Motor gera laudo completo → envia para TipTap
-    const WK_DESC: Record<string, string[]> = {
-      mob: ['Normal','Boa mobilidade da valva, com restrição apenas na ponta do folheto','Redução da mobilidade na porção média e na base dos folhetos','Mobilidade somente na base dos folhetos','Nenhum ou mínimo movimento dos folhetos'],
-      esp: ['Normal','Espessura valvar próxima do normal (4–5 mm)','Grande espessamento nas margens do folheto','Espessamento de todo o folheto (5–8 mm)','Grande espessamento de todo o folheto (>8–10 mm)'],
-      sub: ['Normal','Espessamento mínimo da corda tendínea logo abaixo da valva','Espessamento da corda até terço proximal','Espessamento da corda até terço distal','Extenso espessamento e encurtamento de toda corda até músculo papilar'],
-      cal: ['Sem calcificação','Uma única área de calcificação','Calcificações nas margens dos folhetos','Calcificações extensivas à porção média do folheto','Extensa calcificação em todo o folheto'],
-    };
+    //
+    // WK_DESC vem do Senna90 (tríade final, ARQ-I1): a tabela de critérios de
+    // Wilkins existia DUAS vezes verbatim — a cópia viva aqui e o export de
+    // `senna90/achados/wilkins.ts` sem consumidor nenhum. Arrumar a redação
+    // "onde ela mora" não mudava nada no laudo. Import só de dado puro (o
+    // senna90 segue intocável). Os RÓTULOS ficam aqui e são o outro lado do
+    // contrato de 4 pontas: `RENDER_WILKINS` (laudo-merge.ts) colapsa o bloco
+    // renderizado casando exatamente estes textos — renomear um só de um lado
+    // duplica o escore de Wilkins dentro do laudo assinado. Amarrado em
+    // tests/unit/contrato-ponte-ids.test.mjs (8).
     const WK_LABELS: Record<string, string> = { mob: 'Mobilidade do folheto', esp: 'Espessamento valvar', sub: 'Espessamento subvalvar', cal: 'Calcificação valvar' };
 
     function renderWilkinsHtml(json: string): string {
       const d = JSON.parse(json);
       let html = '<p><strong>Escore Ecocardiográfico de Wilkins &amp; Block:</strong></p>';
-      for (const key of ['mob', 'esp', 'sub', 'cal']) {
+      for (const key of ['mob', 'esp', 'sub', 'cal'] as (keyof typeof WK_DESC)[]) {
         const val = d[key] as number;
         if (val > 0) {
           html += `<p>• <strong>${WK_LABELS[key]}</strong> (${val} pts): ${WK_DESC[key][val]}</p>`;
@@ -283,16 +509,19 @@ export default function LaudoPage() {
     };
 
     // v3: carregar motor com retry e error handling
+    // S5-T12: cache-bust (`?v=${Date.now()}`) só no RETRY — a 1a carga usa a
+    // URL crua (cache do navegador vale) e só perde o cache quando a 1a
+    // tentativa falhou de verdade (s.onerror).
     let retryCount = 0;
-    function carregarScript() {
+    function carregarScript(retry = false) {
       const s = document.createElement('script');
-      s.src = `/motor/motorv8mp4.js?v=${Date.now()}`; // cache bust no retry
+      s.src = retry ? `/motor/motorv8mp4.js?v=${Date.now()}` : '/motor/motorv8mp4.js';
       s.onerror = () => {
         try { document.body.removeChild(s); } catch {}
         if (retryCount < 1) {
           retryCount++;
           console.warn('Motor: falha ao carregar, tentando novamente...');
-          setTimeout(carregarScript, 2000);
+          setTimeout(() => carregarScript(true), 2000);
         } else {
           console.error('Motor: falha definitiva apos retry');
           setMotorErro(true);
@@ -302,10 +531,17 @@ export default function LaudoPage() {
       document.body.appendChild(s);
     }
 
-    const script = { remove: () => {} }; // ref pra cleanup
     function motorInicializar() {
       setMotorLoaded(true);
       setTimeout(() => {
+        // fix (S5-T7 review, I1): troca de exame ANTES do motor terminar de
+        // subir — o `<script>` de A ainda em voo dispara `s.onload` (o
+        // closure de A) depois que B já montou. Sem este guard,
+        // `motorInicializar()` de A rodaria contra a sidebar de B (listeners
+        // duplicados, um deles sempre com `editorRef` morto → `setContent`
+        // cru a cada tecla, matando o merge em B pelo resto da sessão). A
+        // instância viva (B) já religa tudo sozinha no seu próprio efeito.
+        if (!vivoRef.current) return;
         try {
           const calcFn = (window as unknown as Record<string, unknown>).calc as (() => void) | undefined;
           if (calcFn) {
@@ -319,10 +555,53 @@ export default function LaudoPage() {
             // alimenta a ponte. Debounce evita estourar rate-limit 60/min.
             // Falha (rede/auth) → não re-renderiza, motor antigo segue
             // fazendo params-tbody/calc-* (sem regressão).
+            //
+            // Merge por linha (S5-T2, decisão D2-c): o que sai pro editor NÃO
+            // é mais a geração crua do motor — é ela mesclada com o que está
+            // no editor agora. Regra em `src/lib/laudo-merge.ts` (25 testes).
             const dispararSenna90 = criarDebounce(300, async () => {
+              // fix (S5-T7 review, m5): mesmo guard de baixo, repetido ANTES
+              // do fetch — sem isto, uma instância já morta ainda gastava 1
+              // chamada de `/api/laudo/calcular` (rate limit 60/min
+              // compartilhado com a instância viva) só pra jogar o resultado
+              // fora depois do `await`. O guard pós-`await` continua
+              // necessário (o unmount pode acontecer DURANTE o fetch).
+              if (!vivoRef.current) return;
               const r = await calcularSenna90();
-              if (!r) return; // falha → fallback silencioso (motor antigo)
-              const html = montarLaudoHtml(r.achados, r.conclusoes);
+              // fix (S5-T7 review, C2): `criarDebounce` não expõe `cancel()`
+              // — trocar de exame não cancela um timer já armado por esta
+              // instância. Se ele disparar depois do unmount, `editorRef`
+              // já é null (não vaza dados: a checagem de `ed` abaixo pula o
+              // merge) — mas sem este guard `onGer` ainda seria o handler DA
+              // INSTÂNCIA NOVA (reatribuído síncrono no mount dela) e faria
+              // `setContent` CRU (sem merge) de um laudo calculado com o DOM
+              // em branco (pré-`preencherExame` da instância nova) por cima
+              // do texto recém-restaurado do paciente novo.
+              if (!r || !vivoRef.current) return; // falha OU instância morta → no-op
+              const ed = editorRef.current;
+              // Editor ainda não montou: nada pra preservar, e o HTML vai
+              // esperar em `pendingHtml`. Mesclar contra [] aqui APAGARIA o
+              // laudo inteiro (tudo pareceria "linha que o médico deletou").
+              const atuaisA = ed ? ed.getAchadosLines() : null;
+              const atuaisC = ed ? ed.getConclusoesLines() : null;
+              // 1a geração do exame com o editor JÁ preenchido (rascunho
+              // restaurado): alinha contra a PRÓPRIA geração nova como
+              // pseudo-prev — o que casa com o motor é substituído por ele
+              // mesmo (idempotente), o que não casa é do médico e FICA.
+              const prevA = prevGerAchados.current ?? (atuaisA?.length ? r.achados : null);
+              const prevC = prevGerConclusoes.current ?? (atuaisC?.length ? r.conclusoes : null);
+              // `?.length`, NÃO `atuaisA` (Critical 2 do review): `[]` é
+              // truthy — editor montado e vazio virava "o médico apagou tudo"
+              // e o merge devolvia [], apagando o laudo inteiro. Editor vazio
+              // = nada a preservar → a geração nova manda. (`mesclarLinhas`
+              // repete o guard na raiz, pra qualquer outro chamador.)
+              const mescladoA = prevA && atuaisA?.length ? mesclarLinhas(prevA, r.achados, atuaisA) : r.achados;
+              const mescladoC = prevC && atuaisC?.length ? mesclarLinhas(prevC, r.conclusoes, atuaisC) : r.conclusoes;
+              prevGerAchados.current = r.achados;
+              prevGerConclusoes.current = r.conclusoes;
+              // Passa pelo `_onLaudoGerado` de propósito: é lá que a sentinela
+              // __WILKINS__ vira bloco formatado (o merge devolve a sentinela).
+              const html = montarLaudoHtml(mescladoA, mescladoC);
               const onGer = (window as unknown as Record<string, unknown>)
                 ._onLaudoGerado as ((h: string) => void) | undefined;
               if (onGer) onGer(html);
@@ -333,58 +612,116 @@ export default function LaudoPage() {
             // shadow (comparação invisível, se ativo).
             const sc = () => {
               try { calcFn(); } catch (e) { console.warn('calc:', e); }
+              // nº13 (S5-T8): renderizarLaudo agora tem guards e não quebra
+              // antes de alertaIT() — mas religa aqui também pra cobrir os
+              // outros pontos de chamada de calcFn() que não passam por `sc`.
+              try { (window as unknown as { alertaIT?: () => void }).alertaIT?.(); } catch { /* não bloquear */ }
               // Migração Senna90: flag ON → preenche o vazio dos achados.
+              // Achado CRITICAL (revisor S5-T1): a 1a rodada pós-restauração
+              // NÃO dispara o Senna90 — senão o setContent incondicional de
+              // `_onLaudoGerado` sobrescreve o laudoHtml restaurado (rascunho
+              // aceito ou exame.laudoHtml) antes do médico tocar em nada.
+              // calcFn() já rodou acima (tabela/derivados intactos); a partir
+              // do próximo input o fluxo volta ao normal.
               if (senna90Primario()) {
-                try { dispararSenna90(); } catch { /* não bloquear */ }
+                if (textoRestauradoRef.current) {
+                  textoRestauradoRef.current = false;
+                } else {
+                  try { dispararSenna90(); } catch { /* não bloquear */ }
+                }
               }
               // Shadow mode (Fase 5): invisível, server-side
               if (shadowModeAtivo()) {
                 try { executarEReportar(exameId); } catch { /* não bloquear */ }
               }
             };
+            // nº12: publica o wrapper pra `safeCalc()` (fora deste escopo)
+            // preferir `sc` (calc + Senna90 + shadow) em vez do `calc()` cru.
+            scRef.current = sc;
 
             // FIX 12/05/2026: Event delegation no container, NÃO em cada input.
             //
-            // Bug antigo: querySelectorAll só pegava inputs das seções ABERTAS no
-            // momento do load (Válvulas e Contratilidade começam fechadas — seus
-            // inputs nem existiam no DOM). Quando o médico abria essas seções e
-            // digitava, calc() não rodava → frases não apareciam.
+            // Bug antigo (HISTÓRICO — corrigido pelo nº4/S5-T4, `Sec` agora monta
+            // os filhos SEMPRE e só alterna `hidden`): querySelectorAll só pegava
+            // inputs das seções ABERTAS no momento do load (Sistólica e Segmentar
+            // começam fechadas — seus inputs nem existiam no DOM). Quando o médico
+            // abria essas seções e digitava, calc() não rodava → frases não apareciam.
             //
-            // Solução: um único listener no #laudo-sidebar (sempre presente).
-            // Eventos `input`/`change` borbulham (bubble) pro container, e
-            // checamos o target. Funciona pra inputs adicionados depois (seções
-            // expandidas, auto-fill DICOM futuro, etc).
+            // Solução (ainda vale, motivo diferente hoje): um único listener no
+            // #laudo-sidebar (sempre presente). Eventos `input`/`change` borbulham
+            // (bubble) pro container, e checamos o target. Funciona pra inputs
+            // adicionados depois (auto-fill DICOM, importação SR, etc.) sem
+            // precisar re-anexar listener por campo.
             const sidebar = document.getElementById('laudo-sidebar');
             if (sidebar) {
               const onInputOrChange = (e: Event) => {
                 const t = e.target as HTMLElement | null;
                 if (!t) return;
+                // nº23: sinal SINTÉTICO disparado ao fim de `preencherExame()`
+                // (target = o próprio container, não um campo). NÃO é edição
+                // do médico — não marca dirty, não passa pelo `sc()` completo
+                // (que dispararia o Senna90 e consumiria PREMATURAMENTE o
+                // guard `textoRestauradoRef`: os dois chamadores de
+                // `preencherExame()` já rodam `sc()`/`safeCalc()` logo depois,
+                // então o QUE FALTAVA era só revelar o condicional PSMAP
+                // (setado por valor sem disparar `change` real) + recalcular
+                // os derivados do motor legado — nada mais).
+                if (t.id === 'laudo-sidebar') {
+                  const refluxoPulmonarFn = (window as unknown as Record<string, unknown>)
+                    .refluxoPulmonar as (() => void) | undefined;
+                  if (refluxoPulmonarFn) { try { refluxoPulmonarFn(); } catch { /* */ } }
+                  // fix (S5-T7 review, C1): motor CRU aqui, não `safeCalc()`.
+                  // Desde o nº12, `safeCalc()` é o wrapper `sc()` — que dispara
+                  // o Senna90 e CONSOME `textoRestauradoRef`. Este branch existe
+                  // exatamente pra NÃO fazer isso (comentário acima, nº23): os
+                  // dois chamadores de `preencherExame()` já rodam `sc()`/
+                  // `safeCalc()` logo depois deles mesmos — bastava revelar o
+                  // condicional PSMAP e recalcular os derivados legados.
+                  // Passar por `sc()` aqui consumia o guard ANTES da hora,
+                  // dobrando o Senna90 do fluxo de carga (T2 duplicava o laudo
+                  // ~1s após abrir um exame com `laudoHtml` salvo).
+                  try { calcFn(); } catch (e) { console.warn('calc:', e); }
+                  return;
+                }
                 const tag = t.tagName;
                 if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') {
+                  dirtyRef.current = true; // S5-T1: medida mudou → rascunho desatualizado
                   sc();
                 }
               };
               sidebar.addEventListener('input', onInputOrChange);
               sidebar.addEventListener('change', onInputOrChange);
-
-              // Sincronização b24 (Câmaras) ↔ b24_diast (Diastólica) — também
-              // via delegation (pra cobrir caso b24_diast ainda não existir):
-              const onB24Sync = (e: Event) => {
-                const t = e.target as HTMLInputElement | null;
-                if (!t || t.tagName !== 'INPUT') return;
-                if (t.id === 'b24') {
-                  const d = document.getElementById('b24_diast') as HTMLInputElement | null;
-                  if (d) d.value = t.value;
-                } else if (t.id === 'b24_diast') {
-                  const d = document.getElementById('b24') as HTMLInputElement | null;
-                  if (d) d.value = t.value;
-                }
-              };
-              sidebar.addEventListener('input', onB24Sync);
             }
 
-            preencherExame();
-            sc();
+            // fix (S5-T7 review, P1 — pré-existente desde ae71447, achado na
+            // onda de fechamento): este `preencherExame()` é DEAD CODE por
+            // construção — o efeito "Carregar motor" tem deps `[]`, então o
+            // `motorInicializar` aqui dentro fecha sobre o `exame` da
+            // PRIMEIRA renderização (sempre `null`, o Firestore ainda não
+            // respondeu). `preencherExame()` sempre entra no
+            // `if (!exame) return;` do topo e não faz nada — os dois
+            // chamadores REAIS (`[exameCarregadoId, motorLoaded]` mais
+            // abaixo, e o `change` sintético que ele mesmo dispara) já
+            // cobrem a carga com o `exame` de verdade.
+            //
+            // O `sc()` que vinha logo depois, porém, FAZIA algo — e o algo
+            // era ruim: disparava o Senna90 contra a sidebar ainda vazia
+            // (motor recém-carregado, nenhum dado preenchido) e gravava essa
+            // geração fantasma em `prevGerAchados`/`prevGerConclusoes`. Isso
+            // tirava de jogo o pseudo-prev da T2 (`prevGerAchados.current ??
+            // (...)`, só ativa quando o ref ainda é `null`) — a 1a geração
+            // REAL (na carga, com o rascunho restaurado, ou na 1a tecla do
+            // médico) passava a mesclar contra esse "estado conhecido" vazio
+            // em vez do pseudo-prev, e linhas editadas pelo médico saíam
+            // duplicadas (a dele + a nova do motor).
+            //
+            // Fix: `calcFn()` cru no lugar de `sc()` — preserva o único
+            // efeito colateral que tinha valor real (o motor legado
+            // populando `#params-tbody`/derivados assim que carrega, mesmo
+            // antes do exame chegar) sem disparar Senna90 nenhum daqui — logo
+            // sem gravar em `prevGer`. `preencherExame()` foi só apagado
+            // (no-op comprovado, ver acima).
+            try { calcFn(); } catch (e) { console.warn('calc:', e); }
           }
 
           // Override alertaIT — usar style.display em vez de classList.toggle
@@ -396,7 +733,15 @@ export default function LaudoPage() {
           };
 
           // Wrap setDiastModo APÓS motor carregar (motor exporta window.setDiastModo)
-          const origSetDiastModo = (window as unknown as Record<string, unknown>).setDiastModo as ((m: string) => void) | undefined;
+          // fix (S5-T7 review, M2): remount por exame (nº16) roda este bloco
+          // de novo a cada troca — sem a marca abaixo, `origSetDiastModo`
+          // capturaria o WRAPPER da instância anterior (não o motor cru),
+          // empilhando 1 nível de closure por exame aberto na sessão.
+          // Idempotente (só repinta os mesmos botões), mas guarda a
+          // referência ORIGINAL uma única vez.
+          const wDiast = window as unknown as Record<string, unknown>;
+          if (!wDiast.__setDiastModoOrig) wDiast.__setDiastModoOrig = wDiast.setDiastModo;
+          const origSetDiastModo = wDiast.__setDiastModoOrig as ((m: string) => void) | undefined;
           (window as unknown as Record<string, unknown>).setDiastModo = (modo: string) => {
             if (origSetDiastModo) origSetDiastModo(modo);
             const btnAuto = document.getElementById('diast-btn-auto');
@@ -418,14 +763,50 @@ export default function LaudoPage() {
       }, 500);
     }
 
-    carregarScript();
-    return () => { try { document.querySelectorAll('script[src*="motorv8mp4"]').forEach(s => s.remove()); } catch {} };
+    // nº21 (S5-T7): remount por exame (nº16) faz este efeito rodar de novo a
+    // cada troca. Remover a <script> do DOM (cleanup abaixo) NÃO desfaz a
+    // execução do IIFE — `window.calc` sobrevive ao unmount. Reinjetar de
+    // novo carregaria o motor inteiro outra vez à toa; se já existe, só
+    // rebind: `motorInicializar()` religa os listeners na sidebar NOVA (DOM
+    // fresco do remount) e reatribui `scRef.current`/`_onLaudoGerado` pros
+    // closures desta instância — sem repetir o script/retry.
+    if ((window as unknown as Record<string, unknown>).calc) {
+      motorInicializar();
+    } else {
+      carregarScript();
+    }
+    return () => {
+      // fix (S5-T7 review, C2+I1): mata o debounce órfão do Senna90 e o
+      // `onload` zumbi de um `<script>` ainda em voo (ver os dois guards
+      // acima) — a instância que está sendo desmontada não escreve mais
+      // nada, ponto.
+      vivoRef.current = false;
+      try { document.querySelectorAll('script[src*="motorv8mp4"]').forEach(s => s.remove()); } catch {}
+      // `_onLaudoGerado`/`_onInserirFrase` não sobrevivem ao exame que os
+      // criou: se a página é desmontada de vez (sai do /laudo, não troca por
+      // outro exame), ninguém mais reatribui esses globais — sem o delete,
+      // ficariam apontando pro closure do exame antigo (editorRef já nulo)
+      // até o próximo /laudo montar. Deletar é defensivo: uma chamada tardia
+      // (ex.: timer de debounce do Senna90 ainda em voo) vira no-op silencioso
+      // em vez de escrever num editor que não existe mais.
+      const w = window as unknown as Record<string, unknown>;
+      delete w._onLaudoGerado;
+      delete w._onInserirFrase;
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // nº12 (S5-T7): prefere o wrapper `sc` (calc + Senna90 + shadow, montado em
+  // `scRef.current` por `motorInicializar`) — cai pro `calc()` cru do window
+  // só enquanto o motor ainda não terminou de subir (scRef ainda vazio).
+  // NB: NÃO escrito como `scRef.current?.() ?? calc()` — `sc()`/`calc()` são
+  // void (sempre retornam undefined), e `undefined ?? calc()` chamaria as
+  // DUAS toda vez que `scRef.current` já existisse (calc() rodaria 2x por
+  // tecla). O guard explícito abaixo chama só uma.
   function safeCalc() {
     if (motorErro) return; // v3: nao tentar calcular se motor falhou
     try {
+      if (scRef.current) { scRef.current(); return; }
       const c = (window as unknown as Record<string, unknown>).calc as (() => void);
       if (c) c();
       else if (motorLoaded) { console.warn('calc: funcao nao encontrada no window'); }
@@ -435,44 +816,89 @@ export default function LaudoPage() {
   function preencherExame() {
     if (!exame) return;
 
-    // v3: limpar rascunhos orfaos (mais de 7 dias)
-    try {
-      const SETE_DIAS = 7 * 24 * 60 * 60 * 1000;
-      const agora = Date.now();
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key?.startsWith('rascunho_')) {
-          try {
-            const r = JSON.parse(localStorage.getItem(key) || '{}');
-            if (r.timestamp && agora - r.timestamp > SETE_DIAS) {
-              localStorage.removeItem(key);
-            }
-          } catch { localStorage.removeItem(key!); }
-        }
-      }
-    } catch { /* */ }
+    // Bloco de restauração roda só na 1a chamada (S5-T1 fix2): guard
+    // `restauracaoFeitaRef` — ver comentário na declaração do ref, acima.
+    if (!restauracaoFeitaRef.current) {
+      restauracaoFeitaRef.current = true;
 
-    // Verificar rascunho local
-    try {
-      const raw = localStorage.getItem(`rascunho_${exameId}`);
-      if (raw) {
-        const rascunho = JSON.parse(raw);
-        const quando = new Date(rascunho.timestamp);
+      // v3: limpar rascunhos orfaos (mais de 7 dias)
+      // nº19-baixo (S5-T7): `Object.keys(localStorage)` tira uma CÓPIA das
+      // chaves antes de iterar — o loop antigo (`for i < localStorage.length`)
+      // reindexava a cada `removeItem` (o storage encolhe e desloca os
+      // índices seguintes pra trás), pulando a chave seguinte à removida.
+      // Decisão de expiração é pura (`rascunhoExpirado`, testada em
+      // `rascunho-restauracao.test.mjs`) — só o `removeItem` fica aqui.
+      try {
+        const agora = Date.now();
+        Object.keys(localStorage).forEach((key) => {
+          if (!key.startsWith('rascunho_')) return;
+          if (rascunhoExpirado(localStorage.getItem(key), agora, SETE_DIAS_MS)) {
+            localStorage.removeItem(key);
+          }
+        });
+      } catch { /* */ }
+
+      // Rascunho local x exame do servidor: decisão pura em rascunho-restauracao.ts
+      // (testada em tests/unit). nº9: recusar NÃO apaga — plano B local continua
+      // disponível depois. O `confirm()` (impuro) fica aqui, só a resposta viaja.
+      let rascunhoLocal: RascunhoLocal = null;
+      try {
+        const raw = localStorage.getItem(`rascunho_${exameId}`);
+        if (raw) rascunhoLocal = JSON.parse(raw);
+      } catch { /* sem rascunho */ }
+      let aceitouRascunho = false;
+      if (rascunhoLocal) {
+        const quando = new Date(rascunhoLocal.timestamp || 0);
         const fmt = quando.toLocaleDateString('pt-BR') + ' ' + quando.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-        if (confirm(`Rascunho salvo em ${fmt}. Deseja recuperar?`)) {
-          Object.entries(rascunho.medidas as Record<string, string>).forEach(([id, val]) => { if (val) setVal(id, val); });
-          return;
-        } else {
-          localStorage.removeItem(`rascunho_${exameId}`);
+        aceitouRascunho = confirm(`Rascunho salvo em ${fmt}. Deseja recuperar?`);
+      }
+      const fonte = decidirFontePreenchimento(rascunhoLocal, aceitouRascunho, {
+        medidas: exame.medidas as Record<string, string> | undefined,
+        laudoHtml: exame.laudoHtml as string | undefined,
+      });
+      if (fonte.medidas) {
+        Object.entries(fonte.medidas).forEach(([id, val]) => {
+          if (!val) return;
+          // Identificação NUNCA vem de `medidas` (tríade final, I5): exames
+          // antigos têm nome/dtnasc/dtexame/solicitante/sexo duplicados lá
+          // dentro (hoje `coletarMedidas` não grava mais nenhum deles). As
+          // medidas entram ANTES da identificação canônica e sem guarda de
+          // campo vazio — o valor velho vencia o do topo do exame e a próxima
+          // gravação/reemissão desfazia, em silêncio, a correção
+          // administrativa da recepção (T5). Tolerância de leitura = ignorar.
+          if (SO_DO_TOPO.has(id)) return;
+          // legado (S5-T12): a chave antiga da Diastólica foi unificada com
+          // 'b24' (SidebarLaudo.tsx:422, Contrato da Ponte D7 — teste
+          // contrato-ponte-ids.test.mjs pina esta referência em 1). Exames
+          // salvos ANTES da unificação ainda têm a chave extinta em
+          // `medidas`; sem este redirecionamento o valor ficaria órfão (não
+          // sobra elemento no DOM pro setVal escrever).
+          setVal(id === 'b24_diast' ? 'b24' : id, val);
+        });
+        // S5-T3: `setVal` só escreve `.value` — o Senna90 já lê o select
+        // direto do DOM (não depende disso pro texto sair certo), mas sem
+        // isto o painel manual restaurado ficaria invisível (parecendo que
+        // a seleção "sumiu"). A Task 5 cobre o dispatch de change genérico.
+        const diastSel = document.getElementById('diast-manual-sel') as HTMLSelectElement | null;
+        if (diastSel && parseInt(diastSel.value, 10) >= 0) {
+          const panel = document.getElementById('diast-manual-panel');
+          const btnAuto = document.getElementById('diast-btn-auto');
+          const btnManual = document.getElementById('diast-btn-manual');
+          if (panel) panel.style.display = 'block';
+          if (btnManual) btnManual.className = 'flex-1 text-[10px] font-semibold py-1 rounded transition bg-[#1E3A5F] text-white';
+          if (btnAuto) btnAuto.className = 'flex-1 text-[10px] font-semibold py-1 rounded transition bg-transparent text-[#6B7280] hover:bg-white';
         }
       }
-    } catch { /* sem rascunho */ }
-
-    const med = exame.medidas as Record<string, string> | undefined;
-    if (med) {
-      Object.entries(med).forEach(([id, val]) => { if (val) setVal(id, val); });
+      if (fonte.laudoHtml) {
+        pendingHtml.current = fonte.laudoHtml;
+        // Marca restauração (cobre os DOIS caminhos: rascunho aceito e
+        // exame.laudoHtml — `decidirFontePreenchimento` já resolveu qual).
+        // Ver comentário no `sc()` de motorInicializar (achado CRITICAL).
+        textoRestauradoRef.current = true;
+      }
     }
-    // Sempre preencher identificação a partir do exame (fallback se medidas não tiver)
+
+    // nº8: identificação SEMPRE preenchida a partir do exame (fallback se medidas não tiver)
     const idCampos: [string, string][] = [
       ['nome', exame.pacienteNome as string || ''],
       ['dtnasc', exame.pacienteDtnasc as string || ''],
@@ -485,25 +911,63 @@ export default function LaudoPage() {
       const el = document.getElementById(id) as HTMLInputElement | null;
       if (el && !el.value && val) setVal(id, val);
     });
+
+    // nº23: campos restaurados acima via `setVal` (só `.value`/`.checked`,
+    // sem `dispatchEvent`) deixam condicionais que dependem de `change` pra
+    // se revelar — ex.: b40p restaurado com valor mas #field-psmap continua
+    // `display:none` porque quem o abre é `refluxoPulmonar()`, chamado só
+    // pelo `onChange` do próprio select. UM change borbulhado no container
+    // (tratado à parte no listener delegado — não marca dirty, não dispara
+    // Senna90 de novo) resolve sem precisar mirar campo por campo.
+    const sidebarEl = document.getElementById('laudo-sidebar');
+    if (sidebarEl) sidebarEl.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   function setVal(id: string, val: string) {
     const el = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
-    if (el) el.value = val;
+    if (!el) return;
+    // nº15: único checkbox da tela — `.value` não marca/desmarca. Restaura
+    // o check E reabre o painel (senão o escore salvo fica invisível até o
+    // médico clicar de novo, e a próxima edição de medida o apagaria).
+    if (el instanceof HTMLInputElement && el.type === 'checkbox') {
+      el.checked = medidaParaChecked(val);
+      if (el.id === 'wilkins-toggle') {
+        const fields = document.getElementById('wilkins-fields');
+        if (fields) fields.style.display = el.checked ? 'grid' : 'none';
+        const icon = document.getElementById('wilkins-icon');
+        if (icon) icon.textContent = el.checked ? '☑' : '☐';
+      }
+      return;
+    }
+    el.value = val;
   }
 
   function coletarMedidas(): Record<string, string> {
-    // 'convenio' REMOVIDO daqui (fonte única 16/05): convênio é canônico só
-    // no topo do exame (lido por Worklist/Extrato). Antes era duplicado em
-    // medidas.convenio e os dois divergiam. Load usa o fallback do topo.
-    const campos = ['nome', 'dtnasc', 'dtexame', 'solicitante', 'sexo', 'ritmo', 'peso', 'altura',
+    // Identificação REMOVIDA daqui (fonte única): `convenio` saiu em 16/05 e
+    // `nome`/`dtnasc`/`dtexame`/`solicitante`/`sexo` na tríade final da S5
+    // (I5) — todos são canônicos no TOPO do exame (`coletarIdentificacao`,
+    // lido por Worklist/Extrato/PDF). Duplicados em `medidas`, a cópia velha
+    // vencia na abertura e desfazia a correção administrativa da recepção.
+    // Ver `SO_DO_TOPO` (topo do arquivo) e o filtro em `preencherExame`.
+    const campos = ['ritmo', 'peso', 'altura',
       'b7', 'b8', 'b9', 'b10', 'b11', 'b12', 'b13', 'b28', 'b29', 'b24', 'b25',
-      'b19', 'b20', 'b21', 'b22', 'b23', 'b24_diast', 'b37', 'b38', 'b54', 'b32', 'b33', 'gls_ve', 'gls_vd', 'lars',
+      'b19', 'b20', 'b21', 'b22', 'b23', 'b37', 'b38', 'b54', 'b32', 'b33', 'gls_ve', 'gls_vd', 'lars',
       'b34', 'b35', 'b34t', 'b36', 'b39', 'b40', 'b39p', 'b40p', 'psmap',
       'b41', 'b42', 'b45', 'b46', 'b47', 'b46t', 'b47t', 'b50', 'b51', 'b52', 'b50p',
-      'b55', 'b56', 'b57', 'b58', 'b59', 'b60', 'b61', 'b62', 'wk-mob', 'wk-esp', 'wk-cal', 'wk-sub'];
+      'b55', 'b56', 'b57', 'b58', 'b59', 'b60', 'b61', 'b62', 'wk-mob', 'wk-esp', 'wk-cal', 'wk-sub',
+      'diast-manual-sel',
+      // nº15 (background T2/T3): faltava aqui — o escore de Wilkins nunca
+      // era persistido, então reabrir o laudo sempre voltava com o painel
+      // fechado e a 1a medida editada apagava o cálculo salvo em silêncio.
+      'wilkins-toggle'];
     const m: Record<string, string> = {};
-    campos.forEach(id => { const el = document.getElementById(id) as HTMLInputElement | null; if (el) m[id] = el.value || ''; });
+    campos.forEach(id => {
+      const el = document.getElementById(id) as HTMLInputElement | null;
+      if (!el) return;
+      // Checkbox não tem `.value` significativo — grava '1'/'0' (setVal sabe ler de volta).
+      // Codec extraído/testado em `src/lib/checkbox-codec.ts` (M4, revisão S5-T4).
+      m[id] = el.type === 'checkbox' ? checkboxParaMedida(el.checked) : (el.value || '');
+    });
     return m;
   }
 
@@ -535,6 +999,18 @@ export default function LaudoPage() {
   /** Save centralizado — medidas + identificação sempre juntos */
   async function salvarLaudo(status: 'rascunho' | 'andamento', extras?: Record<string, unknown>) {
     if (!workspace?.id || !exameId || !user?.uid) return false;
+    // Laudo ASSINADO não volta pra rascunho por save (tríade final, I1). Os
+    // dois chamadores (autosave de 60s e "Salvar rascunho") gravam
+    // `status:'andamento'`; num exame EMITIDO isso o DES-EMITE:
+    // a correção administrativa passa a responder 409 `nao_emitido`, o exame
+    // some das listas de emitido e não pode mais ser cancelado/estornado — e
+    // contradiz a promessa da própria tela (`handleVoltar`: "o laudo emitido
+    // original continua valendo, a edição não reemitida será PERDIDA"). Na
+    // reedição o único caminho que persiste é reemitir (`/api/emitir`), que
+    // grava tudo junto e cobra o crédito. Plano B local (localStorage) segue
+    // valendo — quem grava é `handleRascunho`, fora daqui. Cancelado entra no
+    // mesmo gate (salvar o ressuscitaria); TRANSFERIDO não — ver `docFechado`.
+    if (docFechado) return false;
     // medicoUid no save: assume o exame orfao (cadastrado pela recepcao) no
     // primeiro salvamento. Se ja e o autor, reenvia o mesmo valor (intacto
     // permite); se o autor e OUTRO medico, a regra nega — como deve.
@@ -689,17 +1165,36 @@ export default function LaudoPage() {
     setPopupOpen(true);
   }
 
-  function handleRascunho() {
+  // S5-T1: rascunho de verdade — grava no servidor via salvarLaudo (era
+  // código morto). Plano B local continua como rede de segurança offline.
+  async function handleRascunho() {
     setPopupOpen(false);
+    const okServer = await salvarLaudo('andamento', { laudoHtml: editorRef.current?.getHTML() ?? '' });
     try {
-      const medidas = coletarMedidas();
-      localStorage.setItem(`rascunho_${exameId}`, JSON.stringify({ medidas, timestamp: Date.now() }));
-      toast('Rascunho salvo localmente');
-    } catch { toast('Erro ao salvar rascunho'); }
+      localStorage.setItem(`rascunho_${exameId}`, JSON.stringify({
+        medidas: coletarMedidas(), laudoHtml: editorRef.current?.getHTML() ?? '', timestamp: Date.now(),
+      }));
+    } catch { /* */ }
+    dirtyRef.current = false;
+    // Documento fechado (emitido/cancelado): `salvarLaudo` recusa de propósito
+    // (I1) — o rascunho fica só local e o médico precisa REEMITIR pra valer.
+    // Dizer "sem conexão" aqui seria mentira.
+    toast(okServer
+      ? 'Rascunho salvo'
+      : docFechado
+        ? 'Laudo fechado — rascunho guardado só neste navegador. Reemita para valer.'
+        : 'Rascunho salvo só neste navegador (sem conexão)');
   }
 
   async function handleEmitir(incluirImagens: boolean = true) {
     if (!workspace?.id || !exameId || !user?.uid) return;
+    // nº11 (S5-T7): duplo-clique/duplo-submit — o guard de baixo (linha ~955)
+    // só sobe DEPOIS dos `confirm()` de pendência DICOM; sem pendência não há
+    // confirm bloqueando, e um segundo clique entre o primeiro clique e o
+    // primeiro `await` cairia aqui de novo. `emitindoRef` também é
+    // compartilhado com `handleCorrigirLaudo` — os dois fluxos gravam o
+    // mesmo laudo, um por vez.
+    if (emitindoRef.current) return;
     // Guarda de emissão (S4-T12): o Wader falhou ou ainda não trouxe as
     // imagens deste exame — emitir agora gera um PDF sem imagem nenhuma.
     // Decisão pura em `precisaConfirmarEmissao` (tem teste); aqui só o aviso.
@@ -718,6 +1213,12 @@ export default function LaudoPage() {
     // antes de incluir as páginas extras de imagens
     setImagensIncluidasNoPdf(incluirImagens);
 
+    // Corrida autosave × emissão (achado IMPORTANT do revisor): sobe o guard
+    // ANTES do corpo assíncrono — o tick de 60s não pode salvar por cima de
+    // uma emissão em curso. `finally` garante reset mesmo em erro/return
+    // precoce (rede, plano sem saldo, etc).
+    emitindoRef.current = true;
+    try {
     const medidas = coletarMedidas();
     const achados = coletarAchados();
     const conclusoes = coletarConclusoes();
@@ -729,10 +1230,19 @@ export default function LaudoPage() {
 
     const dadosFinais = {
       medidas, achados, conclusoes,
+      // Texto ASSINADO no doc (tríade final, I2): `laudoHtml` só era gravado
+      // pelo rascunho/autosave, então reabrir um emitido restaurava o último
+      // autosave (até 60s ANTES da emissão) em vez do texto que foi pro PDF —
+      // "Imprimir"/"Copiar"/"Word" da tela do emitido divergiam do laudo que
+      // o paciente tem na mão. Mesma fonte que o PDF usa (o editor agora).
+      laudoHtml: editorRef.current?.getHTML() ?? '',
       ...identificacao,
       cfgSnapshot: { clinica: clinicaNome, slogan: clinicaSlogan, localEnd: clinicaEnd, localTel: clinicaTel, medNome: profile?.nome, medCrm: profile?.crm, medUf: profile?.ufCrm, p1 },
-      // Dados extras pra consumo/log (server usa)
-      pacienteNome: (exame?.pacienteNome as string) || identificacao.pacienteNome || '',
+      // nº5: pacienteNome NÃO reentra aqui — `...identificacao` (acima) já
+      // traz o nome atual do DOM. A linha antiga sobrescrevia com
+      // `exame.pacienteNome` (valor STALE do servidor) sempre que existia,
+      // igual ao bug do `convenio` (comentário abaixo) — nome editado na tela
+      // nunca chegava a salvar.
       tipoExame: (exame?.tipoExame as string) || '',
       // convenio: NÃO sobrescrever aqui. Vem de `...identificacao` (valor
       // do DOM = o que o médico vê). A linha antiga jogava o `exame.convenio`
@@ -747,10 +1257,10 @@ export default function LaudoPage() {
     // Passa `incluirImagens` explícito pra evitar race do setState async
     // (decisão 15/05/2026 — médico escolhe no PopupSalvarEmitir).
     const pdfHtml = gerarPdfHtml(incluirImagens);
-    const nome = (document.getElementById('nome') as HTMLInputElement)?.value || 'PACIENTE';
-    // Nome do arquivo dinâmico por tipoExame (decisão 15/05/2026):
-    //   eco_tt → ECOTT, doppler_carotidas → DOPPLER CAROTIDAS, etc.
-    const nomeArq = prefixoArquivoPorTipo(exame?.tipoExame as string | undefined) + ' ' + nome.trim().toUpperCase();
+    // `nomeArq` NÃO vai mais no corpo (S5-T14, I3): quem nomeia o objeto do
+    // laudo assinado no Storage é o servidor, a partir do que ele mesmo
+    // acabou de gravar (tipo + nome do paciente). Aqui o mesmo texto ainda é
+    // montado, mas só pro <title> do documento — ver `gerarPdfHtml`.
 
     toast('Emitindo laudo e gerando PDF...');
 
@@ -766,7 +1276,6 @@ export default function LaudoPage() {
           dadosFinais,
           medicoUid: user.uid,
           pdfHtml,
-          nomeArq,
         }),
       });
       resultado = await res.json();
@@ -818,6 +1327,9 @@ export default function LaudoPage() {
     } else {
       toast('Laudo emitido e assinado');
     }
+    } finally {
+      emitindoRef.current = false;
+    }
   }
 
   function handleDesbloquear() {
@@ -832,31 +1344,49 @@ export default function LaudoPage() {
   // Identidade (nome/datas) NÃO entra aqui — segue travada/Desbloquear.
   async function handleCorrigirLaudo() {
     if (!workspace?.id || !exameId || !user?.uid) return;
+    // nº11 (S5-T7): mesmo guard de `handleEmitir` — os dois fluxos gravam o
+    // mesmo laudo, um por vez (duplo-clique aqui, ou correção em cima de uma
+    // emissão em curso).
+    if (emitindoRef.current) return;
+    // S5-T5: com reedição aberta a tela já não é o laudo emitido — corrigir
+    // aqui gravaria o convênio por cima de um laudo que ainda vai ser reemitido.
+    // Um fluxo por vez.
+    if (reedicaoAtiva) {
+      toast('Termine a reedição (emitir) ou saia sem salvar antes de corrigir');
+      return;
+    }
     const convenio = (document.getElementById('convenio') as HTMLInputElement)?.value || '';
     const solicitante = (document.getElementById('solicitante') as HTMLInputElement)?.value || '';
-    const nome = (document.getElementById('nome') as HTMLInputElement)?.value || 'PACIENTE';
-    const nomeArq = prefixoArquivoPorTipo(exame?.tipoExame as string | undefined) + ' ' + nome.trim().toUpperCase();
     toast('Salvando correção e regerando PDF...');
+    emitindoRef.current = true;
     try {
       const token = await user.getIdToken();
       const res = await fetch('/api/corrigir-laudo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          wsId: workspace.id, exameId, convenio, solicitante,
-          pdfHtml: gerarPdfHtml(true), nomeArq,
-        }),
+        // Sem pdfHtml (S5-T5): o servidor regera o PDF do snapshot congelado
+        // na emissão. O que sai daqui é só o dado administrativo.
+        body: JSON.stringify({ wsId: workspace.id, exameId, convenio, solicitante }),
       });
       const r = await res.json();
-      if (!r.ok) { toast('Erro ao salvar correção. Tente novamente.'); return; }
+      if (!r.ok) {
+        toast(r.error === 'reemitido_durante_correcao'
+          ? 'O laudo foi reemitido agora — a reemissão usa os dados da tela e pode ter desfeito esta correção. Confira e refaça se preciso.'
+          : 'Erro ao salvar correção. Tente novamente.');
+        return;
+      }
       if (r.pdfUrl) {
         toast('Correção salva — PDF atualizado');
         window.open(r.pdfUrl, '_blank');
+      } else if (r.pdfDesatualizado) {
+        toast('Correção salva. Laudo antigo: o PDF continua com o dado velho — reemita para atualizá-lo.');
       } else {
         toast(r.pdfErro ? 'Correção salva. PDF falhou — tente "Imprimir".' : 'Correção salva.');
       }
     } catch {
       toast('Erro de conexão ao salvar correção.');
+    } finally {
+      emitindoRef.current = false;
     }
   }
 
@@ -881,6 +1411,20 @@ export default function LaudoPage() {
     return editorRef.current?.getConclusoesHTML() || '';
   }
 
+  // ── Raspagem única da tabela de parâmetros (S5-T13) ──
+  // Usada por gerarPdfHtml/handleCopiarFormatado (via montarParamsHtml,
+  // pdf-params.ts) e por handleCopiarTexto/handleBaixarWord (direto —
+  // formatação própria de cada um, não é HTML de tabela). `textContent`
+  // (não innerHTML): o motor só escreve texto puro em cada `<td>`, nunca
+  // markup aninhado — ver pdf-params.ts sobre o porquê disso ser seguro.
+  function lerParamsDoDOM(): string[][] {
+    const rows: string[][] = [];
+    document.querySelectorAll('#params-tbody tr').forEach((tr) => {
+      rows.push(Array.from(tr.querySelectorAll('td')).map((td) => td.textContent || ''));
+    });
+    return rows;
+  }
+
   // ── Gerar HTML do PDF a partir do DOM ──
   // `incluirImagensParam` (decisão 15/05/2026): se passado, sobrescreve
   // o state `imagensIncluidasNoPdf` — usado pelo handleEmitir() que recebe
@@ -892,35 +1436,10 @@ export default function LaudoPage() {
     // Nome do arquivo dinâmico por tipoExame
     const nomeArq = prefixoArquivoPorTipo(exame?.tipoExame as string | undefined) + ' ' + nome.trim().toUpperCase();
 
-    // Coletar tabela de parâmetros — reconstruir do DOM com larguras fixas
-    const rows = document.querySelectorAll('#params-tbody tr');
-    let paramsRows = '';
-    rows.forEach(tr => {
-      let rowHTML = '<tr>';
-      tr.querySelectorAll('td').forEach((td, idx) => {
-        const divider = idx === 4 ? `border-left:2px solid ${p1};` : '';
-        rowHTML += `<td style="border:0.5px solid #ccc;padding:2px 5px;${divider}">${td.innerHTML}</td>`;
-      });
-      rowHTML += '</tr>';
-      paramsRows += rowHTML;
-    });
-
-    const paramsHTML = `<table style="border-collapse:collapse;width:100%;font-size:7.5pt;table-layout:fixed;">
-<colgroup><col style="width:22%"/><col style="width:8%"/><col style="width:6%"/><col style="width:14%"/><col style="width:22%"/><col style="width:8%"/><col style="width:6%"/><col style="width:14%"/></colgroup>
-<thead><tr>
-<th style="background:${p1}!important;color:#fff;padding:2px 5px;font-weight:600;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">Parâmetro</th>
-<th style="background:${p1}!important;color:#fff;padding:2px 5px;font-weight:600;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">Valor</th>
-<th style="background:${p1}!important;color:#fff;padding:2px 5px;font-weight:600;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">Unid.</th>
-<th style="background:${p1}!important;color:#fff;padding:2px 5px;font-weight:600;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">Referência</th>
-<th style="background:${p1}!important;color:#fff;padding:2px 5px;font-weight:600;text-align:left;border-left:2px solid #fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;">Parâmetro</th>
-<th style="background:${p1}!important;color:#fff;padding:2px 5px;font-weight:600;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">Valor</th>
-<th style="background:${p1}!important;color:#fff;padding:2px 5px;font-weight:600;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">Unid.</th>
-<th style="background:${p1}!important;color:#fff;padding:2px 5px;font-weight:600;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;">Referência</th>
-</tr></thead><tbody>${paramsRows}</tbody></table>
-<div style="font-size:5.5pt;color:#888;line-height:1.4;padding:2px 4px;border-top:0.5px solid #ddd;">
-DDVE= Diâmetro diastólico do VE. DSVE= Diâmetro sistólico do VE. VE= Ventrículo esquerdo. VD= Ventrículo direito.<br/>
-Valores de referência: ASE/EACVI 2015; ASE 2025.
-</div>`;
+    // Tabela de parâmetros — raspagem e montagem de HTML compartilhadas
+    // com handleCopiarFormatado() (S5-T13): mesmas rows, cabeçalho/rodapé
+    // do PDF via opts.pdf=true (ver pdf-params.ts).
+    const paramsHTML = montarParamsHtml(lerParamsDoDOM(), p1, { pdf: true });
 
     // Comentários e Conclusão — usar HTML do TipTap se disponível
     const achadosHTMLContent = getAchadosHTML();
@@ -947,101 +1466,62 @@ Valores de referência: ASE/EACVI 2015; ASE 2025.
     //  - Fix CSS: `minmax(0, 1fr)` + `min-height: 0` força 4 linhas mesmo
     //    se imagem (aspect 4:3) tentar empurrar pra mais (bug 14/05 saía 6/pg)
     //  - Pulado se imagensIncluidasNoPdf=false (toggle no PopupSalvarEmitir)
+    // S5-T13: as páginas em si (grid 2×4, padding de slots vazios) vêm de
+    // `renderPaginas()` (DicomGallery.tsx) — mesma função que o botão
+    // "Imprimir Seleção" da galeria usa. Reconciliação da deriva S4: essa
+    // função usava classes/wording levemente diferentes (`.dicom-pg`/<h2>/
+    // "Imagens —") da cópia que já vivia na galeria (`.pagina`/<h1>/
+    // "Imagens DICOM —"); a versão da galeria é o padrão-ouro (ver relatório
+    // da task). O CSS aqui só re-branda com a cor da clínica (p1) e usa
+    // page-break-before (a folha do laudo já terminou antes desta seção).
     let imagensPdfHtml = '';
     if (incluirImagens && imagensSelecionadasPdf.length > 0) {
-      const POR_PG = 8;
-      const totPgs = Math.ceil(imagensSelecionadasPdf.length / POR_PG);
       const tipoLabel = (exame?.tipoExame as string | undefined) || '';
-      const pgsHtml = Array.from({ length: totPgs }, (_, pgIdx) => {
-        const slice = imagensSelecionadasPdf.slice(pgIdx * POR_PG, (pgIdx + 1) * POR_PG);
-        // Pad pra ter SEMPRE 8 slots por página (decisão 15/05/2026)
-        const padded = [...slice];
-        while (padded.length < POR_PG) padded.push('');
-        const slots = padded.map((url, i) => {
-          if (!url) return '<div class="dicom-slot dicom-slot-vazio"></div>';
-          const num = pgIdx * POR_PG + i + 1;
-          return `<div class="dicom-slot"><img src="${url}" alt="Imagem ${num}" /><span class="num">${num}</span></div>`;
-        }).join('');
-        return `<div class="dicom-pg"><h2>📸 Imagens — ${outNome}${tipoLabel ? ` · ${tipoLabel}` : ''} (página ${pgIdx + 1} de ${totPgs})</h2><div class="dicom-grid">${slots}</div></div>`;
-      }).join('');
+      const pgsHtml = renderPaginas(imagensSelecionadasPdf, outNome, tipoLabel);
       imagensPdfHtml = `<style>
-.dicom-pg{page-break-before:always;display:flex;flex-direction:column;height:calc(100vh - 16mm);padding:8mm;font-family:"IBM Plex Sans",sans-serif;}
-.dicom-pg h2{font-size:11pt;font-weight:700;color:${p1};margin-bottom:3mm;padding-bottom:2mm;border-bottom:1.5px solid ${p1};flex-shrink:0;}
-.dicom-grid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(4, minmax(0, 1fr));gap:3mm;min-height:0;}
-.dicom-slot{background:#000;border-radius:2px;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;min-height:0;}
-.dicom-slot-vazio{background:transparent;}
-.dicom-slot img{max-width:100%;max-height:100%;width:auto;height:auto;display:block;object-fit:contain;}
-.dicom-slot .num{position:absolute;bottom:2mm;right:2mm;background:rgba(0,0,0,.7);color:#fff;font-size:7.5pt;font-weight:600;padding:1mm 2mm;border-radius:2px;}
+.pagina{page-break-before:always;display:flex;flex-direction:column;height:calc(100vh - 16mm);padding:8mm;font-family:"IBM Plex Sans",sans-serif;}
+.pagina h1{font-size:11pt;font-weight:700;color:${p1};margin-bottom:3mm;padding-bottom:2mm;border-bottom:1.5px solid ${p1};flex-shrink:0;}
+.grid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(4, minmax(0, 1fr));gap:3mm;min-height:0;}
+.slot{background:#000;border-radius:2px;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;min-height:0;}
+.slot-vazio{background:transparent;}
+.slot img{max-width:100%;max-height:100%;width:auto;height:auto;display:block;object-fit:contain;}
+.slot .num{position:absolute;bottom:2mm;right:2mm;background:rgba(0,0,0,.7);color:#fff;font-size:7.5pt;font-weight:600;padding:1mm 2mm;border-radius:2px;}
 </style>${pgsHtml}`;
     }
 
-    return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>${nomeArq}</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<style>
-*{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:"IBM Plex Sans",sans-serif;font-size:8.5pt;color:#1a1a1a;}
-@page{size:A4;margin:0;}
-table.pl{width:100%;border-collapse:collapse;table-layout:fixed;}
-thead{display:table-header-group;}
-tfoot{display:table-footer-group;}
-thead td{padding:8mm 14mm 3mm;}
-tfoot td{padding:3mm 14mm 6mm;}
-tbody td.body-cell{padding:0 14mm 4mm;}
-ul{list-style:none;padding:0;margin:0;}
-</style></head><body>
-<table class="pl">
-<thead><tr><td>
-  <div style="padding-bottom:2mm;border-bottom:2.5px solid ${p1};margin-bottom:2mm;">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:-2px;">
-      ${logoB64 ? `<img src="${logoB64}" style="width:42px;height:42px;border-radius:5px;object-fit:contain;" alt="Logo"/>` : ''}
-      <div>
-        <div style="font-size:14pt;font-weight:700;color:${p1};white-space:nowrap;line-height:1.1;">${clinicaNome}</div>
-        ${clinicaSlogan ? `<div style="font-size:7.5pt;color:#888;margin-top:1px;">${clinicaSlogan}</div>` : ''}
-      </div>
-    </div>
-    <div style="font-size:10.5pt;font-weight:700;color:${p1};text-align:center;white-space:nowrap;letter-spacing:0.3px;">ECOCARDIOGRAMA TRANSTORÁCICO</div>
-  </div>
-  <div style="border:1px solid ${p1};border-radius:3px;padding:3px 6px;margin-bottom:2mm;">
-    <div style="display:flex;gap:8px;margin-bottom:2px;">
-      <div style="flex:2"><span style="display:block;font-size:5.5pt;font-weight:600;color:${p1};text-transform:uppercase;">NOME</span><span style="display:block;font-size:8.5pt;font-weight:500;">${outNome}</span></div>
-      <div style="flex:1"><span style="display:block;font-size:5.5pt;font-weight:600;color:${p1};text-transform:uppercase;">IDADE</span><span style="display:block;font-size:8.5pt;font-weight:500;">${outIdade}</span></div>
-      <div style="flex:1"><span style="display:block;font-size:5.5pt;font-weight:600;color:${p1};text-transform:uppercase;">DATA DE NASCIMENTO</span><span style="display:block;font-size:8.5pt;font-weight:500;">${outDtnasc}</span></div>
-    </div>
-    <div style="display:flex;gap:8px;">
-      <div style="flex:1"><span style="display:block;font-size:5.5pt;font-weight:600;color:${p1};text-transform:uppercase;">CONVÊNIO</span><span style="display:block;font-size:8.5pt;font-weight:500;">${outConv}</span></div>
-      <div style="flex:1"><span style="display:block;font-size:5.5pt;font-weight:600;color:${p1};text-transform:uppercase;">MÉDICO SOLICITANTE</span><span style="display:block;font-size:8.5pt;font-weight:500;">${outSolic}</span></div>
-      <div style="flex:1"><span style="display:block;font-size:5.5pt;font-weight:600;color:${p1};text-transform:uppercase;">DATA DO EXAME</span><span style="display:block;font-size:8.5pt;font-weight:500;">${outDtex}</span></div>
-    </div>
-  </div>
-</td></tr></thead>
-<tfoot><tr><td>
-  <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:10px;border-top:1.5px solid ${p1};padding-top:3mm;">
-    <div style="font-size:7pt;color:#444;line-height:1.6;">
-      <strong style="color:${p1};font-size:8pt;">${clinicaNome}</strong><br/>
-      ${clinicaEnd}<br/>
-      ${telCompleto ? '&#9742; ' + telCompleto : ''}
-    </div>
-    <div style="text-align:center;font-size:7pt;color:#444;">
-      ${sigB64 ? `<img src="${sigB64}" style="max-height:50px;max-width:180px;display:block;margin:10px auto 2px;object-fit:contain;" alt="Assinatura"/>` : ''}
-      <div style="width:180px;border-top:1px solid #333;margin:${sigB64 ? '2px' : '24px'} auto 3px;"></div>
-      <div style="font-size:7pt;white-space:pre-line;line-height:1.4;">${sigTexto}</div>
-    </div>
-  </div>
-  <div style="text-align:center;width:100%;margin-top:2mm;padding-top:1mm;border-top:0.5px solid #e0e0e0;font-size:6pt;color:#aaa;">
-    Laudo emitido com ajuda do <strong>LEO</strong> &middot; www.souleo.com.br
-  </div>
-</td></tr></tfoot>
-<tbody><tr><td class="body-cell">
-  <div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;-webkit-print-color-adjust:exact;print-color-adjust:exact;">MEDIDAS E PARÂMETROS</div>
-  <div style="border:1px solid #ddd;border-top:none;padding:0;">${paramsHTML}</div>
-  <div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;margin-top:3mm;-webkit-print-color-adjust:exact;print-color-adjust:exact;">COMENTÁRIOS</div>
-  <div style="border:1px solid #ddd;border-top:none;padding:4px 8px;"><ul>${achadosHTML}</ul></div>
-  <div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;margin-top:3mm;-webkit-print-color-adjust:exact;print-color-adjust:exact;">CONCLUSÃO</div>
-  <div style="border:1px solid #ddd;border-top:none;padding:4px 8px;"><ul>${concHTML}</ul></div>
-</td></tr></tbody>
-</table>
-${imagensPdfHtml}
-</body></html>`;
+    // S5-T10 (D6): a folha A4 é UMA só — `montarPdfMoldura` monta
+    // cabeçalho/identificação/rodapé pro motor e pro laudo-texto. Aqui só
+    // entra o que é do eco: título, os 6 campos e o corpo clínico.
+    // A saída é byte-a-byte a mesma de antes da extração
+    // (tests/unit/pdf-moldura.test.mjs guarda o template legado).
+    const corpoHtml = [
+      `<div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;-webkit-print-color-adjust:exact;print-color-adjust:exact;">MEDIDAS E PARÂMETROS</div>`,
+      `<div style="border:1px solid #ddd;border-top:none;padding:0;">${paramsHTML}</div>`,
+      `<div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;margin-top:3mm;-webkit-print-color-adjust:exact;print-color-adjust:exact;">COMENTÁRIOS</div>`,
+      `<div style="border:1px solid #ddd;border-top:none;padding:4px 8px;"><ul>${achadosHTML}</ul></div>`,
+      `<div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;margin-top:3mm;-webkit-print-color-adjust:exact;print-color-adjust:exact;">CONCLUSÃO</div>`,
+      `<div style="border:1px solid #ddd;border-top:none;padding:4px 8px;"><ul>${concHTML}</ul></div>`,
+    ].join('\n  ');
+
+    return montarPdfMoldura({
+      titulo: tituloExame,
+      tituloDoc: nomeArq,   // <title> = nome do arquivo, como sempre foi
+      identificacao: [
+        [
+          { label: 'NOME', valor: outNome, flex: 2 },
+          { label: 'IDADE', valor: outIdade },
+          { label: 'DATA DE NASCIMENTO', valor: outDtnasc },
+        ],
+        [
+          { label: 'CONVÊNIO', valor: outConv },
+          { label: 'MÉDICO SOLICITANTE', valor: outSolic },
+          { label: 'DATA DO EXAME', valor: outDtex },
+        ],
+      ],
+      corpoHtml,
+      htmlPosTabela: imagensPdfHtml,
+      cfg: { p1, clinicaNome, clinicaSlogan, clinicaEnd, clinicaTel: telCompleto, logoB64, sigB64, sigTexto },
+    });
   }
 
   // ── PDF via window.open ──
@@ -1079,32 +1559,8 @@ ${imagensPdfHtml}
 
   // ── Copiar para Prontuário ──
   function handleCopiarFormatado() {
-    // Usar MESMO HTML do PDF — garantia de formatação idêntica
-    const rows = document.querySelectorAll('#params-tbody tr');
-    let paramsRows = '';
-    rows.forEach(tr => {
-      let rowHTML = '<tr>';
-      tr.querySelectorAll('td').forEach((td, idx) => {
-        const divider = idx === 4 ? `border-left:2px solid ${p1};` : '';
-        rowHTML += `<td style="border:0.5px solid #ccc;padding:2px 5px;${divider}">${td.innerHTML}</td>`;
-      });
-      rowHTML += '</tr>';
-      paramsRows += rowHTML;
-    });
-
-    const paramsHTML = `<table style="border-collapse:collapse;width:100%;font-size:7.5pt;table-layout:fixed;">
-<colgroup><col style="width:22%"/><col style="width:8%"/><col style="width:6%"/><col style="width:14%"/><col style="width:22%"/><col style="width:8%"/><col style="width:6%"/><col style="width:14%"/></colgroup>
-<thead><tr>
-<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;">Parâmetro</th>
-<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;">Valor</th>
-<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;">Unid.</th>
-<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;">Referência</th>
-<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;border-left:2px solid #fff;">Parâmetro</th>
-<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;">Valor</th>
-<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;">Unid.</th>
-<th style="background:${p1};color:#fff;padding:2px 5px;font-weight:600;text-align:left;">Referência</th>
-</tr></thead><tbody>${paramsRows}</tbody></table>
-<div style="font-size:5.5pt;color:#888;padding:2px 4px;">Valores de referência: ASE/EACVI 2015; ASE 2025.</div>`;
+    // Mesma raspagem/montagem do PDF — só o opts.pdf muda (S5-T13).
+    const paramsHTML = montarParamsHtml(lerParamsDoDOM(), p1, { pdf: false });
 
     const achadosHTMLContent = getAchadosHTML();
     const concHTMLContent = getConclusoesHTML();
@@ -1143,13 +1599,11 @@ ${imagensPdfHtml}
     const conclusoes = coletarConclusoes().map((t, i) => `${i + 1}. ${t}`).join('\n');
 
     // Reconstruir tabela com alinhamento por tabulação
-    const rows = document.querySelectorAll('#params-tbody tr');
     let params = '';
-    rows.forEach(tr => {
-      const cells = tr.querySelectorAll('td');
+    lerParamsDoDOM().forEach((cells) => {
       if (cells.length >= 8) {
-        const left = `${(cells[0]?.textContent || '').padEnd(22)}${(cells[1]?.textContent || '').padStart(6)}  ${(cells[2]?.textContent || '').padEnd(4)}${(cells[3]?.textContent || '').padEnd(12)}`;
-        const right = `${(cells[4]?.textContent || '').padEnd(24)}${(cells[5]?.textContent || '').padStart(6)}  ${(cells[6]?.textContent || '').padEnd(6)}${cells[7]?.textContent || ''}`;
+        const left = `${(cells[0] || '').padEnd(22)}${(cells[1] || '').padStart(6)}  ${(cells[2] || '').padEnd(4)}${(cells[3] || '').padEnd(12)}`;
+        const right = `${(cells[4] || '').padEnd(24)}${(cells[5] || '').padStart(6)}  ${(cells[6] || '').padEnd(6)}${cells[7] || ''}`;
         params += `${left}  │  ${right}\n`;
       }
     });
@@ -1171,14 +1625,9 @@ ${imagensPdfHtml}
   }
 
   async function handleBaixarWord() {
-    const rows = document.querySelectorAll('#params-tbody tr');
-    const params: { cells: string[] }[] = [];
-    rows.forEach(tr => {
-      const cells = tr.querySelectorAll('td');
-      if (cells.length >= 8) {
-        params.push({ cells: Array.from(cells).map(c => c.textContent || '') });
-      }
-    });
+    const params: { cells: string[] }[] = lerParamsDoDOM()
+      .filter((cells) => cells.length >= 8)
+      .map((cells) => ({ cells }));
 
     const outNome = (document.getElementById('nome') as HTMLInputElement)?.value || 'PACIENTE';
     const outConv = (document.getElementById('convenio') as HTMLInputElement)?.value || '';
@@ -1200,36 +1649,44 @@ ${imagensPdfHtml}
     toast('Word (.docx) baixado!');
   }
 
+  // S5-T12: delega pro `window.showToast` (mesmo cssText — instalado no
+  // efeito "Carregar motor", page.tsx:~421) em vez de duplicar o markup aqui.
   function toast(msg: string) {
-    const el = document.createElement('div');
-    el.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:99999;background:#1E293B;color:#fff;padding:10px 20px;border-radius:9px;font-size:13px;font-weight:600;font-family:IBM Plex Sans,sans-serif;box-shadow:0 4px 20px rgba(0,0,0,.3);';
-    el.textContent = msg;
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), 3000);
-  }
-
-  // Formatar telefone: 9130854000 → (91) 3085-4000
-  function fmtTel(t: string): string {
-    const d = t.replace(/\D/g, '');
-    if (d.length === 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
-    if (d.length === 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`;
-    return t;
-  }
-
-  // Formatar CEP dentro do endereço: 66023700 → 66023-700
-  function fmtCep(end: string): string {
-    return end.replace(/(\d{5})(\d{3})/, '$1-$2');
+    (window as unknown as { showToast?: (msg: string) => void }).showToast?.(msg);
   }
 
   function handleLimpar() {
     if (!confirm('Limpar todos os campos?')) return;
-    // Limpar TODOS os campos do motor pelos IDs conhecidos (não depende de
-    // a seção estar aberta/fechada no DOM). Mesma motivação do fix de
-    // event-delegation acima — Sec só monta children quando `open=true`.
+    limparCampos();
+    // nº14-alto (S5 corr): "Limpar" zera as medidas mas deixava
+    // `dicomImportado` true — o botão "📡 Importar" continuava mostrando o
+    // selo de "já importado" mesmo com os campos todos vazios de novo.
+    setDicomImportado(false);
+  }
+
+  /**
+   * Zera os campos do motor pelos IDs conhecidos por id — funciona com a
+   * seção aberta ou fechada (desde nº4/S5-T4, `Sec` monta os filhos SEMPRE e
+   * só alterna `hidden`; getElementById por id nunca dependeu do container
+   * estar visível, então esta função nunca teve o problema que o
+   * event-delegation acima corrigiu — mas antes do nº4 uma seção fechada
+   * podia nem ter o input no DOM pra zerar).
+   *
+   * Dois chamadores: o botão "Limpar" (com `confirm`, acima) e a TROCA de
+   * exame (S5-T2 fix3). A wave 2 tinha escrito uma segunda limpeza a partir
+   * de `Object.keys(coletarMedidas())` e foi por aí que dois campos do
+   * paciente anterior vazaram pro exame novo: `convenio` (excluído de
+   * `coletarMedidas` de propósito — fonte única) e `wilkins-toggle`
+   * (checkbox: `.value = ''` nunca desmarca). Uma função só, dois
+   * chamadores.
+   *
+   * @param trocaDeExame também limpa a identificação — ver dentro.
+   */
+  function limparCampos(trocaDeExame = false) {
     const camposNum = [
       'peso','altura',
       'b7','b8','b9','b10','b11','b12','b13','b28','b29',
-      'b19','b20','b21','b22','b23','b24','b24_diast','b25','lars',
+      'b19','b20','b21','b22','b23','b24','b25','lars',
       'b54','b33','gls_ve','gls_vd',
       'b45','b46','b47','b50','b51','b52','b46t','b47t','b50p',
       'psmap','b37',
@@ -1251,8 +1708,46 @@ ${imagensPdfHtml}
       if (el instanceof HTMLSelectElement) el.selectedIndex = 0;
       else if (el instanceof HTMLInputElement && el.type === 'checkbox') el.checked = false;
     });
-    const dtEx = document.getElementById('dtexame') as HTMLInputElement;
-    if (dtEx) dtEx.value = dataLocalHoje();
+    // Painel do Wilkins: desmarcar o toggle não o esconde (quem faz isso é o
+    // onClick da sidebar) — aberto com o toggle off, o médico preenche os 4
+    // escores e nada entra no laudo.
+    const wf = document.getElementById('wilkins-fields');
+    if (wf) wf.style.display = 'none';
+    // nº15: ícone tem estado próprio agora (☐/☑) — sem isto o "Limpar"
+    // desmarcava o checkbox mas o ícone continuava mostrando ☑.
+    const wi = document.getElementById('wilkins-icon');
+    if (wi) wi.textContent = '☐';
+    // Diastólica manual (review S5-T3, I1+I2): mesma classe de bug do Wilkins
+    // acima. (I2) valor canônico explícito — não confia em selectedIndex==0
+    // do <select> (se alguém reordenar as <option>, o loop de camposSel
+    // acima selecionaria outro índice; esta linha corrige por cima, sempre).
+    // (I1) quem sabe fechar #diast-manual-panel e repintar os botões
+    // "Automático"/"Manual" é o wrapper de window.setDiastModo — sem chamá-lo
+    // aqui a tela ficava dizendo "Manual" com o motor já em auto.
+    setVal('diast-manual-sel', '-1');
+    const setDiastModoFn = (window as unknown as Record<string, unknown>).setDiastModo as ((m: string) => void) | undefined;
+    if (setDiastModoFn) setDiastModoFn('auto');
+    // M1 (review S5-T4): mesma classe de bug do Wilkins/diastólica acima —
+    // zerar `b40p` não esconde `#field-psmap` (quem faz isso é `refluxoPulmonar()`,
+    // só chamado pelo onChange do próprio select). Sem isto o campo fica
+    // visível e vazio depois de "Limpar".
+    // try/catch: um throw aqui pularia a limpeza de identificação logo abaixo
+    // (o vazamento de paciente que este bloco existe pra impedir).
+    const refluxoPulmonarFn = (window as unknown as Record<string, unknown>).refluxoPulmonar as (() => void) | undefined;
+    try { if (refluxoPulmonarFn) refluxoPulmonarFn(); } catch { /* campo sempre montado; falha só estética */ }
+    if (trocaDeExame) {
+      // Identificação do paciente ANTERIOR: `preencherExame()` só escreve
+      // campo vazio (`if (el && !el.value && val)`), então sem zerar aqui o
+      // nome/convênio/data de A ficam na tela do exame de B — e
+      // `salvarLaudo` grava `coletarIdentificacao()` lida do DOM. `convenio`
+      // é o pior: canônico pra Worklist/Extrato e fora de `coletarMedidas`,
+      // então nada o sobrescrevia. `dtexame` fica VAZIO (não "hoje") pra
+      // `preencherExame()` conseguir escrever a data do exame novo.
+      ['nome', 'dtnasc', 'dtexame', 'solicitante', 'convenio'].forEach((id) => setVal(id, ''));
+    } else {
+      const dtEx = document.getElementById('dtexame') as HTMLInputElement;
+      if (dtEx) dtEx.value = dataLocalHoje();
+    }
     safeCalc();
   }
 
@@ -1266,13 +1761,11 @@ ${imagensPdfHtml}
       )}
       <SidebarLaudo
         clinicaNome={clinicaNome}
-        medicoNome={profile?.nome as string || ''}
         medicoInfo={medicoInfo}
         onVoltar={handleVoltar}
         onSalvarEmitir={handleSalvarEmitir}
         onLimpar={handleLimpar}
         onImportarDicom={handleImportarDicom}
-        dicomLoading={dicomLoading}
         dicomImportado={dicomImportado}
         ortancAtivo={!!workspace?.ortancAtivo}
         totalMedidasDicom={schemaAntigo ? totalMedidasBrutas : inputsImportaveis.length}
@@ -1283,9 +1776,10 @@ ${imagensPdfHtml}
         readOnlyMotor={emitido}
         exameOrigem={exame?.origem as string || ''}
         exameCpf={exame?.cpf as string || ''}
-        feegowPacienteId={exame?.feegowPacienteId as string | number | null || null}
         exameAcc={exame?.acc as string || ''}
         onCorrigirAdmin={handleCorrigirLaudo}
+        wsId={workspace?.id}
+        onToast={toast}
         modoEmitido={
           <ModoEmitido
             onFinalizar={handleFinalizar}
@@ -1306,10 +1800,24 @@ ${imagensPdfHtml}
         sigTexto={sigTexto}
         logoB64={logoB64}
         sigB64={sigB64}
+        titulo={tituloExame}
         editorLaudo={
           <EditorLaudo
+            // `key` por exame (S5-T2 fix, Critical 1 do review): navegar
+            // /laudo/A → /laudo/B NÃO desmonta esta página, e o editor
+            // continuava exibindo o texto do paciente A. Com `prevGer`
+            // zerado no reset por exame, o merge tratava esse texto como
+            // "frases manuais do médico" e as preservava DENTRO do laudo do
+            // paciente B (escondendo os achados do B). Trocar a key remonta
+            // o TipTap vazio: o merge passa a ver [] e a geração do B manda.
+            key={exameId}
             ref={editorRef}
             placeholder="Achados e conclusões do exame..."
+            // S5-T6: trava única do emitido chega no texto — `setContent`
+            // (restauração/regen do motor) continua funcionando com
+            // editable:false (ver comentário na prop em EditorLaudo.tsx).
+            editable={!emitido}
+            onDirty={() => { dirtyRef.current = true; }}
             onAddFrase={() => {
               const w = window as unknown as Record<string, unknown>;
               const fn = w.abrirBanco as ((target: unknown, pos: string) => void);
@@ -1360,12 +1868,6 @@ ${imagensPdfHtml}
       <style jsx global>{`
         .sf{width:100%;border:1.5px solid #E5E7EB;border-radius:5px;padding:5px 7px;font-size:12px;font-family:'IBM Plex Sans',sans-serif;color:#111827;background:#fff;transition:border-color .15s;}
         .sf:focus{outline:none;border-color:#1E3A5F;}
-        #achados-body .linha-wrapper{display:flex;align-items:flex-start;gap:6px;padding:2px 0;border-bottom:1px solid #f1f5f9;margin:0;}
-        #achados-body textarea{flex:1;border:none;resize:none;font-size:8.5pt;font-family:'IBM Plex Sans',sans-serif;line-height:1.5;padding:1px 3px;overflow:hidden;min-width:0;}
-        #achados-body textarea:focus{background:#FFFBEB;border-radius:2px;outline:none;}
-        #conclusao-list li{display:flex;align-items:flex-start;gap:6px;padding:3px 0;border-bottom:1px solid #f1f5f9;}
-        .conclusao-text{flex:1;font-weight:500;font-size:8pt;line-height:1.5;outline:none;}
-        .conclusao-text:focus{background:#FFFBEB;border-radius:2px;}
 
         /* ── TipTap: heading CONCLUSÃO dentro do editor ── */
         .tiptap h3{background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;margin:8px -8px 4px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
@@ -1385,14 +1887,11 @@ ${imagensPdfHtml}
         .btn-add-top:hover{background:#EFF6FF;border-color:#2563EB;}
 
         /* ── Drag & drop visual feedback ── */
-        .linha-wrapper.dragging,.conc-wrapper.dragging{opacity:.4;background:#DBEAFE;}
-        .linha-wrapper.drag-over,.conc-wrapper.drag-over{border-top:2px solid #2563EB;}
-        .linha-wrapper{position:relative;}
+        .conc-wrapper.dragging{opacity:.4;background:#DBEAFE;}
+        .conc-wrapper.drag-over{border-top:2px solid #2563EB;}
         .conc-wrapper{position:relative;}
 
         /* ── Hover: mostrar botões só ao passar o mouse ── */
-        .linha-wrapper .btn-rm,.linha-wrapper .btn-plus-inline,.linha-wrapper .drag-handle{opacity:0;transition:opacity .15s;}
-        .linha-wrapper:hover .btn-rm,.linha-wrapper:hover .btn-plus-inline,.linha-wrapper:hover .drag-handle{opacity:.6;}
         .conc-wrapper .btn-rm,.conc-wrapper .drag-handle{opacity:0;transition:opacity .15s;}
         .conc-wrapper:hover .btn-rm,.conc-wrapper:hover .drag-handle{opacity:.6;}
 
@@ -1435,7 +1934,19 @@ ${imagensPdfHtml}
         .btn-undo,.btn-redo{background:none;border:1px solid #E5E7EB;color:#6B7280;font-size:12px;padding:2px 8px;border-radius:4px;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;transition:all .12s;}
         .btn-undo:hover,.btn-redo:hover{background:#EFF6FF;border-color:#2563EB;color:#2563EB;}
         #params-tbody td{border:0.5px solid #ccc;padding:2px 5px;}
-        .laudo-locked #laudo-sidebar input,.laudo-locked #laudo-sidebar select,.laudo-locked #laudo-sidebar textarea{pointer-events:none;opacity:.6;background:#f1f5f9;}
+        /* S5-T6 fix (review Important 2): CSS trava mouse+visual de TODO
+           campo do motor; convênio/solicitante ficam de fora (correção
+           administrativa sem crédito, T5 — sempre editáveis) e nome/dtnasc/
+           dtexame TAMBÉM ficam de fora — são da trava de IDENTIFICAÇÃO
+           (idBloqueado, disabled nativo no JSX): sem esta exceção, o botão
+           "🔓 Desbloquear nome/datas" liberava o campo no React mas o CSS
+           continuava com pointer-events:none por cima (emitido ainda true —
+           desbloquear identificação não é a reedição clínica) — o
+           desbloqueio PAGO ficava morto pro mouse. Mesmos 5 ids no
+           disabled-setter de SidebarLaudo.tsx (a lista 'livres') — as duas
+           listas são o MESMO conjunto; teste unitário (laudo-trava-emitido)
+           trava isso comparando as duas, não repetir um id só de um lado. */
+        .laudo-locked #laudo-sidebar input:not(#convenio):not(#solicitante):not(#nome):not(#dtnasc):not(#dtexame),.laudo-locked #laudo-sidebar select:not(#convenio):not(#solicitante):not(#nome):not(#dtnasc):not(#dtexame),.laudo-locked #laudo-sidebar textarea:not(#convenio):not(#solicitante):not(#nome):not(#dtnasc):not(#dtexame){pointer-events:none;opacity:.6;background:#f1f5f9;}
         .laudo-locked #laudo-sidebar .section-btn{pointer-events:none;opacity:.5;}
         .laudo-locked #modo-edicao{display:none;}
       `}</style>

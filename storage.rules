@@ -14,10 +14,18 @@ service firebase.storage {
   match /b/{bucket}/o {
 
     // ── PDFs de laudos ──
-    // Path: laudos/{wsId}/{nomeArq}.pdf
+    // Path ATUAL:  laudos/{wsId}/{exameId}/{nomeArq}.pdf  (S5-T14, fix I3)
+    // Path LEGADO: laudos/{wsId}/{nomeArq}.pdf            (emitidos ate 25/08)
+    // O exameId entrou no caminho porque o nome sozinho colidia: mesmo
+    // paciente em duas datas, ou homonimos, sobrescreviam um laudo assinado
+    // pelo outro. PDFs antigos continuam onde estao — dai as duas regras.
     // Leitura publica (URLs compartilhadas com pacientes)
     // Escrita bloqueada (so admin SDK escreve)
     match /laudos/{wsId}/{fileName} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /laudos/{wsId}/{exameId}/{fileName} {
       allow read: if true;
       allow write: if false;
     }

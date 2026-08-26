@@ -22,6 +22,8 @@
 
 import { useEffect, useState } from 'react';
 import { auth } from '@/lib/firebase';
+// Mesmo escape da moldura do PDF — estas páginas viram HTML do laudo assinado.
+import { escaparHtml } from '@/lib/pdf-moldura';
 
 // Cache do mapa {url canônica → url assinada} por exame. As assinadas valem
 // 1h (imagens-dicom-admin.ts); expiramos com folga em 45min pra galeria
@@ -94,7 +96,12 @@ export function renderPaginas(urls: string[], pacienteNome?: string, tipoExame?:
     while (pg.length < POR_PAGINA) pg.push('');
     paginas.push(pg);
   }
-  const cabec = [pacienteNome, tipoExame].filter(Boolean).join(' · ');
+  // Escapado (fix2 do I4): estas páginas entram no PDF (`htmlPosTabela`) e são
+  // renderizadas pelo Chrome do servidor, numa página com as signed URLs das
+  // imagens do paciente. `pacienteNome`/`tipoExame` são graváveis pela
+  // recepção (whitelist administrativa) e aqui NÃO passam por toUpperCase —
+  // um `<img src=x onerror=…>` rodava inteiro.
+  const cabec = escaparHtml([pacienteNome, tipoExame].filter(Boolean).join(' · '));
   return paginas
     .map(
       (pgUrls, pgIdx) => `<div class="pagina">

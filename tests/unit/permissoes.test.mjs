@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {
   ehMedico, podeEditarLaudo, podeVerFinanceiro, podeEditarLocal,
   podeGerenciarMembros, podeRemoverDaFila, modoEntrada, podeCancelarLaudo,
+  podeCorrigirAdministrativo,
 } from '../../src/lib/permissoes.ts';
 
 describe('ehMedico', () => {
@@ -50,6 +51,12 @@ describe('gates por papel', () => {
     assert.equal(podeRemoverDaFila('dono'), true);
     assert.equal(podeRemoverDaFila('medico'), true);
     assert.equal(podeRemoverDaFila('recepcao'), false);
+  });
+  test('corrigir convenio/solicitante na fila: dono e recepcao (S5-T5/D4)', () => {
+    assert.equal(podeCorrigirAdministrativo('dono'), true);
+    assert.equal(podeCorrigirAdministrativo('recepcao'), true);
+    assert.equal(podeCorrigirAdministrativo('medico'), false);  // corrige pela tela do laudo
+    assert.equal(podeCorrigirAdministrativo(null), false);
   });
 });
 

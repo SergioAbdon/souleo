@@ -11,9 +11,10 @@ import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import Placeholder from '@tiptap/extension-placeholder';
 import { useImperativeHandle, forwardRef, useRef, useState, useEffect } from 'react';
+import { linhasAchados, linhasConclusoes } from '@/lib/laudo-linhas';
 
 // ── Toolbar ──
-function Toolbar({ editor, onAddFrase }: { editor: Editor | null; onAddFrase?: () => void }) {
+function Toolbar({ editor, onAddFrase, editable }: { editor: Editor | null; onAddFrase?: () => void; editable: boolean }) {
   const [, forceUpdate] = useState(0);
 
   useEffect(() => {
@@ -24,6 +25,14 @@ function Toolbar({ editor, onAddFrase }: { editor: Editor | null; onAddFrase?: (
   }, [editor]);
 
   if (!editor) return null;
+  // S5-T6: os botões chamam `editor.chain()...run()` — dispatch PROGRAMÁTICO,
+  // que `editable:false` do ProseMirror NÃO intercepta (só bloqueia digitação/
+  // gesto nativo do usuário no DOM). Sem isto, Negrito/Lista/Desfazer/Banco de
+  // Frases reescreveriam um laudo assinado mesmo com o editor "read-only" —
+  // mesmo furo que os botões do Wilkins/diastólica tinham na sidebar (T4).
+  // Esconder a barra inteira segue o mesmo padrão de `#modo-edicao` (CSS
+  // .laudo-locked em page.tsx): a UI de edição some, não fica cinza clicável.
+  if (!editable) return null;
 
   const btn = (active: boolean) =>
     `px-1.5 py-0.5 rounded text-[11px] cursor-pointer transition ${active ? 'bg-[#1E3A5F] text-white' : 'text-gray-500 hover:bg-gray-100'}`;
@@ -54,7 +63,6 @@ function Toolbar({ editor, onAddFrase }: { editor: Editor | null; onAddFrase?: (
 // ── Ref exposto ──
 export type EditorLaudoRef = {
   getHTML: () => string;
-  getText: () => string;
   getAchadosHTML: () => string;
   getConclusoesHTML: () => string;
   getAchadosLines: () => string[];
@@ -66,13 +74,31 @@ export type EditorLaudoRef = {
 type Props = {
   placeholder?: string;
   onAddFrase?: () => void;
+  // Dirty flag (S5-T1): chamado a cada mudança REAL do médico (digitar,
+  // formatar, inserir frase) — NÃO quando o motor reescreve o documento
+  // via `setContent` (gate `settingContent` abaixo, `emitUpdate:false`
+  // também evitaria o disparo). Task 2 reusa este mesmo mecanismo.
+  onDirty?: () => void;
+  /**
+   * S5-T6: trava única do emitido — texto do laudo assinado também não
+   * edita mais (antes só o CSS/disabled da sidebar travavam; o editor
+   * ficava de fora). `editor.commands.setContent` (usado pra restaurar o
+   * HTML salvo e pro Senna90 recalcular) NÃO passa pelo `editable` do
+   * ProseMirror — esse prop só bloqueia entrada do USUÁRIO (digitação,
+   * teclado, DOM); dispatch programático continua funcionando com
+   * `editable:false`. Confirmado em @tiptap/core/commands/setContent.ts
+   * e Editor.ts (Editable extension só liga o `editable` do EditorView).
+   * @default true
+   */
+  editable?: boolean;
 };
 
-const EditorLaudo = forwardRef<EditorLaudoRef, Props>(({ placeholder, onAddFrase }, ref) => {
+const EditorLaudo = forwardRef<EditorLaudoRef, Props>(({ placeholder, onAddFrase, onDirty, editable = true }, ref) => {
   const settingContent = useRef(false);
 
   const editor = useEditor({
     immediatelyRender: false,
+    editable,
     extensions: [
       StarterKit.configure({
         bulletList: { keepMarks: true },
@@ -88,11 +114,22 @@ const EditorLaudo = forwardRef<EditorLaudoRef, Props>(({ placeholder, onAddFrase
         style: "font-size:8.5pt;font-family:'IBM Plex Sans',sans-serif;line-height:1.6;min-height:120px;",
       },
     },
+    onUpdate: () => {
+      if (!settingContent.current) onDirty?.();
+    },
   });
+
+  useEffect(() => {
+    // S5-T6 fix (review Important 1): `setEditable(editable, true)` (default)
+    // emite 'update' → dispara `onDirty` mesmo sem o médico ter tocado em
+    // nada (laudo aberto e nunca editado virava dirty sozinho ao montar,
+    // armando autosave 'andamento'+medicoUid e o aviso de saída). `false`
+    // aqui é silencioso — sem side-effect, só troca `options.editable`.
+    editor?.setEditable(editable, false);
+  }, [editor, editable]);
 
   useImperativeHandle(ref, () => ({
     getHTML: () => editor?.getHTML() || '',
-    getText: () => editor?.getText() || '',
 
     // Separar achados e conclusões do HTML unificado
     getAchadosHTML: () => {
@@ -128,40 +165,12 @@ const EditorLaudo = forwardRef<EditorLaudoRef, Props>(({ placeholder, onAddFrase
       return html;
     },
 
-    getAchadosLines: () => {
-      if (!editor) return [];
-      const div = document.createElement('div');
-      div.innerHTML = editor.getHTML();
-      const lines: string[] = [];
-      const h3 = div.querySelector('h3');
-      let node = div.firstChild;
-      while (node) {
-        if (node === h3) break;
-        if (node instanceof HTMLElement && (node.tagName === 'P' || node.tagName === 'LI')) {
-          const text = node.textContent?.trim();
-          if (text) lines.push(text);
-        }
-        node = node.nextSibling;
-      }
-      return lines;
-    },
-
-    getConclusoesLines: () => {
-      if (!editor) return [];
-      const div = document.createElement('div');
-      div.innerHTML = editor.getHTML();
-      const lines: string[] = [];
-      const h3 = div.querySelector('h3');
-      if (!h3) return [];
-      const ol = h3.nextElementSibling;
-      if (ol) {
-        ol.querySelectorAll('li').forEach(li => {
-          const text = li.textContent?.trim();
-          if (text) lines.push(text);
-        });
-      }
-      return lines;
-    },
+    // Extração PURA (laudo-linhas.ts, testada em tests/unit): o walker de
+    // primeiro nível que havia aqui não enxergava lista com marcadores /
+    // numerada da toolbar nem conclusão digitada depois do <ol> — e o que
+    // o merge não lê, a regeneração do motor apaga (S5-T2 fix, Imp-5).
+    getAchadosLines: () => (editor ? linhasAchados(editor.getHTML()) : []),
+    getConclusoesLines: () => (editor ? linhasConclusoes(editor.getHTML()) : []),
 
     setContent: (html: string) => {
       if (!editor || editor.isDestroyed) return;
@@ -179,7 +188,7 @@ const EditorLaudo = forwardRef<EditorLaudoRef, Props>(({ placeholder, onAddFrase
 
   return (
     <div>
-      <Toolbar editor={editor} onAddFrase={onAddFrase} />
+      <Toolbar editor={editor} onAddFrase={onAddFrase} editable={editable} />
       <EditorContent editor={editor} />
     </div>
   );

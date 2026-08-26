@@ -34,6 +34,12 @@ function readWk(id: string): number {
   return Math.max(0, Math.min(4, Math.trunc(n)));
 }
 
+/** Lê índice do select manual da diastólica (-1 a 6). -1 = "— Selecione —" (auto). */
+function readSelecaoManual(id: string): number {
+  const n = readNum(id);
+  return n === null ? -1 : Math.trunc(n);
+}
+
 /** Lê checkbox (Wilkins toggle) */
 function readChecked(id: string): boolean {
   if (typeof document === 'undefined') return false;
@@ -91,9 +97,11 @@ export function lerMedidasDoDOM(): MedidasEcoTT {
       volADindex: readNum('b25'),
       laStrain: readNum('lars'),
       sinaisHP: readStr('b38') === 'S' ? 'S' : '',
-      // Modo manual será controlado via API do motor TS
-      modoManual: 'auto',
-      selecaoManual: -1,
+      // Modo manual (D3/S5-T3): #diast-manual-sel decide auto x manual.
+      // sel>=0 = médico escolheu uma sentença manual (mapeamento 1:1 com
+      // DIAST_SENTENCAS no motor); sel<0 (ou select ausente) = automático.
+      modoManual: readSelecaoManual('diast-manual-sel') >= 0 ? 'manual' : 'auto',
+      selecaoManual: readSelecaoManual('diast-manual-sel'),
       textoLivre: '',
     },
     sistolica: {
