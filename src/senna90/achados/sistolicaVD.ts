@@ -11,7 +11,7 @@ import type { GrauRefluxo } from '../types';
  *
  * Lógica:
  * - Se b32 preenchido: "Disfunção sistólica de grau X do ventrículo direito" + sufixo TAPSE
- * - Se b32 vazio + b33>0: "Função preservada. TAPSE= X mm (VR ≥ 20 mm)."
+ * - Se b32 vazio + b33>0: "Função preservada. TAPSE= X mm (VR > 17 mm)."
  * - Se b32 vazio + sem b33: "Função preservada."
  */
 export function jVD_sistolica(b32: GrauRefluxo, b33: number | null): string {
