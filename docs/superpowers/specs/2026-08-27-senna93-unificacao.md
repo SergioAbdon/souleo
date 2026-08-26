@@ -371,3 +371,30 @@ copiável hoje. A decisão de 16/05 "motor no servidor = proteção de IP" (docs
 2. Allowlist de recursos externos no HTML que vai ao Puppeteer (hoje carrega qualquer URL).
 3. PDF público por URL = decisão de produto de 14/05 MANTIDA (discordância do Codex
    registrada; HTML já é privado desde a S5).
+
+---
+
+## 9. Cronograma estimado (27/08/2026 — pedido do Sergio)
+
+Base de estimativa: velocidade real das esteiras anteriores no ledger (S3 ~2 dias,
+S4 ~3, S5 ~4, todas com o mesmo método SDD). "Sessão" = dia de trabalho da esteira;
+"corrido" = calendário (inclui janelas de observação que rodam sozinhas). Datas são
+ALVO assumindo início imediato e checkpoints do Sergio no ritmo das seções anteriores —
+não promessa. Deploys sempre fora do horário da clínica.
+
+| Etapa | Entrega | Esforço | Corrido (alvo) | Gate do Sergio |
+|---|---|---|---|---|
+| Imediato | Repo privado (ação do Sergio, 1 min) + mini-task Emitir (região, reuso do Chromium, trava anti-cobrança-dupla) | ½ sessão | 27/08 | OK pra mini-task + deploy |
+| **F0** Rede de teste | 72 casos no test:unit, ~60 pins novos (aorta×sexo×idade, derivados, TAPSE/GLS/LAVI/RAVI), contrato refluxoPulmonar, teste de pureza | 1 sessão (4-6 tasks) | 27-28/08 | nenhum (sem mudança de comportamento) |
+| **F1** Números nas frases | Aorta nova régua + arco, GLS 3 faixas, TAPSE, LAVI/RAVI, diastólica, valvas, Wilkins, massa/IMVE (tasks opus) | 2-3 sessões (10-14 tasks) | 28-31/08 | vetos V1-V11 antes das tasks; checkpoint no fim |
+| **F2** Apresentação | refVal/isOOR sexo+idade, VIDE, realce estruturado, rodapé por domínio (módulo pronto, ligado a nada) | 1-1,5 sessão (5-7 tasks) | 01-02/09 | checkpoint |
+| **F3** Trocar o cabo | Kill-switch, calc-*, PSAP, 4 consumidores unificados, params+out-* juntos, banco de frases, rate-limit por UID, proveniência | 2-3 sessões (8-10 tasks) | 02-05/09 | teste ao vivo + OK de merge/deploy |
+| **F4** Sombra | Código da persistência (1 sessão) + retroativo no histórico + **janela de 7 dias corridos** acumulando exames reais | 1 sessão + espera | 05-12/09 | relatório de divergências; visita à clínica cabe NESTA janela |
+| **F5a** Virada | Flag global senna93 em produção + observação | ½ sessão + 3-5 dias corridos | 13-17/09 | OK da virada |
+| **F5b** Aposentadoria | Legado removido, contrato encolhe, e2e estendido, TRÍADE FINAL adversarial, teste ao vivo | 1-2 sessões | 17-19/09 | OK final + merge/deploy |
+
+**Totais:** ~9-12 sessões de trabalho · **~3,5 semanas corridas** (as ~2 semanas de
+janela F4/F5a são passivas — o sistema trabalha sozinho e a vida continua). O caminho
+crítico incompressível é a sombra: encurtá-la é abrir mão da rede de segurança clínica.
+Riscos de estouro: achados da sombra (cada divergência inesperada = investigação),
+disponibilidade do Sergio pros gates, e a F1 crescer se algum veto virar rediscussão.
