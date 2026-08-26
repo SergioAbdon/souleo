@@ -40,19 +40,43 @@ export type ArgsMoldura = {
   cfg: CfgMoldura;
 };
 
-// Valor entra CRU, como nos dois templates legados: o travessão de campo
-// vazio é do chamador (o motor lê os `#out-*` já com `|| '—'`, o pdf-texto
-// defaulta na hora de montar). Um `|| '—'` aqui divergiria do legado —
-// invisível hoje e mentiroso no dia em que um chamador parasse de defaultar.
+// Escape dos valores de TEXTO interpolados (S5-T14, fix I4). Antes eles
+// entravam crus "por paridade byte-a-byte com o legado", e este HTML é
+// renderizado pelo CHROME DO SERVIDOR (`page.setContent`, pdf-server.ts) —
+// numa página que carrega as signed URLs das imagens DICOM do paciente. A
+// recepção grava `pacienteNome` pelo caminho administrativo (whitelist,
+// exame não-emitido): um `<img src=x onerror=…>` ali virava execução de
+// script no renderizador da emissão, congelada no snapshot e re-executada a
+// cada correção. É a MESMA função que a correção administrativa aplica
+// (`correcao-admin.ts` importa daqui) — os dois caminhos produzem byte a
+// byte o mesmo valor, então a âncora `>RÓTULO</span><span …>VALOR</span>`
+// continua casando depois de corrigir. Valores limpos (o caso real) saem
+// idênticos ao legado — `tests/unit/pdf-moldura.test.mjs` continua exigindo
+// igualdade exata com o template antigo.
+export function escaparHtml(v: string): string {
+  return v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Valor entra sem `|| '—'`, como nos dois templates legados: o travessão de
+// campo vazio é do chamador (o motor lê os `#out-*` já com `|| '—'`, o
+// pdf-texto defaulta na hora de montar). Um `|| '—'` aqui divergiria do
+// legado — invisível hoje e mentiroso no dia em que um chamador parasse de
+// defaultar.
 function campo(c: CampoId, p1: string): string {
-  return `<div style="flex:${c.flex ?? 1}"><span style="display:block;font-size:5.5pt;font-weight:600;color:${p1};text-transform:uppercase;">${c.label}</span><span style="display:block;font-size:8.5pt;font-weight:500;">${c.valor}</span></div>`;
+  return `<div style="flex:${c.flex ?? 1}"><span style="display:block;font-size:5.5pt;font-weight:600;color:${p1};text-transform:uppercase;">${c.label}</span><span style="display:block;font-size:8.5pt;font-weight:500;">${escaparHtml(c.valor)}</span></div>`;
 }
 
 export function montarPdfMoldura(a: ArgsMoldura): string {
-  const { p1, clinicaNome, sigTexto } = a.cfg;
-  const clinicaSlogan = a.cfg.clinicaSlogan || '';
-  const clinicaEnd = a.cfg.clinicaEnd || '';
-  const telCompleto = a.cfg.clinicaTel || '';
+  const { p1 } = a.cfg;
+  // Dados do local/médico também são texto (vêm do cadastro do workspace e do
+  // perfil) — mesmo tratamento dos campos de identificação. `titulo`,
+  // `corpoHtml`, `cssExtra` e `htmlPosTabela` são HTML de propósito e ficam
+  // fora.
+  const clinicaNome = escaparHtml(a.cfg.clinicaNome || '');
+  const sigTexto = escaparHtml(a.cfg.sigTexto || '');
+  const clinicaSlogan = escaparHtml(a.cfg.clinicaSlogan || '');
+  const clinicaEnd = escaparHtml(a.cfg.clinicaEnd || '');
+  const telCompleto = escaparHtml(a.cfg.clinicaTel || '');
   const logoB64 = a.cfg.logoB64 || '';
   const sigB64 = a.cfg.sigB64 || '';
 

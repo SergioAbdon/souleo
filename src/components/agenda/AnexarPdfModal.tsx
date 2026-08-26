@@ -78,8 +78,9 @@ export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid }
             tipoExame: exame.tipoExame ?? '',
             convenio: exame.convenio ?? '',
           },
+          // `nomeArq` sai daqui (S5-T14, I3): o servidor deriva o nome do
+          // objeto no Storage a partir do tipo + nome do paciente.
           pdfBase64: base64,
-          nomeArq: `laudo-${exame.id}`,
         }),
       });
       const data = await res.json();

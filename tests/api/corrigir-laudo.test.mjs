@@ -6,7 +6,8 @@ import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { resolverPapel, podeCorrigir } from '../../src/lib/exame-admin.ts';
 import { readFile } from 'node:fs/promises';
-import { substituirCamposAdministrativos, nomeArqDoPdfUrl, emissaoMudou } from '../../src/lib/correcao-admin.ts';
+import { substituirCamposAdministrativos, emissaoMudou } from '../../src/lib/correcao-admin.ts';
+import { sanitizarNomeArq, pathPdf } from '../../src/lib/pdf-path.ts';
 
 let db;
 const CONTA = 'contaC', WS = 'wsC';
@@ -154,10 +155,10 @@ describe('alvo do PDF corrigido nao vem do doc do exame (I1)', () => {
     assert.ok(!/nomeArqDoPdfUrl/.test(src), 'alvo do PDF nao pode ser derivado no request');
     assert.ok(/gerarESalvarPdf\([^)]*snapshot\.nomeArq/.test(src), 'alvo do PDF tem que vir do snapshot');
   });
-  test('snapshot sem metadata → string vazia (default laudo_{id}), nunca o doc', () => {
+  test('snapshot sem metadata → string vazia vira o default laudo_{id}, nunca o doc', () => {
     // lerSnapshotHtml normaliza metadata ausente para ''; salvarPdfBuffer cai
     // no proprio default. Aqui garantimos que '' e um alvo valido e inofensivo.
-    assert.equal(nomeArqDoPdfUrl(undefined), '');
+    assert.equal(sanitizarNomeArq('', 'exame123'), 'laudo_exame123');
   });
 });
 
@@ -178,17 +179,19 @@ describe('emissaoMudou (CAS de reemissao durante a correcao — I4)', () => {
   });
 });
 
-describe('nomeArqDoPdfUrl (regrava o MESMO arquivo — link do paciente nao muda)', () => {
-  test('extrai o nome do arquivo publicado', () => {
-    assert.equal(nomeArqDoPdfUrl('https://storage.googleapis.com/leo.appspot.com/laudos/wsC/ECOTT_JOSILENE_DA_SILVA.pdf'),
-      'ECOTT_JOSILENE_DA_SILVA');
+// S5-T14 (I3/ARQ-I3): o formato do path mora em `pdf-path.ts` — a correcao
+// nao faz mais parse de URL pra redescobrir o alvo (o nome vai na metadata do
+// snapshot, gravado pelo servidor na emissao com esta mesma funcao).
+describe('pdf-path — alvo estavel entre emissao e correcao', () => {
+  test('sanitizacao e idempotente: emitir e corrigir apontam pro MESMO objeto', () => {
+    const bruto = 'ECOTT JOSILENE DA SILVA';
+    const umaVez = sanitizarNomeArq(bruto, 'ex1');
+    assert.equal(umaVez, 'ECOTT_JOSILENE_DA_SILVA');
+    assert.equal(sanitizarNomeArq(umaVez, 'ex1'), umaVez);
+    assert.equal(pathPdf('wsC', 'ex1', umaVez), pathPdf('wsC', 'ex1', sanitizarNomeArq(umaVez, 'ex1')));
   });
-  test('nome com acento vem percent-encoded na URL', () => {
-    assert.equal(nomeArqDoPdfUrl('https://storage.googleapis.com/leo.appspot.com/laudos/wsC/ECOTT_JOS%C3%89.pdf'), 'ECOTT_JOSÉ');
-  });
-  test('sem pdfUrl / lixo → string vazia (salvarPdfBuffer usa o default laudo_{id})', () => {
-    assert.equal(nomeArqDoPdfUrl(undefined), '');
-    assert.equal(nomeArqDoPdfUrl(''), '');
-    assert.equal(nomeArqDoPdfUrl('nao-e-url'), '');
+  test('exames diferentes do mesmo paciente NAO colidem (fix I3)', () => {
+    const nome = sanitizarNomeArq('ECOTT JOSILENE DA SILVA', 'marco');
+    assert.notEqual(pathPdf('wsC', 'marco', nome), pathPdf('wsC', 'setembro', nome));
   });
 });

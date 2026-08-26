@@ -8,7 +8,7 @@ import puppeteer, { type Browser } from 'puppeteer-core';
 import { getStorage } from 'firebase-admin/storage';
 import { getFirestore } from 'firebase-admin/firestore';
 import { assinarImagensExame, assinarUrlsNoHtml } from './imagens-dicom-admin';
-import { nomeArqDoPdfUrl } from './correcao-admin';
+import { sanitizarNomeArq, pathPdf } from './pdf-path';
 
 // ── Resolver executável do Chrome (Vercel ou local) ──
 async function resolverExecutavel(): Promise<{ executablePath: string; args: string[]; headless: boolean }> {
@@ -48,10 +48,9 @@ export async function salvarPdfBuffer(
   nomeArq: string
 ): Promise<string> {
   const bucket = getStorage().bucket();
-  const nomeArquivo = (nomeArq || `laudo_${exameId}`)
-    .replace(/[^a-zA-Z0-9À-ÿ _-]/g, '')
-    .replace(/\s+/g, '_');
-  const filePath = `laudos/${wsId}/${nomeArquivo}.pdf`;
+  // Formato do path (com exameId) e sanitização do nome: `pdf-path.ts`.
+  const nomeArquivo = sanitizarNomeArq(nomeArq, exameId);
+  const filePath = pathPdf(wsId, exameId, nomeArquivo);
   const file = bucket.file(filePath);
 
   await file.save(buf, {
@@ -171,9 +170,11 @@ export async function gerarESalvarPdf(
     const url = await salvarPdfBuffer(Buffer.from(pdfBuffer), wsId, exameId, nomeArq);
     // Congela o HTML ORIGINAL (URLs canônicas, não as assinadas — signed URL
     // expira) + o alvo real da escrita. Depois do PDF salvo e sem poder
-    // derrubá-lo. `nomeArqDoPdfUrl(url)` lê a URL que ESTE servidor acabou de
-    // montar — não há entrada de cliente aqui.
-    await salvarSnapshotHtml(pdfHtml, wsId, exameId, nomeArqDoPdfUrl(url));
+    // derrubá-lo. O alvo é o MESMO nome que `salvarPdfBuffer` acabou de usar
+    // (mesma função de sanitização, idempotente) — antes ele era redescoberto
+    // fazendo parse da URL lá em `correcao-admin.ts`, com o formato do path
+    // sabido em dois lugares.
+    await salvarSnapshotHtml(pdfHtml, wsId, exameId, sanitizarNomeArq(nomeArq, exameId));
     return url;
   } finally {
     if (browser) {

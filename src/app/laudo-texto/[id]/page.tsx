@@ -18,8 +18,8 @@ import { TIPOS_LAUDO_PADRAO, TipoLaudo, modalidadeDe } from '@/lib/tipos-laudo';
 import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
 import MolduraA4 from '@/components/laudo/MolduraA4';
-import { gerarPdfHtmlTexto, fmtCep, fmtTel } from '@/lib/pdf-texto';
-import { idadeLabel, fmtData } from '@/lib/paciente-fmt';
+import { gerarPdfHtmlTexto } from '@/lib/pdf-texto';
+import { idadeLabel, fmtData, fmtCep, fmtTel } from '@/lib/paciente-fmt';
 
 export default function LaudoTextoPage() {
   const params = useParams();
@@ -187,8 +187,9 @@ export default function LaudoTextoPage() {
             },
             ...(jaEmitido ? { reemissao: true } : {}),
           },
+          // `nomeArq` sai daqui (S5-T14, I3): o servidor deriva o nome do
+          // objeto no Storage a partir do tipo + nome do paciente.
           pdfHtml,
-          nomeArq: `laudo-${exameId}`,
         }),
       });
       resultado = await res.json();

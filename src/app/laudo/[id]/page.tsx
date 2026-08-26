@@ -44,6 +44,9 @@ import { montarPdfMoldura } from '@/lib/pdf-moldura';
 import { montarParamsHtml } from '@/lib/pdf-params';
 // Tabela de critérios do escore de Wilkins — fonte única (ver renderWilkinsHtml).
 import { WK_DESC } from '@/senna90/achados/wilkins';
+// Telefone/CEP do local: a cópia privada daqui virou uma só em paciente-fmt
+// (ARQ-I6) — o laudo-texto formatava os MESMOS campos com uma segunda cópia.
+import { fmtTel, fmtCep } from '@/lib/paciente-fmt';
 
 // nº16 (S5-T7): remount limpo por exame. Antes o componente NÃO desmontava
 // ao navegar /laudo/A → /laudo/B (mesma rota, só o param muda) — todo o
@@ -1246,10 +1249,10 @@ function LaudoPageInner() {
     // Passa `incluirImagens` explícito pra evitar race do setState async
     // (decisão 15/05/2026 — médico escolhe no PopupSalvarEmitir).
     const pdfHtml = gerarPdfHtml(incluirImagens);
-    const nome = (document.getElementById('nome') as HTMLInputElement)?.value || 'PACIENTE';
-    // Nome do arquivo dinâmico por tipoExame (decisão 15/05/2026):
-    //   eco_tt → ECOTT, doppler_carotidas → DOPPLER CAROTIDAS, etc.
-    const nomeArq = prefixoArquivoPorTipo(exame?.tipoExame as string | undefined) + ' ' + nome.trim().toUpperCase();
+    // `nomeArq` NÃO vai mais no corpo (S5-T14, I3): quem nomeia o objeto do
+    // laudo assinado no Storage é o servidor, a partir do que ele mesmo
+    // acabou de gravar (tipo + nome do paciente). Aqui o mesmo texto ainda é
+    // montado, mas só pro <title> do documento — ver `gerarPdfHtml`.
 
     toast('Emitindo laudo e gerando PDF...');
 
@@ -1265,7 +1268,6 @@ function LaudoPageInner() {
           dadosFinais,
           medicoUid: user.uid,
           pdfHtml,
-          nomeArq,
         }),
       });
       resultado = await res.json();
@@ -1643,19 +1645,6 @@ function LaudoPageInner() {
   // efeito "Carregar motor", page.tsx:~421) em vez de duplicar o markup aqui.
   function toast(msg: string) {
     (window as unknown as { showToast?: (msg: string) => void }).showToast?.(msg);
-  }
-
-  // Formatar telefone: 9130854000 → (91) 3085-4000
-  function fmtTel(t: string): string {
-    const d = t.replace(/\D/g, '');
-    if (d.length === 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
-    if (d.length === 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`;
-    return t;
-  }
-
-  // Formatar CEP dentro do endereço: 66023700 → 66023-700
-  function fmtCep(end: string): string {
-    return end.replace(/(\d{5})(\d{3})/, '$1-$2');
   }
 
   function handleLimpar() {

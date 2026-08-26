@@ -6,7 +6,7 @@
 // (`montarPdfMoldura`). O shell duplicado morreu aqui.
 // ══════════════════════════════════════════════════════════════════
 import { montarPdfMoldura } from './pdf-moldura';
-import { idadeLabel, fmtData } from './paciente-fmt';
+import { idadeLabel, fmtData, fmtTel, fmtCep } from './paciente-fmt';
 
 export type ArgsPdfTexto = {
   p1: string;
@@ -33,19 +33,11 @@ export type ArgsPdfTexto = {
   };
 };
 
-// Duplicados do motor (funções privadas de src/app/laudo/[id]/page.tsx —
-// intocável nesta fase, não dá pra importar). Exportados desde a S5-T10:
-// a TELA do laudo-texto formata os mesmos campos que o PDF (moldura única),
-// e as duas são idempotentes (aplicar 2× não muda nada).
-export function fmtTel(t: string): string {
-  const d = t.replace(/\D/g, '');
-  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
-  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
-  return t;
-}
-export function fmtCep(end: string): string {
-  return end.replace(/(\d{5})(\d{3})/, '$1-$2');
-}
+// `fmtTel`/`fmtCep` moraram aqui até a tríade final da S5 (ARQ-I6),
+// duplicados do motor com a justificativa "page.tsx é intocável, não dá pra
+// importar" — que esta mesma branch tornou falsa (page.tsx já importa
+// `pdf-moldura`/`pdf-params`). Agora são de `paciente-fmt.ts`, junto com
+// `fmtData`/`idadeLabel`: um dono só pra formatação de dado do local.
 
 export function gerarPdfHtmlTexto(args: ArgsPdfTexto): string {
   const { p1, clinicaNome, tituloExame, identificacao: id, htmlCorpo, assinatura } = args;

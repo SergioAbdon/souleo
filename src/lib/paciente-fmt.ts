@@ -68,3 +68,19 @@ export function idadeLabel(dtnasc?: string, ateData?: string): string {
   if (i === null) return '';
   return `${i} ${i > 1 ? 'anos' : 'ano'}`;
 }
+
+/**
+ * Telefone do local: 9130854000 → (91) 3085-4000 (10 ou 11 dígitos; qualquer
+ * outra coisa volta como veio).
+ */
+export function fmtTel(t: string): string {
+  const d = t.replace(/\D/g, '');
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return t;
+}
+
+/** CEP dentro do endereço do local: 66023700 → 66023-700. */
+export function fmtCep(end: string): string {
+  return end.replace(/(\d{5})(\d{3})/, '$1-$2');
+}

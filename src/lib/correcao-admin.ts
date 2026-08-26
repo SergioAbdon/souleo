@@ -6,12 +6,14 @@
 // servidor carrega o SNAPSHOT do HTML emitido e troca SÓ os 2 valores
 // administrativos — cabeçalho, medidas, conclusão e assinatura ficam
 // byte-a-byte como saíram na emissão.
-// Puro, sem import @/ — testado direto por node --test.
+// Puro (só um import relativo de outro módulo puro) — node --test importa
+// direto, sem bundler.
 // ══════════════════════════════════════════════════════════════════
 
-function escaparHtml(v: string): string {
-  return v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+// Fonte única do escape com a EMISSÃO (S5-T14, fix I4): a moldura escapa os
+// mesmos valores ao montar o HTML assinado. Se os dois divergissem, corrigir
+// o convênio reescreveria o campo num formato diferente do resto do PDF.
+import { escaparHtml } from './pdf-moldura';
 
 // Bloco dos dois templates de emissão (gerarPdfHtml no /laudo/[id] e
 // gerarPdfHtmlTexto em pdf-texto.ts — idênticos):
@@ -53,18 +55,10 @@ export function emissaoMudou(antes: unknown, agora: unknown): boolean {
   return marcaEmissao(antes) !== marcaEmissao(agora);
 }
 
-// O PDF corrigido tem que REGRAVAR o mesmo objeto do Storage — o link já foi
-// para o paciente/convênio. O nome do arquivo sai da URL que o PRÓPRIO
-// servidor acabou de montar na emissão (`laudos/{wsId}/{nomeArq}.pdf`) e vai
-// pra metadata do snapshot; nunca do doc do exame (editável pelo médico-autor)
-// nem do cliente. Vazio → salvarPdfBuffer cai no default `laudo_{exameId}`.
-export function nomeArqDoPdfUrl(pdfUrl: unknown): string {
-  if (typeof pdfUrl !== 'string' || !pdfUrl.includes('/laudos/')) return '';
-  const arquivo = pdfUrl.split('/laudos/')[1]?.split('/')[1]?.split('?')[0] ?? '';
-  if (!arquivo.toLowerCase().endsWith('.pdf')) return '';
-  try {
-    return decodeURIComponent(arquivo.slice(0, -4));
-  } catch {
-    return '';
-  }
-}
+// O PDF corrigido REGRAVA o mesmo objeto do Storage — o link já foi para o
+// paciente/convênio. O nome do arquivo vem da metadata do snapshot, gravada
+// pelo próprio servidor na emissão (ver `salvarSnapshotHtml`, pdf-server.ts);
+// nunca do doc do exame (editável pelo médico-autor) nem do cliente. Até a
+// tríade final da S5 este arquivo fazia o parse da URL do PDF pra redescobrir
+// esse nome — conhecimento do formato do path, que agora mora inteiro em
+// `pdf-path.ts` (a feature não sabe mais montar/ler caminho de Storage).

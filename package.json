@@ -19,7 +19,7 @@
         "imagens:privar": "node --env-file=.env.local scripts/imagens-privar.mjs",
         "test:unit": "node --import ./tests/unit/register-ts-resolve-hook.mjs --test tests/unit/*.test.mjs",
         "test:rules": "npx firebase emulators:exec --only firestore --project leo-testes \"node --test tests/rules/regras.test.mjs\"",
-        "test:api": "npx firebase emulators:exec --only firestore,auth --project leo-testes \"node --test tests/api/*.test.mjs\"",
+        "test:api": "npx firebase emulators:exec --only firestore,auth --project leo-testes \"node --import ./tests/unit/register-ts-resolve-hook.mjs --test tests/api/*.test.mjs\"",
         "test:e2e": "playwright test",
         "test:e2e:login": "node tests/e2e/save-auth.mjs"
     },

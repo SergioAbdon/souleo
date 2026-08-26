@@ -8,17 +8,29 @@
 //
 // ⚠️ IDs preservados do motor: #laudo-sheet, #laudo-titulo-exame e os
 // #out-* da identificação (motorv8mp4.js escreve neles por getElementById,
-// e `gerarPdfHtml()` LÊ os #out-* pra montar o PDF).
+// e `gerarPdfHtml()` LÊ os #out-* pra montar o PDF). O conjunto está travado
+// por teste desde a tríade final da S5 — `contrato-ponte-ids.test.mjs` (5).
+//
+// Divergências TELA × PDF que são deliberadas (revisão S5, ARQ-I5), pra
+// ninguém "consertar" achando que é bug: o valor da identificação sai em 9pt
+// aqui e 8.5pt no PDF; a tela defaulta campo vazio pra '—' e o PDF recebe o
+// travessão já pronto do chamador (ver comentário em pdf-moldura.ts). O que
+// NÃO pode divergir é a lista/ordem dos campos e os blocos do rodapé.
 // ══════════════════════════════════════════════════════════════════
 
 import { ReactNode } from 'react';
 
-export type CampoTela = {
-  label: string;
-  id?: string;              // hook do motor (out-nome, out-idade, …)
-  valor?: ReactNode;        // conteúdo estático (laudo-texto)
-  flex?: number;
-};
+// Um nó DOM, UM dono (S5-T14, ARQ-I4): ou o campo é escrito pelo motor
+// legado (`id`, e o React não pode encostar no conteúdo — `motorv8mp4.js`
+// escreve por getElementById), ou é do React (`valor`). O tipo aceitava os
+// dois juntos e só a convenção separava; passar `id` E `valor` no mesmo campo
+// põe React e motor brigando pelo mesmo `textContent` (o valor aparece e some
+// a cada re-render, e o PDF raspa o que estiver lá no instante da emissão).
+// A união discriminada faz o compilador recusar o estado ambíguo.
+export type CampoTela = { label: string; flex?: number } & (
+  | { id: string; valor?: never }        // nó do motor legado
+  | { valor: ReactNode; id?: never }     // nó do React (laudo-texto)
+);
 
 type Props = {
   p1: string;
