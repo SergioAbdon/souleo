@@ -76,7 +76,7 @@ describe('F1-T3 GLS VE — 3 faixas com fonte única (B1 extinta)', () => {
   });
 });
 
-describe('BASELINE LAVI pré-F1 — j4: >34 leve · ≥42 mod · ≥48 IMP  // F1 → 48 vira moderado', () => {
+describe('F1-T5 LAVI — j4: >34 leve · ≥42 mod · >48 IMP (Lang 2015)', () => {
   const comLavi = (v) => {
     const m = medidasVazias();
     m.diastolica.volAEindex = v;
@@ -84,8 +84,8 @@ describe('BASELINE LAVI pré-F1 — j4: >34 leve · ≥42 mod · ≥48 IMP  // F
   };
   test('35 → leve', () => temQueIncluir(comLavi(35), 'leve'));
   test('42 → moderado', () => temQueIncluir(comLavi(42), 'moderado'));
-  test('48 → importante (ATUAL; Lang 2015 diz moderado — F1 corrige)', () =>
-    temQueIncluir(comLavi(48), 'importante'));
+  test('48 → moderado (Lang 2015: grave é >48)', () =>
+    temQueIncluir(comLavi(48), 'moderado'));
   test('49 → importante', () => temQueIncluir(comLavi(49), 'importante'));
   test('34 → silêncio', () => naoPodeIncluir(comLavi(34), 'Átrio esquerdo aumentado'));
 });

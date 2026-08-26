@@ -42,7 +42,8 @@ export function jAE_diametro(b8: number | null, sexo: Sexo, b24: number | null):
 /** j4 — AE pelo volume indexado (LAVI). Tem prioridade sobre j3. */
 export function jAE_volume(b24: number | null): string {
   if (b24 === null || b24 <= 0) return '';
-  if (b24 >= 48) return `Átrio esquerdo aumentado em grau importante. Volume index de ${b24} ml/m².`;
+  // Lang 2015 Tab.4 (spec §2.3): leve 35-41 · moderado 42-48 · grave >48.
+  if (b24 > 48) return `Átrio esquerdo aumentado em grau importante. Volume index de ${b24} ml/m².`;
   if (b24 >= 42) return `Átrio esquerdo aumentado em grau moderado. Volume index de ${b24} ml/m².`;
   if (b24 > 34) return `Átrio esquerdo aumentado em grau leve. Volume index de ${b24} ml/m².`;
   return '';
