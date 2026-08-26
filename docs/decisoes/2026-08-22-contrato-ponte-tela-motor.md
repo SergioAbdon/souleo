@@ -19,7 +19,7 @@ Este é o **pré-requisito da Seção 6** (revisão do motor, maior risco clíni
 sem esse contrato escrito + travado por teste, qualquer refatoração do motor
 pode silenciosamente parar de ler um campo que a tela ainda mostra, ou vice-versa.
 
-## Os 8 contratos (7 do parecer de arquitetura da S5 + o 8º achado na tríade final)
+## Os 9 contratos (7 do parecer de arquitetura da S5 + o 8º achado na tríade final + o 9º achado no levantamento Senna93)
 
 1. **Contrato de IDs** — CINCO listas independentes dos ~50 campos `b*`
    mantidas à mão: JSX (`SidebarLaudo.tsx`), `coletarMedidas` (persistência),
@@ -114,6 +114,12 @@ pode silenciosamente parar de ler um campo que a tela ainda mostra, ou vice-vers
    nova entra de novo — escore de Wilkins duplicado e desatualizado dentro do
    laudo assinado. A tabela de critérios (`WK_DESC`) tem dono único desde a
    tríade final: mora no Senna90 e a page importa. Invariante (8) do teste.
+
+9. **`window.refluxoPulmonar` (achado do levantamento Senna93, 26/08)** — `page.tsx`
+   (:670, :1736) chama direto `window.refluxoPulmonar`, função definida pelo motor
+   legado (`motorv8mp4.js:741`) que mostra/esconde `#field-psmap`. Fora da lista
+   original do item 6. Invariante (9) do teste trava as duas pontas: a F3 do Senna93
+   migra o consumidor, a F5 remove a definição — juntas, nunca uma só.
 
 ## O que o teste trava, exatamente
 

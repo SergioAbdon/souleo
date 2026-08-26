@@ -312,3 +312,22 @@ describe('Bloco de Wilkins — render (page) e colapso (merge) usam os MESMOS r�
     assert.ok(!/const WK_DESC/.test(pageSrc), 'a cópia viva de WK_DESC voltou pra page.tsx');
   });
 });
+
+// ══════════════════════════════════════════════════════════════════
+// (9) window.refluxoPulmonar — o contrato que o ADR de 22/08 não listou
+// (achado do levantamento Senna93, consumidores-e-sombra §A4). page.tsx
+// chama direto uma função definida pelo motor legado. Se o motor sumir sem a
+// page parar de chamar (ou vice-versa), quebra sem exceção. A F3 migra o
+// consumidor; a F5 remove a definição — este teste força as pontas juntas.
+// ══════════════════════════════════════════════════════════════════
+describe('window.refluxoPulmonar — motor DEFINE, page CHAMA, juntos ou nada', () => {
+  test('(9.1) o motor legado DEFINE refluxoPulmonar exatamente 1 vez', () => {
+    const defs = (motorSrc.match(/function refluxoPulmonar\(/g) ?? []).length;
+    assert.equal(defs, 1, `definições no motor: ${defs}`);
+  });
+  test('(9.2) page.tsx referencia window.refluxoPulmonar exatamente nos 2 call-sites conhecidos', () => {
+    const refs = (pageSrc.match(/\.refluxoPulmonar as \(/g) ?? []).length;
+    assert.equal(refs, 2,
+      `call-sites na page: ${refs} (esperado 2 — mudou? atualize o ADR do contrato JUNTO)`);
+  });
+});
