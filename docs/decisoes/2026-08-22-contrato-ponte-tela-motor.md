@@ -1,6 +1,7 @@
 # ADR — Contrato da Ponte tela↔motor (D7)
 
-**Data:** 22/08/2026 (decisão) · 25/08/2026 (documentado, S5-T11) · **Branch:** `feat/secao5-tela-laudo`.
+**Data:** 22/08/2026 (decisão) · 25/08/2026 (documentado, S5-T11; ampliado na
+tríade final, S5-T14) · **Branch:** `feat/secao5-tela-laudo`.
 **Status:** aprovado pelo Sergio (tabela DECISÕES FINAIS, D7) · teste automático no ar (`tests/unit/contrato-ponte-ids.test.mjs`).
 
 ## Contexto
@@ -18,7 +19,7 @@ Este é o **pré-requisito da Seção 6** (revisão do motor, maior risco clíni
 sem esse contrato escrito + travado por teste, qualquer refatoração do motor
 pode silenciosamente parar de ler um campo que a tela ainda mostra, ou vice-versa.
 
-## Os 7 contratos (do parecer de arquitetura, S5)
+## Os 8 contratos (7 do parecer de arquitetura da S5 + o 8º achado na tríade final)
 
 1. **Contrato de IDs** — CINCO listas independentes dos ~50 campos `b*`
    mantidas à mão: JSX (`SidebarLaudo.tsx`), `coletarMedidas` (persistência),
@@ -59,13 +60,23 @@ pode silenciosamente parar de ler um campo que a tela ainda mostra, ou vice-vers
    `dispatchEvent`) ou passar a escutar por-input quebra o recálculo sem
    erro nenhum — o motor simplesmente não é avisado.
 
-4. **Contrato de saída** — os nós DOM que o motor ESCREVE e a tela RASPA de
-   volta: `#params-tbody` (com índice de linha hardcoded em 4 lugares
-   diferentes — acha nº 21/Ponytail), `#out-*`, `#calc-*` (ids como
+4. **Contrato de saída** (TRAVADO POR TESTE desde a tríade final — invariante
+   (5) do `contrato-ponte-ids.test.mjs`) — os nós DOM que o motor ESCREVE e a
+   tela RASPA de volta: `#params-tbody` (com índice de linha hardcoded em 4
+   lugares diferentes — acha nº 21/Ponytail), `#out-*`, `#calc-*` (ids como
    `calc-fe`, `calc-imc`, `calc-wilkins` — ver lista completa na JSX de
    `SidebarLaudo.tsx`). Mudar o formato de saída do motor sem atualizar os 4
    pontos de raspagem quebra silenciosamente (a tabela renderiza errada ou
    vazia, sem exceção).
+
+   ⚠️ **O primeiro fio a puxar com cuidado na Seção 6:** a IDENTIFICAÇÃO
+   IMPRESSA NO PDF ASSINADO (nome, idade, nascimento, convênio, solicitante,
+   data do exame) é **produto do motor legado** — `motorv8mp4.js:1180-1185`
+   escreve nos `#out-*` e `gerarPdfHtml()` (page.tsx) lê de volta por
+   `textContent`. Trocar `renderIdentificacao` do motor por render React
+   deixa a TELA certa e o PDF com `— / — / —`, sem erro nem exceção. A S5-T10
+   moveu essas âncoras (`SheetA4` → `MolduraA4`) e nenhum teste piscou — daí
+   a invariante (5).
 
 5. **Contrato inverso** — o motor legado DEPENDE de coisas que só o React
    fornece: `calcIdade`/`escH` chamadas globais, o modal do banco de frases
@@ -86,10 +97,28 @@ pode silenciosamente parar de ler um campo que a tela ainda mostra, ou vice-vers
    redeclara `const` e quebra em silêncio (achado nº 21) — contrato que a
    Seção 6 precisa manter ao mexer no motor.
 
-## O que o teste (S5-T11) trava, exatamente
+   A `key={exameId}` **faz parte do contrato**, não é otimização: o único
+   mecanismo de cancelamento de execução tardia é `vivoRef` + o cleanup dos
+   efeitos, e é a `key` que garante que uma instância morta nunca volta. Os
+   três órfãos já achados (debounce do Senna90, `onload` do `<script>` e o
+   timer de 500ms do `preencherExame` — este último na tríade final) escreviam
+   a identificação do paciente ANTERIOR na tela viva do paciente novo.
+   Invariante (7) do teste.
 
-`tests/unit/contrato-ponte-ids.test.mjs` — 4 asserções + 3 checagens de
-allowlist "não fica pra trás" (cada allowlist só é válida enquanto a exceção
+8. **Sentinela `__WILKINS__` (contrato de 4 pontas)** — `senna90/achados/
+   wilkins.ts` PRODUZ `__WILKINS__{json}`, `senna90-render.ts` embrulha,
+   `page.tsx` RENDERIZA o bloco (rótulos + descrições + "TOTAL: N pontos.") e
+   `laudo-merge.ts` COLAPSA o bloco renderizado de volta pra sentinela, casando
+   pelo TEXTO VISÍVEL dos rótulos. Renomear um rótulo só de um lado faz o merge
+   parar de colapsar: o bloco vira "linha manual" preservada **e** a sentinela
+   nova entra de novo — escore de Wilkins duplicado e desatualizado dentro do
+   laudo assinado. A tabela de critérios (`WK_DESC`) tem dono único desde a
+   tríade final: mora no Senna90 e a page importa. Invariante (8) do teste.
+
+## O que o teste trava, exatamente
+
+`tests/unit/contrato-ponte-ids.test.mjs` — invariantes (1)-(4) da S5-T11 + as
+invariantes (5)-(8) da tríade final (S5-T14) + 3 checagens de allowlist "não fica pra trás" (cada allowlist só é válida enquanto a exceção
 que ela documenta continuar sendo verdade; se a realidade do código mudar sem
 atualizar a allowlist, o teste falha e força a atualização):
 
@@ -111,9 +140,26 @@ atualizar a allowlist, o teste falha e força a atualização):
    remove** — o teste falha se `b24_diast` for limpo do código mas
    esquecido na allowlist (força fechar as duas pontas juntas).
 
+Na tríade final entraram mais quatro, cobrindo o lado que faltava (a SAÍDA) e
+o que a Seção 6 vai abrir:
+
+5. Todo `#out-*` que `motorv8mp4.js` escreve existe como nó na tela
+   (`SheetA4` → `MolduraA4`) e todo `#out-*` que `gerarPdfHtml()` raspa é
+   escrito pelo motor — mais `#params-tbody` nas 3 pontas. O motor é lido
+   **read-only** pelo teste (o arquivo continua intocável).
+6. Identificação não mora em `medidas`: `coletarMedidas` não persiste
+   `nome`/`dtnasc`/`dtexame`/`convenio`/`solicitante`/`sexo`, e a restauração
+   ignora as cópias que exames antigos ainda têm (`SO_DO_TOPO`).
+7. O timer de 500ms do `preencherExame` tem `clearTimeout` no cleanup **e**
+   guard de `vivoRef` (ver contrato 7).
+8. Os rótulos do bloco Wilkins renderizados em `page.tsx` são exatamente os
+   que `RENDER_WILKINS` (`laudo-merge.ts`) colapsa, e `WK_DESC` vem do
+   Senna90 (sem cópia viva na page).
+
 O que fica **fora** do escopo deste teste (fronteira deliberada, não
-esquecimento): o motor legado (`public/motor/motorv8mp4.js`) e o Senna90 em si
-(`src/senna90/`) — ambos são território da Seção 6. Este teste garante que a
+esquecimento): a lógica do motor legado (`public/motor/motorv8mp4.js`) e do
+Senna90 (`src/senna90/`) — ambos são território da Seção 6; as invariantes
+(5) e (8) só LEEM esses arquivos pra travar a fronteira, nunca o cálculo. Este teste garante que a
 **tela e a persistência concordam entre si e com o que o adapter TypeScript
 lê**; não garante que o motor (legado ou Senna90) consome cada campo
 corretamente — isso é o trabalho da Seção 6, e o item 2 acima (semântica
