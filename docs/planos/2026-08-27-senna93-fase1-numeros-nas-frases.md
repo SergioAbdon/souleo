@@ -207,9 +207,16 @@ const NOTA_CIRURGICA_RAIZ_ASC =
 const NOTA_CIRURGICA_ARCO =
   ' Diâmetro ≥ 55 mm: sugere-se avaliação cirúrgica especializada (ACC/AHA 2022).';
 
+// I1 da revisão da T1: com aneurisma ≥45, o índice NÃO pode sumir do texto na
+// faixa 45-49 (índice = sinalização de risco cirúrgico, spec §2.2). O ramo de
+// aneurisma passa a carregar o índice quando disponível.
+function sufixoIndice(r: SegmentoAortaResult): string {
+  return r.indiceCm2m !== null ? `, ${fmtIdx(r.indiceCm2m)} cm²/m ${NOTA_INDICE}` : '';
+}
+
 function comentarioRaiz(r: SegmentoAortaResult): string {
   if (r.tier === 'aneurisma') {
-    return 'Dilatação aneurismática da Raiz aórtica.'
+    return `Dilatação aneurismática da Raiz aórtica${sufixoIndice(r)}.`
       + (r.notaCirurgica ? NOTA_CIRURGICA_RAIZ_ASC : '');
   }
   if (r.indiceCm2m !== null) {
@@ -220,7 +227,7 @@ function comentarioRaiz(r: SegmentoAortaResult): string {
 
 function comentarioAsc(r: SegmentoAortaResult): string {
   if (r.tier === 'aneurisma') {
-    return `Dilatação aneurismática da aorta ascendente medindo ${fmtMM(r.medidaMM)} mm.`
+    return `Dilatação aneurismática da aorta ascendente medindo ${fmtMM(r.medidaMM)} mm${sufixoIndice(r)}.`
       + (r.notaCirurgica ? NOTA_CIRURGICA_RAIZ_ASC : '');
   }
   if (r.indiceCm2m !== null) {
@@ -256,8 +263,21 @@ export function jAortaAngioTC(b29: number | null, b42: '' | 's' | 'nv', sexo: Se
 - [ ] **Step 3: `conclusoes/index.ts` concAorta** — textos:
 `'Dilatação da Raiz aórtica.'` / `'Dilatação da Raiz aórtica, com critérios de maior
 gravidade.'` (idem ascendente); arco: só `'Dilatação do arco aórtico.'` (ramo aneurisma
-do arco removido). Aneurisma raiz/asc: manter `'Aneurisma da Raiz aórtica.'` /
-`'Aneurisma da aorta ascendente.'`.
+do arco removido). Aneurisma raiz/asc: `'Aneurisma da Raiz aórtica.'` /
+`'Aneurisma da aorta ascendente.'` — E (I1 da revisão T1) o aneurisma com
+`graveIndice` ganha o qualificador: `'Aneurisma da Raiz aórtica, com critérios de
+maior gravidade.'` (idem ascendente).
+
+- [ ] **Step 3b (Minors 1-4 da revisão T1):** (a) cabeçalhos legados: `calculos/aorta.ts`
+topo ainda cita "ectasia leve/moderada/importante" e `achados/aorta.ts` topo diz "Tiers:
+normal / ectasia / aneurisma" — atualizar os DOIS pra régua nova (1-2 linhas cada);
+(b) +2 pins em `senna90-aorta-pins.test.mjs`: ♀70a 37mm → normal (fronteira inferior da
+faixa ≥66) e raiz 49 → `'aneurisma'` / 50 → `'aneurisma'` (tier explícito, não só a
+nota); (c) +2 casos no runner (`casos/06-bordas.ts` ou novo bloco): raiz 46mm ♂50a com
+altura (achado `'Dilatação aneurismática da Raiz aórtica, ... cm²/m'` + conclusão
+`'Aneurisma da Raiz aórtica'`) e arco 42mm (achado `'Arco aórtico dilatado, medindo
+42 mm.'` + frase angio + conclusão `'Dilatação do arco aórtico.'`) — a faixa nova passa
+a ser exercida ponta-a-ponta na esteira (piso da suite sobe junto).
 
 - [ ] **Step 4: Testes** — novos pins em `senna90-frases-pins.test.mjs` (bloco aorta):
 raiz ♂30a 39mm+altura → achado começa `'Dilatação da Raiz aórtica'`; 46mm → contém
@@ -265,7 +285,8 @@ raiz ♂30a 39mm+altura → achado começa `'Dilatação da Raiz aórtica'`; 46m
 `'Arco aórtico dilatado, medindo 42 mm.'` + frase angio presente; arco 55 → nota ≥55;
 `b42='nv'` → frase angio presente mesmo com arco vazio; arco 38 sem 'nv' → frase angio
 AUSENTE. Runner: atualizar casos que pinavam "Ectasia" (listar cada flip). Append na
-allowlist: `| F1-T2 | Aorta | "Ectasia"→"Dilatação" nas frases · nota cirúrgica ≥50/≥55 nova · frase angio-TC/RM nova (arco dilatado ou 'nv') | §2.2 |`.
+allowlist (2 linhas): `| F1-T2 | Aorta | "Ectasia"→"Dilatação" nas frases · nota cirúrgica ≥50/≥55 nova · frase angio-TC/RM nova (arco dilatado ou 'nv') | §2.2 |` e
+`| F1-T2 | Aorta | Aneurisma 45-49 passou a carregar índice cm²/m no achado e "com critérios de maior gravidade" na conclusão (I1 da revisão T1 — antes o índice sumia nessa faixa) | §2.2 |`.
 
 - [ ] **Step 5: Bateria + commit** `feat(senna93-f1): frases da aorta — dilatacao/aneurisma ACC/AHA, nota cirurgica, angio-TC/RM`.
 
