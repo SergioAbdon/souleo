@@ -14,6 +14,7 @@ import { casosDiastologia } from './casos/04-diastologia';
 import { casosStrainHP } from './casos/05-strain-hp';
 import { casosBordas } from './casos/06-bordas';
 import { casosDiastologiaCompleta } from './casos/07-diastologia-completa';
+import { casosAlertas } from './casos/08-alertas';
 
 const todosCasos = [
   ...casosSaudaveis,
@@ -23,6 +24,7 @@ const todosCasos = [
   ...casosStrainHP,
   ...casosBordas,
   ...casosDiastologiaCompleta,
+  ...casosAlertas,
 ];
 
 console.log(`\n🧪 LEO SENNA90 — Suite de Testes`);

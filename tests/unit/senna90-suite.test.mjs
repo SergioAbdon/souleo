@@ -17,6 +17,7 @@ import { casosDiastologia } from '../../src/senna90/tests/casos/04-diastologia.t
 import { casosStrainHP } from '../../src/senna90/tests/casos/05-strain-hp.ts';
 import { casosBordas } from '../../src/senna90/tests/casos/06-bordas.ts';
 import { casosDiastologiaCompleta } from '../../src/senna90/tests/casos/07-diastologia-completa.ts';
+import { casosAlertas } from '../../src/senna90/tests/casos/08-alertas.ts';
 
 const grupos = {
   '01-saudaveis': casosSaudaveis,
@@ -26,12 +27,13 @@ const grupos = {
   '05-strain-hp': casosStrainHP,
   '06-bordas': casosBordas,
   '07-diastologia-completa': casosDiastologiaCompleta,
+  '08-alertas': casosAlertas,
 };
 
 describe('Senna90 — suite completa na esteira (F0-T1)', () => {
   test('piso de contagem: a suite não pode encolher em silêncio', () => {
     const total = Object.values(grupos).flat().length;
-    assert.ok(total >= 72, `suite encolheu: ${total} casos (piso 72)`);
+    assert.ok(total >= 76, `suite encolheu: ${total} casos (piso 76)`);
   });
   for (const [grupo, casos] of Object.entries(grupos)) {
     describe(grupo, () => {
