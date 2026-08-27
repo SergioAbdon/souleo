@@ -41,7 +41,7 @@ export function alertasVisiveis(alertas: AlertaUI[] | null | undefined): AlertaU
   if (!Array.isArray(alertas)) return [];
   const porTipo = new Map<string, AlertaUI>();
   for (const a of alertas) {
-    if (a && a.tipo in ORDEM && !porTipo.has(a.tipo)) porTipo.set(a.tipo, a);
+    if (a && Object.hasOwn(ORDEM, a.tipo) && !porTipo.has(a.tipo)) porTipo.set(a.tipo, a);
   }
   return [...porTipo.values()].sort((x, y) => ORDEM[x.tipo] - ORDEM[y.tipo]);
 }

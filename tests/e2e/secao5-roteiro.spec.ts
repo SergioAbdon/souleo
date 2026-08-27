@@ -173,6 +173,11 @@ test.describe('Seção 5 — roteiro de fechamento', () => {
 
   test('item 8 — alerta PSAP aparece e some', async ({ page }) => {
     await abrirLaudo(page, NOME_A);
+    // ⚠️ GATE DA VIRADA F3 (I1 da revisão F3-T2): este item testa o nó LEGADO
+    // #alerta-psap, que com leo:params-engine ON sai da árvore quando a lista de
+    // alertas do motor chega (o aviso vira o bloco #alertas-motor). Este spec só
+    // liga leo:primary-engine, então segue válido ATÉ a virada — na virada,
+    // ramificar este item pela flag (esperar o bloco novo com params ON).
     // Gatilho real (alertaIT): Vel. IT (#b23) preenchida SEM PSAP (#b37)
     await setMedida(page, 'b23', '2.8');
     await expect(page.locator('#alerta-psap')).toBeVisible({ timeout: 10000 });

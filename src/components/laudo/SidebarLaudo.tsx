@@ -456,9 +456,12 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
         <F label="Vel. IT" u="m/s"><input type="number" id="b23" step="0.01" className="sf" /></F>
         <F label="PSAP" u="mmHg"><input type="number" id="b37" step="1" className="sf" /></F>
         {/* Legado: ligado/desligado pelo override `window.alertaIT` (page.tsx).
-            Com `paramsOn` o motor já emite IT_SEM_PSAP no bloco do topo — o nó
-            some pra não duplicar o aviso (o override tem guard `if (msg)`). */}
-        {!paramsOn && (
+            Com `paramsOn` o motor emite IT_SEM_PSAP no bloco do topo — mas os
+            alertas estruturados só chegam com a 1ª rodada da ponte, que um exame
+            RESTAURADO pula (guard textoRestauradoRef). Enquanto a lista do motor
+            está vazia, o nó legado fica de plantão (I2 da revisão F3-T2); quando
+            a lista chega, ele sai pra não duplicar (o override tem guard if(msg)). */}
+        {(!paramsOn || !alertasMotor?.length) && (
           <div id="alerta-psap" className="col-span-2 text-[9px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1 font-medium" style={{ display: 'none' }}>
             ⚠️ Vel. IT preenchida sem PSAP — informe a PSAP estimada
           </div>
