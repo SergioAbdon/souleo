@@ -8,6 +8,11 @@
 import { useState, useEffect, ReactNode } from 'react';
 import { auth } from '@/lib/firebase';
 import type { AlertaUI } from '@/senna90/types';
+// F3-T6: o campo condicional PSMAP era revelado por `motorCall('refluxoPulmonar')`
+// — função do motor legado, invisível pro regex do Contrato da Ponte (ponto cego).
+// Agora é a mesma função local que a page usa nos outros 2 call-sites: DOM-pura,
+// sem flag, e não depende do motor ter carregado.
+import { sincronizarCampoPmap } from '@/lib/params-render';
 
 // Helpers para chamar funções do motor (expostas em window.*)
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -484,7 +489,7 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
         <F label="V. Pulmonar"><VSel id="b39p" /></F>
         <F label="Refluxo Pulmonar">
           <select id="b40p" className="sf"
-            onChange={() => motorCall('refluxoPulmonar')}>
+            onChange={sincronizarCampoPmap}>
             <option value="">— Ausente —</option>
             <option value="L">L — Leve</option>
             <option value="LM">LM — Leve-Mod</option>

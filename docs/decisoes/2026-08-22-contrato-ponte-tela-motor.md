@@ -155,10 +155,30 @@ pode silenciosamente parar de ler um campo que a tela ainda mostra, ou vice-vers
    tríade final: mora no Senna90 e a page importa. Invariante (8) do teste.
 
 9. **`window.refluxoPulmonar` (achado do levantamento Senna93, 26/08)** — `page.tsx`
-   (:670, :1736) chama direto `window.refluxoPulmonar`, função definida pelo motor
+   (:670, :1736) chamava direto `window.refluxoPulmonar`, função definida pelo motor
    legado (`motorv8mp4.js:741`) que mostra/esconde `#field-psmap`. Fora da lista
    original do item 6. Invariante (9) do teste trava as duas pontas: a F3 do Senna93
    migra o consumidor, a F5 remove a definição — juntas, nunca uma só.
+
+   ### Atualização F3-T6 (27/08/2026) — consumidores migrados, definição órfã
+
+   Eram **três** call-sites, não dois: o levantamento (e o regex de (9.2), que
+   só via `.refluxoPulmonar as (`) não enxergava o `onChange` do select `b40p`
+   em `SidebarLaudo.tsx`, escrito como `motorCall('refluxoPulmonar')` — o
+   mesmo ponto cego de `motorCall('calc')` da F3-T5. Os três agora chamam
+   `sincronizarCampoPmap()` (`src/lib/params-render.ts`): corpo idêntico ao do
+   motor (`value` de `#b40p` → `display` de `#field-psmap`), com guard pros
+   dois nós.
+
+   Consequências: (a) o campo PSMAP deixa de depender do motor ter carregado
+   — antes, um `change` antes do `<script>` subir era engolido em silêncio;
+   (b) o comportamento é **idêntico com a flag ON e OFF**, porque a função não
+   lê flag nenhuma e o corpo é o mesmo dos dois lados; (c) a definição no
+   motor ficou **órfã** — nenhum caminho da aplicação a chama. Ela some na F5,
+   e até lá (9.1) segue exigindo que ela exista (o motor é intocável na F3).
+   (9.2) passou a exigir **zero** referências na page e (9.3) — nova — vigia o
+   ponto cego: zero `motorCall('refluxoPulmonar')` na SidebarLaudo, mais a
+   contagem exata dos 3 call-sites novos (2 na page + o `onChange`).
 
 ## O que o teste trava, exatamente
 
@@ -196,6 +216,11 @@ o que a Seção 6 vai abrir:
    precisa cobrir o MESMO conjunto de 6 ids (5.0b); a raspagem do PDF passa a
    aceitar qualquer um dos dois escritores (5.2); e (5.4)/(5.5) travam a
    exclusividade por flag e o wrap de `window.calc`.
+   **F3-T6:** (5.7) endureceu — emitir com a flag ON exige tabela pintada **e
+   fresca** (`tabelaFrescaRef`), não só presente: `#params-tbody` cheio pode
+   ser a tabela da rodada anterior, invalidada por uma rodada que falhou, e
+   assinar aquilo carimba números velhos como novos. (5.9) trava os 6 pontos
+   que mexem no ref (nasce `false`, 4 falhas → `false`, 2 pinturas → `true`).
 6. Identificação não mora em `medidas`: `coletarMedidas` não persiste
    `nome`/`dtnasc`/`dtexame`/`convenio`/`solicitante`/`sexo`, e a restauração
    ignora as cópias que exames antigos ainda têm (`SO_DO_TOPO`).

@@ -47,7 +47,11 @@ import { montarParamsHtml, paramsParaTexto, paramsParaDocx } from '@/lib/pdf-par
 // F3-T5 (a virada do cabo): com `senna93Params()` ON, quem pinta #out-*,
 // #calc-* e #params-tbody é o Senna93 — os MESMOS nós, o mesmo formato de
 // leitura. OFF = motor legado, byte-idêntico ao de hoje.
-import { pintarTabelaSenna93, lerIdentTela } from '@/lib/params-render';
+// F3-T6: `sincronizarCampoPmap` substitui `window.refluxoPulmonar` (motor
+// legado) nos 3 call-sites — mesmo corpo, mesmo efeito, sem depender do
+// motor estar no ar. DOM-pura: NÃO lê flag (o campo PSMAP aparece igual com
+// ON e com OFF).
+import { pintarTabelaSenna93, lerIdentTela, sincronizarCampoPmap } from '@/lib/params-render';
 import { rodapeFontes } from '@/senna90/classificacoes/fontes';
 // Tabela de critérios do escore de Wilkins — fonte única (ver renderWilkinsHtml).
 import { WK_DESC } from '@/senna90/achados/wilkins';
@@ -171,6 +175,16 @@ function LaudoPageInner() {
   // Reset pra `true` no topo do efeito do motor (StrictMode em dev remonta
   // o mesmo componente sem trocar de instância — precisa rearmar).
   const vivoRef = useRef(true);
+  // F3-T6 (carona da re-revisão da T5, concern 3): "a tabela na tela é a da
+  // ÚLTIMA rodada, e essa rodada deu certo". Contar `#params-tbody tr` só
+  // responde "existe tabela" — uma tabela pintada às 10h00 e invalidada por
+  // uma rodada que falhou às 10h05 (o médico mexeu numa medida, a ponte caiu)
+  // continua no DOM com os números VELHOS, e o laudo sairia assinado com
+  // eles. `false` nos mesmos 4 pontos que dão o toast de falha, `true` depois
+  // de cada pintura que completou. Lido só pelo guard do `handleEmitir` — e
+  // só com a flag ON (com OFF quem pinta é o motor legado, síncrono, e o
+  // guard nem chega a olhar este ref).
+  const tabelaFrescaRef = useRef(false);
   // Dirty flag (S5-T1): setada pelo listener delegado do #laudo-sidebar
   // (medidas) e pelo onDirty do EditorLaudo (achados/conclusões). Autosave
   // e beforeunload leem este ref — zerado só em salvamento COM sucesso.
@@ -626,7 +640,9 @@ function LaudoPageInner() {
               // tabela NÃO foi pintada. Não pode ser silêncio (ver
               // MSG_FALHA_TABELA no topo). `vivoRef` no teste pra não avisar
               // o paciente B sobre a falha do exame A.
-              if (!r && paramsOn && vivoRef.current) toast(MSG_FALHA_TABELA);
+              // F3-T6: a rodada falhou → o que está na tela ficou VELHO.
+              // Marca antes do toast (o `vivoRef` só decide se AVISA).
+              if (!r && paramsOn) { tabelaFrescaRef.current = false; if (vivoRef.current) toast(MSG_FALHA_TABELA); }
               if (!r || !vivoRef.current) return; // falha OU instância morta → no-op
               const ed = editorRef.current;
               // Editor ainda não montou: nada pra preservar, e o HTML vai
@@ -681,7 +697,8 @@ function LaudoPageInner() {
               // `sc()`. Nunca os dois: são mutuamente exclusivos pela flag
               // (ADR do Contrato da Ponte, item 4).
               if (paramsOn && identNaChamada) {
-                try { pintarTabelaSenna93(r, () => identNaChamada); } catch (e) { console.warn('params:', e); toast(MSG_FALHA_TABELA); }
+                try { pintarTabelaSenna93(r, () => identNaChamada); tabelaFrescaRef.current = true; }
+                catch (e) { tabelaFrescaRef.current = false; console.warn('params:', e); toast(MSG_FALHA_TABELA); }
               }
             });
 
@@ -729,10 +746,11 @@ function LaudoPageInner() {
                     calcularSenna90()
                       .then((r) => {
                         if (!vivoRef.current) return;
-                        if (!r) { toast(MSG_FALHA_TABELA); return; }
+                        if (!r) { tabelaFrescaRef.current = false; toast(MSG_FALHA_TABELA); return; }
                         pintarTabelaSenna93(r, () => identNaChamada);
+                        tabelaFrescaRef.current = true;
                       })
-                      .catch(() => { if (vivoRef.current) toast(MSG_FALHA_TABELA); });
+                      .catch(() => { tabelaFrescaRef.current = false; if (vivoRef.current) toast(MSG_FALHA_TABELA); });
                   }
                 } else {
                   try { dispararSenna90(); } catch { /* não bloquear */ }
@@ -804,9 +822,10 @@ function LaudoPageInner() {
                 // (setado por valor sem disparar `change` real) + recalcular
                 // os derivados do motor legado — nada mais).
                 if (t.id === 'laudo-sidebar') {
-                  const refluxoPulmonarFn = (window as unknown as Record<string, unknown>)
-                    .refluxoPulmonar as (() => void) | undefined;
-                  if (refluxoPulmonarFn) { try { refluxoPulmonarFn(); } catch { /* */ } }
+                  // F3-T6: era `window.refluxoPulmonar` (motor legado). Mesmo
+                  // corpo, agora local — e sem o `if (fn)`/try: a função
+                  // guarda os dois nós e não tem como lançar.
+                  sincronizarCampoPmap();
                   // fix (S5-T7 review, C1): motor CRU aqui, não `safeCalc()`.
                   // Desde o nº12, `safeCalc()` é o wrapper `sc()` — que dispara
                   // o Senna90 e CONSOME `textoRestauradoRef`. Este branch existe
@@ -1070,8 +1089,9 @@ function LaudoPageInner() {
     // nº23: campos restaurados acima via `setVal` (só `.value`/`.checked`,
     // sem `dispatchEvent`) deixam condicionais que dependem de `change` pra
     // se revelar — ex.: b40p restaurado com valor mas #field-psmap continua
-    // `display:none` porque quem o abre é `refluxoPulmonar()`, chamado só
-    // pelo `onChange` do próprio select. UM change borbulhado no container
+    // `display:none` porque quem o abre é `sincronizarCampoPmap()` (F3-T6;
+    // era `refluxoPulmonar()` do motor), chamado só pelo `onChange` do
+    // próprio select. UM change borbulhado no container
     // (tratado à parte no listener delegado — não marca dirty, não dispara
     // Senna90 de novo) resolve sem precisar mirar campo por campo.
     const sidebarEl = document.getElementById('laudo-sidebar');
@@ -1413,7 +1433,12 @@ function LaudoPageInner() {
     // pdfHtml (o `finally` do bloco libera o `emitindoRef`). Flag lida direto,
     // mesmo padrão do handler da ponte — o state `paramsOn` serve pro carimbo
     // de proveniência abaixo. Com OFF este guard nunca dispara.
-    if (senna93Params() && document.querySelectorAll('#params-tbody tr').length === 0) {
+    // F3-T6 (carona da re-revisão): "existe tabela" não bastava. `#params-tbody`
+    // cheio pode ser a tabela da rodada ANTERIOR, já invalidada por uma rodada
+    // que falhou (o médico mexeu numa medida e a ponte caiu) — assinar aquilo é
+    // carimbar números velhos como novos. `tabelaFrescaRef` mede o frescor.
+    if (senna93Params()
+      && (document.querySelectorAll('#params-tbody tr').length === 0 || !tabelaFrescaRef.current)) {
       toast('Tabela de medidas não carregou — não é possível emitir');
       return;
     }
@@ -1894,13 +1919,14 @@ function LaudoPageInner() {
     const setDiastModoFn = (window as unknown as Record<string, unknown>).setDiastModo as ((m: string) => void) | undefined;
     if (setDiastModoFn) setDiastModoFn('auto');
     // M1 (review S5-T4): mesma classe de bug do Wilkins/diastólica acima —
-    // zerar `b40p` não esconde `#field-psmap` (quem faz isso é `refluxoPulmonar()`,
-    // só chamado pelo onChange do próprio select). Sem isto o campo fica
-    // visível e vazio depois de "Limpar".
-    // try/catch: um throw aqui pularia a limpeza de identificação logo abaixo
-    // (o vazamento de paciente que este bloco existe pra impedir).
-    const refluxoPulmonarFn = (window as unknown as Record<string, unknown>).refluxoPulmonar as (() => void) | undefined;
-    try { if (refluxoPulmonarFn) refluxoPulmonarFn(); } catch { /* campo sempre montado; falha só estética */ }
+    // zerar `b40p` não esconde `#field-psmap` (quem faz isso é o handler do
+    // próprio select). Sem isto o campo fica visível e vazio depois de
+    // "Limpar".
+    // F3-T6: era `window.refluxoPulmonar` (motor legado). O try/catch existia
+    // porque um throw aqui pularia a limpeza de identificação logo abaixo (o
+    // vazamento de paciente que este bloco existe pra impedir) — a função
+    // local guarda os dois nós e não lança, então saiu junto.
+    sincronizarCampoPmap();
     if (trocaDeExame) {
       // Identificação do paciente ANTERIOR: `preencherExame()` só escreve
       // campo vazio (`if (el && !el.value && val)`), então sem zerar aqui o

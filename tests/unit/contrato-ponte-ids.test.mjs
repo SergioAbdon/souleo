@@ -327,14 +327,36 @@ describe('Contrato de SAÍDA (ADR item 4) — os #out-* dos DOIS motores chegam 
       'o `if (paramsOn)` que instala o wrapper precisa do `else` que restaura o `calc()` cru do `__calcOrig`');
   });
 
-  test('(5.7) emissão com a flag ON exige tabela pintada (revisão I2)', () => {
+  test('(5.7) emissão com a flag ON exige tabela pintada E FRESCA (revisão I2 + F3-T6)', () => {
     // Com ON a tabela É a ponte: se ela falhou, `#params-tbody` está vazio e
     // `gerarPdfHtml` raspa nada — sairia um laudo ASSINADO sem a tabela de
     // medidas. O guard tem que estar ANTES do `gerarPdfHtml` do handleEmitir.
+    //
+    // F3-T6 (re-revisão da T5, concern 3): contar `tr` só responde "existe
+    // tabela". Uma tabela pintada e DEPOIS invalidada por uma rodada que
+    // falhou continua no DOM com os números VELHOS e passava pelo guard —
+    // laudo assinado com medidas de antes da última edição. `tabelaFrescaRef`
+    // é a segunda metade da pergunta: "a última rodada deu certo?".
     const emitir = pageSrc.split('async function handleEmitir(')[1]?.split('const pdfHtml = gerarPdfHtml(')[0] || '';
     assert.ok(emitir, 'não achei o trecho de handleEmitir até o gerarPdfHtml');
-    assert.match(emitir, /senna93Params\(\) && document\.querySelectorAll\('#params-tbody tr'\)\.length === 0/,
-      'handleEmitir precisa abortar (antes de montar o pdfHtml) quando a flag está ON e a tabela não carregou');
+    assert.match(emitir, /senna93Params\(\)\s*\n?\s*&& \(document\.querySelectorAll\('#params-tbody tr'\)\.length === 0 \|\| !tabelaFrescaRef\.current\)/,
+      'handleEmitir precisa abortar (antes de montar o pdfHtml) quando a flag está ON e a tabela não carregou OU não está fresca');
+  });
+
+  test('(5.9) o frescor da tabela é marcado em TODOS os pontos (F3-T6)', () => {
+    // O ref só vale se for atualizado nos 6 pontos: nasce `false`, vira
+    // `false` nas 4 falhas (as mesmas do toast de (5.8)) e `true` depois de
+    // cada uma das 2 pinturas que completaram. Esquecer um `false` deixa o
+    // guard de (5.7) aprovar tabela velha; esquecer um `true` trava emissão
+    // com a tabela certa na tela.
+    assert.match(pageSrc, /const tabelaFrescaRef = useRef\(false\);/,
+      'o ref do frescor precisa nascer `false` (antes da 1a pintura não há tabela pra assinar)');
+    const efeito = (pageSrc.split('function motorInicializar()')[1]?.split('// nº21 (S5-T7)')[0] || '')
+      .replace(/\/\/.*$/gm, '');
+    const stale = (efeito.match(/tabelaFrescaRef\.current = false/g) || []).length;
+    const fresco = (efeito.match(/tabelaFrescaRef\.current = true/g) || []).length;
+    assert.equal(stale, 4, `${stale} marcações de tabela VELHA (esperado 4 — as mesmas 4 falhas de (5.8))`);
+    assert.equal(fresco, 2, `${fresco} marcações de tabela FRESCA (esperado 2 — as duas pinturas: debounce e restaurado)`);
   });
 
   test('(5.8) falha da ponte com a flag ON não é silenciosa (revisão I2) — os DOIS caminhos de pintura avisam', () => {
@@ -403,19 +425,42 @@ describe('Bloco de Wilkins — render (page) e colapso (merge) usam os MESMOS r�
 
 // ══════════════════════════════════════════════════════════════════
 // (9) window.refluxoPulmonar — o contrato que o ADR de 22/08 não listou
-// (achado do levantamento Senna93, consumidores-e-sombra §A4). page.tsx
-// chama direto uma função definida pelo motor legado. Se o motor sumir sem a
-// page parar de chamar (ou vice-versa), quebra sem exceção. A F3 migra o
-// consumidor; a F5 remove a definição — este teste força as pontas juntas.
+// (achado do levantamento Senna93, consumidores-e-sombra §A4). A page chamava
+// direto uma função definida pelo motor legado. Se o motor sumir sem a page
+// parar de chamar (ou vice-versa), quebra sem exceção.
+//
+// F3-T6: os 3 consumidores MIGRARAM pra `sincronizarCampoPmap()` (mesmo corpo,
+// em params-render.ts). A definição no motor ficou órfã e só some na F5 — daí
+// (9.1) continuar pinando 1. (9.2) e (9.3) agora travam o outro sentido:
+// ninguém pode VOLTAR a chamar o motor pra isso, nem pela porta da frente
+// (`window.refluxoPulmonar`) nem pela dos fundos (`motorCall('refluxoPulmonar')`
+// na SidebarLaudo, que o regex antigo não enxergava — o ponto cego que fez o
+// contrato dizer "2 call-sites" quando eram 3).
 // ══════════════════════════════════════════════════════════════════
-describe('window.refluxoPulmonar — motor DEFINE, page CHAMA, juntos ou nada', () => {
-  test('(9.1) o motor legado DEFINE refluxoPulmonar exatamente 1 vez', () => {
+describe('window.refluxoPulmonar — migrado na F3, definição morre na F5', () => {
+  test('(9.1) o motor legado DEFINE refluxoPulmonar exatamente 1 vez (até a F5)', () => {
     const defs = (motorSrc.match(/function refluxoPulmonar\(/g) ?? []).length;
     assert.equal(defs, 1, `definições no motor: ${defs}`);
   });
-  test('(9.2) page.tsx referencia window.refluxoPulmonar exatamente nos 2 call-sites conhecidos', () => {
+  test('(9.2) page.tsx NÃO chama mais window.refluxoPulmonar', () => {
     const refs = (pageSrc.match(/\.refluxoPulmonar as \(/g) ?? []).length;
-    assert.equal(refs, 2,
-      `call-sites na page: ${refs} (esperado 2 — mudou? atualize o ADR do contrato JUNTO)`);
+    assert.equal(refs, 0,
+      `call-sites na page: ${refs} (esperado 0 desde a F3-T6 — voltou? o campo PSMAP tem dono único)`);
+  });
+  test('(9.3) os 3 call-sites são a função local — inclusive o ponto cego da SidebarLaudo', () => {
+    // Comentários fora: o arquivo cita a chamada antiga em prosa (é o
+    // registro de por que ela saiu), e o teste vigia CÓDIGO.
+    assert.ok(!/motorCall\('refluxoPulmonar'\)/.test(sidebarSrc.replace(/\/\/.*$/gm, '')),
+      "o `onChange` do b40p voltou a chamar o motor por `motorCall('refluxoPulmonar')`");
+    assert.match(sidebarSrc, /import \{ sincronizarCampoPmap \} from '@\/lib\/params-render'/,
+      'a SidebarLaudo precisa importar a função local (client component, import direto)');
+    assert.match(sidebarSrc, /onChange=\{sincronizarCampoPmap\}/,
+      'o select b40p precisa revelar o #field-psmap pela função local');
+    // Na page: os 2 call-sites (branch sintético do listener delegado +
+    // `limparCampos`). Comentários fora da conta — o arquivo cita a função em
+    // prosa e o número precisa significar chamada de verdade.
+    const chamadas = (pageSrc.replace(/\/\/.*$/gm, '').match(/sincronizarCampoPmap\(\)/g) ?? []).length;
+    assert.equal(chamadas, 2,
+      `chamadas na page: ${chamadas} (esperado 2 — sinal sintético do #laudo-sidebar e limparCampos)`);
   });
 });

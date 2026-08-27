@@ -130,11 +130,13 @@ function linhasHtml(rows: string[][], oor: boolean[][]): string {
  * Campo condicional PSMAP — o que `refluxoPulmonar()` do motor legado faz
  * (motorv8mp4.js:741-744), com guard de nó ausente.
  *
- * SEM CONSUMIDOR AINDA: a T6 é que troca as 3 chamadas de
- * `window.refluxoPulmonar` (page.tsx ×2 + SidebarLaudo.tsx ×1) por esta.
- * Enquanto isso o motor legado continua dono do `#field-psmap` — com a
- * flag ON inclusive, porque o branch sintético e o `onChange` da sidebar
- * chamam `refluxoPulmonar` direto, não via `calc()`.
+ * F3-T6: é ela quem manda no `#field-psmap` agora — os 3 call-sites que
+ * chamavam `window.refluxoPulmonar` (page.tsx ×2 + o `onChange` do `b40p`
+ * em SidebarLaudo.tsx) apontam pra cá. A definição no motor legado fica
+ * órfã até a F5 removê-la (invariante 9 do contrato trava as duas pontas).
+ * DOM-pura e flag-independente: mesmo corpo do legado (`v('b40p')` → `''`
+ * quando o nó falta = mesmo `none` do `sel?.value`), então o campo se
+ * comporta igual com a flag ON e OFF.
  */
 export function sincronizarCampoPmap(): void {
   const sel = document.getElementById('b40p') as HTMLSelectElement | null;
