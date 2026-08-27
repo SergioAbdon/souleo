@@ -32,19 +32,27 @@ export type ParamsHtmlOpts = {
    *  false = tabela do "Copiar Formatado" (prontuário): sem
    *  !important/print-color-adjust, rodapé só com a linha de referência. */
   pdf: boolean;
+  /** F3-T5: realce fora-de-referência célula a célula (`montarRowsTabela`).
+   *  AUSENTE = HTML byte-idêntico ao de sempre (a raspagem por `textContent`
+   *  não carrega classe, então quem monta a partir do DOM não tem as flags —
+   *  ver `pintarTabelaSenna93`). Presente: `class="alert"` + cor inline (o
+   *  PDF/prontuário são HTML avulso, sem a folha de estilo da tela). */
+  oor?: boolean[][];
 };
 
-function escHtml(s: string): string {
+/** Exportado pra `params-render.ts` (a pintura da TELA escapa igual). */
+export function escHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 export function montarParamsHtml(rows: string[][], p1: string, opts: ParamsHtmlOpts): string {
   const paramsRows = rows
-    .map((cells) => {
+    .map((cells, i) => {
       let rowHTML = '<tr>';
       cells.forEach((cell, idx) => {
         const divider = idx === 4 ? `border-left:2px solid ${p1};` : '';
-        rowHTML += `<td style="border:0.5px solid #ccc;padding:2px 5px;${divider}">${escHtml(cell)}</td>`;
+        const alerta = opts.oor?.[i]?.[idx] === true;
+        rowHTML += `<td${alerta ? ' class="alert"' : ''} style="border:0.5px solid #ccc;padding:2px 5px;${divider}${alerta ? 'color:#B91C1C;font-weight:600;' : ''}">${escHtml(cell)}</td>`;
       });
       rowHTML += '</tr>';
       return rowHTML;

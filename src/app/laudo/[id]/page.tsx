@@ -44,6 +44,10 @@ import { checkboxParaMedida, medidaParaChecked } from '@/lib/checkbox-codec';
 import { TIPOS_LAUDO_PADRAO, modalidadeDe, type TipoLaudo } from '@/lib/tipos-laudo';
 import { montarPdfMoldura } from '@/lib/pdf-moldura';
 import { montarParamsHtml, paramsParaTexto, paramsParaDocx } from '@/lib/pdf-params';
+// F3-T5 (a virada do cabo): com `senna93Params()` ON, quem pinta #out-*,
+// #calc-* e #params-tbody é o Senna93 — os MESMOS nós, o mesmo formato de
+// leitura. OFF = motor legado, byte-idêntico ao de hoje.
+import { pintarTabelaSenna93, lerIdentTela } from '@/lib/params-render';
 import { rodapeFontes } from '@/senna90/classificacoes/fontes';
 // Tabela de critérios do escore de Wilkins — fonte única (ver renderWilkinsHtml).
 import { WK_DESC } from '@/senna90/achados/wilkins';
@@ -557,8 +561,21 @@ function LaudoPageInner() {
         // cru a cada tecla, matando o merge em B pelo resto da sessão). A
         // instância viva (B) já religa tudo sozinha no seu próprio efeito.
         if (!vivoRef.current) return;
+        // F3-T5: a flag é lida UMA vez por montagem do efeito (o `paramsOn`
+        // do render é state e este closure tem deps `[]` — veria `false`
+        // eterno). Trocar a flag exige RECARREGAR a página do laudo; é o
+        // mesmo contrato do kill-switch (primary-engine-flag.ts).
+        const paramsOn = senna93Params();
         try {
-          const calcFn = (window as unknown as Record<string, unknown>).calc as (() => void) | undefined;
+          // F3-T5: `calcFn` é sempre o `calc()` CRU do motor, guardado na
+          // primeira montagem — nunca o wrapper que a virada instala em
+          // `window.calc` mais abaixo. Sem esta guarda, trocar de exame
+          // (remount, sem recarregar) DEPOIS de virar o kill-switch faria
+          // `calcFn` apontar pro wrapper e `sc()` chamar a si mesmo até
+          // estourar a pilha. Mesmo padrão de `__setDiastModoOrig` (nº M2).
+          const wCalc = window as unknown as Record<string, unknown>;
+          if (!wCalc.__calcOrig) wCalc.__calcOrig = wCalc.calc;
+          const calcFn = wCalc.__calcOrig as (() => void) | undefined;
           if (calcFn) {
             // ── Migração Senna90 (16/05/2026) ──────────────────────────
             // Disparador com debounce (300ms): chama o Senna90 no servidor
@@ -582,6 +599,12 @@ function LaudoPageInner() {
               // fora depois do `await`. O guard pós-`await` continua
               // necessário (o unmount pode acontecer DURANTE o fetch).
               if (!vivoRef.current) return;
+              // F3-T5: fotografia da tela no MESMO instante em que a ponte lê
+              // o DOM (`calcularSenna90` lê na linha seguinte). A pintura
+              // acontece depois do round-trip; sem a foto, a coluna de medidas
+              // sairia com o que o médico acabou de digitar e a de derivados
+              // com o cálculo anterior por ~300ms. Com a flag OFF nem lê.
+              const identNaChamada = paramsOn ? lerIdentTela() : null;
               const r = await calcularSenna90();
               // fix (S5-T7 review, C2): `criarDebounce` não expõe `cancel()`
               // — trocar de exame não cancela um timer já armado por esta
@@ -639,17 +662,34 @@ function LaudoPageInner() {
                     ? prev : novos
                 ));
               }
+              // F3 Task 5 (A VIRADA): a metade dos NÚMEROS. Entra DEPOIS do
+              // merge por linha (S5, intocado acima) — pintura pura de DOM,
+              // não toca em texto, editor nem `prevGer`. Com a flag OFF esta
+              // linha nunca roda e quem pinta continua sendo o `calcFn()` do
+              // `sc()`. Nunca os dois: são mutuamente exclusivos pela flag
+              // (ADR do Contrato da Ponte, item 4).
+              if (paramsOn && identNaChamada) {
+                try { pintarTabelaSenna93(r, () => identNaChamada); } catch (e) { console.warn('params:', e); }
+              }
             });
 
             // Wrapper: motor antigo (params-tbody + calc-*, intocado) +
             // Senna90 (achados/conclusões → TipTap, só se flag ON) +
             // shadow (comparação invisível, se ativo).
             const sc = () => {
-              try { calcFn(); } catch (e) { console.warn('calc:', e); }
-              // nº13 (S5-T8): renderizarLaudo agora tem guards e não quebra
-              // antes de alertaIT() — mas religa aqui também pra cobrir os
-              // outros pontos de chamada de calcFn() que não passam por `sc`.
-              try { (window as unknown as { alertaIT?: () => void }).alertaIT?.(); } catch { /* não bloquear */ }
+              // F3-T5 (A VIRADA): com a flag ON o motor legado NÃO pinta
+              // mais — nem `calcFn()` (que escreveria por cima de #out-*/
+              // #calc-*/#params-tbody com o formato antigo), nem o override
+              // `alertaIT` (o aviso IT-sem-PSAP virou alerta estruturado do
+              // motor na T2). Com a flag OFF este bloco é o de sempre, linha
+              // por linha.
+              if (!paramsOn) {
+                try { calcFn(); } catch (e) { console.warn('calc:', e); }
+                // nº13 (S5-T8): renderizarLaudo agora tem guards e não quebra
+                // antes de alertaIT() — mas religa aqui também pra cobrir os
+                // outros pontos de chamada de calcFn() que não passam por `sc`.
+                try { (window as unknown as { alertaIT?: () => void }).alertaIT?.(); } catch { /* não bloquear */ }
+              }
               // Migração Senna90: flag ON → preenche o vazio dos achados.
               // Achado CRITICAL (revisor S5-T1): a 1a rodada pós-restauração
               // NÃO dispara o Senna90 — senão o setContent incondicional de
@@ -660,6 +700,18 @@ function LaudoPageInner() {
               if (senna90Primario()) {
                 if (textoRestauradoRef.current) {
                   textoRestauradoRef.current = false;
+                  // F3-T5: o guard pula a ponte pra não sobrescrever o texto
+                  // restaurado — mas com a flag ON a ponte é a ÚNICA fonte da
+                  // tabela. Sem esta pintura, abrir um exame salvo mostraria
+                  // #params-tbody vazio (e uma reemissão sairia com o PDF sem
+                  // a tabela de medidas). Chamada direta: só pinta, não passa
+                  // por `_onLaudoGerado` nem grava `prevGer` — o texto do
+                  // médico continua intocado, que é o motivo do guard existir.
+                  if (paramsOn) {
+                    calcularSenna90()
+                      .then((r) => { if (r && vivoRef.current) pintarTabelaSenna93(r, lerIdentTela); })
+                      .catch(() => { /* não bloquear */ });
+                  }
                 } else {
                   try { dispararSenna90(); } catch { /* não bloquear */ }
                 }
@@ -672,6 +724,23 @@ function LaudoPageInner() {
             // nº12: publica o wrapper pra `safeCalc()` (fora deste escopo)
             // preferir `sc` (calc + Senna90 + shadow) em vez do `calc()` cru.
             scRef.current = sc;
+
+            // F3-T5 (ponto cego do contrato): `window.calc` tem chamadores
+            // que o guard de `paramsOn` acima NÃO alcança — os 3 botões da
+            // diastólica em SidebarLaudo.tsx (`motorCalc()`, invisível pro
+            // regex do contrato) e o `toggleWilkins()` do próprio motor. Com
+            // a flag ON, cada um deles repintava #params-tbody/#calc-*/#out-*
+            // no formato ANTIGO por cima do Senna93 — e o botão "Manual" não
+            // dispara evento nenhum, então a tabela FICAVA legada até o
+            // próximo input. Um laudo emitido nesse estado sairia com números
+            // do motor legado carimbados `motorNumeros: 'senna93'`. Com a
+            // flag ON, todo `calc()` vira `sc()` (que não chama o legado e
+            // dispara a ponte). Com OFF, `window.calc` continua o motor cru.
+            if (paramsOn) {
+              (window as unknown as Record<string, unknown>).calc = () => {
+                try { scRef.current?.(); } catch (e) { console.warn('calc:', e); }
+              };
+            }
 
             // FIX 12/05/2026: Event delegation no container, NÃO em cada input.
             //
@@ -714,7 +783,15 @@ function LaudoPageInner() {
                   // Passar por `sc()` aqui consumia o guard ANTES da hora,
                   // dobrando o Senna90 do fluxo de carga (T2 duplicava o laudo
                   // ~1s após abrir um exame com `laudoHtml` salvo).
-                  try { calcFn(); } catch (e) { console.warn('calc:', e); }
+                  //
+                  // F3-T5: com a flag ON o motor legado não pinta mais nada —
+                  // sobra o `refluxoPulmonar()` acima (revelar o PSMAP), que é
+                  // o que este branch realmente precisava fazer. A tabela vem
+                  // do `sc()` que os dois chamadores de `preencherExame()`
+                  // rodam logo em seguida.
+                  if (!paramsOn) {
+                    try { calcFn(); } catch (e) { console.warn('calc:', e); }
+                  }
                   return;
                 }
                 const tag = t.tagName;
@@ -755,7 +832,17 @@ function LaudoPageInner() {
             // antes do exame chegar) sem disparar Senna90 nenhum daqui — logo
             // sem gravar em `prevGer`. `preencherExame()` foi só apagado
             // (no-op comprovado, ver acima).
-            try { calcFn(); } catch (e) { console.warn('calc:', e); }
+            //
+            // F3-T5: com a flag ON nada roda aqui. O único efeito que este
+            // `calcFn()` tinha era pintar a tabela VAZIA (só travessões) antes
+            // do exame chegar — e o equivalente ON seria disparar a ponte
+            // contra a sidebar em branco, exatamente a "geração fantasma" que
+            // o fix P1 acima acabou de matar (gravaria `prevGer` e duplicaria
+            // as linhas editadas pelo médico). A tabela é pintada ~500ms
+            // depois, pelo `sc()`/`safeCalc()` que segue o `preencherExame()`.
+            if (!paramsOn) {
+              try { calcFn(); } catch (e) { console.warn('calc:', e); }
+            }
           }
 
           // Override alertaIT — usar style.display em vez de classList.toggle
@@ -1310,6 +1397,11 @@ function LaudoPageInner() {
           dadosFinais,
           medicoUid: user.uid,
           pdfHtml,
+          // F3-T5 (proveniência): QUEM produziu os números deste PDF
+          // assinado. Carimbo aditivo — a F4 (sombra) e qualquer auditoria
+          // clínica precisam saber se a tabela veio do motor legado ou do
+          // Senna93 sem ter que adivinhar pela data do laudo.
+          motorNumeros: paramsOn ? 'senna93' : 'legado',
         }),
       });
       resultado = await res.json();
@@ -1652,13 +1744,15 @@ function LaudoPageInner() {
   }
 
   async function handleBaixarWord() {
-    // F3-T3: filtro/forma vêm de pdf-params.ts. A identificação AINDA sai dos
-    // inputs crus (dtexame em ISO) — a troca pelos #out-* é a T5, junto do cabo.
+    // F3-T3: filtro/forma vêm de pdf-params.ts.
     const params = paramsParaDocx(lerParamsDoDOM());
 
-    const outNome = (document.getElementById('nome') as HTMLInputElement)?.value || 'PACIENTE';
-    const outConv = (document.getElementById('convenio') as HTMLInputElement)?.value || '';
-    const outDtex = (document.getElementById('dtexame') as HTMLInputElement)?.value || '';
+    // F3-T5: identificação dos #out-*, igual ao PDF assinado (era input cru,
+    // com a data do exame em ISO). Consequências declaradas na allowlist:
+    // dtexame sai em pt-BR e campo vazio sai como '—' (o que o PDF já fazia).
+    const outNome = document.getElementById('out-nome')?.textContent || 'PACIENTE';
+    const outConv = document.getElementById('out-convenio')?.textContent || '';
+    const outDtex = document.getElementById('out-dtexame')?.textContent || '';
 
     await gerarDocx({
       clinicaNome,

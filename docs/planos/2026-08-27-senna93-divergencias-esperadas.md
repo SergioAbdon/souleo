@@ -20,3 +20,27 @@ divergência que case com estas linhas como esperada; qualquer outra é achado.
 | F3-T3 | Rodapé/fontes | Rodapé das fontes unificado em `rodapeFontes()` (B20) nos 4 lugares que tinham 3 redações — PDF, Copiar Formatado, Copiar Texto (era "ASE/EACVI 2015; ASE 2025.") e tela do SheetA4 (era a versão longa WASE/ACC-AHA). Todos passam a imprimir a mesma linha por domínio. Vale com a flag OFF (V13) | §2.7 |
 | F3-T3 | Tabela (visual) | Realce vermelho do valor fora de referência passa a APARECER (`#params-tbody td.alert`): o motor legado sempre emitiu `class="alert"` na coluna esquerda, mas CSS nenhum existia — correção B15 parcial, visível JÁ com a flag OFF (o PDF só ganha o realce na T4/T5, via flags OOR) | B15 |
 | F3-T3fix | Rodapé | 5ª saída (arquivo Word/exportDocx) também usa rodapeFontes() — redação antiga extinta em TODAS as saídas | I1 rev T3 |
+
+## A VIRADA DO CABO (F3-T5) — o que muda quando `senna93Params()` está ON
+
+Com a flag **OFF** nada abaixo acontece: quem pinta `#out-*`, `#calc-*` e
+`#params-tbody` continua sendo o motor legado, linha por linha igual a hoje.
+Com a flag **ON**, quem pinta é o Senna93 (`pintarTabelaSenna93`) — mesmos nós,
+mesma raspagem, formato novo. Célula a célula:
+
+| Task | Domínio | O que mudou | Spec |
+|---|---|---|---|
+| F3-T5 | Tabela · separador | Decimal com **vírgula** e **truncamento** no lugar de ponto + `toFixed` (arredondava). Ex.: FE Teichholz `70.4%` → `70,3%` | B25 |
+| F3-T5 | Tabela · casas | Medidas em mm passam de 1 casa para **0** (`34.0` → `34`). Peso/Altura continuam com 1 casa, agora truncada (`80.45` → `80,4`, era `80.5`) | B25 |
+| F3-T5 | Tabela · FE/FS | Como a exibição trunca em vez de arredondar, FE e FS podem sair **1 ponto percentual abaixo** do valor antigo na mesma medida | B25 |
+| F3-T5 | Tabela · valores | Deltas de VALOR herdados da F1/F2 aparecem na tabela: Massa do VE `+0,6 g` (B24, ex. `181.3` → `181,9`), ASC pela constante DuBois 71,84 (era 71,74 → ex. `1,91`), FE/imVE calculados sobre os truncados | §2.1/§2.3 |
+| F3-T5 | Tabela · linhas | 10 → **12 linhas**: Aorta Ascendente (b28) e Arco Aórtico (b29) passam a ter linha própria | B14 |
+| F3-T5 | Tabela · realce | O vermelho passa a acender também na **metade direita** (derivados: IMC, VDF, VSF, FE, FS, massa, imVE, ER) — no legado só a coluna esquerda acendia | B13 |
+| F3-T5 | Tabela · referências | VRs corrigidas na V13 aparecem na coluna Referência: FE `≥ 52%` (era `>51%`), Massa `≤ 200 g` (era `<201 g`), Índice de Massa `≤ 115 g/m²` (era `<103 g/m²`) | V13 |
+| F3-T5 | Tabela · sexo vazio | Sem sexo, **TODAS** as VRs somem — inclusive as 3 que o legado imprimia incondicionalmente: IMC `<25 kg/m²`, Fração de Encurtamento `30–40%` e Espessura Relativa `<0,43` | C8 |
+| F3-T5 | Caixas da sidebar | `calc-*` seguem a mesma vírgula/truncamento (FE/FS mantêm 1 casa + `%` na caixa, contra 0 casas na tabela — divergência do legado preservada) | B25 |
+| F3-T5 | Caixa Wilkins | `calc-wilkins` **limpa** quando o escore sai de cena (toggle desligado ou componente 0 → score null). O legado só escrevia, nunca apagava: o "N pts" ficava fantasma na tela | F1-T9 |
+| F3-T5 | Identificação | Idade dos `#out-*` passa a vir do cálculo do motor (comparação por string `AAAA-MM-DD`, imune a fuso) em vez de `new Date()` local; plural "N anos"/"1 ano" e datas em pt-BR seguem verbatim. Nome/convênio/solicitante saem **aparados** (trim) | §2.7 |
+| F3-T5 | Word (.docx) | Identificação passa a vir dos `#out-*`, como o PDF assinado: data do exame em **pt-BR** (era ISO `2026-08-27`) e campo vazio sai como `—` (era string vazia). Vale com a flag OFF | §2.7 |
+| F3-T5 | Alertas | Com a flag ON o `#alerta-psap` legado deixa de ser atualizado (o `alertaIT` não roda mais): quem avisa é a lista estruturada do motor, no topo da sidebar (F3-T2) | F3-T2 |
+| F3-T5 | Proveniência | Exame emitido ganha o campo `motorNumeros` (`'senna93'` ou `'legado'`) ao lado do `pdfUrl` — aditivo, nenhum consumidor existente muda | §2.7 |

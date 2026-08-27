@@ -27,6 +27,10 @@ const motorSrc = fs.readFileSync(path.join(root, 'public', 'motor', 'motorv8mp4.
 const molduraSrc = fs.readFileSync(path.join(root, 'src', 'components', 'laudo', 'MolduraA4.tsx'), 'utf8');
 const sheetSrc = fs.readFileSync(path.join(root, 'src', 'components', 'laudo', 'SheetA4.tsx'), 'utf8');
 const mergeSrc = fs.readFileSync(path.join(root, 'src', 'lib', 'laudo-merge.ts'), 'utf8');
+// F3-T5 (A VIRADA): o SEGUNDO escritor dos mesmos nós. Com `senna93Params()`
+// ON quem pinta #out-*/#params-tbody é este arquivo, não o motor legado —
+// mutuamente exclusivos pela flag (ADR do contrato, item 4).
+const paramsRenderSrc = fs.readFileSync(path.join(root, 'src', 'lib', 'params-render.ts'), 'utf8');
 
 // ── Extração ──────────────────────────────────────────────────────────────
 
@@ -219,12 +223,16 @@ describe('Contrato da Ponte tela↔motor (D7) — os 3 arquivos concordam nos id
 // por render React, o PDF sai com "— / — / —" sem erro nenhum — este teste é
 // o alarme.
 // ══════════════════════════════════════════════════════════════════
-describe('Contrato de SAÍDA (ADR item 4) — os #out-* do motor chegam ao PDF', () => {
+describe('Contrato de SAÍDA (ADR item 4) — os #out-* dos DOIS motores chegam ao PDF', () => {
   /** ids que o motor legado escreve: getElementById('out-x').textContent= */
   const escritosPeloMotor = new Set(
     [...motorSrc.matchAll(/getElementById\('(out-[\w-]+)'\)\.textContent/g)].map(m => m[1]),
   );
-  /** ids que a page raspa pra montar o PDF assinado. */
+  /** F3-T5: ids que o Senna93 escreve (helper `txt(id, valor)` de params-render). */
+  const escritosPeloSenna93 = new Set(
+    [...paramsRenderSrc.matchAll(/txt\('(out-[\w-]+)'/g)].map(m => m[1]),
+  );
+  /** ids que a page raspa pra montar o PDF assinado (e o Word, desde a T5). */
   const raspadosPeloPdf = new Set(
     [...pageSrc.matchAll(/getElementById\('(out-[\w-]+)'\)/g)].map(m => m[1]),
   );
@@ -233,28 +241,73 @@ describe('Contrato de SAÍDA (ADR item 4) — os #out-* do motor chegam ao PDF',
     [...sheetSrc.matchAll(/id: '(out-[\w-]+)'/g)].map(m => m[1]),
   );
 
-  test('(5.0) piso de sanidade — as 3 extrações precisam achar os 6 campos de identificação', () => {
+  test('(5.0) piso de sanidade — as 4 extrações precisam achar os 6 campos de identificação', () => {
     assert.equal(escritosPeloMotor.size, 6, `motor escreve ${escritosPeloMotor.size} #out-* (esperado 6) — regex quebrou ou o motor mudou`);
+    assert.equal(escritosPeloSenna93.size, 6, `params-render.ts escreve ${escritosPeloSenna93.size} #out-* (esperado 6) — com a flag ON, o que faltar sai "—" no PDF assinado`);
     assert.equal(raspadosPeloPdf.size, 6, `page.tsx raspa ${raspadosPeloPdf.size} #out-* (esperado 6)`);
     assert.equal(renderizadosNaTela.size, 6, `SheetA4 declara ${renderizadosNaTela.size} #out-* (esperado 6)`);
   });
 
-  test('(5.1) tudo que o motor ESCREVE existe como nó na tela (SheetA4 → MolduraA4)', () => {
-    const semNo = [...escritosPeloMotor].filter(id => !renderizadosNaTela.has(id));
-    assert.deepEqual(semNo, [], `motor escreve em id(s) que a tela não renderiza: ${semNo.join(', ')}`);
+  test('(5.0b) os dois escritores escrevem EXATAMENTE o mesmo conjunto', () => {
+    assert.deepEqual(
+      [...escritosPeloSenna93].sort(), [...escritosPeloMotor].sort(),
+      'a virada do cabo (F3-T5) troca quem pinta, não O QUE é pintado — ' +
+      'a flag decide entre dois escritores que precisam cobrir os mesmos nós',
+    );
+  });
+
+  test('(5.1) tudo que os DOIS motores ESCREVEM existe como nó na tela (SheetA4 → MolduraA4)', () => {
+    const semNo = [...escritosPeloMotor, ...escritosPeloSenna93].filter(id => !renderizadosNaTela.has(id));
+    assert.deepEqual(semNo, [], `escrita em id(s) que a tela não renderiza: ${semNo.join(', ')}`);
     // MolduraA4 é quem materializa o `id` — sem isto os ids do SheetA4 viram decoração.
     assert.match(molduraSrc, /id=\{c\.id\}/, 'MolduraA4 precisa aplicar o `id` do campo no <span>');
   });
 
-  test('(5.2) tudo que o PDF RASPA é escrito pelo motor (senão imprime "—" em silêncio)', () => {
-    const orfaos = [...raspadosPeloPdf].filter(id => !escritosPeloMotor.has(id));
-    assert.deepEqual(orfaos, [], `gerarPdfHtml raspa id(s) que ninguém escreve: ${orfaos.join(', ')}`);
+  test('(5.2) tudo que o PDF RASPA é escrito por ALGUM dos dois (senão imprime "—" em silêncio)', () => {
+    const orfaos = [...raspadosPeloPdf].filter(id => !escritosPeloMotor.has(id) && !escritosPeloSenna93.has(id));
+    assert.deepEqual(orfaos, [], `a page raspa id(s) que ninguém escreve: ${orfaos.join(', ')}`);
   });
 
-  test('(5.3) #params-tbody: o motor escreve, a tela tem o nó, a page raspa', () => {
+  test('(5.3) #params-tbody: os dois escrevem, a tela tem o nó, a page raspa', () => {
     assert.match(motorSrc, /getElementById\('params-tbody'\)\.innerHTML/);
+    assert.match(paramsRenderSrc, /getElementById\('params-tbody'\)/);
+    assert.match(paramsRenderSrc, /tb\.innerHTML = /);
     assert.match(sheetSrc, /id="params-tbody"/);
     assert.match(pageSrc, /#params-tbody tr/);
+  });
+
+  test('(5.4) os dois escritores são mutuamente exclusivos pela flag (nunca pintam juntos)', () => {
+    // Do lado legado: TODA chamada de `calcFn()` dentro do efeito do motor
+    // está atrás de `if (!paramsOn)`. Do lado novo: a pintura do Senna93 só
+    // acontece sob `paramsOn`. Se um dos dois vazar do guard, a tabela é
+    // pintada duas vezes por rodada e o último a escrever vence — divergência
+    // clínica silenciosa entre a tela e o PDF.
+    const efeito = pageSrc.split('function motorInicializar()')[1]?.split('// nº21 (S5-T7)')[0] || '';
+    assert.ok(efeito, 'não achei o corpo de motorInicializar — a extração precisa ser refeita');
+    assert.match(efeito, /const paramsOn = senna93Params\(\);/, '`paramsOn` precisa ser lido UMA vez por montagem do efeito');
+    const chamadasCalc = (efeito.match(/try \{ calcFn\(\); \}/g) || []).length;
+    const guardas = (efeito.match(/if \(!paramsOn\) \{/g) || []).length;
+    assert.equal(chamadasCalc, 3, `o efeito tem ${chamadasCalc} chamadas de calcFn() (esperado 3: sc, branch sintético, init)`);
+    assert.equal(guardas, 3, `${guardas} guardas \`if (!paramsOn)\` para 3 chamadas de calcFn() — alguma pintura legada escapou da flag`);
+    for (const m of efeito.matchAll(/pintarTabelaSenna93\(/g)) {
+      const antes = efeito.slice(Math.max(0, m.index - 400), m.index);
+      assert.match(antes, /if \(paramsOn\b/, 'toda pintura do Senna93 precisa estar sob `if (paramsOn…)`');
+    }
+  });
+
+  test('(5.5) `window.calc` — o ponto cego fora do efeito continua coberto', () => {
+    // SidebarLaudo chama `window.calc` DIRETO (motorCalc, 3 botões da
+    // diastólica): fora do alcance do guard `paramsOn`, e o regex do
+    // contrato nunca viu essas chamadas. Com a flag ON, a page reaponta
+    // `window.calc` pro `sc()` — senão o motor legado repinta a tabela por
+    // cima da do Senna93 e o PDF sai com números do motor errado.
+    const efeito = pageSrc.split('function motorInicializar()')[1]?.split('// nº21 (S5-T7)')[0] || '';
+    assert.match(sidebarSrc, /function motorCalc\(\) \{ motorCall\('calc'\)/,
+      'se `motorCalc` sumiu da SidebarLaudo (T6?), reveja o wrap de `window.calc` na page — pode ter perdido o motivo');
+    assert.match(efeito, /__calcOrig/,
+      '`calcFn` precisa vir do `calc()` CRU guardado, nunca do wrapper (senão sc() chama a si mesmo)');
+    assert.match(efeito, /\.calc = \(\) => \{/,
+      'com a flag ON, `window.calc` precisa cair no `sc()`');
   });
 });
 

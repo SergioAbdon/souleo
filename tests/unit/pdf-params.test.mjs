@@ -170,6 +170,35 @@ describe('paramsParaDocx — mesmo filtro/forma do handleBaixarWord legado (F3-T
   });
 });
 
+describe('montarParamsHtml — flags OOR opcionais (F3-T5)', () => {
+  test('SEM `oor` o HTML é byte-idêntico ao de antes do parâmetro existir', () => {
+    // O pin de paridade dos templates legados (acima) já cobre o caso pdf=true/
+    // false; aqui trava-se que passar `oor: undefined` não muda um byte em
+    // relação a não passar nada — quem monta a partir da raspagem do DOM
+    // (gerarPdfHtml/handleCopiarFormatado) continua exatamente onde estava.
+    for (const pdf of [true, false]) {
+      assert.equal(montarParamsHtml(ROWS, P1, { pdf }), montarParamsHtml(ROWS, P1, { pdf, oor: undefined }));
+      assert.equal(montarParamsHtml(ROWS, P1, { pdf }), montarParamsHtml(ROWS, P1, { pdf, oor: [] }));
+    }
+  });
+
+  test('célula marcada ganha class="alert" + cor inline; as outras não mudam', () => {
+    const oor = ROWS.map(() => new Array(8).fill(false));
+    oor[0][5] = true; // IMC 24.1 (hipotético fora de referência)
+    const html = montarParamsHtml(ROWS, P1, { pdf: true, oor });
+    assert.equal((html.match(/ class="alert"/g) || []).length, 1);
+    assert.equal((html.match(/color:#B91C1C;font-weight:600;/g) || []).length, 1);
+    assert.match(html, /<td class="alert" style="[^"]*color:#B91C1C;font-weight:600;">24\.1<\/td>/);
+    // Sem a flag, a MESMA célula sai limpa.
+    assert.match(montarParamsHtml(ROWS, P1, { pdf: true }), /<td style="[^"]*">24\.1<\/td>/);
+  });
+
+  test('matriz curta/irregular não quebra (linha sem entrada = nada aceso)', () => {
+    const html = montarParamsHtml(ROWS, P1, { pdf: false, oor: [[false, true]] });
+    assert.equal((html.match(/ class="alert"/g) || []).length, 1);
+  });
+});
+
 describe('montarParamsHtml — quinta coluna (idx 4) leva o divisor', () => {
   test('divider aparece só na quinta célula de cada linha', () => {
     const html = montarParamsHtml(ROWS, P1, { pdf: false });

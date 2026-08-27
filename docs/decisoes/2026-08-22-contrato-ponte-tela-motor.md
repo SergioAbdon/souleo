@@ -78,6 +78,45 @@ pode silenciosamente parar de ler um campo que a tela ainda mostra, ou vice-vers
    moveu essas âncoras (`SheetA4` → `MolduraA4`) e nenhum teste piscou — daí
    a invariante (5).
 
+   ### Atualização F3-T5 (27/08/2026) — DOIS escritores, exclusivos por flag
+
+   A virada do cabo do Senna93 acrescentou um **segundo escritor** dos mesmos
+   nós: `src/lib/params-render.ts` (`pintarTabelaSenna93`). Quem pinta
+   `#out-*`, `#calc-*` e `#params-tbody` passa a ser decidido pelo kill-switch
+   `senna93Params()`:
+
+   | flag | quem pinta | como |
+   |---|---|---|
+   | OFF (produção de hoje) | motor legado | `sc()` → `calcFn()` → `renderizarLaudo()` |
+   | ON | Senna93 | ponte (`/api/laudo/calcular`) → `pintarTabelaSenna93(r)` |
+
+   **Nunca os dois.** `paramsOn` é lido UMA vez por montagem do efeito do motor
+   (o `paramsOn` do render é state e o efeito tem deps `[]`); trocar a flag
+   **exige recarregar** a página do laudo. Com ON, as três chamadas de
+   `calcFn()` do efeito (`sc`, branch sintético, init) ficam atrás de
+   `if (!paramsOn)`, e o override de `alertaIT` também não roda (os alertas
+   viraram lista estruturada do motor na F3-T2).
+
+   Ponto cego coberto junto: `SidebarLaudo.tsx` chama `window.calc` DIRETO
+   (`motorCalc()`, 3 botões da diastólica) — fora do alcance daquele guard e
+   invisível pro regex do contrato. Com a flag ON a page reaponta
+   `window.calc` para o `sc()`, e `calcFn` passa a vir de `window.__calcOrig`
+   (o `calc()` cru guardado na 1ª montagem) pra que um remount depois de
+   virar o kill-switch não faça `sc()` chamar a si mesmo.
+
+   Este arranjo de dois escritores é **temporário até a F5** (quando o motor
+   legado sai de cena e sobra um só). Enquanto durar, a invariante (5) exige
+   que os dois escrevam EXATAMENTE o mesmo conjunto de `#out-*` (5.0b), que
+   toda pintura do Senna93 esteja sob `if (paramsOn)` e toda chamada legada
+   sob `if (!paramsOn)` (5.4), e que o wrap de `window.calc` continue no ar
+   enquanto `motorCalc` existir na sidebar (5.5).
+
+   Proveniência (mesma task): `handleEmitir` manda
+   `motorNumeros: 'senna93' | 'legado'` no corpo de `/api/emitir`, e a rota
+   grava esse campo no exame ao lado do `pdfUrl` (validado contra a lista de
+   duas palavras; qualquer outra coisa é ignorada). É o carimbo que diz de
+   qual motor saíram os números daquele PDF assinado.
+
 5. **Contrato inverso** — o motor legado DEPENDE de coisas que só o React
    fornece: `calcIdade`/`escH` chamadas globais, o modal do banco de frases
    com `onclick` inline apontando pra funções globais (`_onInserirFrase`).
@@ -153,6 +192,10 @@ o que a Seção 6 vai abrir:
    (`SheetA4` → `MolduraA4`) e todo `#out-*` que `gerarPdfHtml()` raspa é
    escrito pelo motor — mais `#params-tbody` nas 3 pontas. O motor é lido
    **read-only** pelo teste (o arquivo continua intocável).
+   **F3-T5:** o mesmo vale pro segundo escritor (`params-render.ts`), que
+   precisa cobrir o MESMO conjunto de 6 ids (5.0b); a raspagem do PDF passa a
+   aceitar qualquer um dos dois escritores (5.2); e (5.4)/(5.5) travam a
+   exclusividade por flag e o wrap de `window.calc`.
 6. Identificação não mora em `medidas`: `coletarMedidas` não persiste
    `nome`/`dtnasc`/`dtexame`/`convenio`/`solicitante`/`sexo`, e a restauração
    ignora as cópias que exames antigos ainda têm (`SO_DO_TOPO`).
