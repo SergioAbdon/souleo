@@ -50,7 +50,9 @@ export const casosAlertas: CasoTeste[] = [
       m.camaras.raizAo = 34;
       return m;
     })(),
-    esperado: { alertas: ['AORTA_SEM_IDADE'] },
+    // M1 da revisão F2-T4: raiz medida sem idade E sem sexo = 2 faltas
+    // independentes — o pin declara os DOIS (antes só passava por whitelist).
+    esperado: { alertas: ['AORTA_SEM_IDADE', 'SEXO_AUSENTE'] },
   },
   {
     id: 'AL06',
