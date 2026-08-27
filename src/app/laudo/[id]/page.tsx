@@ -1874,6 +1874,11 @@ function LaudoPageInner() {
    * @param trocaDeExame também limpa a identificação — ver dentro.
    */
   function limparCampos(trocaDeExame = false) {
+    // I1 da revisão F3-T6: limpar campos NÃO limpa a tabela pintada nem dispara
+    // rodada — com params ON, a tabela do exame ANTERIOR ficaria emitível na
+    // janela do round-trip (troca de exame) ou pra sempre (botão Limpar).
+    // Marcar velha aqui faz o guard de emissão segurar até a próxima pintura.
+    tabelaFrescaRef.current = false;
     const camposNum = [
       'peso','altura',
       'b7','b8','b9','b10','b11','b12','b13','b28','b29',

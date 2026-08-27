@@ -463,4 +463,20 @@ describe('window.refluxoPulmonar — migrado na F3, definição morre na F5', ()
     assert.equal(chamadas, 2,
       `chamadas na page: ${chamadas} (esperado 2 — sinal sintético do #laudo-sidebar e limparCampos)`);
   });
+  test('(9.2b) endurecimento M1 da revisão T6: NENHUMA forma de refluxoPulmonar sobrevive no código da page/Sidebar', () => {
+    // (9.2)/(9.3) são regex de formas específicas — `(window as any).refluxoPulmonar()`
+    // ou `window.refluxoPulmonar?.()` escapariam. Aqui: zero ocorrências da PALAVRA
+    // no código (comentários removidos) dos dois arquivos.
+    for (const [nome, src] of [['page.tsx', pageSrc], ['SidebarLaudo.tsx', sidebarSrc]]) {
+      const semComentario = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+      assert.ok(!/refluxoPulmonar/.test(semComentario.replace(/refluxoPulmonar: /g, '')),
+        `${nome} voltou a citar refluxoPulmonar em código (a única forma legal é o campo de tipo 'refluxoPulmonar: ')`);
+    }
+  });
+  test('(9.4) prova de orfandade: o motor DEFINE mas NÃO CHAMA refluxoPulmonar (pré-condição da deleção na F5)', () => {
+    const semDef = motorSrc.replace(/function refluxoPulmonar\(/, '');
+    const chamadasMotor = (semDef.match(/refluxoPulmonar\(/g) ?? []).length;
+    assert.equal(chamadasMotor, 0,
+      `o motor passou a chamar refluxoPulmonar (${chamadasMotor}×) — a F5 não pode mais deletar às cegas`);
+  });
 });
