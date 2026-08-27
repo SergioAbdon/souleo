@@ -253,6 +253,34 @@ describe('F1-T7 estenoses — mitral área-primária · aórtica pior-grau · es
   });
 });
 
+// ══════════════════════════════════════════════════════════════════
+// F1-T8 — paredes/valvas (spec §2.5/B4/B9/B21). Comportamento NOVO:
+// · DD imprime "discinesia" (não mais "hipocinesia").
+// · Morfologia AV decide pela MORFOLOGIA tricúspide (b34t), não pelo
+//   refluxo (b36) — b36='M' sozinho não basta mais pra trocar a frase.
+// ══════════════════════════════════════════════════════════════════
+describe('F1-T8 paredes/valvas — DD=discinesia · morfologia AV por b34t (B4/B9/B21)', () => {
+  test('b34 vazio + b34t vazio + b36 "M": "Válvulas atrioventriculares..." AGORA presente (antes o refluxo sozinho trocava pra "Válvula mitral")', () => {
+    const m = medidasVazias();
+    m.valvas.refluxoTricuspide = 'M';
+    const r = calcular(m);
+    temQueIncluir(r.achados, 'Válvulas atrioventriculares com a morfologia preservada.');
+    naoPodeIncluir(r.achados, 'Válvula mitral com morfologia preservada.');
+  });
+  test('b34 vazio + b34t "EL": "Válvula mitral com morfologia preservada."', () => {
+    const m = medidasVazias();
+    m.valvas.morfTricuspide = 'EL';
+    const r = calcular(m);
+    temQueIncluir(r.achados, 'Válvula mitral com morfologia preservada.');
+  });
+  test('demaisParedes DD: "Alteração contrátil por discinesia das demais paredes" (antes imprimia hipocinesia)', () => {
+    const m = medidasVazias();
+    m.segmentar.demaisParedes = 'DD';
+    const r = calcular(m);
+    temQueIncluir(r.achados, 'Alteração contrátil por discinesia das demais paredes');
+  });
+});
+
 describe('BASELINE RAVI (JASE 2025 unificado) — j5: <30 sil · ≤36 leve · ≤41 mod · >41 imp', () => {
   const comRavi = (v) => {
     const m = medidasVazias();

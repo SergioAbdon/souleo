@@ -12,8 +12,8 @@
 import type { GrauRefluxo, MorfologiaValvar, GrauEstenose } from '../types';
 
 // ── J24 — Mitral morfologia ─────────────────────────────────────
-export function jMitralMorfologia(b34: MorfologiaValvar, b36: GrauRefluxo): string {
-  if (!b34) return !b36
+export function jMitralMorfologia(b34: MorfologiaValvar, b34t: MorfologiaValvar): string {
+  if (!b34) return !b34t
     ? 'Válvulas atrioventriculares com a morfologia preservada.'
     : 'Válvula mitral com morfologia preservada.';
 

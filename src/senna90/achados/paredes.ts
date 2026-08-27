@@ -59,12 +59,12 @@ export function jParedeAnterior(b56: CodigoSegmento): string {
 
 /** j15 — Parede septal anterior (b57) */
 export function jParedeSeptalAnterior(b57: CodigoSegmento): string {
-  return wallText(b57, 'parede septalanterior');
+  return wallText(b57, 'parede septal anterior');
 }
 
 /** j16 — Parede septal inferior (b58) */
 export function jParedeSeptalInferior(b58: CodigoSegmento): string {
-  return wallText(b58, 'parede septalinferior');
+  return wallText(b58, 'parede septal inferior');
 }
 
 /** j17 — Parede inferior (b59) — CORRIGIDO conforme AHA */
@@ -86,10 +86,10 @@ export function jParedeLateral(b61: CodigoSegmento): string {
 export function jDemaisParedes(b62: CodigoDemaisParedes): string {
   const m: Record<string, string> = {
     NL: 'Contratilidade preservada nas demais paredes',
-    HD: 'Alteração contratil por hipocinesia difusa do ventrículo esquerdo',
-    HR: 'Alteração contratil por hipocinesia das demais paredes',
-    AD: 'Alteração contratil por acinesia das demais paredes',
-    DD: 'Alteração contratil por hipocinesia das demais paredes',
+    HD: 'Alteração contrátil por hipocinesia difusa do ventrículo esquerdo',
+    HR: 'Alteração contrátil por hipocinesia das demais paredes',
+    AD: 'Alteração contrátil por acinesia das demais paredes',
+    DD: 'Alteração contrátil por discinesia das demais paredes',
   };
   return b62 ? m[b62] || '' : '';
 }

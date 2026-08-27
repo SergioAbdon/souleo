@@ -178,7 +178,7 @@ export function gerarAchados(m: MedidasEcoTT, calc: CalculosDerivados): string[]
   const L = (...xs: (string | string[])[]): string[] =>
     xs.flat().filter((x): x is string => typeof x === 'string' && !!x);
 
-  const mitMorf = jMitralMorfologia(d.b34, d.b36);
+  const mitMorf = jMitralMorfologia(d.b34, d.b34t);
   const tricMorf = jTricMorfologia(d.b34t);
   const fluxoAV = jRefluxoMitral(d.b35, d.b36, d.b45, d.b46, d.b47, d.b34t, d.estenTricGrau);
   const aoMorf = jAorticaMorfologia(d.b39);
