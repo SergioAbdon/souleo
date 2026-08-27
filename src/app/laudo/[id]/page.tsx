@@ -55,6 +55,13 @@ import { WK_DESC } from '@/senna90/achados/wilkins';
 // (ARQ-I6) — o laudo-texto formatava os MESMOS campos com uma segunda cópia.
 import { fmtTel, fmtCep } from '@/lib/paciente-fmt';
 
+// F3-T5 (revisão, I2): com a flag ON a tabela de medidas É a ponte — não há
+// mais pintura local de reserva. Falha de rede/auth/rate-limit deixava
+// `#params-tbody` VAZIO em SILÊNCIO e um laudo podia ser assinado assim. Fail
+// loud: avisa aqui, e o guard de `handleEmitir` barra a emissão. Com a flag
+// OFF nada disto roda (o motor legado continua pintando local).
+const MSG_FALHA_TABELA = 'Falha ao calcular a tabela — verifique a conexão e recarregue';
+
 // nº16 (S5-T7): remount limpo por exame. Antes o componente NÃO desmontava
 // ao navegar /laudo/A → /laudo/B (mesma rota, só o param muda) — todo o
 // arsenal de resets manuais abaixo (exameAnteriorRef + limparCampos(true) +
@@ -615,6 +622,11 @@ function LaudoPageInner() {
               // `setContent` CRU (sem merge) de um laudo calculado com o DOM
               // em branco (pré-`preencherExame` da instância nova) por cima
               // do texto recém-restaurado do paciente novo.
+              // F3-T5 (revisão, I2): a ponte voltou vazia com a flag ON → a
+              // tabela NÃO foi pintada. Não pode ser silêncio (ver
+              // MSG_FALHA_TABELA no topo). `vivoRef` no teste pra não avisar
+              // o paciente B sobre a falha do exame A.
+              if (!r && paramsOn && vivoRef.current) toast(MSG_FALHA_TABELA);
               if (!r || !vivoRef.current) return; // falha OU instância morta → no-op
               const ed = editorRef.current;
               // Editor ainda não montou: nada pra preservar, e o HTML vai
@@ -669,7 +681,7 @@ function LaudoPageInner() {
               // `sc()`. Nunca os dois: são mutuamente exclusivos pela flag
               // (ADR do Contrato da Ponte, item 4).
               if (paramsOn && identNaChamada) {
-                try { pintarTabelaSenna93(r, () => identNaChamada); } catch (e) { console.warn('params:', e); }
+                try { pintarTabelaSenna93(r, () => identNaChamada); } catch (e) { console.warn('params:', e); toast(MSG_FALHA_TABELA); }
               }
             });
 
@@ -707,10 +719,20 @@ function LaudoPageInner() {
                   // a tabela de medidas). Chamada direta: só pinta, não passa
                   // por `_onLaudoGerado` nem grava `prevGer` — o texto do
                   // médico continua intocado, que é o motivo do guard existir.
+                  // F3-T5 (revisão, m1): a foto da tela (`lerIdentTela`) é
+                  // tirada ANTES do await, igual ao caminho do debounce —
+                  // antes era avaliada DEPOIS do round-trip e os dois
+                  // caminhos casavam instantes diferentes da mesma tela.
+                  // (revisão, I2): ponte vazia = tabela vazia → fail loud.
                   if (paramsOn) {
+                    const identNaChamada = lerIdentTela();
                     calcularSenna90()
-                      .then((r) => { if (r && vivoRef.current) pintarTabelaSenna93(r, lerIdentTela); })
-                      .catch(() => { /* não bloquear */ });
+                      .then((r) => {
+                        if (!vivoRef.current) return;
+                        if (!r) { toast(MSG_FALHA_TABELA); return; }
+                        pintarTabelaSenna93(r, () => identNaChamada);
+                      })
+                      .catch(() => { if (vivoRef.current) toast(MSG_FALHA_TABELA); });
                   }
                 } else {
                   try { dispararSenna90(); } catch { /* não bloquear */ }
@@ -736,10 +758,22 @@ function LaudoPageInner() {
             // do motor legado carimbados `motorNumeros: 'senna93'`. Com a
             // flag ON, todo `calc()` vira `sc()` (que não chama o legado e
             // dispara a ponte). Com OFF, `window.calc` continua o motor cru.
+            //
+            // F3-T5 (revisão, I1): o `else` DESFAZ o wrapper. `window.calc` é
+            // global e sobrevive ao remount — sem ele, virar o kill-switch e
+            // trocar de exame deixava o wrapper de ANTES no ar apontando pro
+            // `scRef` novo (que com OFF não pinta nada), e os 3 botões da
+            // diastólica ficavam mudos até um F5. Restaurar do `__calcOrig`
+            // (o `calc()` cru guardado acima) cura o global sem reload. Com a
+            // flag SEMPRE OFF é atribuição-identidade: `__calcOrig` foi lido
+            // de `wCalc.calc` na 1ª montagem e nada mais reescreveu — mesmo
+            // objeto-função de volta no mesmo lugar, no-op.
             if (paramsOn) {
-              (window as unknown as Record<string, unknown>).calc = () => {
+              wCalc.calc = () => {
                 try { scRef.current?.(); } catch (e) { console.warn('calc:', e); }
               };
+            } else if (wCalc.__calcOrig) {
+              wCalc.calc = wCalc.__calcOrig;
             }
 
             // FIX 12/05/2026: Event delegation no container, NÃO em cada input.
@@ -1372,6 +1406,17 @@ function LaudoPageInner() {
       reemissao: jaEmitido,
       identificacaoAlterada: idMudou,
     };
+
+    // F3-T5 (revisão, I2): com a flag ON a tabela de medidas vem da ponte —
+    // se ela falhou, `#params-tbody` está VAZIO e `gerarPdfHtml` raspa nada:
+    // sairia um laudo ASSINADO sem tabela de medidas. Barra antes de montar o
+    // pdfHtml (o `finally` do bloco libera o `emitindoRef`). Flag lida direto,
+    // mesmo padrão do handler da ponte — o state `paramsOn` serve pro carimbo
+    // de proveniência abaixo. Com OFF este guard nunca dispara.
+    if (senna93Params() && document.querySelectorAll('#params-tbody tr').length === 0) {
+      toast('Tabela de medidas não carregou — não é possível emitir');
+      return;
+    }
 
     // v3.1: gerar pdfHtml ANTES de emitir, mandar junto na requisicao
     // Servidor faz emissao + PDF tudo numa chamada (sem race condition).

@@ -285,8 +285,15 @@ describe('Contrato de SAÍDA (ADR item 4) — os #out-* dos DOIS motores chegam 
     const efeito = pageSrc.split('function motorInicializar()')[1]?.split('// nº21 (S5-T7)')[0] || '';
     assert.ok(efeito, 'não achei o corpo de motorInicializar — a extração precisa ser refeita');
     assert.match(efeito, /const paramsOn = senna93Params\(\);/, '`paramsOn` precisa ser lido UMA vez por montagem do efeito');
-    const chamadasCalc = (efeito.match(/try \{ calcFn\(\); \}/g) || []).length;
-    const guardas = (efeito.match(/if \(!paramsOn\) \{/g) || []).length;
+    // m3 (revisão F3-T5): a contagem casava o literal `try { calcFn(); }` —
+    // um `calcFn()` escrito de outro jeito (sem try, dentro de um `if` de uma
+    // linha, encadeado) passava batido E sem guarda, e a tabela era pintada
+    // duas vezes por rodada. Agora conta TODA chamada de `calcFn()`, com os
+    // comentários removidos antes (o corpo do efeito cita `calcFn()` em prosa
+    // 6 vezes — contar o texto cru daria 9 e o número não significaria nada).
+    const codigo = efeito.replace(/\/\/.*$/gm, '');
+    const chamadasCalc = (codigo.match(/calcFn\(\)/g) || []).length;
+    const guardas = (codigo.match(/if \(!paramsOn\) \{/g) || []).length;
     assert.equal(chamadasCalc, 3, `o efeito tem ${chamadasCalc} chamadas de calcFn() (esperado 3: sc, branch sintético, init)`);
     assert.equal(guardas, 3, `${guardas} guardas \`if (!paramsOn)\` para 3 chamadas de calcFn() — alguma pintura legada escapou da flag`);
     for (const m of efeito.matchAll(/pintarTabelaSenna93\(/g)) {
@@ -308,6 +315,34 @@ describe('Contrato de SAÍDA (ADR item 4) — os #out-* dos DOIS motores chegam 
       '`calcFn` precisa vir do `calc()` CRU guardado, nunca do wrapper (senão sc() chama a si mesmo)');
     assert.match(efeito, /\.calc = \(\) => \{/,
       'com a flag ON, `window.calc` precisa cair no `sc()`');
+  });
+
+  test('(5.6) o wrap de `window.calc` se DESFAZ com a flag OFF (revisão I1)', () => {
+    // `window.calc` é global: sobrevive ao remount da page. Sem o `else`,
+    // virar o kill-switch e trocar de exame (sem F5) deixava o wrapper velho
+    // no ar apontando pro `scRef` novo — que com OFF não pinta nada — e os 3
+    // botões da diastólica de `SidebarLaudo` ficavam mudos.
+    const efeito = pageSrc.split('function motorInicializar()')[1]?.split('// nº21 (S5-T7)')[0] || '';
+    assert.match(efeito.replace(/\/\/.*$/gm, ''), /\} else if \(wCalc\.__calcOrig\) \{\s*wCalc\.calc = wCalc\.__calcOrig;/,
+      'o `if (paramsOn)` que instala o wrapper precisa do `else` que restaura o `calc()` cru do `__calcOrig`');
+  });
+
+  test('(5.7) emissão com a flag ON exige tabela pintada (revisão I2)', () => {
+    // Com ON a tabela É a ponte: se ela falhou, `#params-tbody` está vazio e
+    // `gerarPdfHtml` raspa nada — sairia um laudo ASSINADO sem a tabela de
+    // medidas. O guard tem que estar ANTES do `gerarPdfHtml` do handleEmitir.
+    const emitir = pageSrc.split('async function handleEmitir(')[1]?.split('const pdfHtml = gerarPdfHtml(')[0] || '';
+    assert.ok(emitir, 'não achei o trecho de handleEmitir até o gerarPdfHtml');
+    assert.match(emitir, /senna93Params\(\) && document\.querySelectorAll\('#params-tbody tr'\)\.length === 0/,
+      'handleEmitir precisa abortar (antes de montar o pdfHtml) quando a flag está ON e a tabela não carregou');
+  });
+
+  test('(5.8) falha da ponte com a flag ON não é silenciosa (revisão I2) — os DOIS caminhos de pintura avisam', () => {
+    const efeito = (pageSrc.split('function motorInicializar()')[1]?.split('// nº21 (S5-T7)')[0] || '')
+      .replace(/\/\/.*$/gm, '');
+    assert.match(pageSrc, /const MSG_FALHA_TABELA = '/, 'a mensagem de falha da tabela precisa ter fonte única');
+    const avisos = (efeito.match(/toast\(MSG_FALHA_TABELA\)/g) || []).length;
+    assert.equal(avisos, 4, `${avisos} avisos de falha da tabela (esperado 4: debounce r===null, debounce catch, restaurado r===null, restaurado catch)`);
   });
 });
 
