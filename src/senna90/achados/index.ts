@@ -31,6 +31,7 @@
 // ══════════════════════════════════════════════════════════════════
 
 import type { MedidasEcoTT, CalculosDerivados } from '../types';
+import { montarD, temParedeAlterada } from '../adapter-d';
 
 import { jRitmo, jAE_diametro, jAE_volume, jAD_volume, jVE_diametro, jVD_diametro, jCamarasNormais } from './camaras';
 import { jEspessuraMiocardica, jPadraoGeometrico } from './massa';
@@ -42,7 +43,7 @@ import { jVD_sistolica } from './sistolicaVD';
 import {
   jMitralMorfologia, jGradMaxMitral, jGradMedMitral, jAreaMitral, jRefluxoMitral,
   jRefluxoTricuspide, jTricMorfologia, jEstenoseTricuspide,
-  jPSAP, jAorticaMorfologia, jGradMaxAortico, jGradMedAortico, jAreaAortica, jRefluxoAortico,
+  jPSAP, jAorticaMorfologia, jGradMaxAortico, jGradMedAortico, jAreaAortica, jEscleroseAortica, jRefluxoAortico,
   jPulmMorfologia, jEstenosePulmonar, jRefluxoPulmonar,
   jPericardio, jPlacas, jProbabilidadeHP,
 } from './valvas';
@@ -61,6 +62,8 @@ export function setDiastModo(modo: 'auto' | 'manual') { _diastModo = modo; }
 export function setDiastManual(idx: number) { _diastManualSelecao = Math.trunc(idx); }
 export function setDiastTextoLivre(txt: string) { _diastManualTextoLivre = txt; }
 export function getDiastModo() { return _diastModo; }
+export function getDiastManualSelecao() { return _diastManualSelecao; }
+export function getDiastManualTextoLivre() { return _diastManualTextoLivre; }
 
 /** Retorna o achado diastológico baseado no modo (auto ou manual) */
 function diastAchado(d: any): string {
@@ -75,101 +78,6 @@ function diastAchado(d: any): string {
 }
 
 /**
- * Adapter: monta o objeto "d" no formato esperado pelas funções (compatível com motor antigo).
- */
-function montarD(m: MedidasEcoTT, calc: CalculosDerivados): any {
-  return {
-    // identificação
-    nome: m.identificacao.nome,
-    dtnasc: m.identificacao.pacienteDtnasc,
-    dtexame: m.identificacao.dataExame,
-    convenio: m.identificacao.convenio,
-    solicitante: m.identificacao.solicitante,
-    // medidas gerais
-    sexo: m.gerais.sexo,
-    ritmo: m.gerais.ritmo,
-    peso: m.gerais.peso,
-    altura: m.gerais.altura,
-    // câmaras
-    b7: m.camaras.raizAo,
-    b8: m.camaras.ae,
-    b9: m.camaras.ddve,
-    b10: m.camaras.septoIV,
-    b11: m.camaras.paredePosterior,
-    b12: m.camaras.dsve,
-    b13: m.camaras.vd,
-    b28: m.camaras.aoAscendente,
-    b29: m.camaras.arcoAo,
-    // diastologia (incl. b24/b25 movidos pra cá)
-    b19: m.diastolica.ondaE,
-    b20: m.diastolica.relacaoEA,
-    b21: m.diastolica.eSeptal,
-    b22: m.diastolica.relacaoEEseptal,
-    b23: m.diastolica.velocidadeIT,
-    b24: m.diastolica.volAEindex,
-    b25: m.diastolica.volADindex,
-    b37: m.diastolica.psap,
-    b38: m.diastolica.sinaisHP,
-    lars: m.diastolica.laStrain,
-    // sistólica
-    b54: m.sistolica.feSimpson,
-    b32: m.sistolica.disfuncaoVD,
-    b33: m.sistolica.tapse,
-    glsVE: m.sistolica.glsVE,
-    glsVD: m.sistolica.glsVD,
-    // válvulas
-    b34: m.valvas.morfMitral,
-    b35: m.valvas.refluxoMitral,
-    b34t: m.valvas.morfTricuspide,
-    b36: m.valvas.refluxoTricuspide,
-    b39: m.valvas.morfAortica,
-    b40: m.valvas.refluxoAortico,
-    b39p: m.valvas.morfPulmonar,
-    b40p: m.valvas.refluxoPulmonar,
-    psmap: m.valvas.pmap,
-    b41: m.valvas.derramePericard,
-    b42: m.valvas.placasArco,
-    // estenoses
-    b45: m.estenoses.gradMaxMitral,
-    b46: m.estenoses.gradMedMitral,
-    b47: m.estenoses.areaMitral,
-    b50: m.estenoses.gradMaxAo,
-    b51: m.estenoses.gradMedAo,
-    b52: m.estenoses.areaAo,
-    b46t: m.estenoses.gradMedTric,
-    b47t: m.estenoses.areaTric,
-    b50p: m.estenoses.gradMaxPulm,
-    // wilkins
-    wilkinsOn: m.wilkins.ativo,
-    wkMob: m.wilkins.mobilidade,
-    wkEsp: m.wilkins.espessura,
-    wkCal: m.wilkins.calcificacao,
-    wkSub: m.wilkins.subvalvar,
-    // segmentar
-    b55: m.segmentar.apex,
-    b56: m.segmentar.anterior,
-    b57: m.segmentar.septalAnterior,
-    b58: m.segmentar.septalInferior,
-    b59: m.segmentar.inferior,
-    b60: m.segmentar.inferolateral,
-    b61: m.segmentar.lateral,
-    b62: m.segmentar.demaisParedes,
-    // derivados
-    asc: calc.asc,
-    feT: calc.feT,
-    massa: calc.massa,
-    imVE: calc.imVE,
-    er: calc.er,
-    aoIdx: calc.aoIdx,
-    estenMitGrau: calc.estenMitGrau,
-    estenAoGrau: calc.estenAoGrau,
-    estenTricGrau: calc.estenTricGrau,
-    estenPulmGrau: calc.estenPulmGrau,
-    wilkinsScore: calc.wilkinsScore,
-  };
-}
-
-/**
  * gerarAchados — Lista ordenada de achados.
  * Filter(Boolean) remove strings vazias.
  */
@@ -178,7 +86,7 @@ export function gerarAchados(m: MedidasEcoTT, calc: CalculosDerivados): string[]
   const L = (...xs: (string | string[])[]): string[] =>
     xs.flat().filter((x): x is string => typeof x === 'string' && !!x);
 
-  const mitMorf = jMitralMorfologia(d.b34, d.b36);
+  const mitMorf = jMitralMorfologia(d.b34, d.b34t);
   const tricMorf = jTricMorfologia(d.b34t);
   const fluxoAV = jRefluxoMitral(d.b35, d.b36, d.b45, d.b46, d.b47, d.b34t, d.estenTricGrau);
   const aoMorf = jAorticaMorfologia(d.b39);
@@ -196,7 +104,9 @@ export function gerarAchados(m: MedidasEcoTT, calc: CalculosDerivados): string[]
     ...L(jEspessuraMiocardica(d.massa, d.sexo)),
     ...L(jPadraoGeometrico(d.er, d.imVE, d.sexo)),
     // Sistólica VE (Simpson prevalece)
-    ...L(d.b54 !== null ? jFE_Simpson(d.b54, d.sexo) : jFE_Teichholz(d.feT, d.sexo)),
+    ...L(d.b54 !== null
+      ? jFE_Simpson(d.b54, d.sexo, temParedeAlterada(d))
+      : jFE_Teichholz(d.feT, d.sexo)),
     // GLS VE
     ...L(jGLSve(d.glsVE)),
     // Paredes
@@ -232,7 +142,7 @@ export function gerarAchados(m: MedidasEcoTT, calc: CalculosDerivados): string[]
     ...L(jPSAP(d.b37, d.b23)),
     // ── Semilunares ──
     ...L(aoMorf),
-    ...L(jGradMaxAortico(d.b50), jGradMedAortico(d.b51), jAreaAortica(d.b52, d.aoIdx)),
+    ...L(jGradMaxAortico(d.b50), jGradMedAortico(d.b51), jAreaAortica(d.b52, d.aoIdx), jEscleroseAortica(d.estenAoGrau)),
     ...L(jRefluxoAortico(d.b40, d.b40p, d.b50, d.b51, d.b52, d.b39p, d.estenPulmGrau)),
     ...L(pulmMorf),
     ...jEstenosePulmonar(d.estenPulmGrau, d.b50p),

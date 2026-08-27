@@ -27,6 +27,8 @@ export interface CasoTeste {
     conclusoesNaoPresentes?: string[];
     numAchados?: { min?: number; max?: number; igual?: number };
     numConclusoes?: { min?: number; max?: number; igual?: number };
+    alertas?: string[];             // tipos de AlertaUI que DEVEM estar presentes
+    alertasNaoPresentes?: string[]; // tipos que NÃO podem estar
   };
 }
 
@@ -106,6 +108,23 @@ export function rodarCaso(caso: CasoTeste): ResultadoTeste {
     if (igual !== undefined && n !== igual) falhas.push(`numConclusoes: esperado=${igual}, atual=${n}`);
     if (min !== undefined && n < min) falhas.push(`numConclusoes: min=${min}, atual=${n}`);
     if (max !== undefined && n > max) falhas.push(`numConclusoes: max=${max}, atual=${n}`);
+  }
+
+  // Validar alertas (F0-T2 — antes disto, resultado.alertas era invisível ao runner)
+  const tiposAlertas = resultado.alertas.map(a => a.tipo as string);
+  if (caso.esperado.alertas) {
+    for (const esperado of caso.esperado.alertas) {
+      if (!tiposAlertas.includes(esperado)) {
+        falhas.push(`alerta AUSENTE: "${esperado}" (presentes: [${tiposAlertas.join(', ')}])`);
+      }
+    }
+  }
+  if (caso.esperado.alertasNaoPresentes) {
+    for (const indesejado of caso.esperado.alertasNaoPresentes) {
+      if (tiposAlertas.includes(indesejado)) {
+        falhas.push(`alerta INDESEJADO presente: "${indesejado}"`);
+      }
+    }
   }
 
   return {

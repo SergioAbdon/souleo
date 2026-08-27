@@ -1,0 +1,23 @@
+// M1 da revisão pré-merge F3: motorNumeros não tem teste executável (padrão do
+// repo — rotas não são importáveis no node --test). Pin de FONTE: o carimbo
+// vive na TRANSAÇÃO (sobrevive à falha do PDF) e o update pós-PDF só grava a
+// URL. Se alguém devolver o carimbo pro update do PDF, este teste acusa.
+import { test, describe } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const src = fs.readFileSync(
+  path.resolve(import.meta.dirname, '..', '..', 'src', 'app', 'api', 'emitir', 'route.ts'), 'utf8');
+
+describe('carimbo de proveniência do motor (F3, achado do teste ao vivo)', () => {
+  test('motorNumeros entra na TRANSAÇÃO (adjacente ao status emitido)', () => {
+    // Adjacência no MESMO transaction.update — não uma janela por indexOf
+    // (a 1ª ocorrência de "status: 'emitido'" no arquivo é um comentário).
+    assert.match(src, /\.\.\.carimboMotor,\s*\n\s*status: 'emitido'/,
+      'o carimbo saiu da transação — voltaria a morrer com o PDF');
+  });
+  test('o update pós-PDF grava SÓ a URL', () => {
+    assert.match(src, /update\(\{ pdfUrl \}\)/, 'o update pós-PDF deixou de ser só { pdfUrl }');
+  });
+});

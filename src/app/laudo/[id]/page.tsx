@@ -23,6 +23,7 @@ import { normalizarParaImport, prefixoArquivoPorTipo, isSchemaAntigo, InputImpor
 import { carregarPerfilAparelho } from '@/lib/perfil-aparelho';
 import { precisaConfirmarEmissao, SEM_SELECAO_PREFIXO } from '@/lib/emissao-guarda';
 import { decidirFontePreenchimento, rascunhoExpirado, SETE_DIAS_MS, type RascunhoLocal } from '@/lib/rascunho-restauracao';
+import BancoFrases from '@/components/laudo/BancoFrases';
 import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
 import { gerarDocx } from '@/lib/exportDocx';
@@ -34,19 +35,37 @@ import { executarEReportar, shadowModeAtivo } from '@/lib/shadow-runner';
 // via `_onLaudoGerado` — a ponte que existia mas NUNCA era chamada
 // desde a migração TipTap (raiz do "bug das frases" imortal).
 // Flag OFF = comportamento de hoje (rollback instantâneo, zero-deploy).
-import { senna90Primario } from '@/lib/primary-engine-flag';
+import { senna90Primario, senna93Params } from '@/lib/primary-engine-flag';
+import { alertasVisiveis } from '@/lib/alertas-motor';
+import type { AlertaUI } from '@/senna90/types';
 import { calcularSenna90, criarDebounce } from '@/lib/senna90-bridge';
 import { montarLaudoHtml } from '@/lib/senna90-render';
 import { mesclarLinhas } from '@/lib/laudo-merge';
 import { checkboxParaMedida, medidaParaChecked } from '@/lib/checkbox-codec';
 import { TIPOS_LAUDO_PADRAO, modalidadeDe, type TipoLaudo } from '@/lib/tipos-laudo';
 import { montarPdfMoldura } from '@/lib/pdf-moldura';
-import { montarParamsHtml } from '@/lib/pdf-params';
+import { montarParamsHtml, paramsParaTexto, paramsParaDocx } from '@/lib/pdf-params';
+// F3-T5 (a virada do cabo): com `senna93Params()` ON, quem pinta #out-*,
+// #calc-* e #params-tbody é o Senna93 — os MESMOS nós, o mesmo formato de
+// leitura. OFF = motor legado, byte-idêntico ao de hoje.
+// F3-T6: `sincronizarCampoPmap` substitui `window.refluxoPulmonar` (motor
+// legado) nos 3 call-sites — mesmo corpo, mesmo efeito, sem depender do
+// motor estar no ar. DOM-pura: NÃO lê flag (o campo PSMAP aparece igual com
+// ON e com OFF).
+import { pintarTabelaSenna93, lerIdentTela, sincronizarCampoPmap } from '@/lib/params-render';
+import { rodapeFontes } from '@/senna90/classificacoes/fontes';
 // Tabela de critérios do escore de Wilkins — fonte única (ver renderWilkinsHtml).
 import { WK_DESC } from '@/senna90/achados/wilkins';
 // Telefone/CEP do local: a cópia privada daqui virou uma só em paciente-fmt
 // (ARQ-I6) — o laudo-texto formatava os MESMOS campos com uma segunda cópia.
 import { fmtTel, fmtCep } from '@/lib/paciente-fmt';
+
+// F3-T5 (revisão, I2): com a flag ON a tabela de medidas É a ponte — não há
+// mais pintura local de reserva. Falha de rede/auth/rate-limit deixava
+// `#params-tbody` VAZIO em SILÊNCIO e um laudo podia ser assinado assim. Fail
+// loud: avisa aqui, e o guard de `handleEmitir` barra a emissão. Com a flag
+// OFF nada disto roda (o motor legado continua pintando local).
+const MSG_FALHA_TABELA = 'Falha ao calcular a tabela — verifique a conexão e recarregue';
 
 // nº16 (S5-T7): remount limpo por exame. Antes o componente NÃO desmontava
 // ao navegar /laudo/A → /laudo/B (mesma rota, só o param muda) — todo o
@@ -88,6 +107,10 @@ function LaudoPageInner() {
   // Modal de import de medidas SR (15/05/2026). Substitui o auto-import
   // que rodava ao clicar "📡 Vivid" — agora abre modal de validação 1-a-1.
   const [srImportOpen, setSrImportOpen] = useState(false);
+  // F3-T7: Banco de Frases virou React. Antes o modal era HTML injetado no
+  // SheetA4 e quem abria/fechava era o motor legado (window.abrirBanco →
+  // classList.add('open')). Agora é state daqui.
+  const [bancoOpen, setBancoOpen] = useState(false);
   // URLs selecionadas pra imprimir no PDF do laudo (subset de imagensDicom).
   // Sincronizado com `exame.imagensSelecionadasPdf` no Firestore. Default
   // quando undefined no Firestore = primeiras 8 (ou menos se exame tem <8).
@@ -100,6 +123,18 @@ function LaudoPageInner() {
   // true quando médico desbloqueou um 'emitido'. handleEmitir reseta;
   // handleVoltar avisa se ainda true (edição não reemitida será perdida).
   const [reedicaoAtiva, setReedicaoAtiva] = useState(false);
+  // F3 Task 2 — os 5 alertas estruturados do motor. Chegavam em
+  // `ResultadoLaudo.alertas` a cada rodada da ponte e eram DESCARTADOS aqui
+  // (a page só lia `achados`/`conclusoes`). Agora descem pra sidebar.
+  const [alertasMotor, setAlertasMotor] = useState<AlertaUI[]>([]);
+  // `senna93Params()` avaliado UMA vez, na montagem. NÃO no initializer do
+  // useState: a flag lê `localStorage` (false no servidor) — com ela ON, o
+  // primeiro render do cliente divergiria do HTML do SSR (hydration
+  // mismatch). Efeito com deps `[]` → o servidor e o 1º render do cliente
+  // concordam em `false`, e a flag entra logo depois. Flag OFF: `false`
+  // pra `false`, React não re-renderiza (bailout) — árvore idêntica à de hoje.
+  const [paramsOn, setParamsOn] = useState(false);
+  useEffect(() => { setParamsOn(senna93Params()); }, []);
   const editorRef = useRef<EditorLaudoRef>(null);
   const pendingHtml = useRef<string | null>(null);
   // Texto restaurado sobrevive à 1a geração do Senna90 (S5-T1 fix, achado
@@ -145,6 +180,16 @@ function LaudoPageInner() {
   // Reset pra `true` no topo do efeito do motor (StrictMode em dev remonta
   // o mesmo componente sem trocar de instância — precisa rearmar).
   const vivoRef = useRef(true);
+  // F3-T6 (carona da re-revisão da T5, concern 3): "a tabela na tela é a da
+  // ÚLTIMA rodada, e essa rodada deu certo". Contar `#params-tbody tr` só
+  // responde "existe tabela" — uma tabela pintada às 10h00 e invalidada por
+  // uma rodada que falhou às 10h05 (o médico mexeu numa medida, a ponte caiu)
+  // continua no DOM com os números VELHOS, e o laudo sairia assinado com
+  // eles. `false` nos mesmos 4 pontos que dão o toast de falha, `true` depois
+  // de cada pintura que completou. Lido só pelo guard do `handleEmitir` — e
+  // só com a flag ON (com OFF quem pinta é o motor legado, síncrono, e o
+  // guard nem chega a olhar este ref).
+  const tabelaFrescaRef = useRef(false);
   // Dirty flag (S5-T1): setada pelo listener delegado do #laudo-sidebar
   // (medidas) e pelo onDirty do EditorLaudo (achados/conclusões). Autosave
   // e beforeunload leem este ref — zerado só em salvamento COM sucesso.
@@ -503,7 +548,11 @@ function LaudoPageInner() {
         pendingHtml.current = processed;
       }
     };
-    // Banco de frases insere no cursor
+    // Banco de frases insere no cursor.
+    // F3-T7: ÓRFÃ. Quem chamava era `inserirFraseSelecionada()` do motor, só
+    // acionada pelo `onclick` do modal legado — que saiu do SheetA4. O React
+    // agora chama `editorRef.insertLine` direto (ver <BancoFrases>). Fica de
+    // pé porque o motor ainda define a função; morre junto com ele na F5.
     w._onInserirFrase = (texto: string) => {
       if (editorRef.current) editorRef.current.insertLine(texto);
     };
@@ -542,8 +591,21 @@ function LaudoPageInner() {
         // cru a cada tecla, matando o merge em B pelo resto da sessão). A
         // instância viva (B) já religa tudo sozinha no seu próprio efeito.
         if (!vivoRef.current) return;
+        // F3-T5: a flag é lida UMA vez por montagem do efeito (o `paramsOn`
+        // do render é state e este closure tem deps `[]` — veria `false`
+        // eterno). Trocar a flag exige RECARREGAR a página do laudo; é o
+        // mesmo contrato do kill-switch (primary-engine-flag.ts).
+        const paramsOn = senna93Params();
         try {
-          const calcFn = (window as unknown as Record<string, unknown>).calc as (() => void) | undefined;
+          // F3-T5: `calcFn` é sempre o `calc()` CRU do motor, guardado na
+          // primeira montagem — nunca o wrapper que a virada instala em
+          // `window.calc` mais abaixo. Sem esta guarda, trocar de exame
+          // (remount, sem recarregar) DEPOIS de virar o kill-switch faria
+          // `calcFn` apontar pro wrapper e `sc()` chamar a si mesmo até
+          // estourar a pilha. Mesmo padrão de `__setDiastModoOrig` (nº M2).
+          const wCalc = window as unknown as Record<string, unknown>;
+          if (!wCalc.__calcOrig) wCalc.__calcOrig = wCalc.calc;
+          const calcFn = wCalc.__calcOrig as (() => void) | undefined;
           if (calcFn) {
             // ── Migração Senna90 (16/05/2026) ──────────────────────────
             // Disparador com debounce (300ms): chama o Senna90 no servidor
@@ -567,6 +629,12 @@ function LaudoPageInner() {
               // fora depois do `await`. O guard pós-`await` continua
               // necessário (o unmount pode acontecer DURANTE o fetch).
               if (!vivoRef.current) return;
+              // F3-T5: fotografia da tela no MESMO instante em que a ponte lê
+              // o DOM (`calcularSenna90` lê na linha seguinte). A pintura
+              // acontece depois do round-trip; sem a foto, a coluna de medidas
+              // sairia com o que o médico acabou de digitar e a de derivados
+              // com o cálculo anterior por ~300ms. Com a flag OFF nem lê.
+              const identNaChamada = paramsOn ? lerIdentTela() : null;
               const r = await calcularSenna90();
               // fix (S5-T7 review, C2): `criarDebounce` não expõe `cancel()`
               // — trocar de exame não cancela um timer já armado por esta
@@ -577,6 +645,13 @@ function LaudoPageInner() {
               // `setContent` CRU (sem merge) de um laudo calculado com o DOM
               // em branco (pré-`preencherExame` da instância nova) por cima
               // do texto recém-restaurado do paciente novo.
+              // F3-T5 (revisão, I2): a ponte voltou vazia com a flag ON → a
+              // tabela NÃO foi pintada. Não pode ser silêncio (ver
+              // MSG_FALHA_TABELA no topo). `vivoRef` no teste pra não avisar
+              // o paciente B sobre a falha do exame A.
+              // F3-T6: a rodada falhou → o que está na tela ficou VELHO.
+              // Marca antes do toast (o `vivoRef` só decide se AVISA).
+              if (!r && paramsOn) { tabelaFrescaRef.current = false; if (vivoRef.current) toast(MSG_FALHA_TABELA); }
               if (!r || !vivoRef.current) return; // falha OU instância morta → no-op
               const ed = editorRef.current;
               // Editor ainda não montou: nada pra preservar, e o HTML vai
@@ -605,17 +680,54 @@ function LaudoPageInner() {
               const onGer = (window as unknown as Record<string, unknown>)
                 ._onLaudoGerado as ((h: string) => void) | undefined;
               if (onGer) onGer(html);
+              // F3 Task 2 (gate): os alertas do motor chegam aqui desde a
+              // migração Senna90 e eram jogados fora. Único efeito novo no
+              // handler. Dois cuidados, os dois pra NÃO mexer numa página
+              // delicada quando ela não precisa mudar:
+              //  1. `senna93Params()` lido AQUI (não o `paramsOn` do render,
+              //     que este closure de deps `[]` veria eterno em `false`):
+              //     flag OFF = nem o setState acontece → zero re-render novo
+              //     em produção, árvore idêntica à de hoje.
+              //  2. lista igual à anterior → devolve `prev` e o React sai por
+              //     bailout: só re-renderiza quando o conjunto de alertas
+              //     REALMENTE muda, não a cada rodada da ponte.
+              if (senna93Params()) {
+                const novos = alertasVisiveis(r.alertas);
+                setAlertasMotor((prev) => (
+                  prev.length === novos.length
+                  && prev.every((a, i) => a.tipo === novos[i].tipo && a.mensagem === novos[i].mensagem)
+                    ? prev : novos
+                ));
+              }
+              // F3 Task 5 (A VIRADA): a metade dos NÚMEROS. Entra DEPOIS do
+              // merge por linha (S5, intocado acima) — pintura pura de DOM,
+              // não toca em texto, editor nem `prevGer`. Com a flag OFF esta
+              // linha nunca roda e quem pinta continua sendo o `calcFn()` do
+              // `sc()`. Nunca os dois: são mutuamente exclusivos pela flag
+              // (ADR do Contrato da Ponte, item 4).
+              if (paramsOn && identNaChamada) {
+                try { pintarTabelaSenna93(r, () => identNaChamada); tabelaFrescaRef.current = true; }
+                catch (e) { tabelaFrescaRef.current = false; console.warn('params:', e); toast(MSG_FALHA_TABELA); }
+              }
             });
 
             // Wrapper: motor antigo (params-tbody + calc-*, intocado) +
             // Senna90 (achados/conclusões → TipTap, só se flag ON) +
             // shadow (comparação invisível, se ativo).
             const sc = () => {
-              try { calcFn(); } catch (e) { console.warn('calc:', e); }
-              // nº13 (S5-T8): renderizarLaudo agora tem guards e não quebra
-              // antes de alertaIT() — mas religa aqui também pra cobrir os
-              // outros pontos de chamada de calcFn() que não passam por `sc`.
-              try { (window as unknown as { alertaIT?: () => void }).alertaIT?.(); } catch { /* não bloquear */ }
+              // F3-T5 (A VIRADA): com a flag ON o motor legado NÃO pinta
+              // mais — nem `calcFn()` (que escreveria por cima de #out-*/
+              // #calc-*/#params-tbody com o formato antigo), nem o override
+              // `alertaIT` (o aviso IT-sem-PSAP virou alerta estruturado do
+              // motor na T2). Com a flag OFF este bloco é o de sempre, linha
+              // por linha.
+              if (!paramsOn) {
+                try { calcFn(); } catch (e) { console.warn('calc:', e); }
+                // nº13 (S5-T8): renderizarLaudo agora tem guards e não quebra
+                // antes de alertaIT() — mas religa aqui também pra cobrir os
+                // outros pontos de chamada de calcFn() que não passam por `sc`.
+                try { (window as unknown as { alertaIT?: () => void }).alertaIT?.(); } catch { /* não bloquear */ }
+              }
               // Migração Senna90: flag ON → preenche o vazio dos achados.
               // Achado CRITICAL (revisor S5-T1): a 1a rodada pós-restauração
               // NÃO dispara o Senna90 — senão o setContent incondicional de
@@ -626,6 +738,29 @@ function LaudoPageInner() {
               if (senna90Primario()) {
                 if (textoRestauradoRef.current) {
                   textoRestauradoRef.current = false;
+                  // F3-T5: o guard pula a ponte pra não sobrescrever o texto
+                  // restaurado — mas com a flag ON a ponte é a ÚNICA fonte da
+                  // tabela. Sem esta pintura, abrir um exame salvo mostraria
+                  // #params-tbody vazio (e uma reemissão sairia com o PDF sem
+                  // a tabela de medidas). Chamada direta: só pinta, não passa
+                  // por `_onLaudoGerado` nem grava `prevGer` — o texto do
+                  // médico continua intocado, que é o motivo do guard existir.
+                  // F3-T5 (revisão, m1): a foto da tela (`lerIdentTela`) é
+                  // tirada ANTES do await, igual ao caminho do debounce —
+                  // antes era avaliada DEPOIS do round-trip e os dois
+                  // caminhos casavam instantes diferentes da mesma tela.
+                  // (revisão, I2): ponte vazia = tabela vazia → fail loud.
+                  if (paramsOn) {
+                    const identNaChamada = lerIdentTela();
+                    calcularSenna90()
+                      .then((r) => {
+                        if (!vivoRef.current) return;
+                        if (!r) { tabelaFrescaRef.current = false; toast(MSG_FALHA_TABELA); return; }
+                        pintarTabelaSenna93(r, () => identNaChamada);
+                        tabelaFrescaRef.current = true;
+                      })
+                      .catch(() => { tabelaFrescaRef.current = false; if (vivoRef.current) toast(MSG_FALHA_TABELA); });
+                  }
                 } else {
                   try { dispararSenna90(); } catch { /* não bloquear */ }
                 }
@@ -638,6 +773,35 @@ function LaudoPageInner() {
             // nº12: publica o wrapper pra `safeCalc()` (fora deste escopo)
             // preferir `sc` (calc + Senna90 + shadow) em vez do `calc()` cru.
             scRef.current = sc;
+
+            // F3-T5 (ponto cego do contrato): `window.calc` tem chamadores
+            // que o guard de `paramsOn` acima NÃO alcança — os 3 botões da
+            // diastólica em SidebarLaudo.tsx (`motorCalc()`, invisível pro
+            // regex do contrato) e o `toggleWilkins()` do próprio motor. Com
+            // a flag ON, cada um deles repintava #params-tbody/#calc-*/#out-*
+            // no formato ANTIGO por cima do Senna93 — e o botão "Manual" não
+            // dispara evento nenhum, então a tabela FICAVA legada até o
+            // próximo input. Um laudo emitido nesse estado sairia com números
+            // do motor legado carimbados `motorNumeros: 'senna93'`. Com a
+            // flag ON, todo `calc()` vira `sc()` (que não chama o legado e
+            // dispara a ponte). Com OFF, `window.calc` continua o motor cru.
+            //
+            // F3-T5 (revisão, I1): o `else` DESFAZ o wrapper. `window.calc` é
+            // global e sobrevive ao remount — sem ele, virar o kill-switch e
+            // trocar de exame deixava o wrapper de ANTES no ar apontando pro
+            // `scRef` novo (que com OFF não pinta nada), e os 3 botões da
+            // diastólica ficavam mudos até um F5. Restaurar do `__calcOrig`
+            // (o `calc()` cru guardado acima) cura o global sem reload. Com a
+            // flag SEMPRE OFF é atribuição-identidade: `__calcOrig` foi lido
+            // de `wCalc.calc` na 1ª montagem e nada mais reescreveu — mesmo
+            // objeto-função de volta no mesmo lugar, no-op.
+            if (paramsOn) {
+              wCalc.calc = () => {
+                try { scRef.current?.(); } catch (e) { console.warn('calc:', e); }
+              };
+            } else if (wCalc.__calcOrig) {
+              wCalc.calc = wCalc.__calcOrig;
+            }
 
             // FIX 12/05/2026: Event delegation no container, NÃO em cada input.
             //
@@ -667,9 +831,10 @@ function LaudoPageInner() {
                 // (setado por valor sem disparar `change` real) + recalcular
                 // os derivados do motor legado — nada mais).
                 if (t.id === 'laudo-sidebar') {
-                  const refluxoPulmonarFn = (window as unknown as Record<string, unknown>)
-                    .refluxoPulmonar as (() => void) | undefined;
-                  if (refluxoPulmonarFn) { try { refluxoPulmonarFn(); } catch { /* */ } }
+                  // F3-T6: era `window.refluxoPulmonar` (motor legado). Mesmo
+                  // corpo, agora local — e sem o `if (fn)`/try: a função
+                  // guarda os dois nós e não tem como lançar.
+                  sincronizarCampoPmap();
                   // fix (S5-T7 review, C1): motor CRU aqui, não `safeCalc()`.
                   // Desde o nº12, `safeCalc()` é o wrapper `sc()` — que dispara
                   // o Senna90 e CONSOME `textoRestauradoRef`. Este branch existe
@@ -680,7 +845,15 @@ function LaudoPageInner() {
                   // Passar por `sc()` aqui consumia o guard ANTES da hora,
                   // dobrando o Senna90 do fluxo de carga (T2 duplicava o laudo
                   // ~1s após abrir um exame com `laudoHtml` salvo).
-                  try { calcFn(); } catch (e) { console.warn('calc:', e); }
+                  //
+                  // F3-T5: com a flag ON o motor legado não pinta mais nada —
+                  // sobra o `refluxoPulmonar()` acima (revelar o PSMAP), que é
+                  // o que este branch realmente precisava fazer. A tabela vem
+                  // do `sc()` que os dois chamadores de `preencherExame()`
+                  // rodam logo em seguida.
+                  if (!paramsOn) {
+                    try { calcFn(); } catch (e) { console.warn('calc:', e); }
+                  }
                   return;
                 }
                 const tag = t.tagName;
@@ -721,7 +894,17 @@ function LaudoPageInner() {
             // antes do exame chegar) sem disparar Senna90 nenhum daqui — logo
             // sem gravar em `prevGer`. `preencherExame()` foi só apagado
             // (no-op comprovado, ver acima).
-            try { calcFn(); } catch (e) { console.warn('calc:', e); }
+            //
+            // F3-T5: com a flag ON nada roda aqui. O único efeito que este
+            // `calcFn()` tinha era pintar a tabela VAZIA (só travessões) antes
+            // do exame chegar — e o equivalente ON seria disparar a ponte
+            // contra a sidebar em branco, exatamente a "geração fantasma" que
+            // o fix P1 acima acabou de matar (gravaria `prevGer` e duplicaria
+            // as linhas editadas pelo médico). A tabela é pintada ~500ms
+            // depois, pelo `sc()`/`safeCalc()` que segue o `preencherExame()`.
+            if (!paramsOn) {
+              try { calcFn(); } catch (e) { console.warn('calc:', e); }
+            }
           }
 
           // Override alertaIT — usar style.display em vez de classList.toggle
@@ -915,8 +1098,9 @@ function LaudoPageInner() {
     // nº23: campos restaurados acima via `setVal` (só `.value`/`.checked`,
     // sem `dispatchEvent`) deixam condicionais que dependem de `change` pra
     // se revelar — ex.: b40p restaurado com valor mas #field-psmap continua
-    // `display:none` porque quem o abre é `refluxoPulmonar()`, chamado só
-    // pelo `onChange` do próprio select. UM change borbulhado no container
+    // `display:none` porque quem o abre é `sincronizarCampoPmap()` (F3-T6;
+    // era `refluxoPulmonar()` do motor), chamado só pelo `onChange` do
+    // próprio select. UM change borbulhado no container
     // (tratado à parte no listener delegado — não marca dirty, não dispara
     // Senna90 de novo) resolve sem precisar mirar campo por campo.
     const sidebarEl = document.getElementById('laudo-sidebar');
@@ -1252,6 +1436,22 @@ function LaudoPageInner() {
       identificacaoAlterada: idMudou,
     };
 
+    // F3-T5 (revisão, I2): com a flag ON a tabela de medidas vem da ponte —
+    // se ela falhou, `#params-tbody` está VAZIO e `gerarPdfHtml` raspa nada:
+    // sairia um laudo ASSINADO sem tabela de medidas. Barra antes de montar o
+    // pdfHtml (o `finally` do bloco libera o `emitindoRef`). Flag lida direto,
+    // mesmo padrão do handler da ponte — o state `paramsOn` serve pro carimbo
+    // de proveniência abaixo. Com OFF este guard nunca dispara.
+    // F3-T6 (carona da re-revisão): "existe tabela" não bastava. `#params-tbody`
+    // cheio pode ser a tabela da rodada ANTERIOR, já invalidada por uma rodada
+    // que falhou (o médico mexeu numa medida e a ponte caiu) — assinar aquilo é
+    // carimbar números velhos como novos. `tabelaFrescaRef` mede o frescor.
+    if (senna93Params()
+      && (document.querySelectorAll('#params-tbody tr').length === 0 || !tabelaFrescaRef.current)) {
+      toast('Tabela de medidas não carregou — não é possível emitir');
+      return;
+    }
+
     // v3.1: gerar pdfHtml ANTES de emitir, mandar junto na requisicao
     // Servidor faz emissao + PDF tudo numa chamada (sem race condition).
     // Passa `incluirImagens` explícito pra evitar race do setState async
@@ -1276,6 +1476,11 @@ function LaudoPageInner() {
           dadosFinais,
           medicoUid: user.uid,
           pdfHtml,
+          // F3-T5 (proveniência): QUEM produziu os números deste PDF
+          // assinado. Carimbo aditivo — a F4 (sombra) e qualquer auditoria
+          // clínica precisam saber se a tabela veio do motor legado ou do
+          // Senna93 sem ter que adivinhar pela data do laudo.
+          motorNumeros: paramsOn ? 'senna93' : 'legado',
         }),
       });
       resultado = await res.json();
@@ -1598,18 +1803,11 @@ function LaudoPageInner() {
     const achados = coletarAchados().join('\n');
     const conclusoes = coletarConclusoes().map((t, i) => `${i + 1}. ${t}`).join('\n');
 
-    // Reconstruir tabela com alinhamento por tabulação
-    let params = '';
-    lerParamsDoDOM().forEach((cells) => {
-      if (cells.length >= 8) {
-        const left = `${(cells[0] || '').padEnd(22)}${(cells[1] || '').padStart(6)}  ${(cells[2] || '').padEnd(4)}${(cells[3] || '').padEnd(12)}`;
-        const right = `${(cells[4] || '').padEnd(24)}${(cells[5] || '').padStart(6)}  ${(cells[6] || '').padEnd(6)}${cells[7] || ''}`;
-        params += `${left}  │  ${right}\n`;
-      }
-    });
+    // Tabela alinhada por padEnd/padStart — formato em pdf-params.ts (F3-T3),
+    // mesma fonte única do HTML; rodapé = rodapeFontes() (B20).
+    const params = paramsParaTexto(lerParamsDoDOM());
 
-    const ref = 'Valores de referência: ASE/EACVI 2015; ASE 2025.';
-    const texto = `MEDIDAS E PARÂMETROS\n${'─'.repeat(80)}\n${params}${'─'.repeat(80)}\n${ref}\n\nCOMENTÁRIOS\n${achados}\n\nCONCLUSÃO\n${conclusoes}`;
+    const texto = `MEDIDAS E PARÂMETROS\n${'─'.repeat(80)}\n${params}${'─'.repeat(80)}\n${rodapeFontes()}\n\nCOMENTÁRIOS\n${achados}\n\nCONCLUSÃO\n${conclusoes}`;
 
     navigator.clipboard.writeText(texto).then(() => {
       toast('Copiado texto simples — cole no prontuário');
@@ -1625,13 +1823,15 @@ function LaudoPageInner() {
   }
 
   async function handleBaixarWord() {
-    const params: { cells: string[] }[] = lerParamsDoDOM()
-      .filter((cells) => cells.length >= 8)
-      .map((cells) => ({ cells }));
+    // F3-T3: filtro/forma vêm de pdf-params.ts.
+    const params = paramsParaDocx(lerParamsDoDOM());
 
-    const outNome = (document.getElementById('nome') as HTMLInputElement)?.value || 'PACIENTE';
-    const outConv = (document.getElementById('convenio') as HTMLInputElement)?.value || '';
-    const outDtex = (document.getElementById('dtexame') as HTMLInputElement)?.value || '';
+    // F3-T5: identificação dos #out-*, igual ao PDF assinado (era input cru,
+    // com a data do exame em ISO). Consequências declaradas na allowlist:
+    // dtexame sai em pt-BR e campo vazio sai como '—' (o que o PDF já fazia).
+    const outNome = document.getElementById('out-nome')?.textContent || 'PACIENTE';
+    const outConv = document.getElementById('out-convenio')?.textContent || '';
+    const outDtex = document.getElementById('out-dtexame')?.textContent || '';
 
     await gerarDocx({
       clinicaNome,
@@ -1683,6 +1883,11 @@ function LaudoPageInner() {
    * @param trocaDeExame também limpa a identificação — ver dentro.
    */
   function limparCampos(trocaDeExame = false) {
+    // I1 da revisão F3-T6: limpar campos NÃO limpa a tabela pintada nem dispara
+    // rodada — com params ON, a tabela do exame ANTERIOR ficaria emitível na
+    // janela do round-trip (troca de exame) ou pra sempre (botão Limpar).
+    // Marcar velha aqui faz o guard de emissão segurar até a próxima pintura.
+    tabelaFrescaRef.current = false;
     const camposNum = [
       'peso','altura',
       'b7','b8','b9','b10','b11','b12','b13','b28','b29',
@@ -1728,13 +1933,14 @@ function LaudoPageInner() {
     const setDiastModoFn = (window as unknown as Record<string, unknown>).setDiastModo as ((m: string) => void) | undefined;
     if (setDiastModoFn) setDiastModoFn('auto');
     // M1 (review S5-T4): mesma classe de bug do Wilkins/diastólica acima —
-    // zerar `b40p` não esconde `#field-psmap` (quem faz isso é `refluxoPulmonar()`,
-    // só chamado pelo onChange do próprio select). Sem isto o campo fica
-    // visível e vazio depois de "Limpar".
-    // try/catch: um throw aqui pularia a limpeza de identificação logo abaixo
-    // (o vazamento de paciente que este bloco existe pra impedir).
-    const refluxoPulmonarFn = (window as unknown as Record<string, unknown>).refluxoPulmonar as (() => void) | undefined;
-    try { if (refluxoPulmonarFn) refluxoPulmonarFn(); } catch { /* campo sempre montado; falha só estética */ }
+    // zerar `b40p` não esconde `#field-psmap` (quem faz isso é o handler do
+    // próprio select). Sem isto o campo fica visível e vazio depois de
+    // "Limpar".
+    // F3-T6: era `window.refluxoPulmonar` (motor legado). O try/catch existia
+    // porque um throw aqui pularia a limpeza de identificação logo abaixo (o
+    // vazamento de paciente que este bloco existe pra impedir) — a função
+    // local guarda os dois nós e não lança, então saiu junto.
+    sincronizarCampoPmap();
     if (trocaDeExame) {
       // Identificação do paciente ANTERIOR: `preencherExame()` só escreve
       // campo vazio (`if (el && !el.value && val)`), então sem zerar aqui o
@@ -1780,6 +1986,8 @@ function LaudoPageInner() {
         onCorrigirAdmin={handleCorrigirLaudo}
         wsId={workspace?.id}
         onToast={toast}
+        alertasMotor={alertasMotor}
+        paramsOn={paramsOn}
         modoEmitido={
           <ModoEmitido
             onFinalizar={handleFinalizar}
@@ -1818,14 +2026,19 @@ function LaudoPageInner() {
             // editable:false (ver comentário na prop em EditorLaudo.tsx).
             editable={!emitido}
             onDirty={() => { dirtyRef.current = true; }}
-            onAddFrase={() => {
-              const w = window as unknown as Record<string, unknown>;
-              const fn = w.abrirBanco as ((target: unknown, pos: string) => void);
-              if (fn) fn(null, 'top');
-            }}
+            onAddFrase={() => setBancoOpen(true)}
           />
         }
       />
+      {/* Banco de Frases (F3-T7) — mesmo acervo (localStorage
+          `medcardio_banco`), mesmas 34 frases de fábrica, agora em React. */}
+      {bancoOpen && (
+        <BancoFrases
+          p1={p1}
+          onClose={() => setBancoOpen(false)}
+          onInserir={(txt) => editorRef.current?.insertLine(txt)}
+        />
+      )}
       {/* Popup Salvar/Emitir — agora mostra toggle "Incluir imagens DICOM"
           quando há selecionadas (decisão 15/05/2026). */}
       <PopupSalvarEmitir
@@ -1934,6 +2147,13 @@ function LaudoPageInner() {
         .btn-undo,.btn-redo{background:none;border:1px solid #E5E7EB;color:#6B7280;font-size:12px;padding:2px 8px;border-radius:4px;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;transition:all .12s;}
         .btn-undo:hover,.btn-redo:hover{background:#EFF6FF;border-color:#2563EB;color:#2563EB;}
         #params-tbody td{border:0.5px solid #ccc;padding:2px 5px;}
+        /* F3-T3 (B15 parcial): o realce vermelho do valor fora de referência.
+           ESCOPADO ao Senna93 (achado do teste ao vivo 27/08): o motor legado
+           também emite class="alert", mas DESLOCADO 3 linhas — bug antigo que
+           CSS nenhum revelava até a T3. O params-render.ts assina a pintura
+           com data-engine="senna93"; a pintura do legado fica sem o atributo,
+           sem realce (status quo de sempre) e o bug morre com ele na F5. */
+        #params-tbody[data-engine="senna93"] td.alert{color:#B91C1C;font-weight:600;}
         /* S5-T6 fix (review Important 2): CSS trava mouse+visual de TODO
            campo do motor; convênio/solicitante ficam de fora (correção
            administrativa sem crédito, T5 — sempre editáveis) e nome/dtnasc/

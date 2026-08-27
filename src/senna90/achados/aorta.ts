@@ -3,14 +3,23 @@
 // ══════════════════════════════════════════════════════════════════
 // docs/decisoes/2026-05-16-spec-aorta.md
 //
-// Tiers: normal / ectasia / aneurisma (tierRaizAo/Asc/Arco em calculos).
+// Tiers: normal / dilatacao / aneurisma (tierRaizAo/Asc/Arco em calculos),
+// régua ACC/AHA 2022 + WASE 2022 (Senna93 §2.2) — "ectasia leve/moderada/
+// importante" morreu na F1; o arco nunca é "aneurisma".
 // COMENTÁRIOS:
-//   • Raiz : SEM "medindo XX mm" (já vai no quadro de parâmetros).
-//            ectasia → índice cm²/m no texto. aneurisma → só "Dilatação
-//            aneurismática da Raiz aórtica."
+//   • Raiz : COM "medindo XX mm" SÓ no aneurisma (decisão 27/08 — paridade
+//            com a ascendente); a dilatação segue sem medida (decisão 16/05).
+//            índice cm²/m no texto em dilatação E em aneurisma (quando há
+//            altura).
 //   • Asc  : COM "medindo XX mm" + índice cm²/m (espelha a raiz).
 //   • Arco : COM "medindo XX mm", SEM índice (não validado p/ arco).
 // Frase "com dimensões normais" PRESERVADA (decisão 07/05/2026).
+//
+// SEM FRASES DE SUGESTÃO (decisão do cardiologista, teste ao vivo 27/08 — V13):
+// o laudo é técnico e DESCREVE; conduta é do médico assistente. Morreram as
+// notas de avaliação cirúrgica (≥50 raiz/asc · ≥55 arco) e a frase de
+// angio-TC/RM do arco. A flag estruturada `notaCirurgica` do cálculo FICA
+// (sinal sem texto, para a UI usar depois).
 // ══════════════════════════════════════════════════════════════════
 
 import type { Sexo } from '../types';
@@ -32,32 +41,38 @@ function fmtMM(mm: number): string {
 
 // ── COMENTÁRIOS por segmento ──
 
-/** Raiz: sem "medindo" (já no quadro). Índice no texto da ectasia. */
+// I1 da revisão da T1: com aneurisma ≥45, o índice NÃO pode sumir do texto na
+// faixa 45-49 (índice = sinalização de risco cirúrgico, spec §2.2). O ramo de
+// aneurisma passa a carregar o índice quando disponível.
+function sufixoIndice(r: SegmentoAortaResult): string {
+  return r.indiceCm2m !== null ? `, ${fmtIdx(r.indiceCm2m)} cm²/m ${NOTA_INDICE}` : '';
+}
+
+/** Raiz: "medindo" só no aneurisma (27/08). Índice na dilatação e no aneurisma. */
 function comentarioRaiz(r: SegmentoAortaResult): string {
-  if (r.tier === 'aneurisma') return 'Dilatação aneurismática da Raiz aórtica.';
-  if (r.indiceCm2m !== null) {
-    return `Ectasia da Raiz aórtica, ${fmtIdx(r.indiceCm2m)} cm²/m ${NOTA_INDICE}.`;
+  if (r.tier === 'aneurisma') {
+    return `Dilatação aneurismática da Raiz aórtica medindo ${fmtMM(r.medidaMM)} mm${sufixoIndice(r)}.`;
   }
-  return 'Ectasia da Raiz aórtica.';
+  if (r.indiceCm2m !== null) {
+    return `Dilatação da Raiz aórtica, ${fmtIdx(r.indiceCm2m)} cm²/m ${NOTA_INDICE}.`;
+  }
+  return 'Dilatação da Raiz aórtica.';
 }
 
 /** Ascendente: COM "medindo XX mm" + índice. */
 function comentarioAsc(r: SegmentoAortaResult): string {
   if (r.tier === 'aneurisma') {
-    return `Dilatação aneurismática da aorta ascendente medindo ${fmtMM(r.medidaMM)} mm.`;
+    return `Dilatação aneurismática da aorta ascendente medindo ${fmtMM(r.medidaMM)} mm${sufixoIndice(r)}.`;
   }
   if (r.indiceCm2m !== null) {
-    return `Ectasia da aorta ascendente medindo ${fmtMM(r.medidaMM)} mm, ${fmtIdx(r.indiceCm2m)} cm²/m ${NOTA_INDICE}.`;
+    return `Dilatação da aorta ascendente medindo ${fmtMM(r.medidaMM)} mm, ${fmtIdx(r.indiceCm2m)} cm²/m ${NOTA_INDICE}.`;
   }
-  return `Ectasia da aorta ascendente medindo ${fmtMM(r.medidaMM)} mm.`;
+  return `Dilatação da aorta ascendente medindo ${fmtMM(r.medidaMM)} mm.`;
 }
 
-/** Arco: COM "medindo XX mm", SEM índice. */
+/** Arco: COM "medindo XX mm", SEM índice, SEM tier de aneurisma. */
 function comentarioArco(r: SegmentoAortaResult): string {
-  if (r.tier === 'aneurisma') {
-    return `Dilatação aneurismática do arco aórtico medindo ${fmtMM(r.medidaMM)} mm.`;
-  }
-  return `Ectasia do arco aórtico medindo ${fmtMM(r.medidaMM)} mm.`;
+  return `Arco aórtico dilatado, medindo ${fmtMM(r.medidaMM)} mm.`;
 }
 
 // ── Helper: combinação dos segmentos NORMAIS (preservado 07/05/2026) ──
@@ -94,7 +109,7 @@ export function jAortaRaiz(
 
   const raiz = b7 ? tierRaizAo(b7, sexo, asc, idade, alturaCm) : null;
   const ascR = b28 ? tierAoAscendente(b28, sexo, asc, alturaCm) : null;
-  const arco = b29 ? tierArcoAo(b29, sexo) : null;
+  const arco = b29 ? tierArcoAo(b29) : null;
 
   if (raiz && raiz.tier !== 'normal') {
     return comentarioRaiz(raiz);
@@ -122,7 +137,7 @@ export function jAortaAscendente(
 /** j39 — Arco aórtico (faixa fixa, sem sexo/ASC/índice) */
 export function jArcoAortico(b29: number | null, sexo: Sexo): string {
   if (!sexo || !b29) return '';
-  const r = tierArcoAo(b29, sexo);
+  const r = tierArcoAo(b29);
   return r.tier !== 'normal' ? comentarioArco(r) : '';
 }
 
@@ -148,7 +163,7 @@ export function jAortaNormaisComplementar(
   if (!raiz || raiz.tier === 'normal') return '';
 
   const ascR = b28 ? tierAoAscendente(b28, sexo, asc, alturaCm) : null;
-  const arco = b29 ? tierArcoAo(b29, sexo) : null;
+  const arco = b29 ? tierArcoAo(b29) : null;
 
   const normais: string[] = [];
   if (!ascR || ascR.tier === 'normal') normais.push('aorta ascendente');

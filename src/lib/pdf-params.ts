@@ -15,8 +15,16 @@
 // escreve texto), então a única diferença prática é que textContent não
 // escapa "<"/">"/"&" — por isso esta função escapa antes de reinserir,
 // reproduzindo o mesmo HTML final que a raspagem por innerHTML produzia.
-// Puro, sem import @/ — testado direto por node --test.
+//
+// F3-T3: os outros dois consumidores da mesma raspagem (Copiar Texto e
+// Baixar Word) moraram até agora dentro da page com formatação própria —
+// agora são `paramsParaTexto`/`paramsParaDocx` aqui, puros e pinados.
+// Único import: `rodapeFontes()` (B20) — o rodapé das fontes existia em 4
+// lugares com 3 redações. Import RELATIVO de propósito: `node --test`
+// resolve `../` (hook de .ts), não resolve o alias `@/`.
 // ══════════════════════════════════════════════════════════════════
+
+import { rodapeFontes } from '../senna90/classificacoes/fontes';
 
 export type ParamsHtmlOpts = {
   /** true = tabela do PDF (impressão): !important + print-color-adjust
@@ -24,19 +32,27 @@ export type ParamsHtmlOpts = {
    *  false = tabela do "Copiar Formatado" (prontuário): sem
    *  !important/print-color-adjust, rodapé só com a linha de referência. */
   pdf: boolean;
+  /** F3-T5: realce fora-de-referência célula a célula (`montarRowsTabela`).
+   *  AUSENTE = HTML byte-idêntico ao de sempre (a raspagem por `textContent`
+   *  não carrega classe, então quem monta a partir do DOM não tem as flags —
+   *  ver `pintarTabelaSenna93`). Presente: `class="alert"` + cor inline (o
+   *  PDF/prontuário são HTML avulso, sem a folha de estilo da tela). */
+  oor?: boolean[][];
 };
 
-function escHtml(s: string): string {
+/** Exportado pra `params-render.ts` (a pintura da TELA escapa igual). */
+export function escHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 export function montarParamsHtml(rows: string[][], p1: string, opts: ParamsHtmlOpts): string {
   const paramsRows = rows
-    .map((cells) => {
+    .map((cells, i) => {
       let rowHTML = '<tr>';
       cells.forEach((cell, idx) => {
         const divider = idx === 4 ? `border-left:2px solid ${p1};` : '';
-        rowHTML += `<td style="border:0.5px solid #ccc;padding:2px 5px;${divider}">${escHtml(cell)}</td>`;
+        const alerta = opts.oor?.[i]?.[idx] === true;
+        rowHTML += `<td${alerta ? ' class="alert"' : ''} style="border:0.5px solid #ccc;padding:2px 5px;${divider}${alerta ? 'color:#B91C1C;font-weight:600;' : ''}">${escHtml(cell)}</td>`;
       });
       rowHTML += '</tr>';
       return rowHTML;
@@ -63,9 +79,34 @@ ${th('Referência')}
 ${opts.pdf
     ? `<div style="font-size:5.5pt;color:#888;line-height:1.4;padding:2px 4px;border-top:0.5px solid #ddd;">
 DDVE= Diâmetro diastólico do VE. DSVE= Diâmetro sistólico do VE. VE= Ventrículo esquerdo. VD= Ventrículo direito.<br/>
-Valores de referência: ASE/EACVI 2015; ASE 2025.
+${rodapeFontes()}
 </div>`
-    : `<div style="font-size:5.5pt;color:#888;padding:2px 4px;">Valores de referência: ASE/EACVI 2015; ASE 2025.</div>`}`;
+    : `<div style="font-size:5.5pt;color:#888;padding:2px 4px;">${rodapeFontes()}</div>`}`;
 
   return paramsHTML;
+}
+
+// ── Copiar Texto (texto puro, colunas por padEnd/padStart) ──────────
+// Formato BYTE-IDÊNTICO ao que `handleCopiarTexto` montava inline
+// (page.tsx, pré-F3-T3): 22/6/4/12 à esquerda, ' │ ' no meio, 24/6/6 à
+// direita, linha com menos de 8 células PULADA (row incompleta do motor
+// sairia desalinhada). Retorna só o bloco da tabela — cabeçalho, réguas
+// e rodapé continuam na page, que é quem sabe o resto do documento.
+export function paramsParaTexto(rows: string[][]): string {
+  let params = '';
+  rows.forEach((cells) => {
+    if (cells.length >= 8) {
+      const left = `${(cells[0] || '').padEnd(22)}${(cells[1] || '').padStart(6)}  ${(cells[2] || '').padEnd(4)}${(cells[3] || '').padEnd(12)}`;
+      const right = `${(cells[4] || '').padEnd(24)}${(cells[5] || '').padStart(6)}  ${(cells[6] || '').padEnd(6)}${cells[7] || ''}`;
+      params += `${left}  │  ${right}\n`;
+    }
+  });
+  return params;
+}
+
+// ── Baixar Word (docx) ──────────────────────────────────────────────
+// Mesmo filtro de linha incompleta do texto puro; `gerarDocx` espera
+// `{ cells }` por linha (src/lib/exportDocx.ts).
+export function paramsParaDocx(rows: string[][]): { cells: string[] }[] {
+  return rows.filter((cells) => cells.length >= 8).map((cells) => ({ cells }));
 }

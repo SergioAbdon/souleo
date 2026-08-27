@@ -31,14 +31,25 @@ export async function POST(req: NextRequest) {
   const dbAdmin = adminDb();
   try {
     const body = await req.json();
-    const { wsId, exameId, dadosFinais, medicoUid, pdfHtml, pdfBase64 } = body as {
+    const { wsId, exameId, dadosFinais, medicoUid, pdfHtml, pdfBase64, motorNumeros } = body as {
       wsId: string;
       exameId: string;
       dadosFinais: Record<string, unknown>;
       medicoUid: string;
       pdfHtml?: string;
       pdfBase64?: string;
+      motorNumeros?: string;
     };
+    // F3-T5 (proveniência): carimbo de QUEM produziu os números do laudo.
+    // Vem do cliente, então entra só se for uma das duas palavras conhecidas
+    // — qualquer outra coisa (string livre, objeto, tamanho arbitrário) é
+    // ignorada em silêncio, o campo simplesmente não é gravado.
+    // 27/08 (achado do teste ao vivo): o carimbo é gravado na TRANSAÇÃO, junto
+    // de `status: 'emitido'` — antes ia no update pós-PDF e sumia quando a
+    // geração do PDF falhava (laudo emitido sem saber quem fez os números).
+    const carimboMotor = (motorNumeros === 'senna93' || motorNumeros === 'legado')
+      ? { motorNumeros }
+      : {};
 
     if (!wsId || !exameId || !medicoUid) {
       return NextResponse.json(
@@ -137,6 +148,7 @@ export async function POST(req: NextRequest) {
 
       transaction.update(exameRef, {
         ...dadosFinais,
+        ...carimboMotor,
         status: 'emitido',
         emitidoEm: FieldValue.serverTimestamp(),
         medicoUid,
@@ -199,7 +211,6 @@ export async function POST(req: NextRequest) {
     } else if (pdfHtml) {
       try {
         pdfUrl = await gerarESalvarPdf(pdfHtml, wsId, exameId, nomeArq);
-        // Salvar pdfUrl no exame
         await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfUrl });
       } catch (e) {
         pdfErro = e instanceof Error ? e.message : 'erro_pdf';

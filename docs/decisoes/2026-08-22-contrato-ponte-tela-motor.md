@@ -19,7 +19,7 @@ Este é o **pré-requisito da Seção 6** (revisão do motor, maior risco clíni
 sem esse contrato escrito + travado por teste, qualquer refatoração do motor
 pode silenciosamente parar de ler um campo que a tela ainda mostra, ou vice-versa.
 
-## Os 8 contratos (7 do parecer de arquitetura da S5 + o 8º achado na tríade final)
+## Os 9 contratos (7 do parecer de arquitetura da S5 + o 8º achado na tríade final + o 9º achado no levantamento Senna93)
 
 1. **Contrato de IDs** — CINCO listas independentes dos ~50 campos `b*`
    mantidas à mão: JSX (`SidebarLaudo.tsx`), `coletarMedidas` (persistência),
@@ -78,6 +78,45 @@ pode silenciosamente parar de ler um campo que a tela ainda mostra, ou vice-vers
    moveu essas âncoras (`SheetA4` → `MolduraA4`) e nenhum teste piscou — daí
    a invariante (5).
 
+   ### Atualização F3-T5 (27/08/2026) — DOIS escritores, exclusivos por flag
+
+   A virada do cabo do Senna93 acrescentou um **segundo escritor** dos mesmos
+   nós: `src/lib/params-render.ts` (`pintarTabelaSenna93`). Quem pinta
+   `#out-*`, `#calc-*` e `#params-tbody` passa a ser decidido pelo kill-switch
+   `senna93Params()`:
+
+   | flag | quem pinta | como |
+   |---|---|---|
+   | OFF (produção de hoje) | motor legado | `sc()` → `calcFn()` → `renderizarLaudo()` |
+   | ON | Senna93 | ponte (`/api/laudo/calcular`) → `pintarTabelaSenna93(r)` |
+
+   **Nunca os dois.** `paramsOn` é lido UMA vez por montagem do efeito do motor
+   (o `paramsOn` do render é state e o efeito tem deps `[]`); trocar a flag
+   **exige recarregar** a página do laudo. Com ON, as três chamadas de
+   `calcFn()` do efeito (`sc`, branch sintético, init) ficam atrás de
+   `if (!paramsOn)`, e o override de `alertaIT` também não roda (os alertas
+   viraram lista estruturada do motor na F3-T2).
+
+   Ponto cego coberto junto: `SidebarLaudo.tsx` chama `window.calc` DIRETO
+   (`motorCalc()`, 3 botões da diastólica) — fora do alcance daquele guard e
+   invisível pro regex do contrato. Com a flag ON a page reaponta
+   `window.calc` para o `sc()`, e `calcFn` passa a vir de `window.__calcOrig`
+   (o `calc()` cru guardado na 1ª montagem) pra que um remount depois de
+   virar o kill-switch não faça `sc()` chamar a si mesmo.
+
+   Este arranjo de dois escritores é **temporário até a F5** (quando o motor
+   legado sai de cena e sobra um só). Enquanto durar, a invariante (5) exige
+   que os dois escrevam EXATAMENTE o mesmo conjunto de `#out-*` (5.0b), que
+   toda pintura do Senna93 esteja sob `if (paramsOn)` e toda chamada legada
+   sob `if (!paramsOn)` (5.4), e que o wrap de `window.calc` continue no ar
+   enquanto `motorCalc` existir na sidebar (5.5).
+
+   Proveniência (mesma task): `handleEmitir` manda
+   `motorNumeros: 'senna93' | 'legado'` no corpo de `/api/emitir`, e a rota
+   grava esse campo no exame ao lado do `pdfUrl` (validado contra a lista de
+   duas palavras; qualquer outra coisa é ignorada). É o carimbo que diz de
+   qual motor saíram os números daquele PDF assinado.
+
 5. **Contrato inverso** — o motor legado DEPENDE de coisas que só o React
    fornece: `calcIdade`/`escH` chamadas globais, o modal do banco de frases
    com `onclick` inline apontando pra funções globais (`_onInserirFrase`).
@@ -115,6 +154,32 @@ pode silenciosamente parar de ler um campo que a tela ainda mostra, ou vice-vers
    laudo assinado. A tabela de critérios (`WK_DESC`) tem dono único desde a
    tríade final: mora no Senna90 e a page importa. Invariante (8) do teste.
 
+9. **`window.refluxoPulmonar` (achado do levantamento Senna93, 26/08)** — `page.tsx`
+   (:670, :1736) chamava direto `window.refluxoPulmonar`, função definida pelo motor
+   legado (`motorv8mp4.js:741`) que mostra/esconde `#field-psmap`. Fora da lista
+   original do item 6. Invariante (9) do teste trava as duas pontas: a F3 do Senna93
+   migra o consumidor, a F5 remove a definição — juntas, nunca uma só.
+
+   ### Atualização F3-T6 (27/08/2026) — consumidores migrados, definição órfã
+
+   Eram **três** call-sites, não dois: o levantamento (e o regex de (9.2), que
+   só via `.refluxoPulmonar as (`) não enxergava o `onChange` do select `b40p`
+   em `SidebarLaudo.tsx`, escrito como `motorCall('refluxoPulmonar')` — o
+   mesmo ponto cego de `motorCall('calc')` da F3-T5. Os três agora chamam
+   `sincronizarCampoPmap()` (`src/lib/params-render.ts`): corpo idêntico ao do
+   motor (`value` de `#b40p` → `display` de `#field-psmap`), com guard pros
+   dois nós.
+
+   Consequências: (a) o campo PSMAP deixa de depender do motor ter carregado
+   — antes, um `change` antes do `<script>` subir era engolido em silêncio;
+   (b) o comportamento é **idêntico com a flag ON e OFF**, porque a função não
+   lê flag nenhuma e o corpo é o mesmo dos dois lados; (c) a definição no
+   motor ficou **órfã** — nenhum caminho da aplicação a chama. Ela some na F5,
+   e até lá (9.1) segue exigindo que ela exista (o motor é intocável na F3).
+   (9.2) passou a exigir **zero** referências na page e (9.3) — nova — vigia o
+   ponto cego: zero `motorCall('refluxoPulmonar')` na SidebarLaudo, mais a
+   contagem exata dos 3 call-sites novos (2 na page + o `onChange`).
+
 ## O que o teste trava, exatamente
 
 `tests/unit/contrato-ponte-ids.test.mjs` — invariantes (1)-(4) da S5-T11 + as
@@ -147,6 +212,15 @@ o que a Seção 6 vai abrir:
    (`SheetA4` → `MolduraA4`) e todo `#out-*` que `gerarPdfHtml()` raspa é
    escrito pelo motor — mais `#params-tbody` nas 3 pontas. O motor é lido
    **read-only** pelo teste (o arquivo continua intocável).
+   **F3-T5:** o mesmo vale pro segundo escritor (`params-render.ts`), que
+   precisa cobrir o MESMO conjunto de 6 ids (5.0b); a raspagem do PDF passa a
+   aceitar qualquer um dos dois escritores (5.2); e (5.4)/(5.5) travam a
+   exclusividade por flag e o wrap de `window.calc`.
+   **F3-T6:** (5.7) endureceu — emitir com a flag ON exige tabela pintada **e
+   fresca** (`tabelaFrescaRef`), não só presente: `#params-tbody` cheio pode
+   ser a tabela da rodada anterior, invalidada por uma rodada que falhou, e
+   assinar aquilo carimba números velhos como novos. (5.9) trava os 6 pontos
+   que mexem no ref (nasce `false`, 4 falhas → `false`, 2 pinturas → `true`).
 6. Identificação não mora em `medidas`: `coletarMedidas` não persiste
    `nome`/`dtnasc`/`dtexame`/`convenio`/`solicitante`/`sexo`, e a restauração
    ignora as cópias que exames antigos ainda têm (`SO_DO_TOPO`).

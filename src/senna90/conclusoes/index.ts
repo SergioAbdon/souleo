@@ -34,23 +34,20 @@ import {
   tierAoAscendente,
   tierArcoAo,
 } from '../calculos/aorta';
-import { getDiastModo } from '../achados/index';
-
-// Estado manual diastologia (referenciado do mesmo state em achados/index.ts)
-let _diastManualSelecaoConcl = -1;
-let _diastManualTextoLivreConcl = '';
-export function setDiastManualConcl(idx: number) { _diastManualSelecaoConcl = Math.trunc(idx); }
-export function setDiastTextoLivreConcl(txt: string) { _diastManualTextoLivreConcl = txt; }
+import { getDiastModo, getDiastManualSelecao, getDiastManualTextoLivre } from '../achados/index';
+import { faixaGLSve } from '../achados/strain';
+import { montarD, temParedeAlterada } from '../adapter-d';
 
 // ══ HELPERS ═════════════════════════════════════════════════════
 
 /**
  * j47 — Hipertrofia/Remodelamento (conclusão)
- * Limites IM: M=102, F=88. Limite ER: 0.42.
+ * Limites IMVE (V2 — ASE 2015 Lang, Tabela 4): M=115, F=95. Limite ER: 0.42.
+ * Mesmos limites do j10 (achados/massa.ts) e da diastologia.
  */
 function j47(d: any): string {
   if (d.er === null || d.imVE === null || !d.sexo) return '';
-  const lim = d.sexo === 'M' ? 102 : 88;
+  const lim = d.sexo === 'M' ? 115 : 95;
   if (d.er > 0.42 && d.imVE <= lim) return 'Remodelamento concêntrico do ventrículo esquerdo.';
   if (d.er <= 0.42 && d.imVE > lim) return 'Hipertrofia excêntrica do ventrículo esquerdo.';
   if (d.er > 0.42 && d.imVE > lim) return 'Hipertrofia concêntrica do ventrículo esquerdo.';
@@ -87,9 +84,16 @@ function concSistolica(d: any): string {
   const disfVE = feDisp && feReduz;
   const dilatado = veAum || vdAum;
   const prefix = dilatado ? 'Miocardiopatia Dilatada com ' : '';
+  // B7 — alguma parede com contratilidade alterada (b62 usa 'NL' para normal)
+  const paredes = temParedeAlterada(d);
 
   if (!disfVE && !disfVD) {
-    if (dilatado) return 'Miocardiopatia Dilatada com função sistólica preservada.';
+    if (dilatado) {
+      return paredes
+        ? 'Miocardiopatia Dilatada com função sistólica preservada, apesar da alteração contrátil segmentar.'
+        : 'Miocardiopatia Dilatada com função sistólica preservada.';
+    }
+    if (paredes && feDisp) return 'Alteração contrátil segmentar do ventrículo esquerdo.';
     return '';
   }
 
@@ -97,12 +101,8 @@ function concSistolica(d: any): string {
     return prefix + 'Disfunção sistólica biventricular.';
   }
   if (disfVE && !disfVD) {
-    // Caso especial: Simpson preservado mas paredes alteradas
-    if (d.b54 !== null && d.b54 >= feLimS) {
-      return dilatado
-        ? 'Miocardiopatia Dilatada com função sistólica do ventrículo esquerdo preservada, apesar da alteração contrátil segmentar.'
-        : 'Alteração contrátil segmentar do ventrículo esquerdo.';
-    }
+    // B7: aqui NÃO cabe mais o ramo "Simpson preservado" — disfVE só é true
+    // quando b54 < feLimS (ou feT < feLim), logo b54 >= feLimS era inalcançável.
     return prefix + 'Disfunção sistólica do ventrículo esquerdo.';
   }
   if (!disfVE && disfVD) {
@@ -135,15 +135,12 @@ function concHP(b23: number | null, b38: '' | 'S'): string {
 }
 
 /**
- * concAorta — combina segmentos alterados
- * 1 segmento: "Ectasia X da Y."
- * 2-3 segmentos: "Ectasia da aorta (X, Y e Z)."
- */
-/**
- * concAorta — uma frase por segmento alterado (spec 16/05/2026).
- * "Ectasia/Aneurisma da [segmento]" (+ ", com critérios de maior
- * gravidade" se índice cm²/m ≥ 10 — só raiz/asc). Múltiplos segmentos
- * = frases concatenadas no mesmo item. (Antes: "Ectasia X da aorta (...)".)
+ * concAorta — uma frase por segmento alterado (spec 16/05/2026, régua
+ * ACC/AHA 2022 da F1). "Dilatação/Aneurisma da [segmento]" (+ ", com
+ * critérios de maior gravidade" se índice cm²/m ≥ 10 — só raiz/asc, nas
+ * DUAS faixas, I1 da revisão da T1). O arco só tem "Dilatação do arco
+ * aórtico." (nunca aneurisma). Múltiplos segmentos = frases concatenadas
+ * no mesmo item.
  */
 function concAorta(d: any): string {
   if (!d.sexo) return '';
@@ -151,47 +148,49 @@ function concAorta(d: any): string {
 
   if (d.b7) {
     const r = tierRaizAo(d.b7, d.sexo, d.asc, d.idade, d.altura);
-    if (r.tier === 'aneurisma') out.push('Aneurisma da Raiz aórtica.');
-    else if (r.tier === 'ectasia') {
+    if (r.tier === 'aneurisma') {
       out.push(r.graveIndice
-        ? 'Ectasia da Raiz aórtica, com critérios de maior gravidade.'
-        : 'Ectasia da Raiz aórtica.');
+        ? 'Aneurisma da Raiz aórtica, com critérios de maior gravidade.'
+        : 'Aneurisma da Raiz aórtica.');
+    } else if (r.tier === 'dilatacao') {
+      out.push(r.graveIndice
+        ? 'Dilatação da Raiz aórtica, com critérios de maior gravidade.'
+        : 'Dilatação da Raiz aórtica.');
     }
   }
   if (d.b28) {
     const r = tierAoAscendente(d.b28, d.sexo, d.asc, d.altura);
-    if (r.tier === 'aneurisma') out.push('Aneurisma da aorta ascendente.');
-    else if (r.tier === 'ectasia') {
+    if (r.tier === 'aneurisma') {
       out.push(r.graveIndice
-        ? 'Ectasia da aorta ascendente, com critérios de maior gravidade.'
-        : 'Ectasia da aorta ascendente.');
+        ? 'Aneurisma da aorta ascendente, com critérios de maior gravidade.'
+        : 'Aneurisma da aorta ascendente.');
+    } else if (r.tier === 'dilatacao') {
+      out.push(r.graveIndice
+        ? 'Dilatação da aorta ascendente, com critérios de maior gravidade.'
+        : 'Dilatação da aorta ascendente.');
     }
   }
   if (d.b29) {
-    const r = tierArcoAo(d.b29, d.sexo);
-    if (r.tier === 'aneurisma') out.push('Aneurisma do arco aórtico.');
-    else if (r.tier === 'ectasia') out.push('Ectasia do arco aórtico.');
+    if (tierArcoAo(d.b29).tier === 'dilatacao') out.push('Dilatação do arco aórtico.');
   }
 
   return out.join(' ');
 }
 
-/** concStrainVE — 3 cenários (FE pres+normal, FE pres+reduzido, FE reduz) */
+/** concStrainVE — FE reduzida · FE pres+normal · FE pres+limítrofe · FE pres+reduzido
+ *  Classificação do GLS vem de faixaGLSve (mesma fonte do achado — F1-T3, mata B1). */
 function concStrainVE(d: any): string {
   if (d.glsVE === null) return '';
-  const abs = Math.abs(d.glsVE);
+  const faixa = faixaGLSve(d.glsVE);
   const feLimS = d.sexo === 'M' ? 52 : 54;
   let fePreservada = true;
   if (d.b54 !== null) fePreservada = d.b54 >= feLimS;
   else if (d.feT !== null) fePreservada = d.feT >= 1 ? d.feT >= feLimS : d.feT >= feLimS / 100;
 
-  if (fePreservada && abs >= 18) {
-    return `Função sistólica global do ventrículo esquerdo preservada, confirmada pelo strain longitudinal (${d.glsVE}%).`;
-  }
-  if (fePreservada && abs < 18) {
-    return `Função sistólica preservada com strain longitudinal reduzido (${d.glsVE}%), sugestivo de disfunção subclínica.`;
-  }
-  return `Disfunção sistólica do ventrículo esquerdo, com strain longitudinal de ${d.glsVE}%.`;
+  if (!fePreservada) return `Disfunção sistólica do ventrículo esquerdo, com strain longitudinal de ${d.glsVE}%.`;
+  if (faixa === 'normal') return `Função sistólica global do ventrículo esquerdo preservada, confirmada pelo strain longitudinal (${d.glsVE}%).`;
+  if (faixa === 'limitrofe') return `Função sistólica global do ventrículo esquerdo preservada, com strain longitudinal no limite inferior da normalidade (${d.glsVE}%).`;
+  return `Função sistólica preservada com strain longitudinal reduzido (${d.glsVE}%), sugestivo de disfunção subclínica.`;
 }
 
 /** concStrainVD — silencia se VD já alterado */
@@ -226,58 +225,17 @@ function concLARS(d: any): string {
 function diastConclusao(d: any): string {
   const modo = getDiastModo();
   if (modo === 'manual') {
-    if (_diastManualTextoLivreConcl) return _diastManualTextoLivreConcl;
-    if (_diastManualSelecaoConcl >= 0 && _diastManualSelecaoConcl < DIAST_SENTENCAS.length) {
+    const textoLivre = getDiastManualTextoLivre();
+    const selecao = getDiastManualSelecao();
+    if (textoLivre) return textoLivre;
+    if (selecao >= 0 && selecao < DIAST_SENTENCAS.length) {
       // Se é FA (índice 5), calcular pressão de enchimento via j43
-      if (_diastManualSelecaoConcl === 5) return j43(d);
-      return DIAST_SENTENCAS[_diastManualSelecaoConcl].conclusao;
+      if (selecao === 5) return j43(d);
+      return DIAST_SENTENCAS[selecao].conclusao;
     }
     return '';
   }
   return j43(d);
-}
-
-// ══ ADAPTER ═════════════════════════════════════════════════════
-
-function montarD(m: MedidasEcoTT, calc: CalculosDerivados): any {
-  return {
-    sexo: m.gerais.sexo,
-    ritmo: m.gerais.ritmo,
-    b7: m.camaras.raizAo,
-    b8: m.camaras.ae,
-    b9: m.camaras.ddve,
-    b13: m.camaras.vd,
-    b28: m.camaras.aoAscendente,
-    b29: m.camaras.arcoAo,
-    b19: m.diastolica.ondaE,
-    b20: m.diastolica.relacaoEA,
-    b21: m.diastolica.eSeptal,
-    b22: m.diastolica.relacaoEEseptal,
-    b23: m.diastolica.velocidadeIT,
-    b24: m.diastolica.volAEindex,
-    b38: m.diastolica.sinaisHP,
-    lars: m.diastolica.laStrain,
-    b54: m.sistolica.feSimpson,
-    b32: m.sistolica.disfuncaoVD,
-    glsVE: m.sistolica.glsVE,
-    glsVD: m.sistolica.glsVD,
-    b35: m.valvas.refluxoMitral,
-    b36: m.valvas.refluxoTricuspide,
-    b40: m.valvas.refluxoAortico,
-    b40p: m.valvas.refluxoPulmonar,
-    b41: m.valvas.derramePericard,
-    b42: m.valvas.placasArco,
-    asc: calc.asc,
-    altura: m.gerais.altura,
-    feT: calc.feT,
-    imVE: calc.imVE,
-    er: calc.er,
-    idade: calc.idade,
-    estenMitGrau: calc.estenMitGrau,
-    estenAoGrau: calc.estenAoGrau,
-    estenTricGrau: calc.estenTricGrau,
-    estenPulmGrau: calc.estenPulmGrau,
-  };
 }
 
 // ══ ORQUESTRADOR ═══════════════════════════════════════════════

@@ -52,9 +52,15 @@ export const casosBordas: CasoTeste[] = [
       return m;
     })(),
     esperado: {
+      // V2 (F1-T10): imVE 110.5 g/m² (♂) — com o limite antigo (102) caía em
+      // "Hipertrofia excêntrica"; com 115 (ASE 2015 Lang) o quadrante é preservado.
+      achados: [
+        'Índice de massa e espessura relativa do ventrículo esquerdo preservados.',
+      ],
       // 58 não é > 58, então não dispara "leve" — fica normal
       achadosNaoPresentes: [
         'Ventrículo esquerdo aumentado',
+        'Hipertrofia excêntrica do ventrículo esquerdo.',
       ],
     },
   },
@@ -160,7 +166,7 @@ export const casosBordas: CasoTeste[] = [
   },
   {
     id: 'B10',
-    descricao: 'Aorta ascendente 50mm → aneurisma (spec 16/05/2026, ≥50mm)',
+    descricao: 'Aorta ascendente 50mm → aneurisma descrito, SEM frase de sugestão (V13, 27/08)',
     inputs: (() => {
       const m = pacienteSaudavelM();
       m.camaras.aoAscendente = 50;
@@ -172,9 +178,47 @@ export const casosBordas: CasoTeste[] = [
         'aorta ascendente',
         'medindo 50 mm',
       ],
+      achadosNaoPresentes: ['sugere-se', 'Sugere-se'],
       conclusoes: [
-        'Aneurisma da aorta ascendente.',
+        // índice 50 mm / 1,75 m ≈ 11,2 cm²/m ⇒ qualificador de gravidade (F1-T2, I1)
+        'Aneurisma da aorta ascendente, com critérios de maior gravidade.',
       ],
+    },
+  },
+  {
+    id: 'B11',
+    descricao: 'Raiz 46mm ♂50a → aneurisma 45-49 com medida + índice cm²/m, sem sugestão (F1-T2 · 27/08)',
+    inputs: (() => {
+      const m = pacienteSaudavelM();
+      m.identificacao.pacienteDtnasc = '1976-01-01'; // 50 anos no exame
+      m.camaras.raizAo = 46;
+      return m;
+    })(),
+    esperado: {
+      achados: [
+        'Dilatação aneurismática da Raiz aórtica medindo 46 mm, ',
+        'cm²/m (valores acima de 10 cm²/m sugerem maior gravidade).',
+      ],
+      // o laudo descreve, não recomenda (V13, 27/08)
+      achadosNaoPresentes: ['sugere-se', 'Sugere-se'],
+      conclusoes: ['Aneurisma da Raiz aórtica'],
+    },
+  },
+  {
+    id: 'B12',
+    descricao: 'Arco 42mm → "dilatado" sem graus e SEM frase de angio-TC/RM (V13, 27/08)',
+    inputs: (() => {
+      const m = pacienteSaudavelM();
+      m.camaras.arcoAo = 42;
+      return m;
+    })(),
+    esperado: {
+      achados: [
+        'Arco aórtico dilatado, medindo 42 mm.',
+      ],
+      achadosNaoPresentes: ['sugere-se', 'Sugere-se', 'angiotomografia'],
+      conclusoes: ['Dilatação do arco aórtico.'],
+      conclusoesNaoPresentes: ['Aneurisma do arco'],
     },
   },
 ];
