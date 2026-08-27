@@ -156,6 +156,41 @@ describe('F1-T2 aorta — nomenclatura ACC/AHA nos achados e conclusões', () =>
   });
 });
 
+// ══════════════════════════════════════════════════════════════════
+// F1-T6 — B8: j22 sinusal monta só os campos preenchidos (sem buracos).
+// Antes: template fixo imprimia "Relação E/A= ; " com campo vazio.
+// Depois: monta um array e faz join — buraco não aparece.
+// ══════════════════════════════════════════════════════════════════
+describe('F1-T6 j22 sinusal — sem buracos (B8)', () => {
+  test('só Onda E + E/A preenchidos: frase SEM "= ;" e SEM "e\' septal"', () => {
+    const m = medidasVazias();
+    m.gerais.ritmo = 'S';
+    m.diastolica.ondaE = 80;
+    m.diastolica.relacaoEA = 1.2;
+    const r = calcular(m);
+    temQueIncluir(r.achados, 'Velocidade da Onda E= 80 cm/s; Relação E/A= 1.2.');
+    naoPodeIncluir(r.achados, '= ;');
+    naoPodeIncluir(r.achados, "e' septal");
+  });
+
+  test('todos preenchidos: frase completa IDÊNTICA à antiga (paridade byte a byte)', () => {
+    const m = medidasVazias();
+    m.gerais.ritmo = 'S';
+    m.diastolica.ondaE = 80;
+    m.diastolica.relacaoEA = 1.2;
+    m.diastolica.eSeptal = 9;
+    m.diastolica.relacaoEEseptal = 8;
+    m.diastolica.volAEindex = 28;
+    m.diastolica.velocidadeIT = 2.5;
+    const r = calcular(m);
+    const fraseAntiga =
+      "Velocidade da Onda E= 80 cm/s; Relação E/A= 1.2; Velocidade e' septal= 9 cm/s; " +
+      "Relação E/e'= 8; volume index do átrio esquerdo = 28 ml/m²; " +
+      'Velocidade do Refluxo Tricuspídeo= 2.5 m/s.';
+    temQueIncluir(r.achados, fraseAntiga);
+  });
+});
+
 describe('BASELINE RAVI (JASE 2025 unificado) — j5: <30 sil · ≤36 leve · ≤41 mod · >41 imp', () => {
   const comRavi = (v) => {
     const m = medidasVazias();
