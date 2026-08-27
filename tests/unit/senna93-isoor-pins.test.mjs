@@ -34,6 +34,18 @@ describe('Senna93 isOOR — b7 raiz (WASE sexo+idade, só teto)', () => {
     assert.equal(tetoRaiz('M', null), 40);
     assert.equal(tetoRaiz('F', null), 36);
   });
+  test('bordas das faixas WASE: 40 vs 41 e 65 vs 66 anos', () => {
+    // ♂ 38 (≤40a) → 40 (41-65) → 41 (≥66)
+    assert.equal(isOOR('b7', 39, 'M', 40), true);    // 40a ainda é jovem
+    assert.equal(isOOR('b7', 39, 'M', 41), false);   // 41a já é faixa média
+    assert.equal(isOOR('b7', 41, 'M', 65), true);    // 65a ainda é média
+    assert.equal(isOOR('b7', 41, 'M', 66), false);   // 66a já é idoso
+    // ♀ 35 (≤40a) → 36 (41-65) → 38 (≥66)
+    assert.equal(isOOR('b7', 36, 'F', 40), true);
+    assert.equal(isOOR('b7', 36, 'F', 41), false);
+    assert.equal(isOOR('b7', 37, 'F', 65), true);
+    assert.equal(isOOR('b7', 37, 'F', 66), false);
+  });
   test('b7 não tem corte inferior — raiz pequena não acende', () => {
     assert.equal(isOOR('b7', 20, 'M', 50), false);
     assert.equal(isOOR('b7', 20, 'F', 50), false);
@@ -56,11 +68,13 @@ describe('Senna93 isOOR — medidas cruas (mm)', () => {
   test('b10 septo: ♂6-10 · ♀6-9', () => {
     fronteira('b10', 'M', 6, 5.9);
     fronteira('b10', 'M', 10, 10.1);
+    fronteira('b10', 'F', 6, 5.9);   // piso ♀ é 6 também
     fronteira('b10', 'F', 9, 9.1);
   });
   test('b11 parede posterior: mesmos cortes do b10', () => {
     fronteira('b11', 'M', 6, 5.9);
     fronteira('b11', 'M', 10, 10.1);
+    fronteira('b11', 'F', 6, 5.9);
     fronteira('b11', 'F', 9, 9.1);
   });
   test('b12 DSVE: ♂25-40 · ♀21-35', () => {
@@ -139,7 +153,9 @@ describe('Senna93 isOOR — derivados (B13: passam a acender)', () => {
 
 describe('Senna93 isOOR — C8: sexo vazio e valor ausente', () => {
   test("sexo '' → NADA acende (o alerta SEXO_AUSENTE explica)", () => {
-    for (const [campo, valor] of [['b7', 99], ['b9', 99], ['b28', 99], ['feT', 0.1], ['imVE', 999]]) {
+    // inclui as linhas SEM distinção de sexo (b13/b29/imc): elas também apagam
+    for (const [campo, valor] of [['b7', 99], ['b9', 99], ['b13', 99], ['b28', 99],
+      ['b29', 99], ['imc', 99], ['feT', 0.1], ['imVE', 999]]) {
       assert.equal(isOOR(campo, valor, '', 50), false, `${campo} acendeu sem sexo`);
     }
   });
