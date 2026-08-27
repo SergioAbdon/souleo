@@ -43,7 +43,8 @@ import { mesclarLinhas } from '@/lib/laudo-merge';
 import { checkboxParaMedida, medidaParaChecked } from '@/lib/checkbox-codec';
 import { TIPOS_LAUDO_PADRAO, modalidadeDe, type TipoLaudo } from '@/lib/tipos-laudo';
 import { montarPdfMoldura } from '@/lib/pdf-moldura';
-import { montarParamsHtml } from '@/lib/pdf-params';
+import { montarParamsHtml, paramsParaTexto, paramsParaDocx } from '@/lib/pdf-params';
+import { rodapeFontes } from '@/senna90/classificacoes/fontes';
 // Tabela de critérios do escore de Wilkins — fonte única (ver renderWilkinsHtml).
 import { WK_DESC } from '@/senna90/achados/wilkins';
 // Telefone/CEP do local: a cópia privada daqui virou uma só em paciente-fmt
@@ -1631,18 +1632,11 @@ function LaudoPageInner() {
     const achados = coletarAchados().join('\n');
     const conclusoes = coletarConclusoes().map((t, i) => `${i + 1}. ${t}`).join('\n');
 
-    // Reconstruir tabela com alinhamento por tabulação
-    let params = '';
-    lerParamsDoDOM().forEach((cells) => {
-      if (cells.length >= 8) {
-        const left = `${(cells[0] || '').padEnd(22)}${(cells[1] || '').padStart(6)}  ${(cells[2] || '').padEnd(4)}${(cells[3] || '').padEnd(12)}`;
-        const right = `${(cells[4] || '').padEnd(24)}${(cells[5] || '').padStart(6)}  ${(cells[6] || '').padEnd(6)}${cells[7] || ''}`;
-        params += `${left}  │  ${right}\n`;
-      }
-    });
+    // Tabela alinhada por padEnd/padStart — formato em pdf-params.ts (F3-T3),
+    // mesma fonte única do HTML; rodapé = rodapeFontes() (B20).
+    const params = paramsParaTexto(lerParamsDoDOM());
 
-    const ref = 'Valores de referência: ASE/EACVI 2015; ASE 2025.';
-    const texto = `MEDIDAS E PARÂMETROS\n${'─'.repeat(80)}\n${params}${'─'.repeat(80)}\n${ref}\n\nCOMENTÁRIOS\n${achados}\n\nCONCLUSÃO\n${conclusoes}`;
+    const texto = `MEDIDAS E PARÂMETROS\n${'─'.repeat(80)}\n${params}${'─'.repeat(80)}\n${rodapeFontes()}\n\nCOMENTÁRIOS\n${achados}\n\nCONCLUSÃO\n${conclusoes}`;
 
     navigator.clipboard.writeText(texto).then(() => {
       toast('Copiado texto simples — cole no prontuário');
@@ -1658,9 +1652,9 @@ function LaudoPageInner() {
   }
 
   async function handleBaixarWord() {
-    const params: { cells: string[] }[] = lerParamsDoDOM()
-      .filter((cells) => cells.length >= 8)
-      .map((cells) => ({ cells }));
+    // F3-T3: filtro/forma vêm de pdf-params.ts. A identificação AINDA sai dos
+    // inputs crus (dtexame em ISO) — a troca pelos #out-* é a T5, junto do cabo.
+    const params = paramsParaDocx(lerParamsDoDOM());
 
     const outNome = (document.getElementById('nome') as HTMLInputElement)?.value || 'PACIENTE';
     const outConv = (document.getElementById('convenio') as HTMLInputElement)?.value || '';
@@ -1969,6 +1963,10 @@ function LaudoPageInner() {
         .btn-undo,.btn-redo{background:none;border:1px solid #E5E7EB;color:#6B7280;font-size:12px;padding:2px 8px;border-radius:4px;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;transition:all .12s;}
         .btn-undo:hover,.btn-redo:hover{background:#EFF6FF;border-color:#2563EB;color:#2563EB;}
         #params-tbody td{border:0.5px solid #ccc;padding:2px 5px;}
+        /* F3-T3 (B15 parcial): o motor SEMPRE emitiu class="alert" no <td> do
+           valor fora de referência (coluna esquerda) — só que CSS nenhum
+           existia, então o realce nunca apareceu. Agora aparece. */
+        #params-tbody td.alert{color:#B91C1C;font-weight:600;}
         /* S5-T6 fix (review Important 2): CSS trava mouse+visual de TODO
            campo do motor; convênio/solicitante ficam de fora (correção
            administrativa sem crédito, T5 — sempre editáveis) e nome/dtnasc/
