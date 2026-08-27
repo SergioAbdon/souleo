@@ -9,13 +9,23 @@
 import type { GrauEstenose } from '../types';
 
 /**
- * Classificação de Estenose Mitral (Senna93 F1-T7 — spec §2.5/B2)
+ * Classificação de Estenose Mitral (Senna93 F1-T7 — spec §2.5/B2, V4)
  *
- * Prioridade 1: ÁREA (critério primário — ASE 2017)
+ * Prioridade 1: ÁREA (critério primário)
  * - <1,0 cm² → importante
- * - <1,5 cm² → moderada
- * - 1,5–2,0 cm² → leve SÓ com gradiente médio ≥5 mmHg (B19); senão, silêncio
+ * - ≤1,5 cm² → moderada
+ * - ≤2,0 cm² → leve (direto, sem exigir gradiente)
  * - >2,0 cm² → silêncio
+ *
+ * DIRETRIZES (decisão do cardiologista no teste ao vivo 27/08 — "o que dizem
+ * as diretrizes"; pesquisa Perplexity 27/08):
+ * · ASE/EACVI 2017 (Baumgartner, JASE 2017;30:372-392) — a ÁREA valvar é que
+ *   grada: leve >1,5 cm² · moderada 1,0-1,5 cm² · grave <1,0 cm². O gradiente
+ *   médio é CONFIRMATÓRIO, não classificatório (<5 · 5-10 · >10 mmHg), porque
+ *   depende de fluxo e frequência cardíaca. Por isso a exigência antiga de
+ *   gradMedio ≥5 para fechar "leve" na faixa 1,5-2,0 SAIU: área >1,5 já é leve.
+ * · ACC/AHA 2020 (Otto et al.) — área >1,5 cm² = Stage B (progressiva);
+ *   ≤1,5 cm² = grave hemodinamicamente significativa.
  *
  * Prioridade 2 (se área vazia): Gradiente médio
  * - >10 mmHg → importante
@@ -32,9 +42,8 @@ export function classificarEstenoseMitral(
   // Prioridade 1 (spec §2.5/B2): ÁREA é o critério primário.
   if (areaPHT !== null && areaPHT > 0) {
     if (areaPHT < 1.0) return 'importante';
-    if (areaPHT < 1.5) return 'moderada';
-    // 1,5–2,0: só fecha "leve" com suporte do gradiente (B19).
-    if (areaPHT <= 2.0) return gradMedio !== null && gradMedio >= 5 ? 'leve' : '';
+    if (areaPHT <= 1.5) return 'moderada';
+    if (areaPHT <= 2.0) return 'leve';
     return '';
   }
   // Sem área: gradiente médio decide (comportamento anterior preservado).

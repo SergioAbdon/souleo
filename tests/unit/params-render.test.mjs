@@ -24,7 +24,8 @@ const NOS_SAIDA = [
 
 /** DOM de mentira: entradas (`value`) + nós de saída (textContent/innerHTML). */
 function stubDocumento(valores) {
-  const saida = Object.fromEntries(NOS_SAIDA.map((id) => [id, { textContent: null, innerHTML: null }]));
+  const saida = Object.fromEntries(
+    NOS_SAIDA.map((id) => [id, { textContent: null, innerHTML: null, dataset: {} }]));
   globalThis.document = {
     getElementById(id) {
       if (id in saida) return saida[id];
@@ -152,6 +153,10 @@ describe('pintarTabelaSenna93 — #params-tbody', () => {
     assert.equal((html.match(/<td/g) || []).length, 96);
     assert.match(html, /<td class="params-divider">/);
     assert.match(html, /<td class="ref">/);
+  });
+
+  test('a pintura ASSINA o tbody com data-engine="senna93" (escopo do realce, 27/08)', () => {
+    assert.equal(n['params-tbody'].dataset.engine, 'senna93');
   });
 
   test('realce OOR sai na coluna de valor — e agora também na DIREITA (B13)', () => {

@@ -93,11 +93,17 @@ describe('F1-T5 LAVI — j4: >34 leve · ≥42 mod · >48 IMP (Lang 2015)', () =
 
 // ══════════════════════════════════════════════════════════════════
 // F1-T2 — TEXTOS da aorta (não é baseline: é o comportamento NOVO).
-// "Ectasia" morreu; entram a nota cirúrgica (≥50 raiz/asc · ≥55 arco) e
-// a frase de angio-TC/RM (arco dilatado ou não visualizado).
+// "Ectasia" morreu. As frases de SUGESTÃO morreram no teste ao vivo de 27/08
+// (decisão do cardiologista, V13): o laudo é técnico e DESCREVE — conduta é do
+// médico assistente. Foram-se a nota cirúrgica (≥50 raiz/asc · ≥55 arco) e a
+// frase de angio-TC/RM do arco; os pins abaixo travam a AUSÊNCIA delas.
+// O aneurisma da RAIZ ganhou "medindo XX mm" (paridade com a ascendente).
 // ══════════════════════════════════════════════════════════════════
-const NOTA_CIRURGIA = 'sugere-se avaliação cirúrgica especializada (ACC/AHA 2022)';
-const FRASE_ANGIO = 'Sugere-se complementação com angiotomografia ou angiorressonância da aorta torácica';
+/** Nenhuma frase de recomendação, em nenhuma capitalização (V13, 27/08). */
+const semSugestao = (lista) => {
+  naoPodeIncluir(lista, 'sugere-se');
+  naoPodeIncluir(lista, 'Sugere-se');
+};
 
 const laudoAorta = ({ raiz = null, asc = null, arco = null, placas = '', altura = 175 } = {}) => {
   const m = medidasVazias();
@@ -113,47 +119,47 @@ const laudoAorta = ({ raiz = null, asc = null, arco = null, placas = '', altura 
 };
 
 describe('F1-T2 aorta — nomenclatura ACC/AHA nos achados e conclusões', () => {
-  test('raiz ♂30a 39 mm (dilatação): "Dilatação da Raiz aórtica" + índice, sem nota', () => {
+  test('raiz ♂30a 39 mm (dilatação): "Dilatação da Raiz aórtica" + índice, SEM "medindo"', () => {
     const r = laudoAorta({ raiz: 39 });
     temQueIncluir(r.achados, 'Dilatação da Raiz aórtica, ');
     temQueIncluir(r.achados, 'cm²/m (valores acima de 10 cm²/m sugerem maior gravidade)');
     naoPodeIncluir(r.achados, 'Ectasia');
-    naoPodeIncluir(r.achados, NOTA_CIRURGIA);
+    // decisão 16/05 preservada: "medindo" só no aneurisma da raiz
+    naoPodeIncluir(r.achados, 'Dilatação da Raiz aórtica medindo');
+    semSugestao(r.achados);
     temQueIncluir(r.conclusoes, 'Dilatação da Raiz aórtica.');
   });
-  test('raiz 46 mm (aneurisma 45-49): "Dilatação aneurismática" COM índice e SEM nota (I1)', () => {
+  test('raiz 46 mm (aneurisma 45-49): "medindo 46 mm" + índice, sem sugestão (I1 + 27/08)', () => {
     const r = laudoAorta({ raiz: 46 });
-    temQueIncluir(r.achados, 'Dilatação aneurismática da Raiz aórtica, ');
+    temQueIncluir(r.achados, 'Dilatação aneurismática da Raiz aórtica medindo 46 mm, ');
     temQueIncluir(r.achados, 'cm²/m (valores acima de 10 cm²/m sugerem maior gravidade).');
-    naoPodeIncluir(r.achados, NOTA_CIRURGIA);
+    semSugestao(r.achados);
     temQueIncluir(r.conclusoes, 'Aneurisma da Raiz aórtica');
   });
-  test('raiz 52 mm: aneurisma COM a nota cirúrgica ≥ 50', () => {
+  test('raiz 52 mm: aneurisma com a medida e SEM a antiga nota cirúrgica ≥ 50 (V13)', () => {
     const r = laudoAorta({ raiz: 52 });
-    temQueIncluir(r.achados, 'Dilatação aneurismática da Raiz aórtica, ');
-    temQueIncluir(r.achados, 'Diâmetro ≥ 50 mm: ' + NOTA_CIRURGIA + '.');
+    temQueIncluir(r.achados, 'Dilatação aneurismática da Raiz aórtica medindo 52 mm, ');
+    semSugestao(r.achados);
+    naoPodeIncluir(r.achados, 'avaliação cirúrgica');
   });
-  test('arco 42 mm: "Arco aórtico dilatado, medindo 42 mm." + frase de angio-TC/RM', () => {
+  test('arco 42 mm: "Arco aórtico dilatado, medindo 42 mm." e NADA de angio-TC/RM (V13)', () => {
     const r = laudoAorta({ arco: 42 });
     temQueIncluir(r.achados, 'Arco aórtico dilatado, medindo 42 mm.');
-    temQueIncluir(r.achados, FRASE_ANGIO);
-    naoPodeIncluir(r.achados, NOTA_CIRURGIA);
+    semSugestao(r.achados);
+    naoPodeIncluir(r.achados, 'angiotomografia');
     temQueIncluir(r.conclusoes, 'Dilatação do arco aórtico.');
     naoPodeIncluir(r.conclusoes, 'Aneurisma do arco');
   });
-  test('arco 55 mm: nota cirúrgica ≥ 55 (e continua "dilatado", nunca aneurisma)', () => {
+  test('arco 55 mm: só a descrição — sem nota ≥ 55 (e continua "dilatado", nunca aneurisma)', () => {
     const r = laudoAorta({ arco: 55 });
     temQueIncluir(r.achados, 'Arco aórtico dilatado, medindo 55 mm.');
-    temQueIncluir(r.achados, 'Diâmetro ≥ 55 mm: ' + NOTA_CIRURGIA + '.');
+    semSugestao(r.achados);
     naoPodeIncluir(r.conclusoes, 'Aneurisma');
   });
-  test("arco NÃO VISUALIZADO ('nv') sem medida: frase de angio-TC/RM mesmo assim", () => {
+  test("arco NÃO VISUALIZADO ('nv'): descreve, não recomenda exame complementar (V13)", () => {
     const r = laudoAorta({ arco: null, placas: 'nv' });
-    temQueIncluir(r.achados, FRASE_ANGIO);
-  });
-  test('arco 38 mm normal e sem "nv": frase de angio-TC/RM AUSENTE', () => {
-    const r = laudoAorta({ arco: 38 });
-    naoPodeIncluir(r.achados, FRASE_ANGIO);
+    semSugestao(r.achados);
+    naoPodeIncluir(r.achados, 'angiorressonância');
   });
 });
 
@@ -195,7 +201,8 @@ describe('F1-T6 j22 sinusal — sem buracos (B8)', () => {
 // ══════════════════════════════════════════════════════════════════
 // F1-T7 — estenoses (spec §2.5). Comportamento NOVO:
 // · Mitral: ÁREA é primária (gradiente baixo por fluxo baixo não
-//   subclassifica mais); faixa 1,5–2,0 só fecha "leve" com grad ≥5 (B19).
+//   subclassifica mais); desde 27/08 a faixa 1,5–2,0 fecha "leve" SOZINHA
+//   (ASE/EACVI 2017: leve é área >1,5; gradiente médio é confirmatório).
 // · Aórtica: PIOR grau entre os critérios (low-flow-low-gradient deixa
 //   de sair "leve"); esclerose só quando é o único critério.
 // · Esclerose ganha frase no ACHADO (B27) — conclusão segue silenciando.
@@ -211,11 +218,23 @@ describe('F1-T7 estenoses — mitral área-primária · aórtica pior-grau · es
   test('mitral área 0.8 + grad 3: importante (era "leve" pelo gradiente)', () => {
     assert.equal(derivados((e) => { e.areaMitral = 0.8; e.gradMedMitral = 3; }).estenMitGrau, 'importante');
   });
-  test('mitral área 1.8 sem gradiente: silêncio (1,5–2,0 não fecha sozinha)', () => {
-    assert.equal(derivados((e) => { e.areaMitral = 1.8; }).estenMitGrau, '');
+  // 27/08 (V4, decisão "o que dizem as diretrizes"): ASE/EACVI 2017 grada pela
+  // ÁREA — leve é >1,5 cm², o gradiente médio só confirma. A exigência de
+  // grad ≥5 pra fechar "leve" na faixa 1,5–2,0 saiu; 1,5 exato é moderada.
+  test('mitral área 1.8 sem gradiente: LEVE direto (ASE 2017 — área >1,5)', () => {
+    assert.equal(derivados((e) => { e.areaMitral = 1.8; }).estenMitGrau, 'leve');
   });
-  test('mitral área 1.8 + grad 6: leve (B19 — gradiente dá o suporte)', () => {
+  test('mitral área 1.8 + grad 4 (baixo): leve — gradiente é confirmatório, não rebaixa', () => {
+    assert.equal(derivados((e) => { e.areaMitral = 1.8; e.gradMedMitral = 4; }).estenMitGrau, 'leve');
+  });
+  test('mitral área 1.8 + grad 6: leve (segue leve)', () => {
     assert.equal(derivados((e) => { e.areaMitral = 1.8; e.gradMedMitral = 6; }).estenMitGrau, 'leve');
+  });
+  test('mitral área 1.5 exata: moderada (faixa 1,0–1,5 fecha no limite superior)', () => {
+    assert.equal(derivados((e) => { e.areaMitral = 1.5; }).estenMitGrau, 'moderada');
+  });
+  test('mitral área 1.0 exata: moderada (importante é <1,0 — 1,0 não é <1,0)', () => {
+    assert.equal(derivados((e) => { e.areaMitral = 1.0; }).estenMitGrau, 'moderada');
   });
   test('mitral sem área, grad 12: importante (gradiente decide)', () => {
     assert.equal(derivados((e) => { e.gradMedMitral = 12; }).estenMitGrau, 'importante');

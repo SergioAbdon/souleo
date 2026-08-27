@@ -47,7 +47,7 @@ import {
   jPulmMorfologia, jEstenosePulmonar, jRefluxoPulmonar,
   jPericardio, jPlacas, jProbabilidadeHP,
 } from './valvas';
-import { jAortaRaiz, jAortaAscendente, jArcoAortico, jAortaNormaisComplementar, jAortaAngioTC } from './aorta';
+import { jAortaRaiz, jAortaAscendente, jArcoAortico, jAortaNormaisComplementar } from './aorta';
 import { jWilkins } from './wilkins';
 
 /**
@@ -155,7 +155,6 @@ export function gerarAchados(m: MedidasEcoTT, calc: CalculosDerivados): string[]
       jArcoAortico(d.b29, d.sexo),
       jAortaNormaisComplementar(d.b7, d.b28, d.b29, d.sexo, d.asc, calc.idade, m.gerais.altura),
       jPlacas(d.b42),
-      jAortaAngioTC(d.b29, d.b42, d.sexo),
     ),
   ].filter(Boolean);
 }

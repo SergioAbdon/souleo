@@ -97,7 +97,16 @@ export function pintarTabelaSenna93(r: ResultadoLaudo, lerIdent: () => IdentTela
   // ── 3) Tabela de parâmetros (#params-tbody) ──
   const { rows, oor } = montarRowsTabela(m.gerais, medidasDaTabela(m), d, d.idade);
   const tb = document.getElementById('params-tbody');
-  if (tb) tb.innerHTML = linhasHtml(rows, oor);
+  if (tb) {
+    tb.innerHTML = linhasHtml(rows, oor);
+    // Marca de origem da pintura (achado do teste ao vivo 27/08): o realce
+    // vermelho do `td.alert` é do Senna93, e ESTE é o único lugar que assina.
+    // O motor legado emite `class="alert"` deslocado 3 linhas (bug latente que
+    // o CSS da T3 tornou visível com a flag OFF); sem o atributo, o CSS
+    // `#params-tbody[data-engine="senna93"] td.alert` não pega a pintura dele
+    // e o bug volta a ser invisível até morrer junto com o motor na F5.
+    tb.dataset.engine = 'senna93';
+  }
 }
 
 /** b7..b29 no formato do builder (o adapter chama de raizAo/ae/ddve/...). */

@@ -7,12 +7,19 @@
 // régua ACC/AHA 2022 + WASE 2022 (Senna93 §2.2) — "ectasia leve/moderada/
 // importante" morreu na F1; o arco nunca é "aneurisma".
 // COMENTÁRIOS:
-//   • Raiz : SEM "medindo XX mm" (já vai no quadro de parâmetros).
+//   • Raiz : COM "medindo XX mm" SÓ no aneurisma (decisão 27/08 — paridade
+//            com a ascendente); a dilatação segue sem medida (decisão 16/05).
 //            índice cm²/m no texto em dilatação E em aneurisma (quando há
-//            altura). ≥ 50 mm acrescenta a nota de avaliação cirúrgica.
+//            altura).
 //   • Asc  : COM "medindo XX mm" + índice cm²/m (espelha a raiz).
 //   • Arco : COM "medindo XX mm", SEM índice (não validado p/ arco).
 // Frase "com dimensões normais" PRESERVADA (decisão 07/05/2026).
+//
+// SEM FRASES DE SUGESTÃO (decisão do cardiologista, teste ao vivo 27/08 — V13):
+// o laudo é técnico e DESCREVE; conduta é do médico assistente. Morreram as
+// notas de avaliação cirúrgica (≥50 raiz/asc · ≥55 arco) e a frase de
+// angio-TC/RM do arco. A flag estruturada `notaCirurgica` do cálculo FICA
+// (sinal sem texto, para a UI usar depois).
 // ══════════════════════════════════════════════════════════════════
 
 import type { Sexo } from '../types';
@@ -24,10 +31,6 @@ import {
 } from '../calculos/aorta';
 
 const NOTA_INDICE = '(valores acima de 10 cm²/m sugerem maior gravidade)';
-const NOTA_CIRURGICA_RAIZ_ASC =
-  ' Diâmetro ≥ 50 mm: sugere-se avaliação cirúrgica especializada (ACC/AHA 2022).';
-const NOTA_CIRURGICA_ARCO =
-  ' Diâmetro ≥ 55 mm: sugere-se avaliação cirúrgica especializada (ACC/AHA 2022).';
 
 function fmtIdx(idx: number): string {
   return idx.toFixed(1).replace('.', ',');
@@ -45,11 +48,10 @@ function sufixoIndice(r: SegmentoAortaResult): string {
   return r.indiceCm2m !== null ? `, ${fmtIdx(r.indiceCm2m)} cm²/m ${NOTA_INDICE}` : '';
 }
 
-/** Raiz: sem "medindo" (já no quadro). Índice no texto da dilatação e do aneurisma. */
+/** Raiz: "medindo" só no aneurisma (27/08). Índice na dilatação e no aneurisma. */
 function comentarioRaiz(r: SegmentoAortaResult): string {
   if (r.tier === 'aneurisma') {
-    return `Dilatação aneurismática da Raiz aórtica${sufixoIndice(r)}.`
-      + (r.notaCirurgica ? NOTA_CIRURGICA_RAIZ_ASC : '');
+    return `Dilatação aneurismática da Raiz aórtica medindo ${fmtMM(r.medidaMM)} mm${sufixoIndice(r)}.`;
   }
   if (r.indiceCm2m !== null) {
     return `Dilatação da Raiz aórtica, ${fmtIdx(r.indiceCm2m)} cm²/m ${NOTA_INDICE}.`;
@@ -60,8 +62,7 @@ function comentarioRaiz(r: SegmentoAortaResult): string {
 /** Ascendente: COM "medindo XX mm" + índice. */
 function comentarioAsc(r: SegmentoAortaResult): string {
   if (r.tier === 'aneurisma') {
-    return `Dilatação aneurismática da aorta ascendente medindo ${fmtMM(r.medidaMM)} mm${sufixoIndice(r)}.`
-      + (r.notaCirurgica ? NOTA_CIRURGICA_RAIZ_ASC : '');
+    return `Dilatação aneurismática da aorta ascendente medindo ${fmtMM(r.medidaMM)} mm${sufixoIndice(r)}.`;
   }
   if (r.indiceCm2m !== null) {
     return `Dilatação da aorta ascendente medindo ${fmtMM(r.medidaMM)} mm, ${fmtIdx(r.indiceCm2m)} cm²/m ${NOTA_INDICE}.`;
@@ -71,21 +72,7 @@ function comentarioAsc(r: SegmentoAortaResult): string {
 
 /** Arco: COM "medindo XX mm", SEM índice, SEM tier de aneurisma. */
 function comentarioArco(r: SegmentoAortaResult): string {
-  return `Arco aórtico dilatado, medindo ${fmtMM(r.medidaMM)} mm.`
-    + (r.notaCirurgica ? NOTA_CIRURGICA_ARCO : '');
-}
-
-/**
- * Frase de imagem complementar (decisão do arco, 26/08): arco DILATADO ou
- * NÃO VISUALIZADO ('nv') → recomendar angio-TC/RM da aorta torácica inteira.
- * Emitida uma única vez, depois de jPlacas.
- */
-export function jAortaAngioTC(b29: number | null, b42: '' | 's' | 'nv', sexo: Sexo): string {
-  const dilatado = !!sexo && !!b29 && tierArcoAo(b29).tier === 'dilatacao';
-  if (dilatado || b42 === 'nv') {
-    return 'Sugere-se complementação com angiotomografia ou angiorressonância da aorta torácica para avaliação completa.';
-  }
-  return '';
+  return `Arco aórtico dilatado, medindo ${fmtMM(r.medidaMM)} mm.`;
 }
 
 // ── Helper: combinação dos segmentos NORMAIS (preservado 07/05/2026) ──

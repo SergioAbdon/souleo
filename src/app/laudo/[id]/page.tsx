@@ -2147,10 +2147,13 @@ function LaudoPageInner() {
         .btn-undo,.btn-redo{background:none;border:1px solid #E5E7EB;color:#6B7280;font-size:12px;padding:2px 8px;border-radius:4px;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;transition:all .12s;}
         .btn-undo:hover,.btn-redo:hover{background:#EFF6FF;border-color:#2563EB;color:#2563EB;}
         #params-tbody td{border:0.5px solid #ccc;padding:2px 5px;}
-        /* F3-T3 (B15 parcial): o motor SEMPRE emitiu class="alert" no <td> do
-           valor fora de referência (coluna esquerda) — só que CSS nenhum
-           existia, então o realce nunca apareceu. Agora aparece. */
-        #params-tbody td.alert{color:#B91C1C;font-weight:600;}
+        /* F3-T3 (B15 parcial): o realce vermelho do valor fora de referência.
+           ESCOPADO ao Senna93 (achado do teste ao vivo 27/08): o motor legado
+           também emite class="alert", mas DESLOCADO 3 linhas — bug antigo que
+           CSS nenhum revelava até a T3. O params-render.ts assina a pintura
+           com data-engine="senna93"; a pintura do legado fica sem o atributo,
+           sem realce (status quo de sempre) e o bug morre com ele na F5. */
+        #params-tbody[data-engine="senna93"] td.alert{color:#B91C1C;font-weight:600;}
         /* S5-T6 fix (review Important 2): CSS trava mouse+visual de TODO
            campo do motor; convênio/solicitante ficam de fora (correção
            administrativa sem crédito, T5 — sempre editáveis) e nome/dtnasc/

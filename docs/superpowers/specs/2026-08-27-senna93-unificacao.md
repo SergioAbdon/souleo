@@ -303,7 +303,7 @@ wader **104** · `tsc` e `build` limpos. (Fase 0 SOBE o unit; cada fase registra
 | V1 | RAVI sem sexo (A14/A15) | JASE 2025 unificado | manter critério por sexo do legado |
 | V2 | IMVE limite de HVE (B12) | 115♂/95♀ em tudo (Lang 2015) | manter 102/88 na geometria |
 | V3 | Estenose aórtica (B3) | pior grau entre Vmax/grad médio/área | manter precedência por grad máx |
-| V4 | Estenose mitral (B2/B19) | área primária; 1,5-2,0 não fecha leve sozinha | manter gradiente-primeiro |
+| V4 | Estenose mitral (B2/B19) | **ATUALIZADO 27/08 — ASE/EACVI 2017:** área primária, e **leve é >1,5 direto** (<1,0 importante · ≤1,5 moderada · ≤2,0 leve · >2,0 silêncio). O gradiente médio é confirmatório, não classificatório — a exigência de grad ≥5 na faixa 1,5-2,0 caiu (decisão do cardiologista: "o que dizem as diretrizes"; ACC/AHA 2020 põe >1,5 em Stage B) | manter gradiente-primeiro |
 | V5 | Estenose pulmonar (A20) | ASE 2017 valvar (Senna90) | critério congênito do legado (80/50/25) |
 | V6 | Tricúspide "restrição" (A21) | só ramos E (Senna90) | alinhar com a mitral (E/F/EF) |
 | V7 | Wilkins literal (B10) | ≤7 favorável, texto "(escore < 8)" | 8 passa a favorável ("≤8") |
@@ -312,7 +312,7 @@ wader **104** · `tsc` e `build` limpos. (Fase 0 SOBE o unit; cada fase registra
 | V10 | Palavra "VIDE" (C4) | mantém "VIDE" (estruturado por dentro) | texto claro ("não medido — DSVE ausente") |
 | V11 | Índice cm²/m no arco (A4) | NÃO (sem base em diretriz) | incluir |
 | V12 | E/e' na FA (A18) | mantém >15 (decisão sua documentada no código: E/e' SEPTAL isolado) | mudar pra >14 (ASE 2016, régua da média) |
-| V13 | Textos novos da F1 (nota cirúrgica ≥50/≥55, frase angio-TC/RM, faixa limítrofe do GLS, esclerose aórtica) | redação proposta no plano da F1, revisada por você no teste ao vivo da fase | reescrever qualquer um |
+| V13 | Textos novos da F1 (nota cirúrgica ≥50/≥55, frase angio-TC/RM, faixa limítrofe do GLS, esclerose aórtica) | **DECIDIDO no teste ao vivo 27/08 — "o laudo é técnico e DESCREVE; sugestão de conduta é do médico assistente": NENHUMA frase de recomendação no laudo.** Morreram a nota cirúrgica (≥50/≥55) e a frase de angio-TC/RM; o aneurisma da RAIZ passou a imprimir "medindo XX mm" (paridade com a ascendente), a dilatação da raiz segue sem medida. GLS e esclerose aórtica ficam como estão | — (fechado) |
 | V14 | Degraus de fronteira exata (B17: "leve a moderado" só no valor exato) | MANTIDOS nos campos em mm (semântica deliberada do V6); só o feT (float) vira banda na granularidade do truncamento (A13) | converter tudo pra faixas contínuas |
 
 Tudo que NÃO está nesta lista segue a Seção 2 sem consulta (evidências fechadas ou recomendação

@@ -480,3 +480,26 @@ describe('window.refluxoPulmonar — migrado na F3, definição morre na F5', ()
       `o motor passou a chamar refluxoPulmonar (${chamadasMotor}×) — a F5 não pode mais deletar às cegas`);
   });
 });
+
+// ══════════════════════════════════════════════════════════════════
+// (10) REALCE ESCOPADO (achado do teste ao vivo 27/08). Os DOIS motores
+// emitem `class="alert"` no <td> — só que o do legado sai DESLOCADO 3 linhas
+// (bug antigo que só ficou visível quando a T3 criou o CSS). O CSS agora só
+// pega a pintura assinada: `params-render.ts` põe `data-engine="senna93"` no
+// tbody, o seletor exige o atributo. É um PAR — quebrar um lado sozinho volta
+// a acender o realce errado (ou apaga o certo), e nenhum teste de DOM veria.
+// ══════════════════════════════════════════════════════════════════
+describe('Realce do td.alert — atributo (params-render) e seletor (page) andam juntos', () => {
+  test('(10.1) só params-render.ts assina o tbody com data-engine="senna93"', () => {
+    assert.match(paramsRenderSrc, /dataset\.engine = 'senna93'/,
+      'a pintura do Senna93 precisa assinar o #params-tbody — sem a assinatura o realce some');
+    // O legado é intocável e não pode ganhar a assinatura por acidente.
+    assert.ok(!/data-engine/.test(motorSrc), 'o motor legado passou a emitir data-engine');
+  });
+  test('(10.2) o CSS do realce exige o atributo', () => {
+    assert.match(pageSrc, /#params-tbody\[data-engine="senna93"\] td\.alert\{/,
+      'o seletor do realce precisa ser escopado — sem escopo, o alert deslocado do legado acende');
+    assert.ok(!/#params-tbody td\.alert\{/.test(pageSrc),
+      'voltou a existir um seletor NÃO escopado de td.alert — o bug do legado fica visível de novo');
+  });
+});
