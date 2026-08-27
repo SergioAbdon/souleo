@@ -141,7 +141,7 @@ const ANEURISMA_MM_RAIZ_ASC = 45;
 const NOTA_CIRURGICA_MM_RAIZ_ASC = 50;
 // Arco: NENHUMA diretriz tabula normal do arco; teto prático ~40 mm (ACC/AHA,
 // "aproximado, não validado"). > 40 = "dilatado" SEM graus; >= 55 = cirurgia.
-const ARCO_NORMAL_MAX = 40;
+export const ARCO_NORMAL_MAX = 40;
 const NOTA_CIRURGICA_MM_ARCO = 55;
 
 /**
@@ -150,7 +150,7 @@ const NOTA_CIRURGICA_MM_ARCO = 55;
  * Limite superior do normal = média + 2 DP → Homem 38 · Mulher 35 mm.
  * Arco usa o mesmo (Chamber não tabula o arco transverso isolado).
  */
-function corteChamberAsc(sexo: Sexo): number {
+export function corteChamberAsc(sexo: Sexo): number {
   return sexo !== 'F' ? 38 : 35;
 }
 
@@ -175,7 +175,7 @@ export function indiceAortaAltura(
  *   Homem : 38 / 40 / 41      Mulher : 35 / 36 / 38
  * (♀ ≥66 anos: 37,5 mm cru arredonda para 38 — correção F1.)
  */
-function corteWaseRaiz(sexo: Sexo, idade: number): number {
+export function corteWaseRaiz(sexo: Sexo, idade: number): number {
   const homem = sexo !== 'F';
   if (idade <= 40) return homem ? 38 : 35;
   if (idade <= 65) return homem ? 40 : 36;

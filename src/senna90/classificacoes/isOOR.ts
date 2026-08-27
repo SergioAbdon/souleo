@@ -1,149 +1,57 @@
 // ══════════════════════════════════════════════════════════════════
-// LEO Senna90 — Out-of-Range Checker
+// LEO Senna93 — isOOR: realce (vermelho) da tabela de parâmetros
 // ══════════════════════════════════════════════════════════════════
-// Verifica se um valor está fora do range de referência por sexo.
-// Usado pra marcar células da tabela como "alert" (vermelho).
-//
-// Equivalente a isOOR(campo, val, sexo) do motor original.
-//
-// COMPORTAMENTO PRESERVADO: IMC sem alerta (decisão Dr. Sérgio).
+// Reescrito na F2 (spec §2.7/C3) a partir dos cortes VIVOS — a versão
+// anterior era código morto que já tinha derivado em 7 pontos (A22).
+// Regra C8: sexo vazio → NUNCA acende (nenhuma linha), o alerta
+// SEXO_AUSENTE (F2-T4) explica. Valor null → nunca acende (decisão 19b:
+// zero validação; ausência não é anormalidade).
+// B13: as linhas de derivados (imc/vdf/vsf/feT/fs/massa/imVE/er) TAMBÉM
+// acendem — a "metade direita sempre preta" do legado morreu.
 // ══════════════════════════════════════════════════════════════════
-
 import type { Sexo } from '../types';
+import { corteWaseRaiz, corteChamberAsc, ARCO_NORMAL_MAX } from '../calculos/aorta';
 
-/**
- * Retorna true se o valor estiver fora do range fisiológico do parâmetro.
- *
- * @param campo ID do campo (b7-b13, b28, etc.)
- * @param val Valor numérico
- * @param sexo M ou F (afeta range pra muitos parâmetros)
- *
- * @example
- * isOOR('b9', 65, 'M') // true (DDVE M normal: 42-58)
- * isOOR('b9', 50, 'M') // false
- */
-export function isOOR(campo: string, val: number | null, sexo: Sexo): boolean {
-  if (val === null || val === undefined) return false;
-  const isM = sexo !== 'F';
+export type CampoTabela =
+  | 'b7' | 'b8' | 'b9' | 'b10' | 'b11' | 'b12' | 'b13' | 'b28' | 'b29'
+  | 'imc' | 'aoae' | 'asc' | 'vdf' | 'vsf' | 'feT' | 'fs' | 'massa' | 'imVE' | 'er';
 
+/** Teto da raiz p/ exibição: WASE por idade; sem idade, faixa 41-65 (paridade legado). */
+export function tetoRaiz(sexo: Sexo, idade: number | null): number {
+  if (idade === null) return sexo !== 'F' ? 40 : 36;
+  return corteWaseRaiz(sexo, idade);
+}
+
+export function isOOR(
+  campo: CampoTabela,
+  valor: number | null,
+  sexo: Sexo,
+  idade: number | null
+): boolean {
+  if (valor === null || !sexo) return false;   // C8: sem sexo, nada acende
+  const M = sexo !== 'F';
   switch (campo) {
-    // Câmaras (mm) — Cutoffs ASE 2015 atualizados 07/05/2026
-    // ── Aorta: spec 16/05 (autoritativo = calculos/aorta.ts). Só
-    //    sinaliza dilatação (sem corte inferior — não flag "pequena").
-    //    Raiz por idade vive em tierRaizAo; aqui faixa média por sexo.
-    case 'b7': // Raiz — WASE 2022 (≤40 ♂ / ≤36 ♀, faixa média s/ idade)
-      return isM ? val > 40 : val > 36;
-    case 'b8':
-      return isM ? (val < 30 || val > 40) : (val < 27 || val > 38);
-    case 'b9':
-      return isM ? (val < 42 || val > 58) : (val < 38 || val > 52);
+    // ── coluna esquerda (medidas cruas, mm) ──
+    case 'b7':  return valor > tetoRaiz(sexo, idade);          // só teto (WASE)
+    case 'b8':  return M ? (valor < 30 || valor > 40) : (valor < 27 || valor > 38);
+    case 'b9':  return M ? (valor < 42 || valor > 58) : (valor < 38 || valor > 52);
     case 'b10':
-      return isM ? (val < 6 || val > 10) : (val < 6 || val > 9);
-    case 'b11':
-      return isM ? (val < 6 || val > 10) : (val < 6 || val > 9);
-    case 'b12':
-      return isM ? (val < 25 || val > 40) : (val < 21 || val > 35);
-    case 'b13':
-      return val < 21 || val > 35; // unificado
-    case 'b28': // Aorta ascendente — ASE Chamber 2015 (≤38 ♂ / ≤35 ♀)
-      return isM ? val > 38 : val > 35;
-    case 'b29': // Arco — ACR/ACRIN 6654 (≤35 ♂ / ≤32 ♀)
-      return isM ? val > 35 : val > 32;
-
-    // Atrial volumes
-    case 'b24': // LAVI
-      return val > 34;
-    case 'b25': // RAVI (JASE 2025 unificado)
-      return val >= 30;
-
-    // Diastologia (anormalidade)
-    case 'b19': return val < 50; // Onda E baixa
-    case 'b20': return val < 0.8 || val >= 2; // E/A
-    case 'b21': return val < 7; // e' septal baixa
-    case 'b22': return val > 15; // E/e' septal elevada
-    case 'b23': return val > 2.8; // Vel IT elevada
-    case 'b37': return val >= 36; // PSAP elevada
-
-    // Sistólica VD
-    case 'b33': return val < 17; // TAPSE baixa
-
-    // Strain (valores negativos)
-    case 'gls_ve': return Math.abs(val) < 20; // <|20%| reduzido
-    case 'gls_vd': return Math.abs(val) < 20;
-    case 'lars': return val < 18; // reservoir reduzido
-
-    // IMC — DECISÃO PRESERVADA: sem alerta automático
-    case 'imc': return false;
-
-    // Calculados (na tabela)
-    case 'feT':
-      return isM ? val < 0.51 : val < 0.53;
-    case 'fs':
-      return val < 0.30 || val > 0.40;
-    case 'massa':
-      return isM ? val >= 201 : val >= 151;
-    case 'imVE':
-      return isM ? val >= 103 : val >= 89;
-    case 'er':
-      return val >= 0.43;
-
-    default:
-      return false;
-  }
-}
-
-/**
- * Versão extensa que retorna não apenas se está OOR mas também
- * a direção (alta ou baixa). Útil pra UI mais rica.
- */
-export function checkOOR(
-  campo: string,
-  val: number | null,
-  sexo: Sexo
-): { oor: boolean; direcao: 'normal' | 'baixo' | 'alto' } {
-  if (val === null) return { oor: false, direcao: 'normal' };
-  if (!isOOR(campo, val, sexo)) return { oor: false, direcao: 'normal' };
-
-  // Determina direção
-  const isM = sexo !== 'F';
-  switch (campo) {
-    case 'b7':  case 'b8':  case 'b9':
-    case 'b10': case 'b11': case 'b12':
-    case 'b13': case 'b28':
-      // Para diâmetros, "alto" = aumentado (mais comum); "baixo" = pequeno
-      const limiteAlto = getLimiteSuperior(campo, isM);
-      return { oor: true, direcao: val > limiteAlto ? 'alto' : 'baixo' };
-
-    case 'b24': case 'b25': case 'b22': case 'b23':
-    case 'b37': case 'massa': case 'imVE': case 'er':
-      return { oor: true, direcao: 'alto' };
-
-    case 'b19': case 'b21': case 'b33': case 'lars':
-    case 'feT':
-      return { oor: true, direcao: 'baixo' };
-
-    case 'gls_ve': case 'gls_vd':
-      return { oor: true, direcao: 'baixo' }; // strain reduzido = anormal
-
-    default:
-      return { oor: true, direcao: 'normal' };
-  }
-}
-
-// ── Helper interno ──
-function getLimiteSuperior(campo: string, isM: boolean): number {
-  switch (campo) {
-    // Limites superiores alinhados aos ranges do isOOR (cutoffs ASE 2015,
-    // atualizados 07/05/2026). b7/b28 estavam com valor antigo (37/33 e
-    // 34/31) — corrigido p/ bater com isOOR (b7: 40/36 · b28: 37/34).
-    case 'b7':  return isM ? 40 : 36;
-    case 'b8':  return isM ? 40 : 38;
-    case 'b9':  return isM ? 58 : 52;
-    case 'b10': return isM ? 10 : 9;
-    case 'b11': return isM ? 10 : 9;
-    case 'b12': return isM ? 40 : 35;
-    case 'b13': return 35;
-    case 'b28': return isM ? 37 : 34;
-    default: return Infinity;
+    case 'b11': return M ? (valor < 6 || valor > 10) : (valor < 6 || valor > 9);
+    case 'b12': return M ? (valor < 25 || valor > 40) : (valor < 21 || valor > 35);
+    case 'b13': return valor < 21 || valor > 35;
+    case 'b28': return valor > corteChamberAsc(sexo);          // ≤38♂/≤35♀ (F1)
+    case 'b29': return valor > ARCO_NORMAL_MAX;                // ≤40, sem sexo (F1)
+    // ── coluna direita (derivados) — B13: passam a acender ──
+    case 'imc':  return valor >= 25;                           // VR '<25'
+    case 'vdf':  return M ? (valor < 62 || valor > 150) : (valor < 46 || valor > 106);
+    case 'vsf':  return M ? (valor < 21 || valor > 61) : (valor < 14 || valor > 42);
+    case 'feT':  return M ? valor < 0.52 : valor < 0.54;       // decimal 0-1 (≥52/54%)
+    case 'fs':   return valor < 0.30 || valor > 0.40;          // VR '30-40%'
+    case 'massa': return M ? valor > 200 : valor > 150;        // VR '<201'/'<151'
+    case 'imVE': return M ? valor > 115 : valor > 95;          // V2 (Lang 2015)
+    case 'er':   return valor > 0.42;                          // VR '<0,43'
+    // ── sem referência definida — nunca acendem ──
+    case 'aoae':
+    case 'asc':  return false;
   }
 }
