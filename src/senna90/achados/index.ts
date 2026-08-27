@@ -170,6 +170,15 @@ function montarD(m: MedidasEcoTT, calc: CalculosDerivados): any {
 }
 
 /**
+ * B5 — há alguma parede com contratilidade alterada?
+ * b55..b61 vazio = normal; b62 ('demais paredes') usa 'NL' para normal.
+ */
+function temParedeAlterada(d: any): boolean {
+  return !!(d.b55 || d.b56 || d.b57 || d.b58 || d.b59 || d.b60 || d.b61
+    || (d.b62 && d.b62 !== 'NL'));
+}
+
+/**
  * gerarAchados — Lista ordenada de achados.
  * Filter(Boolean) remove strings vazias.
  */
@@ -196,7 +205,9 @@ export function gerarAchados(m: MedidasEcoTT, calc: CalculosDerivados): string[]
     ...L(jEspessuraMiocardica(d.massa, d.sexo)),
     ...L(jPadraoGeometrico(d.er, d.imVE, d.sexo)),
     // Sistólica VE (Simpson prevalece)
-    ...L(d.b54 !== null ? jFE_Simpson(d.b54, d.sexo) : jFE_Teichholz(d.feT, d.sexo)),
+    ...L(d.b54 !== null
+      ? jFE_Simpson(d.b54, d.sexo, temParedeAlterada(d))
+      : jFE_Teichholz(d.feT, d.sexo)),
     // GLS VE
     ...L(jGLSve(d.glsVE)),
     // Paredes

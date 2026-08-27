@@ -4,8 +4,8 @@
 // F3 vai começar a IMPRIMIR (tabela + caixas calc-*) — pinar antes.
 // Política numérica ATUAL: truncar (não arredondar) — helpers/truncate.
 // Valores esperados conferidos à mão (fórmulas no comentário de cada
-// assert). BASELINE pré-F1: a F1 corrige o +0,6 da massa (B24) e este
-// arquivo registra a mudança (181.3 → 181.9).
+// assert). F1-T10 já aplicou a correção do +0,6 da massa (B24): massa
+// 181.3 → 181.9 e imVE 94.9 → 95.2.
 // ══════════════════════════════════════════════════════════════════
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -49,10 +49,12 @@ describe('BASELINE derivados pré-F1 — os 12 números da tabela (F0-T4)', () =
     assert.equal(d.feT, 0.7038);
   });
   test('fs = 20/50 = 0.4', () => assert.equal(d.fs, 0.4));
-  test('massa Devereux ATUAL (+0.6 dentro do /1000 — bug B24): ((70³−50³)·1.04·0.8+0.6)/1000 = 181.3766 → trunc1 181.3  // F1 → 181.9', () =>
-    assert.equal(d.massa, 181.3));
-  test('imVE = massa/asc = 181.3/1.91 = 94.92… → trunc1 94.9', () =>
-    assert.equal(d.imVE, 94.9));
+  // F1-T10 (B24): o +0,6 é em GRAMAS e saiu de dentro do /1000.
+  // (70³−50³)·1.04·0.8 = 181376 → /1000 = 181.376 → +0.6 = 181.976 → trunc1 181.9
+  test('massa Devereux CORRIGIDA (B24 — +0.6 g fora do /1000): 181.976 → trunc1 181.9 (era 181.3)', () =>
+    assert.equal(d.massa, 181.9));
+  test('imVE = massa/asc = 181.9/1.91 = 95.235… → trunc1 95.2 (era 94.9)', () =>
+    assert.equal(d.imVE, 95.2));
   test('er = (10+10)/50 = 0.4', () => assert.equal(d.er, 0.4));
   test('aoIdx = 3.0/1.91 = 1.570… → trunc2 1.57', () => assert.equal(d.aoIdx, 1.57));
 

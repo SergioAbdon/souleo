@@ -47,11 +47,12 @@ export function setDiastTextoLivreConcl(txt: string) { _diastManualTextoLivreCon
 
 /**
  * j47 — Hipertrofia/Remodelamento (conclusão)
- * Limites IM: M=102, F=88. Limite ER: 0.42.
+ * Limites IMVE (V2 — ASE 2015 Lang, Tabela 4): M=115, F=95. Limite ER: 0.42.
+ * Mesmos limites do j10 (achados/massa.ts) e da diastologia.
  */
 function j47(d: any): string {
   if (d.er === null || d.imVE === null || !d.sexo) return '';
-  const lim = d.sexo === 'M' ? 102 : 88;
+  const lim = d.sexo === 'M' ? 115 : 95;
   if (d.er > 0.42 && d.imVE <= lim) return 'Remodelamento concêntrico do ventrículo esquerdo.';
   if (d.er <= 0.42 && d.imVE > lim) return 'Hipertrofia excêntrica do ventrículo esquerdo.';
   if (d.er > 0.42 && d.imVE > lim) return 'Hipertrofia concêntrica do ventrículo esquerdo.';
@@ -88,9 +89,17 @@ function concSistolica(d: any): string {
   const disfVE = feDisp && feReduz;
   const dilatado = veAum || vdAum;
   const prefix = dilatado ? 'Miocardiopatia Dilatada com ' : '';
+  // B7 — alguma parede com contratilidade alterada (b62 usa 'NL' para normal)
+  const paredes = !!(d.b55 || d.b56 || d.b57 || d.b58 || d.b59 || d.b60 || d.b61
+    || (d.b62 && d.b62 !== 'NL'));
 
   if (!disfVE && !disfVD) {
-    if (dilatado) return 'Miocardiopatia Dilatada com função sistólica preservada.';
+    if (dilatado) {
+      return paredes
+        ? 'Miocardiopatia Dilatada com função sistólica preservada, apesar da alteração contrátil segmentar.'
+        : 'Miocardiopatia Dilatada com função sistólica preservada.';
+    }
+    if (paredes && feDisp) return 'Alteração contrátil segmentar do ventrículo esquerdo.';
     return '';
   }
 
@@ -98,12 +107,8 @@ function concSistolica(d: any): string {
     return prefix + 'Disfunção sistólica biventricular.';
   }
   if (disfVE && !disfVD) {
-    // Caso especial: Simpson preservado mas paredes alteradas
-    if (d.b54 !== null && d.b54 >= feLimS) {
-      return dilatado
-        ? 'Miocardiopatia Dilatada com função sistólica do ventrículo esquerdo preservada, apesar da alteração contrátil segmentar.'
-        : 'Alteração contrátil segmentar do ventrículo esquerdo.';
-    }
+    // B7: aqui NÃO cabe mais o ramo "Simpson preservado" — disfVE só é true
+    // quando b54 < feLimS (ou feT < feLim), logo b54 >= feLimS era inalcançável.
     return prefix + 'Disfunção sistólica do ventrículo esquerdo.';
   }
   if (!disfVE && disfVD) {
@@ -261,6 +266,15 @@ function montarD(m: MedidasEcoTT, calc: CalculosDerivados): any {
     b32: m.sistolica.disfuncaoVD,
     glsVE: m.sistolica.glsVE,
     glsVD: m.sistolica.glsVD,
+    // B7 — paredes segmentares (mesmo mapeamento do adapter de achados)
+    b55: m.segmentar.apex,
+    b56: m.segmentar.anterior,
+    b57: m.segmentar.septalAnterior,
+    b58: m.segmentar.septalInferior,
+    b59: m.segmentar.inferior,
+    b60: m.segmentar.inferolateral,
+    b61: m.segmentar.lateral,
+    b62: m.segmentar.demaisParedes,
     b35: m.valvas.refluxoMitral,
     b36: m.valvas.refluxoTricuspide,
     b40: m.valvas.refluxoAortico,

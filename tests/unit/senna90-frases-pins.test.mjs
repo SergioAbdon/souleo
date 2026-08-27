@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { calcular, calcularDerivados } from '../../src/senna90/motor.ts';
 import { medidasVazias } from '../../src/senna90/tests/helpers.ts';
 import { faixaGLSve } from '../../src/senna90/achados/strain.ts';
+import { jFE_Teichholz } from '../../src/senna90/achados/sistolica.ts';
 
 const temQueIncluir = (lista, trecho) =>
   assert.ok(lista.some((s) => s.includes(trecho)),
@@ -326,6 +327,106 @@ describe('F1-T9 Wilkins — não avaliado · literal "(escore < 8)"', () => {
     const r = calcular(m);
     naoPodeIncluir(r.achados, '__WILKINS__');
     assert.equal(r.alertas.filter((a) => a.tipo === 'WILKINS_INCOMPLETO').length, 0);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════
+// F1-T10 — massa/sistólica (spec §2.1/§2.3). Comportamento NOVO:
+// · B5: "apesar da alteração contrátil segmentar" só sai com parede
+//   alterada (b55..b62) — antes era assumida em TODO Simpson preservado.
+// · B7: a conclusão "Alteração contrátil segmentar do ventrículo
+//   esquerdo." era inalcançável (vivia dentro de disfVE, onde b54 >= lim
+//   é impossível) e agora nasce no ramo !disfVE && !disfVD.
+// · A13: as igualdades exatas da FE Teichholz viraram bandas do trunc4.
+// ══════════════════════════════════════════════════════════════════
+describe('F1-T10 sistólica — B5 (apesar da) · B7 (segmentar isolada) · A13 (bandas)', () => {
+  const comSimpson = (b54, parede) => {
+    const m = medidasVazias();
+    m.gerais.sexo = 'M';
+    m.sistolica.feSimpson = b54;
+    if (parede) m.segmentar.anterior = parede;
+    return calcular(m);
+  };
+
+  test('B5 — Simpson 60 SEM parede alterada: frase preservada SEM "apesar da"', () => {
+    const r = comSimpson(60, null);
+    temQueIncluir(r.achados, 'Função sistólica do ventrículo esquerdo preservada. Fração de ejeção de 60% (Simpson).');
+    naoPodeIncluir(r.achados, 'apesar da alteração contrátil segmentar');
+  });
+
+  test('B5/B7 — Simpson 60 COM b56="HB": volta o "apesar da" E nasce a conclusão segmentar', () => {
+    const r = comSimpson(60, 'HB');
+    temQueIncluir(r.achados, 'Função sistólica do ventrículo esquerdo preservada, apesar da alteração contrátil segmentar. Fração de ejeção de 60% (Simpson).');
+    temQueIncluir(r.conclusoes, 'Alteração contrátil segmentar do ventrículo esquerdo.');
+  });
+
+  test('B7 — sem FE nenhuma, parede alterada NÃO inventa a conclusão segmentar', () => {
+    const m = medidasVazias();
+    m.gerais.sexo = 'M';
+    m.segmentar.anterior = 'HB';
+    naoPodeIncluir(calcular(m).conclusoes, 'Alteração contrátil segmentar do ventrículo esquerdo.');
+  });
+
+  test('A13 — jFE_Teichholz(0.52, "M"): limite inferior da normalidade (banda, não igualdade)', () => {
+    assert.equal(jFE_Teichholz(0.52, 'M'),
+      'Função sistólica do ventrículo esquerdo preservada, porém no limite inferior da normalidade.');
+  });
+  test('A13 — jFE_Teichholz(0.5201, "M"): preservada (primeiro degrau do trunc4 acima do limite)', () => {
+    assert.equal(jFE_Teichholz(0.5201, 'M'),
+      'Função sistólica do ventrículo esquerdo preservada e sem alteração contrátil segmentar.');
+  });
+  test('A13 — espelho ♀ 0.54/0.5401 e as bandas 0.30/0.3001 e 0.40/0.4001', () => {
+    assert.equal(jFE_Teichholz(0.54, 'F'),
+      'Função sistólica do ventrículo esquerdo preservada, porém no limite inferior da normalidade.');
+    assert.equal(jFE_Teichholz(0.5401, 'F'),
+      'Função sistólica do ventrículo esquerdo preservada e sem alteração contrátil segmentar.');
+    assert.equal(jFE_Teichholz(0.30, 'M'), 'Disfunção sistólica do ventrículo esquerdo em grau moderado a importante.');
+    assert.equal(jFE_Teichholz(0.3001, 'M'), 'Disfunção sistólica do ventrículo esquerdo em grau moderado.');
+    assert.equal(jFE_Teichholz(0.40, 'M'), 'Disfunção sistólica do ventrículo esquerdo em grau leve a moderado.');
+    assert.equal(jFE_Teichholz(0.4001, 'M'), 'Disfunção sistólica do ventrículo esquerdo em grau leve.');
+    assert.equal(jFE_Teichholz(0.2999, 'M'), 'Disfunção sistólica do ventrículo esquerdo em grau importante.');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════
+// F1-T10 — V2: limite de hipertrofia unificado em 115♂/95♀ (ASE 2015
+// Lang, Tabela 4). Antes eram 102/88, divergindo da diastologia.
+// ══════════════════════════════════════════════════════════════════
+describe('F1-T10 geometria — IMVE 115♂/95♀ no j10 e no j47 (V2)', () => {
+  // peso 80 / altura 170 → ASC 1.91 (DuBois, independe de sexo)
+  const medidasGeo = (sexo, ddve, siv, pp) => {
+    const m = medidasVazias();
+    m.gerais.sexo = sexo;
+    m.gerais.peso = 80; m.gerais.altura = 170;
+    m.camaras.ddve = ddve; m.camaras.septoIV = siv; m.camaras.paredePosterior = pp;
+    return m;
+  };
+  const comGeometria = (...a) => calcular(medidasGeo(...a));
+
+  test('♂ imVE 106.4 (era >102 = excêntrica; agora ≤115 = preservado)', () => {
+    // ddve 58 / 9 / 9 → massa 203.4 → 203.4/1.91 = 106.4 · er = 18/58 = 0.31
+    const d = calcularDerivados(medidasGeo('M', 58, 9, 9));
+    assert.equal(d.imVE, 106.4);
+    const r = comGeometria('M', 58, 9, 9);
+    temQueIncluir(r.achados, 'Índice de massa e espessura relativa do ventrículo esquerdo preservados.');
+    naoPodeIncluir(r.achados, 'Hipertrofia excêntrica do ventrículo esquerdo.');
+    naoPodeIncluir(r.conclusoes, 'Hipertrofia excêntrica do ventrículo esquerdo.');
+  });
+  test('♀ imVE 88.9 (era >88 = excêntrica; agora ≤95 = preservado)', () => {
+    // ddve 50 / 10 / 9 → massa 169.9 → 169.9/1.91 = 88.9 · er = 19/50 = 0.38
+    const d = calcularDerivados(medidasGeo('F', 50, 10, 9));
+    assert.equal(d.massa, 169.9);
+    assert.equal(d.imVE, 88.9);
+    const r = comGeometria('F', 50, 10, 9);
+    temQueIncluir(r.achados, 'Índice de massa e espessura relativa do ventrículo esquerdo preservados.');
+    naoPodeIncluir(r.achados, 'Hipertrofia excêntrica do ventrículo esquerdo.');
+    naoPodeIncluir(r.conclusoes, 'Hipertrofia excêntrica do ventrículo esquerdo.');
+  });
+  test('♀ imVE 95.2 (acima de 95): hipertrofia excêntrica no achado E na conclusão', () => {
+    // ddve 50 / 10 / 10 → massa 181.9 → 181.9/1.91 = 95.2 · er = 20/50 = 0.40
+    const r = comGeometria('F', 50, 10, 10);
+    temQueIncluir(r.achados, 'Hipertrofia excêntrica do ventrículo esquerdo.');
+    temQueIncluir(r.conclusoes, 'Hipertrofia excêntrica do ventrículo esquerdo.');
   });
 });
 

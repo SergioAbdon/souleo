@@ -52,9 +52,15 @@ export const casosBordas: CasoTeste[] = [
       return m;
     })(),
     esperado: {
+      // V2 (F1-T10): imVE 110.5 g/m² (♂) — com o limite antigo (102) caía em
+      // "Hipertrofia excêntrica"; com 115 (ASE 2015 Lang) o quadrante é preservado.
+      achados: [
+        'Índice de massa e espessura relativa do ventrículo esquerdo preservados.',
+      ],
       // 58 não é > 58, então não dispara "leve" — fica normal
       achadosNaoPresentes: [
         'Ventrículo esquerdo aumentado',
+        'Hipertrofia excêntrica do ventrículo esquerdo.',
       ],
     },
   },
