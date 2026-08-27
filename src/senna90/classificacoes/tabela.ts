@@ -8,7 +8,7 @@
 // Mudanças declaradas em relação ao legado:
 // • B13 — a metade DIREITA passa a acender (isOOR cobre os derivados);
 //   o realce sai nas colunas 1 e 5, as duas colunas de valor.
-// • B14 — 2 linhas novas (Ao Ascendente / Arco Aórtico): 10 → 12 rows.
+// • B14 — 2 linhas novas (Aorta Ascendente / Arco Aórtico): 10 → 12 rows.
 // • B25 — valorTabela trunca e usa vírgula (o legado arredondava com
 //   toFixed e ponto); mm passam a 0 casas.
 // • C8 — sexo vazio zera TODAS as colunas VR (inclusive IMC, que no
@@ -75,7 +75,7 @@ export function montarRowsTabela(
     ['Parede Posterior', t('b11'), 'mm', r('b11'), 'Índice de Massa VE', t('imVE'), 'g/m²', r('imVE')],
     ['DSVE', t('b12'), 'mm', r('b12'), 'Espessura Relativa', t('er'), '', r('er')],
     ['Ventrículo Direito', t('b13'), 'mm', r('b13'), 'Área Sup. Corpórea', t('asc'), 'm²', r('asc')],
-    ['Ao Ascendente', t('b28'), 'mm', r('b28'), '', '', '', ''],
+    ['Aorta Ascendente', t('b28'), 'mm', r('b28'), '', '', '', ''],
     ['Arco Aórtico', t('b29'), 'mm', r('b29'), '', '', '', ''],
   ];
 

@@ -70,7 +70,7 @@ describe('Senna93 montarRowsTabela — paciente-padrão F0, célula a célula', 
       ['Parede Posterior', '10', 'mm', '6–10 mm', 'Índice de Massa VE', '95,2', 'g/m²', '≤ 115 g/m²'],
       ['DSVE', '30', 'mm', '25–40 mm', 'Espessura Relativa', '0,40', '', '<0,43'],
       ['Ventrículo Direito', '—', 'mm', '21–35 mm', 'Área Sup. Corpórea', '1,91', 'm²', ''],
-      ['Ao Ascendente', '—', 'mm', '≤ 38 mm', '', '', '', ''],
+      ['Aorta Ascendente', '—', 'mm', '≤ 38 mm', '', '', '', ''],
       ['Arco Aórtico', '—', 'mm', '≤ 40 mm', '', '', '', ''],
     ]);
   });
@@ -142,7 +142,7 @@ describe('Senna93 montarRowsTabela — VIDE, sexo ausente e aorta (B14)', () => 
 
   test('b28/b29 null → linhas 11-12 com "—" mas VR presente', () => {
     const { rows, oor } = montar();
-    assert.deepEqual(rows[10], ['Ao Ascendente', '—', 'mm', '≤ 38 mm', '', '', '', '']);
+    assert.deepEqual(rows[10], ['Aorta Ascendente', '—', 'mm', '≤ 38 mm', '', '', '', '']);
     assert.deepEqual(rows[11], ['Arco Aórtico', '—', 'mm', '≤ 40 mm', '', '', '', '']);
     assert.equal(oor[10][1], false);
     assert.equal(oor[11][1], false);
@@ -154,5 +154,21 @@ describe('Senna93 montarRowsTabela — VIDE, sexo ausente e aorta (B14)', () => 
     assert.equal(rows[11][1], '41');
     assert.equal(oor[10][1], true);
     assert.equal(oor[11][1], true);
+  });
+});
+
+// M2 da revisão F3-T4: CAMPOS é array paralelo a rows — trocar massa↔imVE
+// acenderia a linha errada sem nenhum pin piscar. Este fecha as linhas 6/7.
+describe('F3-T4 fix — realce da direita aponta pra linha certa (massa vs imVE)', () => {
+  test('massa 210 (>200 ♂) acende a linha "Massa do VE" e NÃO a do índice', () => {
+    const m = pacientePadrao();
+    const d = { ...calcularDerivados(m), massa: 210, imVE: 100 };
+    const { rows, oor } = montarRowsTabela(
+      { sexo: 'M', peso: 80, altura: 170 }, MEDIDAS, d, 46
+    );
+    const iMassa = rows.findIndex((l) => l[4] === 'Massa do VE');
+    const iIm = rows.findIndex((l) => l[4] === 'Índice de Massa VE');
+    assert.equal(oor[iMassa][5], true, 'massa 210 devia acender');
+    assert.equal(oor[iIm][5], false, 'imVE 100 (≤115) não devia acender');
   });
 });
