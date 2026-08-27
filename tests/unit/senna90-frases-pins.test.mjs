@@ -367,6 +367,15 @@ describe('F1-T10 sistólica — B5 (apesar da) · B7 (segmentar isolada) · A13 
     naoPodeIncluir(calcular(m).conclusoes, 'Alteração contrátil segmentar do ventrículo esquerdo.');
   });
 
+  test('T11 carona (M1/T10) — VE dilatado (ddve 60 ♂) + b56="HB" + Simpson 60: "Miocardiopatia Dilatada com função sistólica preservada, apesar da alteração contrátil segmentar."', () => {
+    const m = medidasVazias();
+    m.gerais.sexo = 'M';
+    m.camaras.ddve = 60;
+    m.segmentar.anterior = 'HB';
+    m.sistolica.feSimpson = 60;
+    temQueIncluir(calcular(m).conclusoes, 'Miocardiopatia Dilatada com função sistólica preservada, apesar da alteração contrátil segmentar.');
+  });
+
   test('A13 — jFE_Teichholz(0.52, "M"): limite inferior da normalidade (banda, não igualdade)', () => {
     assert.equal(jFE_Teichholz(0.52, 'M'),
       'Função sistólica do ventrículo esquerdo preservada, porém no limite inferior da normalidade.');

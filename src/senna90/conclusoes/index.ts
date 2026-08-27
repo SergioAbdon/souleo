@@ -34,14 +34,9 @@ import {
   tierAoAscendente,
   tierArcoAo,
 } from '../calculos/aorta';
-import { getDiastModo } from '../achados/index';
+import { getDiastModo, getDiastManualSelecao, getDiastManualTextoLivre } from '../achados/index';
 import { faixaGLSve } from '../achados/strain';
-
-// Estado manual diastologia (referenciado do mesmo state em achados/index.ts)
-let _diastManualSelecaoConcl = -1;
-let _diastManualTextoLivreConcl = '';
-export function setDiastManualConcl(idx: number) { _diastManualSelecaoConcl = Math.trunc(idx); }
-export function setDiastTextoLivreConcl(txt: string) { _diastManualTextoLivreConcl = txt; }
+import { montarD, temParedeAlterada } from '../adapter-d';
 
 // ══ HELPERS ═════════════════════════════════════════════════════
 
@@ -90,8 +85,7 @@ function concSistolica(d: any): string {
   const dilatado = veAum || vdAum;
   const prefix = dilatado ? 'Miocardiopatia Dilatada com ' : '';
   // B7 — alguma parede com contratilidade alterada (b62 usa 'NL' para normal)
-  const paredes = !!(d.b55 || d.b56 || d.b57 || d.b58 || d.b59 || d.b60 || d.b61
-    || (d.b62 && d.b62 !== 'NL'));
+  const paredes = temParedeAlterada(d);
 
   if (!disfVE && !disfVD) {
     if (dilatado) {
@@ -231,67 +225,17 @@ function concLARS(d: any): string {
 function diastConclusao(d: any): string {
   const modo = getDiastModo();
   if (modo === 'manual') {
-    if (_diastManualTextoLivreConcl) return _diastManualTextoLivreConcl;
-    if (_diastManualSelecaoConcl >= 0 && _diastManualSelecaoConcl < DIAST_SENTENCAS.length) {
+    const textoLivre = getDiastManualTextoLivre();
+    const selecao = getDiastManualSelecao();
+    if (textoLivre) return textoLivre;
+    if (selecao >= 0 && selecao < DIAST_SENTENCAS.length) {
       // Se é FA (índice 5), calcular pressão de enchimento via j43
-      if (_diastManualSelecaoConcl === 5) return j43(d);
-      return DIAST_SENTENCAS[_diastManualSelecaoConcl].conclusao;
+      if (selecao === 5) return j43(d);
+      return DIAST_SENTENCAS[selecao].conclusao;
     }
     return '';
   }
   return j43(d);
-}
-
-// ══ ADAPTER ═════════════════════════════════════════════════════
-
-function montarD(m: MedidasEcoTT, calc: CalculosDerivados): any {
-  return {
-    sexo: m.gerais.sexo,
-    ritmo: m.gerais.ritmo,
-    b7: m.camaras.raizAo,
-    b8: m.camaras.ae,
-    b9: m.camaras.ddve,
-    b13: m.camaras.vd,
-    b28: m.camaras.aoAscendente,
-    b29: m.camaras.arcoAo,
-    b19: m.diastolica.ondaE,
-    b20: m.diastolica.relacaoEA,
-    b21: m.diastolica.eSeptal,
-    b22: m.diastolica.relacaoEEseptal,
-    b23: m.diastolica.velocidadeIT,
-    b24: m.diastolica.volAEindex,
-    b38: m.diastolica.sinaisHP,
-    lars: m.diastolica.laStrain,
-    b54: m.sistolica.feSimpson,
-    b32: m.sistolica.disfuncaoVD,
-    glsVE: m.sistolica.glsVE,
-    glsVD: m.sistolica.glsVD,
-    // B7 — paredes segmentares (mesmo mapeamento do adapter de achados)
-    b55: m.segmentar.apex,
-    b56: m.segmentar.anterior,
-    b57: m.segmentar.septalAnterior,
-    b58: m.segmentar.septalInferior,
-    b59: m.segmentar.inferior,
-    b60: m.segmentar.inferolateral,
-    b61: m.segmentar.lateral,
-    b62: m.segmentar.demaisParedes,
-    b35: m.valvas.refluxoMitral,
-    b36: m.valvas.refluxoTricuspide,
-    b40: m.valvas.refluxoAortico,
-    b40p: m.valvas.refluxoPulmonar,
-    b41: m.valvas.derramePericard,
-    b42: m.valvas.placasArco,
-    asc: calc.asc,
-    altura: m.gerais.altura,
-    feT: calc.feT,
-    imVE: calc.imVE,
-    er: calc.er,
-    idade: calc.idade,
-    estenMitGrau: calc.estenMitGrau,
-    estenAoGrau: calc.estenAoGrau,
-    estenTricGrau: calc.estenTricGrau,
-    estenPulmGrau: calc.estenPulmGrau,
-  };
 }
 
 // ══ ORQUESTRADOR ═══════════════════════════════════════════════

@@ -19,7 +19,7 @@ import {
 } from './calculos/valvas';
 import { calcWilkinsScore } from './achados/wilkins';
 import { gerarAchados, setDiastModo, setDiastManual, setDiastTextoLivre } from './achados/index';
-import { gerarConclusao, setDiastManualConcl, setDiastTextoLivreConcl } from './conclusoes/index';
+import { gerarConclusao } from './conclusoes/index';
 
 // ══ MOTOR PRINCIPAL ════════════════════════════════════════════
 
@@ -131,16 +131,15 @@ function gerarAlertas(m: MedidasEcoTT): AlertaUI[] {
  */
 export function calcular(medidas: MedidasEcoTT): ResultadoLaudo {
   // Modo manual da diastólica (D3/S5-T3): `medidas.diastolica` carrega a
-  // seleção do médico (vinda do adapter), mas achados/index.ts e
-  // conclusoes/index.ts guardam o modo/seleção em variáveis de módulo (mesmo
-  // padrão do motor antigo — ver DIAST_SENTENCAS). Sem sincronizar aqui a
-  // cada chamada, a seleção nunca chegava no texto (e, pior, um exame em
-  // modo manual "vazava" pro próximo cálculo se não fosse resetada).
+  // seleção do médico (vinda do adapter), mas achados/index.ts guarda o
+  // modo/seleção em variáveis de módulo (mesmo padrão do motor antigo — ver
+  // DIAST_SENTENCAS). conclusoes/index.ts lê o mesmo estado via getters
+  // (dono único desde a T11/B30). Sem sincronizar aqui a cada chamada, a
+  // seleção nunca chegava no texto (e, pior, um exame em modo manual
+  // "vazava" pro próximo cálculo se não fosse resetada).
   setDiastModo(medidas.diastolica.modoManual);
   setDiastManual(medidas.diastolica.selecaoManual);
   setDiastTextoLivre(medidas.diastolica.textoLivre);
-  setDiastManualConcl(medidas.diastolica.selecaoManual);
-  setDiastTextoLivreConcl(medidas.diastolica.textoLivre);
 
   const derivados = calcularDerivados(medidas);
   const achados = gerarAchados(medidas, derivados);
@@ -158,4 +157,3 @@ export function calcular(medidas: MedidasEcoTT): ResultadoLaudo {
 // Re-exports para conveniência
 export type { MedidasEcoTT, CalculosDerivados, ResultadoLaudo } from './types';
 export { setDiastModo, setDiastManual, setDiastTextoLivre, getDiastModo } from './achados/index';
-export { setDiastManualConcl, setDiastTextoLivreConcl } from './conclusoes/index';
