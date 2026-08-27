@@ -23,6 +23,7 @@ import { normalizarParaImport, prefixoArquivoPorTipo, isSchemaAntigo, InputImpor
 import { carregarPerfilAparelho } from '@/lib/perfil-aparelho';
 import { precisaConfirmarEmissao, SEM_SELECAO_PREFIXO } from '@/lib/emissao-guarda';
 import { decidirFontePreenchimento, rascunhoExpirado, SETE_DIAS_MS, type RascunhoLocal } from '@/lib/rascunho-restauracao';
+import BancoFrases from '@/components/laudo/BancoFrases';
 import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
 import { gerarDocx } from '@/lib/exportDocx';
@@ -106,6 +107,10 @@ function LaudoPageInner() {
   // Modal de import de medidas SR (15/05/2026). Substitui o auto-import
   // que rodava ao clicar "📡 Vivid" — agora abre modal de validação 1-a-1.
   const [srImportOpen, setSrImportOpen] = useState(false);
+  // F3-T7: Banco de Frases virou React. Antes o modal era HTML injetado no
+  // SheetA4 e quem abria/fechava era o motor legado (window.abrirBanco →
+  // classList.add('open')). Agora é state daqui.
+  const [bancoOpen, setBancoOpen] = useState(false);
   // URLs selecionadas pra imprimir no PDF do laudo (subset de imagensDicom).
   // Sincronizado com `exame.imagensSelecionadasPdf` no Firestore. Default
   // quando undefined no Firestore = primeiras 8 (ou menos se exame tem <8).
@@ -543,7 +548,11 @@ function LaudoPageInner() {
         pendingHtml.current = processed;
       }
     };
-    // Banco de frases insere no cursor
+    // Banco de frases insere no cursor.
+    // F3-T7: ÓRFÃ. Quem chamava era `inserirFraseSelecionada()` do motor, só
+    // acionada pelo `onclick` do modal legado — que saiu do SheetA4. O React
+    // agora chama `editorRef.insertLine` direto (ver <BancoFrases>). Fica de
+    // pé porque o motor ainda define a função; morre junto com ele na F5.
     w._onInserirFrase = (texto: string) => {
       if (editorRef.current) editorRef.current.insertLine(texto);
     };
@@ -2017,14 +2026,19 @@ function LaudoPageInner() {
             // editable:false (ver comentário na prop em EditorLaudo.tsx).
             editable={!emitido}
             onDirty={() => { dirtyRef.current = true; }}
-            onAddFrase={() => {
-              const w = window as unknown as Record<string, unknown>;
-              const fn = w.abrirBanco as ((target: unknown, pos: string) => void);
-              if (fn) fn(null, 'top');
-            }}
+            onAddFrase={() => setBancoOpen(true)}
           />
         }
       />
+      {/* Banco de Frases (F3-T7) — mesmo acervo (localStorage
+          `medcardio_banco`), mesmas 34 frases de fábrica, agora em React. */}
+      {bancoOpen && (
+        <BancoFrases
+          p1={p1}
+          onClose={() => setBancoOpen(false)}
+          onInserir={(txt) => editorRef.current?.insertLine(txt)}
+        />
+      )}
       {/* Popup Salvar/Emitir — agora mostra toggle "Incluir imagens DICOM"
           quando há selecionadas (decisão 15/05/2026). */}
       <PopupSalvarEmitir

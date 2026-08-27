@@ -88,31 +88,9 @@ export default function SheetA4({ p1, clinicaNome, clinicaSlogan, clinicaEnd, cl
         </div>
       </MolduraA4>
     </div>
-
-    {/* ═══ MODAL BANCO DE FRASES ═══ */}
-    <div dangerouslySetInnerHTML={{ __html: `
-      <div class="modal-overlay" id="modal-banco">
-        <div class="modal-box">
-          <div class="modal-header" style="background:${p1}">
-            <h2>📚 Banco de Frases</h2>
-            <button class="modal-close" onclick="fecharBanco()">×</button>
-          </div>
-          <div class="modal-search">
-            <input type="text" id="banco-busca" placeholder="🔍 Buscar frase..." oninput="renderBanco()"/>
-          </div>
-          <div class="modal-cats" id="banco-cats"></div>
-          <div class="modal-list" id="banco-lista"></div>
-          <div class="modal-footer">
-            <div class="modal-nova-frase">
-              <input type="text" id="nova-frase-txt" placeholder="Nova frase..."/>
-              <select id="nova-frase-cat"></select>
-              <button class="btn-nova-add" onclick="adicionarFraseBanco()">+ Salvar</button>
-            </div>
-            <button class="btn-inserir" id="btn-inserir-frase" onclick="inserirFraseSelecionada()" disabled>Inserir no Laudo</button>
-          </div>
-        </div>
-      </div>
-    ` }} />
+    {/* F3-T7: o modal do Banco de Frases morava aqui, em
+        dangerouslySetInnerHTML com `onclick` globais do motor. Virou
+        componente React (BancoFrases.tsx), renderizado pela page. */}
   </>;
 
   return result;
