@@ -61,8 +61,10 @@ describe('alertasVisiveis', () => {
 describe('fiação na sidebar — flag OFF não muda nada', () => {
   const SIDEBAR = readFileSync(new URL('../../src/components/laudo/SidebarLaudo.tsx', import.meta.url), 'utf8');
 
-  test('o #alerta-psap legado só some com paramsOn (`!paramsOn &&`)', () => {
-    assert.match(SIDEBAR, /\{!paramsOn && \(\s*\n\s*<div id="alerta-psap"/);
+  test('o #alerta-psap legado fica de plantão até a lista do motor chegar (I2 da revisão F3-T2)', () => {
+    // OFF: !paramsOn=true → nó presente (tela de hoje). ON + lista vazia (exame
+    // restaurado): nó presente. ON + lista chegou: nó sai (sem duplicar o aviso).
+    assert.match(SIDEBAR, /\{\(!paramsOn \|\| !alertasMotor\?\.length\) && \(\s*\n\s*<div id="alerta-psap"/);
   });
 
   test('o bloco novo só existe com paramsOn E com alerta na lista', () => {
