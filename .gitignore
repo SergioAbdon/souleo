@@ -78,3 +78,6 @@ tests/e2e/.auth/
 # artefatos do Playwright
 /test-results/
 /playwright-report/
+
+# Backup de cache do build (incidente Tailwind 27/08) — nunca versionar
+.next-corrompido-bak/
