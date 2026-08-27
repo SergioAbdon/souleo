@@ -7,6 +7,7 @@
 
 import { useState, useEffect, ReactNode } from 'react';
 import { auth } from '@/lib/firebase';
+import type { AlertaUI } from '@/senna90/types';
 
 // Helpers para chamar funções do motor (expostas em window.*)
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -53,9 +54,24 @@ type Props = {
   wsId?: string;
   /** Feedback visível (toast) — reusa o toast já existente em page.tsx (S5-T9). */
   onToast?: (msg: string) => void;
+  /**
+   * F3 Task 2 — alertas estruturados que o motor devolve a cada rodada da
+   * ponte (`ResultadoLaudo.alertas`), já passados por `alertasVisiveis()`
+   * (dedupe + ordem fixa). Até a F3 a page descartava esse campo.
+   * Só é renderizado com `paramsOn` — ver abaixo.
+   */
+  alertasMotor?: AlertaUI[];
+  /**
+   * `senna93Params()` avaliado UMA vez na montagem da page. Liga o bloco de
+   * alertas do motor E desliga o `#alerta-psap` legado (o motor já emite
+   * IT_SEM_PSAP — sem isto o médico veria o MESMO aviso duas vezes).
+   * OFF (produção de hoje) = nada muda: sem bloco novo, `#alerta-psap`
+   * no lugar de sempre, controlado pelo override `window.alertaIT`.
+   */
+  paramsOn?: boolean;
 };
 
-export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, onImportarDicom, dicomImportado, ortancAtivo, totalMedidasDicom, totalImagensDicom, onAbrirGaleria, emitido, modoEmitido, readOnlyIdentificacao, readOnlyMotor, exameOrigem, exameCpf, exameAcc, onCorrigirAdmin, wsId, onToast }: Props) {
+export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalvarEmitir, onLimpar, onImportarDicom, dicomImportado, ortancAtivo, totalMedidasDicom, totalImagensDicom, onAbrirGaleria, emitido, modoEmitido, readOnlyIdentificacao, readOnlyMotor, exameOrigem, exameCpf, exameAcc, onCorrigirAdmin, wsId, onToast, alertasMotor, paramsOn }: Props) {
   const [idDesbloqueado, setIdDesbloqueado] = useState(false);
   const [feegowLoading, setFeegowLoading] = useState(false);
   const idBloqueado = readOnlyIdentificacao && !idDesbloqueado;
@@ -269,6 +285,23 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
           já são nativos do browser. Ver navTeclado() no fim do arquivo. */}
       <div className="flex-1 overflow-y-auto pb-10" onKeyDown={navTeclado}>
 
+      {/* ═══ ALERTAS DO MOTOR (F3 Task 2) ═══
+          Os 5 alertas estruturados (IT_SEM_PSAP, REFLUXO_PULM_SEM_PMAP,
+          AORTA_SEM_IDADE, WILKINS_INCOMPLETO, SEXO_AUSENTE) chegavam pela
+          ponte e eram descartados pela page. Agora aparecem aqui, no topo,
+          com a MESMA pele do `#alerta-psap` (âmbar) — o médico já conhece
+          esse visual. `paramsOn` OFF → este bloco não existe. */}
+      {paramsOn && !!alertasMotor?.length && (
+        <div id="alertas-motor" className="px-5 pt-2.5 flex flex-col gap-1">
+          {alertasMotor.map((a) => (
+            <div key={a.tipo}
+              className="text-[9px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1 font-medium">
+              ⚠️ {a.mensagem}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* ═══ IDENTIFICAÇÃO ═══ */}
       <Sec id="sec-id" title="👤 Identificação" defaultOpen single>
         {exameAcc && (
@@ -422,9 +455,14 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
         <F label="Relação E/e'"><input type="number" id="b22" step="0.1" className="sf" /></F>
         <F label="Vel. IT" u="m/s"><input type="number" id="b23" step="0.01" className="sf" /></F>
         <F label="PSAP" u="mmHg"><input type="number" id="b37" step="1" className="sf" /></F>
-        <div id="alerta-psap" className="col-span-2 text-[9px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1 font-medium" style={{ display: 'none' }}>
-          ⚠️ Vel. IT preenchida sem PSAP — informe a PSAP estimada
-        </div>
+        {/* Legado: ligado/desligado pelo override `window.alertaIT` (page.tsx).
+            Com `paramsOn` o motor já emite IT_SEM_PSAP no bloco do topo — o nó
+            some pra não duplicar o aviso (o override tem guard `if (msg)`). */}
+        {!paramsOn && (
+          <div id="alerta-psap" className="col-span-2 text-[9px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1 font-medium" style={{ display: 'none' }}>
+            ⚠️ Vel. IT preenchida sem PSAP — informe a PSAP estimada
+          </div>
+        )}
         <F label="Vol. AE index" u="ml/m²"><input type="number" id="b24" step="0.1" className="sf" /></F>
         <F label="≥2 sinais indiretos de HP?"><select id="b38" className="sf"><option value="">Não</option><option value="S">Sim</option></select></F>
         <F label="Vol. AD index" u="ml/m²"><input type="number" id="b25" step="0.1" className="sf" /></F>

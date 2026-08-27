@@ -34,7 +34,9 @@ import { executarEReportar, shadowModeAtivo } from '@/lib/shadow-runner';
 // via `_onLaudoGerado` — a ponte que existia mas NUNCA era chamada
 // desde a migração TipTap (raiz do "bug das frases" imortal).
 // Flag OFF = comportamento de hoje (rollback instantâneo, zero-deploy).
-import { senna90Primario } from '@/lib/primary-engine-flag';
+import { senna90Primario, senna93Params } from '@/lib/primary-engine-flag';
+import { alertasVisiveis } from '@/lib/alertas-motor';
+import type { AlertaUI } from '@/senna90/types';
 import { calcularSenna90, criarDebounce } from '@/lib/senna90-bridge';
 import { montarLaudoHtml } from '@/lib/senna90-render';
 import { mesclarLinhas } from '@/lib/laudo-merge';
@@ -100,6 +102,18 @@ function LaudoPageInner() {
   // true quando médico desbloqueou um 'emitido'. handleEmitir reseta;
   // handleVoltar avisa se ainda true (edição não reemitida será perdida).
   const [reedicaoAtiva, setReedicaoAtiva] = useState(false);
+  // F3 Task 2 — os 5 alertas estruturados do motor. Chegavam em
+  // `ResultadoLaudo.alertas` a cada rodada da ponte e eram DESCARTADOS aqui
+  // (a page só lia `achados`/`conclusoes`). Agora descem pra sidebar.
+  const [alertasMotor, setAlertasMotor] = useState<AlertaUI[]>([]);
+  // `senna93Params()` avaliado UMA vez, na montagem. NÃO no initializer do
+  // useState: a flag lê `localStorage` (false no servidor) — com ela ON, o
+  // primeiro render do cliente divergiria do HTML do SSR (hydration
+  // mismatch). Efeito com deps `[]` → o servidor e o 1º render do cliente
+  // concordam em `false`, e a flag entra logo depois. Flag OFF: `false`
+  // pra `false`, React não re-renderiza (bailout) — árvore idêntica à de hoje.
+  const [paramsOn, setParamsOn] = useState(false);
+  useEffect(() => { setParamsOn(senna93Params()); }, []);
   const editorRef = useRef<EditorLaudoRef>(null);
   const pendingHtml = useRef<string | null>(null);
   // Texto restaurado sobrevive à 1a geração do Senna90 (S5-T1 fix, achado
@@ -605,6 +619,25 @@ function LaudoPageInner() {
               const onGer = (window as unknown as Record<string, unknown>)
                 ._onLaudoGerado as ((h: string) => void) | undefined;
               if (onGer) onGer(html);
+              // F3 Task 2 (gate): os alertas do motor chegam aqui desde a
+              // migração Senna90 e eram jogados fora. Único efeito novo no
+              // handler. Dois cuidados, os dois pra NÃO mexer numa página
+              // delicada quando ela não precisa mudar:
+              //  1. `senna93Params()` lido AQUI (não o `paramsOn` do render,
+              //     que este closure de deps `[]` veria eterno em `false`):
+              //     flag OFF = nem o setState acontece → zero re-render novo
+              //     em produção, árvore idêntica à de hoje.
+              //  2. lista igual à anterior → devolve `prev` e o React sai por
+              //     bailout: só re-renderiza quando o conjunto de alertas
+              //     REALMENTE muda, não a cada rodada da ponte.
+              if (senna93Params()) {
+                const novos = alertasVisiveis(r.alertas);
+                setAlertasMotor((prev) => (
+                  prev.length === novos.length
+                  && prev.every((a, i) => a.tipo === novos[i].tipo && a.mensagem === novos[i].mensagem)
+                    ? prev : novos
+                ));
+              }
             });
 
             // Wrapper: motor antigo (params-tbody + calc-*, intocado) +
@@ -1780,6 +1813,8 @@ function LaudoPageInner() {
         onCorrigirAdmin={handleCorrigirLaudo}
         wsId={workspace?.id}
         onToast={toast}
+        alertasMotor={alertasMotor}
+        paramsOn={paramsOn}
         modoEmitido={
           <ModoEmitido
             onFinalizar={handleFinalizar}
