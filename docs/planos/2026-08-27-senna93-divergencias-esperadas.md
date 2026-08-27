@@ -12,3 +12,5 @@ divergência que case com estas linhas como esperada; qualquer outra é achado.
 | F1-T5 | Câmaras | LAVI 48: importante → moderado (Lang 2015: grave é >48) | §2.3 |
 | F1-T6 | Diastólica | j22 sinusal deixou de imprimir campos vazios ("Relação E/A= ;") | §2.4/B8 |
 | F1-T7 | Valvas | Mitral: área primária (grad em fluxo baixo não subclassifica mais) · Aórtica: pior grau entre critérios (low-flow-low-gradient deixa de sair "leve") · esclerose ganha achado · estenose tricúspide sempre imprime o gradiente | §2.5 |
+| F1-T7 | Valvas | Mitral: área >2,0 (ou 1,5-2,0 sem grad ≥5) SILENCIA grau e conclusão mesmo com gradiente alto — números seguem impressos no achado, grau some (área primária normal; gradiente alto = fluxo/FC) | §2.5/I1 rev |
+| F1-T7 | Valvas | Aórtica: gradMax 16-26 + gradMédio >0 troca esclerose silenciosa por "Estenose Aórtica Leve." na conclusão (cria conclusão onde o motor antigo calava) — pauta V13: piso de esclerose no gradMédio? | §2.5/I2 rev |

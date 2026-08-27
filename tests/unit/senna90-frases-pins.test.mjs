@@ -232,6 +232,18 @@ describe('F1-T7 estenoses — mitral área-primária · aórtica pior-grau · es
     naoPodeIncluir(r.conclusoes, 'Estenose Aórtica');
   });
 
+  // Pins dos 2 flips de segunda ordem achados na revisão da T7 (allowlist I1/I2):
+  test('mitral área 2.1 + grad 12: SILÊNCIO (área primária normal vence o gradiente alto — I1)', () => {
+    assert.equal(derivados((e) => { e.areaMitral = 2.1; e.gradMedMitral = 12; }).estenMitGrau, '');
+  });
+  test('aórtica gradMax 20 + gradMed 8: leve com CONCLUSÃO nova (esclerose cede ao pior grau — I2, pauta V13)', () => {
+    const m = medidasVazias();
+    m.estenoses.gradMaxAo = 20;
+    m.estenoses.gradMedAo = 8;
+    assert.equal(calcularDerivados(m).estenAoGrau, 'leve');
+    temQueIncluir(calcular(m).conclusoes, 'Estenose Aórtica Leve.');
+  });
+
   test('tricúspide grad 3 + área 0.9: importante COM o gradiente impresso (B18)', () => {
     const m = medidasVazias();
     m.estenoses.gradMedTric = 3;
