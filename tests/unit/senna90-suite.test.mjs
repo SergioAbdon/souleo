@@ -33,7 +33,7 @@ const grupos = {
 describe('Senna90 — suite completa na esteira (F0-T1)', () => {
   test('piso de contagem: a suite não pode encolher em silêncio', () => {
     const total = Object.values(grupos).flat().length;
-    assert.ok(total >= 81, `suite encolheu: ${total} casos (piso 81 — F1-T3 somou ST03B)`);
+    assert.ok(total >= 83, `suite encolheu: ${total} casos (piso 83 — F1-T9 somou AL07/AL08)`);
   });
   for (const [grupo, casos] of Object.entries(grupos)) {
     describe(grupo, () => {

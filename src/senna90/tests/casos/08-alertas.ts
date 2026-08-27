@@ -62,4 +62,38 @@ export const casosAlertas: CasoTeste[] = [
     })(),
     esperado: { alertasNaoPresentes: ['AORTA_SEM_IDADE'] },
   },
+  {
+    id: 'AL07',
+    descricao: 'Wilkins ativo com calcificação não avaliada (0) → alerta e SEM bloco',
+    inputs: (() => {
+      const m = pacienteSaudavelM();
+      m.wilkins.ativo = true;
+      m.wilkins.mobilidade = 2;
+      m.wilkins.espessura = 2;
+      m.wilkins.subvalvar = 2;
+      m.wilkins.calcificacao = 0;   // não avaliada
+      return m;
+    })(),
+    esperado: {
+      alertas: ['WILKINS_INCOMPLETO'],
+      achadosNaoPresentes: ['__WILKINS__'],
+    },
+  },
+  {
+    id: 'AL08',
+    descricao: 'Wilkins ativo 2/2/2/2 → sem alerta, bloco presente com score 8',
+    inputs: (() => {
+      const m = pacienteSaudavelM();
+      m.wilkins.ativo = true;
+      m.wilkins.mobilidade = 2;
+      m.wilkins.espessura = 2;
+      m.wilkins.subvalvar = 2;
+      m.wilkins.calcificacao = 2;
+      return m;
+    })(),
+    esperado: {
+      alertasNaoPresentes: ['WILKINS_INCOMPLETO'],
+      achados: ['__WILKINS__', '"sc":8'],
+    },
+  },
 ];

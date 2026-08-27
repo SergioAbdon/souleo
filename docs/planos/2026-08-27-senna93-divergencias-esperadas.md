@@ -15,3 +15,4 @@ divergência que case com estas linhas como esperada; qualquer outra é achado.
 | F1-T7 | Valvas | Mitral: área >2,0 (ou 1,5-2,0 sem grad ≥5) SILENCIA grau e conclusão mesmo com gradiente alto — números seguem impressos no achado, grau some (área primária normal; gradiente alto = fluxo/FC) | §2.5/I1 rev |
 | F1-T7 | Valvas | Aórtica: gradMax 16-26 + gradMédio >0 troca esclerose silenciosa por "Estenose Aórtica Leve." na conclusão (cria conclusão onde o motor antigo calava) — pauta V13: piso de esclerose no gradMédio? | §2.5/I2 rev |
 | F1-T8 | Paredes/valvas | DD imprimia hipocinesia → discinesia · "septal anterior/inferior" com espaço · morfologia AV decide por morfologia (não refluxo) · acentos | §2.5/B4/B9/B21 |
+| F1-T9 | Wilkins | componente 0 = não avaliado (score null + alerta, antes somava e imprimia "TOTAL 0 pts") · literal "(escore < 8)" · descrições de espessura 2/3 corrigidas pro artigo | §2.6 |

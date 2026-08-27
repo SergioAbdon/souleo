@@ -104,6 +104,17 @@ function gerarAlertas(m: MedidasEcoTT): AlertaUI[] {
     });
   }
 
+  // Wilkins ativado com categoria em 0 (não avaliada). Antes o motor somava o
+  // 0 e imprimia "TOTAL 0 pts"; agora o bloco some e o médico é avisado (B29/V8).
+  if (m.wilkins.ativo && ![m.wilkins.mobilidade, m.wilkins.espessura, m.wilkins.subvalvar, m.wilkins.calcificacao]
+      .every((v) => Number.isInteger(v) && v >= 1 && v <= 4)) {
+    alertas.push({
+      tipo: 'WILKINS_INCOMPLETO',
+      campo: 'wk-mob',
+      mensagem: 'Escore de Wilkins ativado com categoria não avaliada — pontue as 4 categorias (1 a 4) ou desative o escore.',
+    });
+  }
+
   return alertas;
 }
 

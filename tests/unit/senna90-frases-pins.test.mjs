@@ -281,6 +281,54 @@ describe('F1-T8 paredes/valvas — DD=discinesia · morfologia AV por b34t (B4/B
   });
 });
 
+// ══════════════════════════════════════════════════════════════════
+// F1-T9 — Wilkins (spec §2.6/B10/B11/B29). Comportamento NOVO:
+// · componente 0 = NÃO AVALIADO → score null, bloco não sai, alerta
+//   WILKINS_INCOMPLETO (antes somava o 0 e imprimia "TOTAL 0 pts").
+// · literal do ramo ≤7 diz "(escore < 8)" — parou de contradizer a
+//   fronteira; o ramo =8 "no limite" fica.
+// ══════════════════════════════════════════════════════════════════
+describe('F1-T9 Wilkins — não avaliado · literal "(escore < 8)"', () => {
+  const comWilkins = (mob, esp, sub, cal) => {
+    const m = medidasVazias();
+    m.wilkins.ativo = true;
+    m.wilkins.mobilidade = mob;
+    m.wilkins.espessura = esp;
+    m.wilkins.subvalvar = sub;
+    m.wilkins.calcificacao = cal;
+    return m;
+  };
+
+  test('score 7 (2/2/2/1): literal "(escore < 8)" (era "(escore ≤ 8)")', () => {
+    const r = calcular(comWilkins(2, 2, 2, 1));
+    temQueIncluir(r.achados, 'Escore de Wilkins & Block de 7 pontos.');
+    temQueIncluir(r.achados, 'valvuloplastia mitral percutânea (escore < 8).');
+    naoPodeIncluir(r.achados, 'escore ≤ 8');
+  });
+
+  test('score 8 (2/2/2/2): "no limite" continua e score 8 no derivado', () => {
+    const m = comWilkins(2, 2, 2, 2);
+    assert.equal(calcularDerivados(m).wilkinsScore, 8);
+    temQueIncluir(calcular(m).achados, 'de 8 pontos. Paciente no limite para valvuloplastia mitral percutânea.');
+  });
+
+  test('calcificação 0 (não avaliada): score null, SEM bloco, alerta WILKINS_INCOMPLETO', () => {
+    const m = comWilkins(2, 2, 2, 0);
+    assert.equal(calcularDerivados(m).wilkinsScore, null);
+    const r = calcular(m);
+    naoPodeIncluir(r.achados, '__WILKINS__');
+    assert.ok(r.alertas.some((a) => a.tipo === 'WILKINS_INCOMPLETO'),
+      `esperado WILKINS_INCOMPLETO em: ${JSON.stringify(r.alertas)}`);
+  });
+
+  test('escore desativado: sem bloco e SEM alerta (0 só incomoda com o toggle ligado)', () => {
+    const m = medidasVazias();   // wilkins.ativo = false
+    const r = calcular(m);
+    naoPodeIncluir(r.achados, '__WILKINS__');
+    assert.equal(r.alertas.filter((a) => a.tipo === 'WILKINS_INCOMPLETO').length, 0);
+  });
+});
+
 describe('BASELINE RAVI (JASE 2025 unificado) — j5: <30 sil · ≤36 leve · ≤41 mod · >41 imp', () => {
   const comRavi = (v) => {
     const m = medidasVazias();
