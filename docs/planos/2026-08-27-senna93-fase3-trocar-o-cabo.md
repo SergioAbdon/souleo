@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 > **Mapa de âncoras obrigatório:** todo implementador lê ANTES o arquivo
-> `C:\Users\sergi\AppData\Local\Temp\claude\C--Users-sergi-Desktop-souleo\e973e703-7e7a-4655-b0bf-3a8af01251c6\scratchpad\f3-mapa.md`
+> `C:/Users/sergi/AppData/Local/Temp/claude/C--Users-sergi-Desktop-souleo/e973e703-7e7a-4655-b0bf-3a8af01251c6/scratchpad/f3-mapa.md`
 > (âncoras arquivo:linha levantadas em 27/08 — se uma linha tiver deslocado, o texto da âncora localiza).
 
 **Goal:** A tela e o PDF param de consumir o motor legado (tabela `#params-tbody`,
