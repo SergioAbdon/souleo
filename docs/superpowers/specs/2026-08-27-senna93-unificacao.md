@@ -28,7 +28,7 @@ seu cabeçalho carrega referências superadas):
 | Tema | Tabela 1-a-1 dizia | O que VALE (evidências 26/08) |
 |---|---|---|
 | Aneurisma raiz/asc | ≥50 mm | **≥45 mm** (ACC/AHA 2022); 50/55 são limiares CIRÚRGICOS (nota de encaminhamento, não mudança de nome) |
-| Arco | 22–36 / 37–44 / ≥45 (e A2 "decisão do Sergio") | **≤40 normal · >40 "dilatado" SEM graus · ≥55 nota cirúrgica · dilatado/mal visualizado → frase de angio-TC/RM**. As 3 réguas de casa MORREM |
+| Arco | 22–36 / 37–44 / ≥45 (e A2 "decisão do Sergio") | **≤40 normal · >40 "dilatado" SEM graus**. As 3 réguas de casa MORREM. ~~nota cirúrgica/frase de angio~~ **[SUPERADO por V13 27/08: laudo descreve, não recomenda — ≥55 vira só a flag `notaCirurgica`, sem texto]** |
 | GLS VE (A11/B1) | "Senna90 vence (20)" | **3 faixas** (ASE/EACVI 2025): normal < −18% · limítrofe −18 a −16% · anormal > −16% (valor assinado). Nem 18 nem 20 binário |
 | TAPSE (A10) | "decisão do Sergio 17×20" | **>17 mm** (ASE 2025 Coração Direito — substitui Rudski). "≥20" morre nas duas pontas |
 | FE (A9) | "número final é decisão do Sergio" | **52%♂ / 54%♀** (Lang 2015) — a frase já estava certa; a coluna VR impressa (">51/53%") é que corrige |
@@ -85,17 +85,14 @@ Esta é a tabela canônica. Toda task de fórmula pina ESTES valores em teste an
   (♂ 38/40/41 · ♀ 35/36/**38** nas faixas 18-40 / 41-65 / >65) · ascendente ASE Chamber Tab.14
   (♂ ≤38 · ♀ ≤35). É o MESMO gatilho da tabela/VR — tabela e frase param de discordar (A5).
 - **Nome do grau** = ACC/AHA 2022 por mm absoluto: acima do gatilho e **<45 mm → "dilatação"** ·
-  **≥45 mm → "ANEURISMA"** · **≥50 mm → nota de encaminhamento cirúrgico** (50/55 são limiares
-  cirúrgicos, não mudança de nome). O vocabulário "ectasia leve/moderada/importante" MORRE.
+  **≥45 mm → "ANEURISMA"** · **≥50 mm → flag estruturada `notaCirurgica`, SEM texto no laudo** [V13 27/08: laudo descreve, não recomenda; 50/55 são limiares cirúrgicos, não mudança de nome]. O vocabulário "ectasia leve/moderada/importante" MORRE.
 - **Índice área/altura ≥10 cm²/m** = sinalização de **risco cirúrgico**, nunca diagnóstico
   (frase de "critérios de maior gravidade" mantida; raiz e ascendente; arco NÃO — sem base).
 - **Z-score/DP**: sobrevive SÓ como rede de segurança quando `idade === null` (comportamento
   Senna90 atual, A6/A7); o Senna93 **avisa** (alerta estruturado) quando falta data de nascimento
   em vez de chutar 50 anos. O caminho por DP do legado (sem sexo) NÃO é portado.
 
-**Arco aórtico:** ≤40 normal · **>40 "dilatado", SEM graus** · ≥55 nota cirúrgica · dilatado OU
-não visualizado (`b42==='nv'`) → frase recomendando angio-TC ou angio-RM da aorta torácica
-inteira. Sem sexo, sem índice. As três réguas atuais (fallback [36,38,42], ACR/ACRIN 35/32-44/41,
+**Arco aórtico:** ≤40 normal · **>40 "dilatado", SEM graus** · ≥55 = flag `notaCirurgica` sem texto [V13 27/08]. ~~Frase de angio-TC/RM~~ **[MORTA por V13 27/08 — laudo descreve, não recomenda; o 'nv' segue descrito por jPlacas]**. Sem sexo, sem índice. As três réguas atuais (fallback [36,38,42], ACR/ACRIN 35/32-44/41,
 tabela 22–36) morrem.
 
 **Tabela/VR:** ganha as linhas de ascendente e arco que hoje não são impressas (B14, recomendação
@@ -126,7 +123,7 @@ aceita); raiz com VR "≤ N mm" por sexo+idade (WASE); ascendente "≤38/≤35";
 
 | Item | Decisão | Ref |
 |---|---|---|
-| Estenose mitral | **área como critério primário**, gradiente médio como suporte (B2); área 1,5-2,0 cm² NÃO fecha "leve" sozinha (B19) | recomendação aceita; itens de veto |
+| Estenose mitral | **área como critério primário**, gradiente médio como suporte (B2); ~~área 1,5-2,0 não fecha leve sozinha~~ **[SUPERADO por V4 27/08, diretriz pesquisada: ASE/EACVI 2017 gradua leve >1,5 DIRETO (mod 1,0-1,5 · grave <1,0); gradiente é só confirmatório — implementado <1,0 imp · ≤1,5 mod · ≤2,0 leve · >2,0 silêncio]** | recomendação aceita; itens de veto |
 | Estenose aórtica | critérios em CONJUNTO (Vmax/grad máx ≥64 · grad médio ≥40 · área <1,0) — **pior grau entre os disponíveis**; mata o low-flow-low-gradient saindo "leve" (B3); "esclerose" (16-26 mmHg) ganha frase própria em vez de ser jogada fora (B27) | item de veto |
 | Estenose pulmonar | **ASE 2017 valvar** (>64 imp · ≥36 mod · senão leve) = Senna90 atual (A20) | item de veto (legado era critério congênito) |
 | Tricúspide "restrição da abertura" | mantém comportamento Senna90 (só ramos E) — menor mudança (A21) | item de veto (alternativa: alinhar com a mitral E/F/EF) |
@@ -246,7 +243,7 @@ horário da clínica.
   C5 (`window.refluxoPulmonar` no Contrato da Ponte + teste). Placar unit sobe; nada muda no laudo.
 - **FASE 1 — Números certos onde já vivem (frases do Senna90 — a metade que JÁ está no ar).**
   Todas as correções das Seções 2.1-2.6 que afetam achados/conclusões: aorta nova régua
-  (ACC/AHA + WASE ♀38, arco 40/55, angio-TC/RM), GLS 3 faixas, TAPSE 17, LAVI, RAVI, E/e' FA 14,
+  (ACC/AHA + WASE ♀38, arco ≤40/>40 [nota/angio mortas por V13 27/08]), GLS 3 faixas, TAPSE 17, LAVI, RAVI, E/e' FA 14,
   diastólica ≥2 campos/j22/divergência manual, valvas (mitral área-primária, aórtica conjunto,
   B4/B9/B18/B21/B27), Wilkins (literal, componente 0, descrições), massa +0,6, IMVE 115/95,
   sistólica B5/B7. **Tasks de fórmula = opus + teste pinando cada referência.** Sombra retroativa
