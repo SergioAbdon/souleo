@@ -9,6 +9,7 @@ import {
   AlignmentType, LevelFormat, BorderStyle, WidthType, ShadingType,
 } from 'docx';
 import { saveAs } from 'file-saver';
+import { rodapeFontes } from '../senna90/classificacoes/fontes';
 
 type ParamRow = { cells: string[] };
 
@@ -149,7 +150,8 @@ export async function gerarDocx(data: LaudoData) {
           // Referência
           new Paragraph({
             spacing: { after: 100 },
-            children: [new TextRun({ text: 'Valores de referência: ASE/EACVI 2015; ASE 2025.', font: 'Arial', size: 12, color: '888888', italics: true })],
+            // I1 da revisão F3-T3: 5ª saída do rodapé — mesma fonte única dos outros 4.
+            children: [new TextRun({ text: rodapeFontes(), font: 'Arial', size: 12, color: '888888', italics: true })],
           }),
 
           // Título COMENTÁRIOS
