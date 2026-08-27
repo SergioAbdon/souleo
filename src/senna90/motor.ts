@@ -115,6 +115,21 @@ function gerarAlertas(m: MedidasEcoTT): AlertaUI[] {
     });
   }
 
+  // Sexo ausente: as frases silenciam e (a partir da F3) a tabela fica sem
+  // VR/realce — este alerta explica o porquê em vez de deixar o vazio mudo (C8).
+  const temMedidaClinica = [
+    m.camaras.raizAo, m.camaras.ae, m.camaras.ddve, m.camaras.septoIV,
+    m.camaras.paredePosterior, m.camaras.dsve, m.camaras.vd,
+    m.camaras.aoAscendente, m.camaras.arcoAo,
+  ].some((v) => v !== null && v > 0);
+  if (!m.gerais.sexo && temMedidaClinica) {
+    alertas.push({
+      tipo: 'SEXO_AUSENTE',
+      campo: 'sexo',
+      mensagem: 'Sexo não informado — referências e frases dependentes de sexo estão suprimidas.',
+    });
+  }
+
   return alertas;
 }
 

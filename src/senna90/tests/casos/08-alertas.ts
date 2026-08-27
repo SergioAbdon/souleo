@@ -96,4 +96,31 @@ export const casosAlertas: CasoTeste[] = [
       achados: ['__WILKINS__', '"sc":8'],
     },
   },
+  {
+    id: 'AL09',
+    descricao: 'DDVE preenchido sem sexo → alerta SEXO_AUSENTE (C8)',
+    inputs: (() => {
+      const m = medidasVazias();
+      m.camaras.ddve = 50; // medida clínica presente, sexo ''
+      return m;
+    })(),
+    esperado: { alertas: ['SEXO_AUSENTE'] },
+  },
+  {
+    id: 'AL10',
+    descricao: 'DDVE preenchido COM sexo → sem alerta SEXO_AUSENTE',
+    inputs: (() => {
+      const m = medidasVazias();
+      m.camaras.ddve = 50;
+      m.gerais.sexo = 'M';
+      return m;
+    })(),
+    esperado: { alertasNaoPresentes: ['SEXO_AUSENTE'] },
+  },
+  {
+    id: 'AL11',
+    descricao: 'Exame totalmente em branco (medidas + sexo vazios) → SEM SEXO_AUSENTE (não grita à toa)',
+    inputs: medidasVazias(),
+    esperado: { alertasNaoPresentes: ['SEXO_AUSENTE'] },
+  },
 ];
