@@ -140,7 +140,8 @@ export function jEstenoseTricuspide(
 ): string[] {
   if (!estenTricGrau) return [];
   const linhas: string[] = [];
-  if (b46t !== null && b46t >= 5) linhas.push(`Gradiente transvalvar tricúspide médio de ${b46t} mmHg.`);
+  // B18: o gradiente que fechou o grau é sempre impresso (antes o >0 e <5 sumia).
+  if (b46t !== null && b46t > 0) linhas.push(`Gradiente transvalvar tricúspide médio de ${b46t} mmHg.`);
   if (b47t !== null && b47t > 0) linhas.push(`Área tricúspide estimada em ${b47t} cm² (PHT).`);
   if (estenTricGrau === 'importante') linhas.push('Estenose Tricúspide Importante.');
   else if (estenTricGrau === 'moderada') linhas.push('Estenose Tricúspide Moderada.');
@@ -196,6 +197,11 @@ export function jGradMedAortico(b51: number | null): string {
   return b51 !== null && b51 >= 1
     ? `Gradiente transvalvar aórtico médio de ${b51} mmHg.`
     : '';
+}
+
+/** Esclerose aórtica (16–26 mmHg): calculada e antes jogada fora (B27). Conclusão continua silenciando (decisão preservada). */
+export function jEscleroseAortica(estenAoGrau: GrauEstenose): string {
+  return estenAoGrau === 'esclerose' ? 'Esclerose valvar aórtica, sem estenose significativa.' : '';
 }
 
 /** j34 — Área aórtica + área indexada */

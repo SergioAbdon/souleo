@@ -11,3 +11,4 @@ divergência que case com estas linhas como esperada; qualquer outra é achado.
 | F1-T4 | VD | Texto TAPSE VR ≥20 → >17 (ASE 2025) | §2.1 |
 | F1-T5 | Câmaras | LAVI 48: importante → moderado (Lang 2015: grave é >48) | §2.3 |
 | F1-T6 | Diastólica | j22 sinusal deixou de imprimir campos vazios ("Relação E/A= ;") | §2.4/B8 |
+| F1-T7 | Valvas | Mitral: área primária (grad em fluxo baixo não subclassifica mais) · Aórtica: pior grau entre critérios (low-flow-low-gradient deixa de sair "leve") · esclerose ganha achado · estenose tricúspide sempre imprime o gradiente | §2.5 |

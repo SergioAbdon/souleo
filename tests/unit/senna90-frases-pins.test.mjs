@@ -6,7 +6,7 @@
 // ══════════════════════════════════════════════════════════════════
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { calcular } from '../../src/senna90/motor.ts';
+import { calcular, calcularDerivados } from '../../src/senna90/motor.ts';
 import { medidasVazias } from '../../src/senna90/tests/helpers.ts';
 import { faixaGLSve } from '../../src/senna90/achados/strain.ts';
 
@@ -188,6 +188,56 @@ describe('F1-T6 j22 sinusal — sem buracos (B8)', () => {
       "Relação E/e'= 8; volume index do átrio esquerdo = 28 ml/m²; " +
       'Velocidade do Refluxo Tricuspídeo= 2.5 m/s.';
     temQueIncluir(r.achados, fraseAntiga);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════
+// F1-T7 — estenoses (spec §2.5). Comportamento NOVO:
+// · Mitral: ÁREA é primária (gradiente baixo por fluxo baixo não
+//   subclassifica mais); faixa 1,5–2,0 só fecha "leve" com grad ≥5 (B19).
+// · Aórtica: PIOR grau entre os critérios (low-flow-low-gradient deixa
+//   de sair "leve"); esclerose só quando é o único critério.
+// · Esclerose ganha frase no ACHADO (B27) — conclusão segue silenciando.
+// · Estenose tricúspide sempre imprime o gradiente que fechou o grau (B18).
+// ══════════════════════════════════════════════════════════════════
+describe('F1-T7 estenoses — mitral área-primária · aórtica pior-grau · esclerose · B18', () => {
+  const derivados = (mut) => {
+    const m = medidasVazias();
+    mut(m.estenoses);
+    return calcularDerivados(m);
+  };
+
+  test('mitral área 0.8 + grad 3: importante (era "leve" pelo gradiente)', () => {
+    assert.equal(derivados((e) => { e.areaMitral = 0.8; e.gradMedMitral = 3; }).estenMitGrau, 'importante');
+  });
+  test('mitral área 1.8 sem gradiente: silêncio (1,5–2,0 não fecha sozinha)', () => {
+    assert.equal(derivados((e) => { e.areaMitral = 1.8; }).estenMitGrau, '');
+  });
+  test('mitral área 1.8 + grad 6: leve (B19 — gradiente dá o suporte)', () => {
+    assert.equal(derivados((e) => { e.areaMitral = 1.8; e.gradMedMitral = 6; }).estenMitGrau, 'leve');
+  });
+  test('mitral sem área, grad 12: importante (gradiente decide)', () => {
+    assert.equal(derivados((e) => { e.gradMedMitral = 12; }).estenMitGrau, 'importante');
+  });
+
+  test('aórtica área 0.8 + gradMax 30: importante (era "leve" pelo gradMax)', () => {
+    assert.equal(derivados((e) => { e.areaAo = 0.8; e.gradMaxAo = 30; }).estenAoGrau, 'importante');
+  });
+  test('aórtica gradMax 20 sozinho: esclerose + achado presente, conclusão silenciada', () => {
+    const m = medidasVazias();
+    m.estenoses.gradMaxAo = 20;
+    assert.equal(calcularDerivados(m).estenAoGrau, 'esclerose');
+    const r = calcular(m);
+    temQueIncluir(r.achados, 'Esclerose valvar aórtica, sem estenose significativa.');
+    naoPodeIncluir(r.conclusoes, 'Estenose Aórtica');
+  });
+
+  test('tricúspide grad 3 + área 0.9: importante COM o gradiente impresso (B18)', () => {
+    const m = medidasVazias();
+    m.estenoses.gradMedTric = 3;
+    m.estenoses.areaTric = 0.9;
+    assert.equal(calcularDerivados(m).estenTricGrau, 'importante');
+    temQueIncluir(calcular(m).achados, 'Gradiente transvalvar tricúspide médio de 3 mmHg.');
   });
 });
 

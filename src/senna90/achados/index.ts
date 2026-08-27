@@ -42,7 +42,7 @@ import { jVD_sistolica } from './sistolicaVD';
 import {
   jMitralMorfologia, jGradMaxMitral, jGradMedMitral, jAreaMitral, jRefluxoMitral,
   jRefluxoTricuspide, jTricMorfologia, jEstenoseTricuspide,
-  jPSAP, jAorticaMorfologia, jGradMaxAortico, jGradMedAortico, jAreaAortica, jRefluxoAortico,
+  jPSAP, jAorticaMorfologia, jGradMaxAortico, jGradMedAortico, jAreaAortica, jEscleroseAortica, jRefluxoAortico,
   jPulmMorfologia, jEstenosePulmonar, jRefluxoPulmonar,
   jPericardio, jPlacas, jProbabilidadeHP,
 } from './valvas';
@@ -232,7 +232,7 @@ export function gerarAchados(m: MedidasEcoTT, calc: CalculosDerivados): string[]
     ...L(jPSAP(d.b37, d.b23)),
     // ── Semilunares ──
     ...L(aoMorf),
-    ...L(jGradMaxAortico(d.b50), jGradMedAortico(d.b51), jAreaAortica(d.b52, d.aoIdx)),
+    ...L(jGradMaxAortico(d.b50), jGradMedAortico(d.b51), jAreaAortica(d.b52, d.aoIdx), jEscleroseAortica(d.estenAoGrau)),
     ...L(jRefluxoAortico(d.b40, d.b40p, d.b50, d.b51, d.b52, d.b39p, d.estenPulmGrau)),
     ...L(pulmMorf),
     ...jEstenosePulmonar(d.estenPulmGrau, d.b50p),
