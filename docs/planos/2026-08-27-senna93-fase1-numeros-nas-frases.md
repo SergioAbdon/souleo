@@ -680,7 +680,10 @@ diastólica passa a ter DONO ÚNICO em `achados/index.ts`, com getters novos
 `getDiastManualSelecao()` e `getDiastManualTextoLivre()`.
 
 - [ ] **Step 1:** Criar `adapter-d.ts` com o montarD dos achados (copiar) + os 2 campos;
-os dois orquestradores importam dele e deletam os locais.
+os dois orquestradores importam dele e deletam os locais. **Emenda da revisão T10:**
+mover também `temParedeAlterada(d)` pra `adapter-d.ts` (export) e usar nos DOIS lados
+(achados/index.ts e a const `paredes` de concSistolica) — fim da expressão duplicada;
+neutro em comportamento (cabe na licença zero-flip desta task).
 - [ ] **Step 2:** `achados/index.ts` exporta os 2 getters; `conclusoes/index.ts` DELETA
 `_diastManualSelecaoConcl`/`_diastManualTextoLivreConcl`/`setDiastManualConcl`/
 `setDiastTextoLivreConcl` e usa os getters em `diastConclusao`.
@@ -691,6 +694,11 @@ senna90 importava esses setters (esperado: ninguém — a rota e o adapter chama
 - [ ] **Step 4:** ZERO mudança de comportamento: bateria inteira deve passar SEM flip
 nenhum (esta task não tem licença de flip). `tests/unit/senna90-diastolica-manual.test.mjs`
 é o vigia principal. Sem entrada na allowlist.
+- [ ] **Step 4b (carona M1 da revisão T10 — pin novo, não flip):** em
+`tests/unit/senna90-frases-pins.test.mjs`, +1 pin da variante dilatada do B7:
+ddve 60 (♂, dilatado) + b56='HB' + b54=60 → conclusão contém
+`'Miocardiopatia Dilatada com função sistólica preservada, apesar da alteração contrátil segmentar.'`
+(frase nova da T10 que ficou sem teste).
 - [ ] **Step 5:** Bateria + commit `feat(senna93-f1): adapter unico + estado manual com dono unico (B30)`.
 
 ---
