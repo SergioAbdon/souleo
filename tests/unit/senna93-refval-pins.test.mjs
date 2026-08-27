@@ -8,10 +8,11 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { refVal } from '../../src/senna90/classificacoes/refValues.ts';
-import { isOOR, tetoRaiz } from '../../src/senna90/classificacoes/isOOR.ts';
+import { isOOR, tetoRaiz, CAMPOS_TABELA } from '../../src/senna90/classificacoes/isOOR.ts';
 
-const CAMPOS = ['b7', 'b8', 'b9', 'b10', 'b11', 'b12', 'b13', 'b28', 'b29',
-  'imc', 'aoae', 'asc', 'vdf', 'vsf', 'feT', 'fs', 'massa', 'imVE', 'er'];
+// Fonte única runtime (achado I da revisão F2-T2): campo novo na união entra
+// aqui automaticamente — a coerência nunca deixa de cobri-lo em silêncio.
+const CAMPOS = CAMPOS_TABELA;
 
 /** ♂ e ♀ com idade 50 (faixa média WASE) — string exata de cada linha. */
 const PINS = {
@@ -31,7 +32,9 @@ const PINS = {
   vsf:  ['21–61 ml', '14–42 ml'],
   feT:  ['≥ 52%', '≥ 54%'],
   fs:   ['30–40%', '30–40%'],
-  massa: ['<201 g', '<151 g'],
+  // V13 (achado M da revisão F2-T2): '≤ 200 g' fecha o gap 200,1-200,9 em que
+  // a VR '<201' dizia normal enquanto frase (j9 >200) e realce acendiam.
+  massa: ['≤ 200 g', '≤ 150 g'],
   imVE: ['≤ 115 g/m²', '≤ 95 g/m²'],
   er:   ['<0,43', '<0,43'],
 };
@@ -120,5 +123,21 @@ describe('Senna93 coerência refVal ↔ isOOR', () => {
       }
     }
     assert.equal(Number(refVal('b7', 'F', 70).match(/[\d.]+/)[0]), tetoRaiz('F', 70));
+  });
+});
+
+// Fecho do achado M (revisão F2-T2): a zona 200,1-200,9 conta a MESMA história
+// nas três pontas — VR '≤ 200 g' diz fora, realce acende, e a frase j9 (>200)
+// chama de aumentada. O par (200 normal · 200.1 fora) pina a granularidade.
+describe('F2-T2 fix — massa: VR, realce e frase contam a mesma história na fronteira', () => {
+  test('massa ♂ 200 → VR dentro (não acende); 200.1 → fora (acende)', () => {
+    assert.equal(isOOR('massa', 200, 'M', null), false);
+    assert.equal(isOOR('massa', 200.1, 'M', null), true);
+    assert.equal(refVal('massa', 'M', null), '≤ 200 g');
+  });
+  test('massa ♀ 150 → dentro; 150.1 → fora', () => {
+    assert.equal(isOOR('massa', 150, 'F', null), false);
+    assert.equal(isOOR('massa', 150.1, 'F', null), true);
+    assert.equal(refVal('massa', 'F', null), '≤ 150 g');
   });
 });

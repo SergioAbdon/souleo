@@ -39,7 +39,10 @@ const VR: Record<Exclude<CampoTabela, 'b7'>, readonly [string, string]> = {
   vsf:  ['21–61 ml', '14–42 ml'],
   feT:  ['≥ 52%', '≥ 54%'],          // V13/A9 (era >51%/>53%)
   fs:   ['30–40%', '30–40%'],
-  massa: ['<201 g', '<151 g'],
+  // '≤ 200 g' (era '<201 g' no legado): com massa truncada a 1 casa, '<201'
+  // deixava 200,1-200,9 "normal" na VR enquanto a frase (j9 >200) e o realce
+  // acendem — achado M da revisão F2-T2. A frase é a verdade; a VR acompanha. V13.
+  massa: ['≤ 200 g', '≤ 150 g'],
   imVE: ['≤ 115 g/m²', '≤ 95 g/m²'], // V13/V2 Lang 2015 (era <103/<89)
   er:   ['<0,43', '<0,43'],
 };

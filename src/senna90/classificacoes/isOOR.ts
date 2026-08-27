@@ -16,6 +16,16 @@ export type CampoTabela =
   | 'b7' | 'b8' | 'b9' | 'b10' | 'b11' | 'b12' | 'b13' | 'b28' | 'b29'
   | 'imc' | 'aoae' | 'asc' | 'vdf' | 'vsf' | 'feT' | 'fs' | 'massa' | 'imVE' | 'er';
 
+// Lista runtime com exaustividade travada pelo tipo (achado I da revisão F2-T2):
+// um 20º membro na união sem entrada aqui quebra o tsc — e o teste de coerência
+// itera ESTA lista, então campo novo nunca escapa da coerência em silêncio.
+const TODOS_OS_CAMPOS: Record<CampoTabela, true> = {
+  b7: true, b8: true, b9: true, b10: true, b11: true, b12: true, b13: true,
+  b28: true, b29: true, imc: true, aoae: true, asc: true, vdf: true, vsf: true,
+  feT: true, fs: true, massa: true, imVE: true, er: true,
+};
+export const CAMPOS_TABELA = Object.keys(TODOS_OS_CAMPOS) as CampoTabela[];
+
 /** Teto da raiz p/ exibição: WASE por idade; sem idade, faixa 41-65 (paridade legado). */
 export function tetoRaiz(sexo: Sexo, idade: number | null): number {
   if (idade === null) return sexo !== 'F' ? 40 : 36;
