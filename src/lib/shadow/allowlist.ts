@@ -77,7 +77,9 @@ export const FRASES_ESPERADAS: MatcherFrase[] = [
   // um segmento entra/sai do normal e a frase combinada muda
   // (achados/aorta.ts:75,81-90,172-174 × motorv8mp4.js j37).
   fam('F1-T1 Aorta',
-    /(Raiz aórtica|aorta ascendente|arco aórtico).{0,60}com dimensões normais/,
+    // /i: frase pode abrir a sentença com "Aorta ascendente"/"Arco aórtico"
+    // maiúsculos (aorta.ts:88-89,174) — só "Raiz aórtica" tinha capital antes.
+    /(Raiz aórtica|aorta ascendente|arco aórtico).{0,60}com dimensões normais/i,
     /Arco aórtico dilatado, medindo/),
 
   // LAVI 48: legado ≥48 = importante (motorv8mp4.js:173-175); Lang 2015 põe
@@ -165,9 +167,12 @@ export const VR_INCONDICIONAL_LEGADO = ['<25 kg/m²', '30–40%', '<0,43'];
  * O ,01 a mais absorve o próprio arredondamento de ponto flutuante.
  */
 export const TOL_CELULA: Record<string, number> = {
-  // coluna 1 — peso/altura (1 casa) e medidas em mm (1 casa → 0 casas)
-  '1,1': 0.11, '2,1': 0.11, '3,1': 0.11, '4,1': 0.11, '5,1': 0.11,
-  '6,1': 0.11, '7,1': 0.11, '8,1': 0.11, '9,1': 0.11,
+  // coluna 1 — peso/altura (1 casa em ambos os lados; 0,11 só absorve arredonda-vs-trunca)
+  '1,1': 0.11, '2,1': 0.11,
+  // linhas 3..9 (mm): legado imprime 1 casa (toFixed, ex. 34.5), Senna93
+  // trunca pra 0 casas (34) — Δ pode chegar a quase 1 (B25/F3-T5 Tabela · casas).
+  '3,1': 0.91, '4,1': 0.91, '5,1': 0.91,
+  '6,1': 0.91, '7,1': 0.91, '8,1': 0.91, '9,1': 0.91,
   // coluna 5 — derivados
   '0,5': 0.11,   // imc
   '1,5': 0.011,  // aoae (2 casas)
@@ -187,6 +192,9 @@ export const TOL_CELULA: Record<string, number> = {
  * declaradas aqui para o tripwire de cobertura não passar em branco.
  */
 export const LINHAS_MD_NAO_COMPARAVEIS: string[] = [
+  // realce/oor não é comparado — o simulador da T1 não porta o oor do
+  // legado (deslocado 3 linhas, morre na F5)
+  'F3-T5 Tabela · realce',
   'F3-T3 Tabela (visual)',        // realce vermelho (CSS)
   'F3-fix Tabela (visual)',       // realce escopado ao caminho novo
   'F3-T3fix Rodapé',              // 5ª saída (Word) usando rodapeFontes()

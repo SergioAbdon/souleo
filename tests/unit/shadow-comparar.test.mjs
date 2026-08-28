@@ -83,6 +83,32 @@ describe('compararTabelas — paciente-padrão F0 (♂ 46a, 80/170)', () => {
     assert.ok(divs.every((d) => d.linha < 10));
   });
 
+  test('medidas fracionárias (mm 1 casa vs 0 casas) não viram INESPERADA (Fix 1)', () => {
+    // Mesma fixture pattern de doisLados(), mas com MEDIDAS fracionárias
+    // nos dois motores (linha 3..9 do legado é a coluna 1 truncada).
+    const MEDIDAS_FRAC = { ...MEDIDAS, b7: 34.5, b8: 40.7, b9: 50.6, b10: 10.5, b11: 10.2, b12: 30.4 };
+    const m = pacientePadrao();
+    m.camaras.raizAo = MEDIDAS_FRAC.b7;
+    m.camaras.ae = MEDIDAS_FRAC.b8;
+    m.camaras.ddve = MEDIDAS_FRAC.b9;
+    m.camaras.septoIV = MEDIDAS_FRAC.b10;
+    m.camaras.paredePosterior = MEDIDAS_FRAC.b11;
+    m.camaras.dsve = MEDIDAS_FRAC.b12;
+    const d = calcularDerivados(m);
+    const { rows } = montarRowsTabela(IDENT, MEDIDAS_FRAC, d, d.idade);
+    const legadoFrac = simularTabelaLegado({
+      sexo: IDENT.sexo, peso: IDENT.peso, altura: IDENT.altura, ...MEDIDAS_FRAC,
+      dtnasc: m.identificacao.pacienteDtnasc, dtexame: m.identificacao.dataExame,
+    });
+    const divs = compararTabelas(rows, legadoFrac);
+    const inesperadas = divs.filter((d) => !d.esperada);
+    assert.deepEqual(inesperadas, [], `inesperadas:\n${descreve(inesperadas)}`);
+    // as células mm (linhas 3..9, col 1) divergem por truncamento e são esperadas
+    const mmCols = divs.filter((d) => d.col === 1 && d.linha >= 3 && d.linha <= 9);
+    assert.ok(mmCols.length > 0, 'esperava divergências nas células mm truncadas');
+    assert.ok(mmCols.every((d) => d.esperada && d.ref === 'F3-T5 Tabela · valores'), descreve(mmCols));
+  });
+
   test('MUTATION: célula adulterada no legado sai INESPERADA', () => {
     const adulterado = legado.map((l) => [...l]);
     adulterado[6][5] = '999.9';                       // massa fora de qualquer tolerância
@@ -178,6 +204,15 @@ describe('compararFrases', () => {
     );
     assert.equal(divs.length, 2);
     assert.ok(divs.every((d) => d.esperada && d.ref === 'F1-T4 VD'));
+  });
+
+  test('"Aorta ascendente"/"Arco aórtico" maiúsculos casam F1-T1 (Fix 2)', () => {
+    const divs = compararFrases(
+      { ...vazio, achados: ['Raiz aórtica, aorta ascendente e arco aórtico com dimensões normais.'] },
+      { ...vazio, achados: ['Aorta ascendente com dimensões normais.', 'Arco aórtico com dimensões normais.'] }
+    );
+    assert.ok(divs.length > 0, JSON.stringify(divs));
+    assert.ok(divs.every((d) => d.esperada && d.ref === 'F1-T1 Aorta'), JSON.stringify(divs));
   });
 
   test('sentinela __WILKINS__ continua fora da comparação', () => {
