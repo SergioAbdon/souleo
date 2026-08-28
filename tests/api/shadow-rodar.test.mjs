@@ -11,9 +11,11 @@ import {
   rodarShadow,
   dadosParaMedidas,
   entradaLegadoDe,
+  exameTemDivergencia,
   ERA_SENNA90_DESDE,
 } from '../../src/lib/shadow/rodar.ts';
 import { simularTabelaLegado } from '../../src/lib/shadow/legado-tabela.ts';
+import { montarParamsHtml } from '../../src/lib/pdf-params.ts';
 
 function exameFixture(over = {}) {
   return {
@@ -94,6 +96,94 @@ describe('rodarShadow', () => {
 
   test('ERA_SENNA90_DESDE é o dia seguinte à virada em produção (16/05/2026)', () => {
     assert.equal(ERA_SENNA90_DESDE, '2026-05-17');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════
+// F4-T4 · snapshotCheck (simulador × snapshot pintado)
+// ══════════════════════════════════════════════════════════════════
+describe('rodarShadow · snapshotCheck (T4)', () => {
+  test('snapshot adulterado (massa=999.9) → batem:false, difs preenchidos, resumo.snapshot conta', async () => {
+    const fixture = exameFixture();
+    const medidas = dadosParaMedidas(fixture.dados);
+    const rowsReais = simularTabelaLegado(entradaLegadoDe(medidas));
+    const rowsAdulteradas = rowsReais.map((r) => [...r]);
+    rowsAdulteradas[6][5] = '999.9'; // Massa do VE — linha 6, col 5
+    const snapshotHtml = `<html><body>${montarParamsHtml(rowsAdulteradas, '#0A7C71', { pdf: true })}</body></html>`;
+
+    const deps = {
+      listarExames: async () => [fixture],
+      persistir: async () => 'e',
+      lerSnapshot: async () => snapshotHtml,
+    };
+    const { exec } = await rodarShadow(deps, { wsId: 'w', from: new Date(0), to: new Date(),
+                                               origem: 'script', uid: null });
+    const ex = exec.exames[0];
+    assert.equal(ex.snapshotCheck.batem, false);
+    assert.ok(ex.snapshotCheck.difs.length > 0);
+    assert.equal(exec.resumo.snapshot.conferidos, 1);
+    assert.equal(exec.resumo.snapshot.divergem, 1);
+    assert.equal(exec.resumo.snapshot.batem, 0);
+  });
+
+  test('snapshot idêntico ao simulado → batem:true, resumo.snapshot.batem conta', async () => {
+    const fixture = exameFixture();
+    const medidas = dadosParaMedidas(fixture.dados);
+    const rowsReais = simularTabelaLegado(entradaLegadoDe(medidas));
+    const snapshotHtml = `<html><body>${montarParamsHtml(rowsReais, '#0A7C71', { pdf: true })}</body></html>`;
+
+    const deps = { listarExames: async () => [fixture], persistir: async () => 'e',
+                   lerSnapshot: async () => snapshotHtml };
+    const { exec } = await rodarShadow(deps, { wsId: 'w', from: new Date(0), to: new Date(),
+                                               origem: 'script', uid: null });
+    assert.deepEqual(exec.exames[0].snapshotCheck, { batem: true, difs: [] });
+    assert.equal(exec.resumo.snapshot.batem, 1);
+  });
+
+  test('sem deps.lerSnapshot → snapshotCheck fica undefined (check pulado, comportamento antigo intacto)', async () => {
+    const deps = { listarExames: async () => [exameFixture()], persistir: async () => 'e' };
+    const { exec } = await rodarShadow(deps, { wsId: 'w', from: new Date(0), to: new Date(),
+                                               origem: 'script', uid: null });
+    assert.equal(exec.exames[0].snapshotCheck, undefined);
+    assert.equal(exec.resumo.snapshot.conferidos, 0);
+  });
+
+  test('motorNumeros="senna93" → não confere contra o snapshot (proveniência não é do legado)', async () => {
+    const deps = {
+      listarExames: async () => [exameFixture({ motorNumeros: 'senna93' })],
+      persistir: async () => 'e',
+      lerSnapshot: async () => { throw new Error('não deveria ler o snapshot'); },
+    };
+    const { exec } = await rodarShadow(deps, { wsId: 'w', from: new Date(0), to: new Date(),
+                                               origem: 'script', uid: null });
+    assert.equal(exec.exames[0].snapshotCheck, undefined);
+  });
+
+  test('snapshot com 12 linhas (pintura Senna93 escapada da proveniência) → não-conferido', async () => {
+    const fixture = exameFixture();
+    const medidas = dadosParaMedidas(fixture.dados);
+    const rowsReais = simularTabelaLegado(entradaLegadoDe(medidas));
+    const rows12 = [...rowsReais, ['Aorta Ascendente', '30.0', 'mm', '', '', '', '', ''],
+                                    ['Arco Aórtico', '25.0', 'mm', '', '', '', '', '']];
+    const snapshotHtml = `<html><body>${montarParamsHtml(rows12, '#0A7C71', { pdf: true })}</body></html>`;
+    const deps = { listarExames: async () => [fixture], persistir: async () => 'e',
+                   lerSnapshot: async () => snapshotHtml };
+    const { exec } = await rodarShadow(deps, { wsId: 'w', from: new Date(0), to: new Date(),
+                                               origem: 'script', uid: null });
+    assert.equal(exec.exames[0].snapshotCheck, null);
+    assert.equal(exec.resumo.snapshot.conferidos, 0);
+  });
+
+  test('exameTemDivergencia: snapshotCheck.batem=false persiste mesmo com frases/células limpas', () => {
+    const ex = { id: 'e1', emitidoEm: '', era: 'senna90', motorNumeros: null,
+                 frases: [], celulas: [], snapshotCheck: { batem: false, difs: [] } };
+    assert.equal(exameTemDivergencia(ex), true);
+  });
+
+  test('exameTemDivergencia: tudo limpo (sem check) não persiste', () => {
+    const ex = { id: 'e1', emitidoEm: '', era: 'senna90', motorNumeros: null,
+                 frases: [], celulas: [] };
+    assert.equal(exameTemDivergencia(ex), false);
   });
 });
 

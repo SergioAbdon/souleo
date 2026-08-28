@@ -14,8 +14,9 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, Timestamp, FieldValue } from 'firebase-admin/firestore';
 import { resolverPapel, idValido } from '@/lib/exame-admin';
-import { rodarShadow } from '@/lib/shadow/rodar';
+import { rodarShadow, exameTemDivergencia } from '@/lib/shadow/rodar';
 import type { ExecucaoShadow, ShadowDeps } from '@/lib/shadow/rodar';
+import { lerSnapshotHtml } from '@/lib/pdf-server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -66,13 +67,14 @@ async function persistirExecucao(wsId: string, exec: ExecucaoShadow): Promise<st
     resumo: exec.resumo,
   });
 
-  const comDiv = exec.exames.filter(e => !e.pulado && (e.frases.length > 0 || e.celulas.length > 0));
+  const comDiv = exec.exames.filter(exameTemDivergencia);
   for (let i = 0; i < comDiv.length; i += CHUNK) {
     const batch = dbAdmin.batch();
     for (const e of comDiv.slice(i, i + CHUNK)) {
       batch.set(ref.collection('exames').doc(e.id), {
         emitidoEm: e.emitidoEm, era: e.era, motorNumeros: e.motorNumeros,
         frases: e.frases, celulas: e.celulas,
+        ...(e.snapshotCheck !== undefined ? { snapshotCheck: e.snapshotCheck } : {}),
       });
     }
     await batch.commit();
@@ -133,6 +135,7 @@ export async function POST(req: NextRequest) {
         });
       },
       persistir: persistirExecucao,
+      lerSnapshot: async (ws, exameId) => (await lerSnapshotHtml(ws, exameId))?.html ?? null,
     };
 
     const { execId, exec } = await rodarShadow(deps, {

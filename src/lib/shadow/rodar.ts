@@ -22,6 +22,7 @@ import { compararFrases, compararTabelas, extrairLinhas } from './comparar';
 import type { DivFrase, DivCelula } from './comparar';
 import { simularTabelaLegado } from './legado-tabela';
 import type { EntradaLegado } from './legado-tabela';
+import { extrairRowsDoSnapshot } from './snapshot-params';
 
 /** Frases do Senna90 em produção desde 16/05/2026 (primary-engine-flag.ts). */
 export const ERA_SENNA90_DESDE = '2026-05-17';
@@ -29,6 +30,8 @@ export const ERA_SENNA90_DESDE = '2026-05-17';
 export interface ShadowDeps {
   listarExames(wsId: string, from: Date, to: Date): Promise<{ id: string; dados: Record<string, unknown> }[]>;
   persistir(wsId: string, exec: ExecucaoShadow): Promise<string>;  // devolve execId
+  /** T4: HTML do snapshot pintado (`laudos-html/`) — ausente = check pulado. */
+  lerSnapshot?(wsId: string, exameId: string): Promise<string | null>;
 }
 
 export interface ExameShadow {
@@ -45,6 +48,8 @@ export interface ResumoShadow {
   totalExames: number; comparados: number; pulados: number; match: number; diverge: number;
   frases: { esperadas: number; inesperadas: number; eraLegado: number };
   celulas: { esperadas: number; inesperadas: number };
+  /** T4: validação simulador × snapshot pintado — só conta quem foi de fato conferido. */
+  snapshot: { conferidos: number; batem: number; divergem: number };
 }
 
 export interface ExecucaoShadow {
@@ -216,6 +221,39 @@ function calcularOuNull(m: MedidasEcoTT): ReturnType<typeof calcular> | null {
   }
 }
 
+/**
+ * T4: simulador (T1) × o que o legado REALMENTE pintou (snapshot HTML) —
+ * byte-exato, célula a célula, nas 10 linhas comuns. Diferente de
+ * `compararTabelas` (que classifica divergências ESPERADAS entre os dois
+ * MOTORES via allowlist): aqui os dois lados representam o MESMO motor
+ * (legado), logo qualquer diferença é divergência de verdade — o
+ * simulador saiu da linha, não o legado.
+ */
+function compararComSnapshot(simulado: string[][], pintado: string[][]): DivCelula[] {
+  const out: DivCelula[] = [];
+  for (let linha = 0; linha < 10; linha++) {
+    const s = simulado[linha] ?? [];
+    const p = pintado[linha] ?? [];
+    for (let col = 0; col < 8; col++) {
+      const senna93 = s[col] ?? '';
+      const legado = p[col] ?? '';
+      if (senna93 === legado) continue;
+      out.push({ linha, col, legado, senna93, esperada: false, ref: null });
+    }
+  }
+  return out;
+}
+
+/**
+ * Regra de persistência: frase/célula divergente OU o simulador divergindo
+ * do que o legado realmente pintou (`snapshotCheck.batem === false` — achado
+ * por si, mesmo com frases/células limpas). Fonte única — usada pelo core
+ * e pela rota (`persistirExecucao`), pra não duplicar o filtro.
+ */
+export function exameTemDivergencia(ex: ExameShadow): boolean {
+  return !ex.pulado && (ex.frases.length > 0 || ex.celulas.length > 0 || ex.snapshotCheck?.batem === false);
+}
+
 export async function rodarShadow(
   deps: ShadowDeps,
   args: { wsId: string; from: Date; to: Date; origem: ExecucaoShadow['origem']; uid: string | null },
@@ -227,6 +265,7 @@ export async function rodarShadow(
     totalExames: docs.length, comparados: 0, pulados: 0, match: 0, diverge: 0,
     frases: { esperadas: 0, inesperadas: 0, eraLegado: 0 },
     celulas: { esperadas: 0, inesperadas: 0 },
+    snapshot: { conferidos: 0, batem: 0, divergem: 0 },
   };
 
   for (const { id, dados } of docs) {
@@ -258,11 +297,28 @@ export async function rodarShadow(
     if (m && !novo) ex.pulado = 'erro-calculo';
     if (!m || !novo) { resumo.pulados++; continue; }
 
+    const legadoSimulado = simularTabelaLegado(entradaLegadoDe(m));
     ex.frases = compararFrases(velho, novo);
     ex.celulas = compararTabelas(
       montarRowsTabela(m.gerais, medidasDaTabela(m), novo.derivados, novo.derivados.idade).rows,
-      simularTabelaLegado(entradaLegadoDe(m)),
+      legadoSimulado,
     );
+
+    // T4: só exames que o legado pintou (proveniência da F3) — se o
+    // Senna93 pintou, o snapshot não é referência do legado nenhuma.
+    if (deps.lerSnapshot && ex.motorNumeros !== 'senna93') {
+      const snapHtml = await deps.lerSnapshot(args.wsId, ex.id);
+      const rows = snapHtml ? extrairRowsDoSnapshot(snapHtml) : null;
+      // 12 linhas = pintura Senna93 escapada da proveniência → não-conferido.
+      if (rows && rows.length === 10) {
+        const difs = compararComSnapshot(legadoSimulado, rows);
+        ex.snapshotCheck = { batem: difs.length === 0, difs };
+        resumo.snapshot.conferidos++;
+        if (ex.snapshotCheck.batem) resumo.snapshot.batem++; else resumo.snapshot.divergem++;
+      } else {
+        ex.snapshotCheck = null;
+      }
+    }
 
     resumo.comparados++;
     for (const f of ex.frases) {
