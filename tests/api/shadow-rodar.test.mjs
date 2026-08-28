@@ -104,7 +104,7 @@ describe('rodarShadow', () => {
 // ══════════════════════════════════════════════════════════════════
 describe('rodarShadow · snapshotCheck (T4)', () => {
   test('snapshot adulterado (massa=999.9) → batem:false, difs preenchidos, resumo.snapshot conta', async () => {
-    const fixture = exameFixture();
+    const fixture = exameFixture({ emitidoEm: { toDate: () => new Date('2026-08-26T12:00:00Z') } });
     const medidas = dadosParaMedidas(fixture.dados);
     const rowsReais = simularTabelaLegado(entradaLegadoDe(medidas));
     const rowsAdulteradas = rowsReais.map((r) => [...r]);
@@ -127,7 +127,7 @@ describe('rodarShadow · snapshotCheck (T4)', () => {
   });
 
   test('snapshot idêntico ao simulado → batem:true, resumo.snapshot.batem conta', async () => {
-    const fixture = exameFixture();
+    const fixture = exameFixture({ emitidoEm: { toDate: () => new Date('2026-08-26T12:00:00Z') } });
     const medidas = dadosParaMedidas(fixture.dados);
     const rowsReais = simularTabelaLegado(entradaLegadoDe(medidas));
     const snapshotHtml = `<html><body>${montarParamsHtml(rowsReais, '#0A7C71', { pdf: true })}</body></html>`;
@@ -159,8 +159,21 @@ describe('rodarShadow · snapshotCheck (T4)', () => {
     assert.equal(exec.exames[0].snapshotCheck, undefined);
   });
 
+  test('emitido antes de 2026-08-25 (pré-S5, sem snapshot) → lerSnapshot nem é chamado', async () => {
+    const fixture = exameFixture({ emitidoEm: { toDate: () => new Date('2026-08-24T12:00:00Z') } });
+    const deps = {
+      listarExames: async () => [fixture],
+      persistir: async () => 'e',
+      lerSnapshot: async () => { throw new Error('não deveria ler snapshot pré-S5'); },
+    };
+    const { exec } = await rodarShadow(deps, { wsId: 'w', from: new Date(0), to: new Date(),
+                                               origem: 'script', uid: null });
+    assert.equal(exec.exames[0].snapshotCheck, undefined);
+    assert.equal(exec.resumo.snapshot.conferidos, 0);
+  });
+
   test('snapshot com 12 linhas (pintura Senna93 escapada da proveniência) → não-conferido', async () => {
-    const fixture = exameFixture();
+    const fixture = exameFixture({ emitidoEm: { toDate: () => new Date('2026-08-26T12:00:00Z') } });
     const medidas = dadosParaMedidas(fixture.dados);
     const rowsReais = simularTabelaLegado(entradaLegadoDe(medidas));
     const rows12 = [...rowsReais, ['Aorta Ascendente', '30.0', 'mm', '', '', '', '', ''],

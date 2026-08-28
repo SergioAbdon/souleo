@@ -19,7 +19,17 @@ function decodeEntities(s: string): string {
  *  achar a tabela (formato de `montarParamsHtml`) ou se alguma linha do
  *  tbody não tiver exatamente 8 células. */
 export function extrairRowsDoSnapshot(html: string): string[][] | null {
-  const tabelas = html.match(/<table\b[^>]*>[\s\S]*?<\/table>/gi) || [];
+  // Ancorado na própria marca (`table-layout:fixed` inline) — não na
+  // primeira `<table\b>` do documento. A moldura real (`pdf-moldura.ts:116`)
+  // envolve TUDO num `<table class="pl">` externo sem essa marca inline (ela
+  // só existe na folha de estilo, não no atributo `style` da tag); o scan
+  // não-guloso `/<table\b[^>]*>.../` que começasse por QUALQUER abertura
+  // pegaria a externa e pararia no primeiro `</table>` — o da tabela de
+  // params, ainda dentro da externa — rejeitando o candidato (a abertura
+  // capturada seria a de `class="pl"`) e nunca chegando na tabela real.
+  // A tabela de params não tem `<table>` aninhada, então o não-guloso a
+  // partir da abertura certa fecha exatamente nela.
+  const tabelas = html.match(/<table\b[^>]*table-layout:\s*fixed[^>]*>[\s\S]*?<\/table>/gi) || [];
 
   for (const tabela of tabelas) {
     const abertura = (tabela.match(/^<table\b[^>]*>/i) || [''])[0];
@@ -43,6 +53,9 @@ export function extrairRowsDoSnapshot(html: string): string[][] | null {
       if (cells.length !== 8) return null;
       rows.push(cells);
     }
+    // tbody achado mas sem nenhuma linha: tabela estranha, não um "zero
+    // linhas" legítimo — mesmo contrato de "formato bate ou vira null".
+    if (rows.length === 0) return null;
     return rows;
   }
   return null;

@@ -306,7 +306,8 @@ export async function rodarShadow(
 
     // T4: só exames que o legado pintou (proveniência da F3) — se o
     // Senna93 pintou, o snapshot não é referência do legado nenhuma.
-    if (deps.lerSnapshot && ex.motorNumeros !== 'senna93') {
+    // snapshot só existe pós-S5 25/08 — evita 200 downloads 404 em série na rota de 60s
+    if (deps.lerSnapshot && ex.motorNumeros !== 'senna93' && emitidoEm.slice(0, 10) >= '2026-08-25') {
       const snapHtml = await deps.lerSnapshot(args.wsId, ex.id);
       const rows = snapHtml ? extrairRowsDoSnapshot(snapHtml) : null;
       // 12 linhas = pintura Senna93 escapada da proveniência → não-conferido.
