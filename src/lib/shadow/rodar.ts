@@ -39,7 +39,7 @@ export interface ExameShadow {
   era: 'senna90' | 'legado';            // emitidoEm >= ERA_SENNA90_DESDE
   motorNumeros: string | null;          // proveniência gravada na F3 (se houver)
   frases: DivFrase[]; celulas: DivCelula[];
-  pulado?: 'sem-medidas' | 'sem-texto' | 'erro-calculo';
+  pulado?: 'sem-data' | 'sem-medidas' | 'sem-texto' | 'erro-calculo';
   /** Preenchido pela T4 (validação contra o snapshot HTML), quando houver. */
   snapshotCheck?: { batem: boolean; difs: DivCelula[] } | null;
 }
@@ -273,6 +273,11 @@ export async function rodarShadow(
     const ex: ExameShadow = {
       id,
       emitidoEm,
+      // M1: fronteira em data de CALENDÁRIO UTC (slice de um ISO). Benigno:
+      // a flag virou 'senna90' 16/05 às 00h BRT (03h UTC) — o UTC "come" as
+      // primeiras ~3h do dia 17 como se ainda fosse 16, encolhendo a folga
+      // de 1 dia que ERA_SENNA90_DESDE já tem margem pra cobrir, nunca
+      // invertendo a direção da classificação.
       era: emitidoEm.slice(0, 10) >= ERA_SENNA90_DESDE ? 'senna90' : 'legado',
       motorNumeros: typeof dados.motorNumeros === 'string' ? dados.motorNumeros : null,
       frases: [], celulas: [],
@@ -286,7 +291,12 @@ export async function rodarShadow(
       achados: extrairLinhas(dados.achados),
       conclusoes: extrairLinhas(dados.conclusoes),
     };
-    if (Object.values(brutas).every((v) => v === '' || v === null || v === undefined)) {
+    // M2 (revisão T3): emitidoEm ilegível não pode virar 'legado' silencioso
+    // — antes caía no balde informativo eraLegado sem avisar que a DATA em
+    // si já é a falha. Prioridade sobre sem-medidas/sem-texto.
+    if (emitidoEm === '') {
+      ex.pulado = 'sem-data';
+    } else if (Object.values(brutas).every((v) => v === '' || v === null || v === undefined)) {
       ex.pulado = 'sem-medidas';
     } else if (velho.achados.length === 0 && velho.conclusoes.length === 0) {
       ex.pulado = 'sem-texto';

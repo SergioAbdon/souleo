@@ -10,77 +10,14 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { NextRequest, NextResponse } from 'next/server';
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
-import { getFirestore, Timestamp, FieldValue } from 'firebase-admin/firestore';
+import { requireUid, adminDb } from '@/lib/auth-admin';
 import { resolverPapel, idValido } from '@/lib/exame-admin';
-import { rodarShadow, exameTemDivergencia } from '@/lib/shadow/rodar';
-import type { ExecucaoShadow, ShadowDeps } from '@/lib/shadow/rodar';
-import { lerSnapshotHtml } from '@/lib/pdf-server';
+import { rodarShadow } from '@/lib/shadow/rodar';
+import { depsAdmin } from '@/lib/shadow/deps-admin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
-
-const CHUNK = 400; // limite Firestore = 500 ops/batch
-
-if (!getApps().length) {
-  initializeApp({
-    credential: cert({
-      projectId: 'leo-sistema-laudos',
-      clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL!,
-      privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-  });
-}
-const fbAuth = getAuth();
-const dbAdmin = getFirestore();
-
-async function verificarAuth(req: NextRequest): Promise<string | null> {
-  const authHeader = req.headers.get('authorization');
-  if (!authHeader?.startsWith('Bearer ')) return null;
-  const token = authHeader.slice(7);
-  try {
-    const decoded = await fbAuth.verifyIdToken(token);
-    return decoded.uid;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * `workspaces/{ws}/privado/shadow/execucoes/{execId}` (gaveta deny-by-default,
- * firestore.rules:116 — nenhum cliente lê, nenhuma regra nova).
- * A subcoleção `exames` só recebe QUEM DIVERGIU, e SEM `pacienteNome`
- * (o exameId basta pra rastrear — minimização de dado clínico).
- */
-async function persistirExecucao(wsId: string, exec: ExecucaoShadow): Promise<string> {
-  const ref = dbAdmin
-    .collection('workspaces').doc(wsId)
-    .collection('privado').doc('shadow')
-    .collection('execucoes').doc();
-
-  await ref.set({
-    rodadaEm: FieldValue.serverTimestamp(),
-    origem: exec.origem, uid: exec.uid,
-    from: exec.from, to: exec.to,
-    resumo: exec.resumo,
-  });
-
-  const comDiv = exec.exames.filter(exameTemDivergencia);
-  for (let i = 0; i < comDiv.length; i += CHUNK) {
-    const batch = dbAdmin.batch();
-    for (const e of comDiv.slice(i, i + CHUNK)) {
-      batch.set(ref.collection('exames').doc(e.id), {
-        emitidoEm: e.emitidoEm, era: e.era, motorNumeros: e.motorNumeros,
-        frases: e.frases, celulas: e.celulas,
-        ...(e.snapshotCheck !== undefined ? { snapshotCheck: e.snapshotCheck } : {}),
-      });
-    }
-    await batch.commit();
-  }
-  return ref.id;
-}
 
 /**
  * POST /api/admin/shadow-retroativo
@@ -92,7 +29,7 @@ async function persistirExecucao(wsId: string, exec: ExecucaoShadow): Promise<st
 export async function POST(req: NextRequest) {
   try {
     // Ordem 401 → 400 → 403 (padrão S5-T7).
-    const uid = await verificarAuth(req);
+    const uid = await requireUid(req);
     if (!uid) return NextResponse.json({ ok: false, error: 'Auth requerida' }, { status: 401 });
 
     const body = await req.json();
@@ -105,7 +42,7 @@ export async function POST(req: NextRequest) {
     // Gate de papel: antes, QUALQUER usuário autenticado lia achados,
     // conclusões e nome de paciente de QUALQUER workspace. Recepção não lê
     // conteúdo clínico.
-    const papel = await resolverPapel(dbAdmin, wsId, uid);
+    const papel = await resolverPapel(adminDb(), wsId, uid);
     if (papel !== 'dono' && papel !== 'medico') {
       return NextResponse.json({ ok: false, error: 'sem_acesso' }, { status: 403 });
     }
@@ -117,26 +54,7 @@ export async function POST(req: NextRequest) {
     // `pacienteNome` fica SÓ aqui (resposta HTTP) — não entra no core nem
     // no Firestore; a página mostra, o banco não guarda.
     const nomes = new Map<string, string>();
-
-    const deps: ShadowDeps = {
-      listarExames: async (ws, de, ate) => {
-        const snap = await dbAdmin
-          .collection('workspaces').doc(ws).collection('exames')
-          .where('status', '==', 'emitido')
-          .where('emitidoEm', '>=', Timestamp.fromDate(de))
-          .where('emitidoEm', '<=', Timestamp.fromDate(ate))
-          .orderBy('emitidoEm', 'desc')
-          .limit(200)
-          .get();
-        return snap.docs.map(d => {
-          const dados = d.data();
-          nomes.set(d.id, String(dados.pacienteNome || '—'));
-          return { id: d.id, dados };
-        });
-      },
-      persistir: persistirExecucao,
-      lerSnapshot: async (ws, exameId) => (await lerSnapshotHtml(ws, exameId))?.html ?? null,
-    };
+    const deps = depsAdmin((id, nome) => nomes.set(id, nome));
 
     const { execId, exec } = await rodarShadow(deps, {
       wsId, from: fromDate, to: toDate, origem: 'retroativo', uid,

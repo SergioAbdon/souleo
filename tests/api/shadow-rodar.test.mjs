@@ -62,6 +62,16 @@ describe('rodarShadow', () => {
     assert.equal(exec.exames[0].pulado, 'sem-medidas');
   });
 
+  test('exame sem emitidoEm legível (T5-M2) é pulado como sem-data, não vira era legado silenciosa', async () => {
+    const deps = { listarExames: async () => [exameFixture({ emitidoEm: undefined })],
+                   persistir: async () => 'e' };
+    const { exec } = await rodarShadow(deps, { wsId: 'w', from: new Date(0), to: new Date(),
+                                               origem: 'script', uid: null });
+    assert.equal(exec.resumo.pulados, 1);
+    assert.equal(exec.resumo.comparados, 0);
+    assert.equal(exec.exames[0].pulado, 'sem-data');
+  });
+
   test('exame sem achados nem conclusões é pulado como sem-texto', async () => {
     const deps = { listarExames: async () => [exameFixture({ achados: [], conclusoes: [] })],
                    persistir: async () => 'e' };
