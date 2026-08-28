@@ -29,7 +29,7 @@ const POR_ESTRUTURA = [
 ];
 
 test('o markdown parseia (sanidade do regex de extração)', () => {
-  assert.equal(refsMd.length, 37, 'linhas de tabela do md');
+  assert.equal(refsMd.length, 38, 'linhas de tabela do md');
   assert.equal(refsMd.length, (md.match(/^\| F/gm) || []).length, 'linha do md com ref fora do formato extraível');
   assert.equal(new Set(refsMd).size, 33, 'refs distintas');
   assert.ok(refsMd.includes('F1-T1 Aorta'));

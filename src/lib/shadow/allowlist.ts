@@ -96,6 +96,18 @@ export const FRASES_ESPERADAS: MatcherFrase[] = [
     /Velocidade e' septal=/,
     /volume index do átrio esquerdo/i),
 
+  // Entrada do algoritmo diastólico mudou (calculos/diastologia.ts:86-92):
+  // FE-baixa 50→52/54 por sexo (A12) e massa alta 102/88→115/95 (B12) trocam
+  // o RAMO da classificação. Direcional de propósito — o SUMIÇO dessas
+  // frases não é esperado (mascararia bug real); só a APARIÇÃO pelo flip
+  // de ramo A12/B12 (achado no retroativo real 28/08, exames era-senna90).
+  {
+    ref: 'F1-T6 Diastólica',
+    casa: (velho, novo) =>
+      velho === '' &&
+      /Função diastólica do ventrículo esquerdo Indeterminada|Índices diastólicos do ventrículo esquerdo preservados/i.test(novo),
+  },
+
   // Estenose mitral pela diretriz (27/08): área 1,5-2,0 vira LEVE direto
   // (calculos/valvas.ts:46) — o legado nessa faixa segue o gradiente primeiro
   // (motorv8mp4.js:101-111). Frase: conclusoes/index.ts:119.

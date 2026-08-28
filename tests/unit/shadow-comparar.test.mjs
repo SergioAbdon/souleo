@@ -215,6 +215,26 @@ describe('compararFrases', () => {
     assert.ok(divs.every((d) => d.esperada && d.ref === 'F1-T1 Aorta'), JSON.stringify(divs));
   });
 
+  test('flip de ramo A12/B12: aparição de "Indeterminada" sai esperada (F1-T6 Diastólica)', () => {
+    const divs = compararFrases(
+      vazio,
+      { ...vazio, achados: ['Função diastólica do ventrículo esquerdo Indeterminada.'] }
+    );
+    assert.equal(divs.length, 1);
+    assert.equal(divs[0].esperada, true);
+    assert.equal(divs[0].ref, 'F1-T6 Diastólica');
+  });
+
+  test('flip de ramo A12/B12: SUMIÇO da mesma frase (reverso) sai INESPERADA (direcional)', () => {
+    const divs = compararFrases(
+      { ...vazio, achados: ['Função diastólica do ventrículo esquerdo Indeterminada.'] },
+      vazio
+    );
+    assert.equal(divs.length, 1);
+    assert.equal(divs[0].esperada, false);
+    assert.equal(divs[0].ref, null);
+  });
+
   test('sentinela __WILKINS__ continua fora da comparação', () => {
     const divs = compararFrases(
       { ...vazio, achados: ['__WILKINS__{"sc":8}'] },
