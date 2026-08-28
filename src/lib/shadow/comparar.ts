@@ -147,8 +147,13 @@ function splitFrases(s: string): string[] {
     .filter(Boolean);
 }
 
-/** Normaliza string pra comparação tolerante (remove pontuação final, espaços extras, numeração) */
-function normalizar(s: string): string {
+/**
+ * Normaliza string pra comparação tolerante (remove pontuação final, espaços
+ * extras, numeração). Exportada para o relatório do script CLI do
+ * retroativo (`scripts/shadow/retroativo.mjs`) agrupar divergências pela
+ * mesma chave — reusa em vez de duplicar.
+ */
+export function normalizar(s: string): string {
   return s
     .trim()
     .replace(/^\d+[\.\)]\s*/, '')   // remove "1. " ou "1) " do início

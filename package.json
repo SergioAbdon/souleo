@@ -17,6 +17,7 @@
         "integracoes:migrar": "node --env-file=.env.local scripts/integracoes/01-migrar.mjs",
         "integracoes:limpar": "node --env-file=.env.local scripts/integracoes/02-limpar-campos-antigos.mjs",
         "imagens:privar": "node --env-file=.env.local scripts/imagens-privar.mjs",
+        "shadow:retroativo": "node --env-file=.env.local --import ./tests/unit/register-ts-resolve-hook.mjs scripts/shadow/retroativo.mjs",
         "test:unit": "node --import ./tests/unit/register-ts-resolve-hook.mjs --test tests/unit/*.test.mjs",
         "test:rules": "npx firebase emulators:exec --only firestore --project leo-testes \"node --test tests/rules/regras.test.mjs\"",
         "test:api": "npx firebase emulators:exec --only firestore,auth --project leo-testes \"node --import ./tests/unit/register-ts-resolve-hook.mjs --test tests/api/*.test.mjs\"",
