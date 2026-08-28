@@ -223,8 +223,10 @@ async function main() {
   }
 
   const fromDate = new Date(fromArg);
-  const toDate = toArg ? new Date(toArg) : new Date();
-  toDate.setHours(23, 59, 59, 999);
+  // fim do dia LOCAL da data pedida — new Date('AAAA-MM-DD') seria meia-noite UTC e
+  // cortaria o dia inteiro em UTC-3 (revisao final I1)
+  const toDate = toArg ? new Date(`${toArg}T23:59:59.999`) : new Date();
+  if (!toArg) toDate.setHours(23, 59, 59, 999);
 
   console.log(`MODO: ${modo()}`);
   console.log(`período: ${fromArg} .. ${toArg ?? hojeLocal()}`);

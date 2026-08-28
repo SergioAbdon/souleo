@@ -20,6 +20,18 @@ import { calcular } from '../../senna90/motor';
 import { montarRowsTabela } from '../../senna90/classificacoes/tabela';
 import { compararFrases, compararTabelas, extrairLinhas } from './comparar';
 import type { DivFrase, DivCelula } from './comparar';
+
+/**
+ * T4: dif de UMA célula na checagem simulador × snapshot pintado. Diferente
+ * de `DivCelula` (que compara os DOIS motores — legado/senna93): aqui os
+ * dois lados são o MESMO motor (legado), então os nomes `legado`/`senna93`
+ * mentiriam sobre qual lado é qual — revisão final M-a.
+ */
+export interface DifSnapshot {
+  linha: number; col: number;
+  pintado: string; simulado: string;
+  esperada: boolean; ref: string | null;
+}
 import { simularTabelaLegado } from './legado-tabela';
 import type { EntradaLegado } from './legado-tabela';
 import { extrairRowsDoSnapshot } from './snapshot-params';
@@ -41,7 +53,7 @@ export interface ExameShadow {
   frases: DivFrase[]; celulas: DivCelula[];
   pulado?: 'sem-data' | 'sem-medidas' | 'sem-texto' | 'erro-calculo';
   /** Preenchido pela T4 (validação contra o snapshot HTML), quando houver. */
-  snapshotCheck?: { batem: boolean; difs: DivCelula[] } | null;
+  snapshotCheck?: { batem: boolean; difs: DifSnapshot[] } | null;
 }
 
 export interface ResumoShadow {
@@ -229,16 +241,16 @@ function calcularOuNull(m: MedidasEcoTT): ReturnType<typeof calcular> | null {
  * (legado), logo qualquer diferença é divergência de verdade — o
  * simulador saiu da linha, não o legado.
  */
-function compararComSnapshot(simulado: string[][], pintado: string[][]): DivCelula[] {
-  const out: DivCelula[] = [];
+function compararComSnapshot(simulado: string[][], pintado: string[][]): DifSnapshot[] {
+  const out: DifSnapshot[] = [];
   for (let linha = 0; linha < 10; linha++) {
     const s = simulado[linha] ?? [];
     const p = pintado[linha] ?? [];
     for (let col = 0; col < 8; col++) {
-      const senna93 = s[col] ?? '';
-      const legado = p[col] ?? '';
-      if (senna93 === legado) continue;
-      out.push({ linha, col, legado, senna93, esperada: false, ref: null });
+      const cSimulado = s[col] ?? '';
+      const cPintado = p[col] ?? '';
+      if (cSimulado === cPintado) continue;
+      out.push({ linha, col, pintado: cPintado, simulado: cSimulado, esperada: false, ref: null });
     }
   }
   return out;
