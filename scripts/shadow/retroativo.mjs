@@ -29,6 +29,7 @@ import { Timestamp, FieldValue } from 'firebase-admin/firestore';
 import { getDb, getCredential, COMMIT, modo } from '../secao1/lib-admin.mjs';
 import { rodarShadow, exameTemDivergencia } from '../../src/lib/shadow/rodar.ts';
 import { normalizar } from '../../src/lib/shadow/comparar.ts';
+import { idValido } from '../../src/lib/exame-admin.ts';
 
 // Os 3 workspaces da fase (spec F4 T5/T6) — sem --ws roda nos 3.
 const WORKSPACES_PADRAO = [
@@ -48,19 +49,38 @@ if (!getApps().length) {
 }
 const db = getDb();
 
-function argVal(flag) {
-  const i = process.argv.indexOf(flag);
-  return i >= 0 ? process.argv[i + 1] : undefined;
-}
+const USO = 'Uso: npm run shadow:retroativo -- --from AAAA-MM-DD [--to AAAA-MM-DD] [--ws <wsId>] [--commit]';
+const FLAGS_COM_VALOR = ['--ws', '--from', '--to'];
+const FLAGS_VALIDAS = [...FLAGS_COM_VALOR, '--commit'];
 
-const wsArg = argVal('--ws');
-const fromArg = argVal('--from');
-const toArg = argVal('--to');
-
-if (!fromArg) {
-  console.error('Uso: npm run shadow:retroativo -- --from AAAA-MM-DD [--to AAAA-MM-DD] [--ws <wsId>] [--commit]');
+function sair(msgExtra) {
+  if (msgExtra) console.error(msgExtra);
+  console.error(USO);
   process.exit(1);
 }
+
+// Parsing estrito: revisão T6 — `--ws=x` (silenciosamente ignorado pelo
+// antigo argVal/indexOf, caindo nos 3 workspaces padrão) e valor ausente/
+// trocado por outra flag (`--ws --commit` virava wsId literal '--commit')
+// agora explodem em vez de rodar com escopo errado.
+const argvOperador = process.argv.slice(2);
+const args = {};
+for (let i = 0; i < argvOperador.length; i++) {
+  const tok = argvOperador[i];
+  if (!tok.startsWith('--')) continue;
+  if (!FLAGS_VALIDAS.includes(tok)) sair(`argumento desconhecido: ${tok}`);
+  if (tok === '--commit') { args.commit = true; continue; }
+  const val = argvOperador[i + 1];
+  if (val === undefined || val.startsWith('--')) sair(`valor ausente para ${tok}`);
+  args[tok.slice(2)] = val;
+  i++; // consome o valor
+}
+
+const wsArg = args.ws;
+const fromArg = args.from;
+const toArg = args.to;
+
+if (!fromArg) sair();
 
 // ── deps reais (Admin SDK) ──
 
@@ -188,14 +208,26 @@ function imprimirRelatorio(wsId, exec) {
   }
 }
 
+// AAAA-MM-DD local (não UTC) — mesmo formato dos argumentos de entrada.
+function hojeLocal() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 async function main() {
   const wsList = wsArg ? [wsArg] : WORKSPACES_PADRAO;
+  for (const wsId of wsList) {
+    // Mesma regra da rota (src/lib/exame-admin.ts:idValido) — id entra
+    // interpolado no path do Admin SDK, `/` remontaria a coleção.
+    if (!idValido(wsId)) sair(`wsId inválido: ${wsId}`);
+  }
+
   const fromDate = new Date(fromArg);
   const toDate = toArg ? new Date(toArg) : new Date();
   toDate.setHours(23, 59, 59, 999);
 
   console.log(`MODO: ${modo()}`);
-  console.log(`período: ${fromDate.toISOString().slice(0, 10)} .. ${toDate.toISOString().slice(0, 10)}`);
+  console.log(`período: ${fromArg} .. ${toArg ?? hojeLocal()}`);
 
   for (const wsId of wsList) {
     const { exec } = await rodarShadow(
@@ -206,9 +238,17 @@ async function main() {
   }
 
   if (!COMMIT) {
+    // Ecoa o escopo REAL do ensaio (--ws/--to só entram se o operador os deu)
+    // — revisão T6: a dica antiga sempre sugeria os 3 workspaces padrão.
+    let dica = 'npm run shadow:retroativo --';
+    if (wsArg) dica += ` --ws ${wsArg}`;
+    dica += ` --from ${fromArg}`;
+    if (toArg) dica += ` --to ${toArg}`;
+    dica += ' --commit';
+
     console.log('\nENSAIO. Nada foi gravado.');
     console.log('>>> Pra gravar de valer, rode (o "--" é obrigatório, senão o npm engole a flag):');
-    console.log('>>>   npm run shadow:retroativo -- --from ' + fromArg + ' --commit');
+    console.log('>>>   ' + dica);
   }
 }
 
