@@ -16,6 +16,17 @@ import { obterBrowser, descartarBrowser, ehErroDeConexao } from './pdf-browser';
 // depois de 30s do `networkidle0` (e, pelo P4, com a franquia já cobrada).
 const TETO_FONTES_MS = 8000;
 
+// P1: o pdfHtml vem do cliente — o Chrome do servidor não pode ser o proxy
+// dele. Só o que o laudo legitimamente usa: data: (logo/assinatura), o
+// próprio bucket (signed URLs das imagens DICOM) e as fontes da moldura.
+// Prefixo com barra no bucket: "meu-bucketX" não passa.
+export function urlPermitidaNoRender(url: string, bucketName: string): boolean {
+  return url.startsWith('data:')
+    || url.startsWith(`https://storage.googleapis.com/${bucketName}/`)
+    || url.startsWith('https://fonts.googleapis.com/')
+    || url.startsWith('https://fonts.gstatic.com/');
+}
+
 // ── Salvar buffer de PDF pronto no Storage (Task 5: reusado pelo caminho
 // Puppeteer abaixo E pelo caminho de anexo direto em /api/emitir) ──
 export async function salvarPdfBuffer(
@@ -126,6 +137,16 @@ export async function gerarESalvarPdf(
   const renderizar = async (): Promise<Uint8Array> => {
     const page = await (await obterBrowser()).newPage();
     try {
+      // P1: o laudo não usa JS (o Chrome só pagina e imprime) e não pode fazer
+      // o servidor buscar host arbitrário — SSRF/beacon, congelado no snapshot
+      // e re-executado a cada correção administrativa. Precisa vir ANTES do
+      // setContent: a interceptação só filtra requisições feitas depois dela.
+      await page.setJavaScriptEnabled(false);
+      await page.setRequestInterception(true);
+      page.on('request', (r) => {
+        if (urlPermitidaNoRender(r.url(), bucket.name)) void r.continue();
+        else void r.abort();
+      });
       // `load` (não `networkidle0`): o evento já espera o CSS do <link> das
       // fontes e as imagens do laudo — que é o que o PDF precisa —, sem os
       // 500ms de silêncio de rede nem ficar refém de uma conexão pendurada.
