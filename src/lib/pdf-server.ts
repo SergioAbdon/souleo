@@ -145,7 +145,7 @@ export async function gerarESalvarPdf(
       await page.setRequestInterception(true);
       page.on('request', (r) => {
         if (urlPermitidaNoRender(r.url(), bucket.name)) void r.continue();
-        else void r.abort();
+        else { console.warn(`render: url bloqueada ${r.url().slice(0, 120)} (ws=${wsId} exame=${exameId})`); void r.abort(); }
       });
       // `load` (não `networkidle0`): o evento já espera o CSS do <link> das
       // fontes e as imagens do laudo — que é o que o PDF precisa —, sem os
