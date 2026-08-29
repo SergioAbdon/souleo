@@ -163,6 +163,13 @@ function LaudoPageInner() {
   // de uma emissão em curso. Task 7 reusa este mesmo ref pro guard de duplo
   // clique no botão emitir.
   const emitindoRef = useRef(false);
+  // S7-T0.3 (E1): chave da TENTATIVA de emissão, não do clique. Nasce na
+  // primeira tentativa e SOBREVIVE ao erro — o retry depois de um timeout de
+  // rede (a transação de billing já commitou, o Puppeteer é que estourou)
+  // manda a mesma chave e o servidor devolve a emissão que existe em vez de
+  // debitar de novo. Só zera no sucesso: reemissão deliberada = chave nova,
+  // e essa cobra (política registrada).
+  const emissaoKeyRef = useRef<string | null>(null);
   // Wrapper único do motor (S5-T7, nº12): `sc()` (declarado dentro de
   // `motorInicializar`) é calc() + disparo do Senna90 + shadow mode — só
   // existe DEPOIS do motor carregar. `safeCalc()` é chamado de fora (Limpar,
@@ -1476,6 +1483,7 @@ function LaudoPageInner() {
           dadosFinais,
           medicoUid: user.uid,
           pdfHtml,
+          emissaoKey: (emissaoKeyRef.current ||= crypto.randomUUID()),
           // F3-T5 (proveniência): QUEM produziu os números deste PDF
           // assinado. Carimbo aditivo — a F4 (sombra) e qualquer auditoria
           // clínica precisam saber se a tabela veio do motor legado ou do
@@ -1521,6 +1529,7 @@ function LaudoPageInner() {
 
     setEmitido(true);
     setReedicaoAtiva(false); // reemitiu com sucesso — não há edição pendente
+    emissaoKeyRef.current = null;   // S7-T0.3: próxima emissão é intenção nova (cobra)
 
     // Abrir o PDF gerado (se ja foi salvo no Storage)
     if (resultado.pdfUrl) {

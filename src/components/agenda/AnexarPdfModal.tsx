@@ -9,7 +9,7 @@
 // rota também recusa não-médico com 403 nao_medico, defesa em profundidade).
 // ══════════════════════════════════════════════════════════════════
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { auth } from '@/lib/firebase';
 
 const LIMITE_BYTES = 3 * 1024 * 1024; // 3MB — limite client honesto (Vercel ~4,5MB, base64 +33%)
@@ -39,6 +39,10 @@ export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid }
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [erro, setErro] = useState('');
   const [enviando, setEnviando] = useState(false);
+  // S7-T0.3 (E1): chave da TENTATIVA de anexo, presa ao exame (o modal fica
+  // montado na Agenda e troca de exame). Sobrevive ao erro — reenviar depois
+  // de um timeout não debita a franquia de novo; zera no sucesso.
+  const emissaoKeyRef = useRef<{ id: string; key: string } | null>(null);
 
   if (!open || !exame) return null;
 
@@ -81,6 +85,9 @@ export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid }
           // `nomeArq` sai daqui (S5-T14, I3): o servidor deriva o nome do
           // objeto no Storage a partir do tipo + nome do paciente.
           pdfBase64: base64,
+          emissaoKey: (emissaoKeyRef.current?.id === exame.id
+            ? emissaoKeyRef.current
+            : (emissaoKeyRef.current = { id: exame.id, key: crypto.randomUUID() })).key,
         }),
       });
       const data = await res.json();
@@ -93,6 +100,7 @@ export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid }
       } else {
         alert('PDF anexado — laudo emitido (1 franquia consumida)');
       }
+      emissaoKeyRef.current = null;   // S7-T0.3: próximo anexo é intenção nova (cobra)
       setArquivo(null);
       onClose();
     } catch {

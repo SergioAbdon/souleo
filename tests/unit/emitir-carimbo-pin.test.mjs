@@ -9,12 +9,19 @@ import path from 'node:path';
 
 const src = fs.readFileSync(
   path.resolve(import.meta.dirname, '..', '..', 'src', 'app', 'api', 'emitir', 'route.ts'), 'utf8');
+// S7-T0.3: a transação saiu da rota para src/lib/emitir-admin.ts (ganhou
+// bateria em tests/api/emitir-idempotencia.test.mjs). O carimbo viaja como
+// `extras` — o pin passa a olhar os dois lados.
+const lib = fs.readFileSync(
+  path.resolve(import.meta.dirname, '..', '..', 'src', 'lib', 'emitir-admin.ts'), 'utf8');
 
 describe('carimbo de proveniência do motor (F3, achado do teste ao vivo)', () => {
   test('motorNumeros entra na TRANSAÇÃO (adjacente ao status emitido)', () => {
     // Adjacência no MESMO transaction.update — não uma janela por indexOf
     // (a 1ª ocorrência de "status: 'emitido'" no arquivo é um comentário).
-    assert.match(src, /\.\.\.carimboMotor,\s*\n\s*status: 'emitido'/,
+    assert.match(src, /extras: carimboMotor/,
+      'a rota parou de passar o carimbo para a transação');
+    assert.match(lib, /\.\.\.\(p\.extras \|\| \{\}\),\s*\n\s*status: 'emitido'/,
       'o carimbo saiu da transação — voltaria a morrer com o PDF');
   });
   test('o update pós-PDF grava SÓ a URL', () => {

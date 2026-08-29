@@ -5,12 +5,12 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { NextRequest, NextResponse } from 'next/server';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { FieldValue } from 'firebase-admin/firestore';
 import { gerarESalvarPdf, salvarPdfBuffer } from '@/lib/pdf-server';
 import { validarPdfBase64 } from '@/lib/pdf-validacao';
-import { resolverAssinatura } from '@/lib/billing-admin';
 import { adminDb, requireUid } from '@/lib/auth-admin';
 import { resolverPapel } from '@/lib/exame-admin';
+import { emitirComCobranca, emissaoKeyValida } from '@/lib/emitir-admin';
 import { prefixoArquivoPorTipo } from '@/lib/dicom-sr-mapping';
 
 // ── Config Next.js ──
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   const dbAdmin = adminDb();
   try {
     const body = await req.json();
-    const { wsId, exameId, dadosFinais, medicoUid, pdfHtml, pdfBase64, motorNumeros } = body as {
+    const { wsId, exameId, dadosFinais, medicoUid, pdfHtml, pdfBase64, motorNumeros, emissaoKey } = body as {
       wsId: string;
       exameId: string;
       dadosFinais: Record<string, unknown>;
@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
       pdfHtml?: string;
       pdfBase64?: string;
       motorNumeros?: string;
+      emissaoKey?: string;
     };
     // F3-T5 (proveniência): carimbo de QUEM produziu os números do laudo.
     // Vem do cliente, então entra só se for uma das duas palavras conhecidas
@@ -54,6 +55,15 @@ export async function POST(req: NextRequest) {
     if (!wsId || !exameId || !medicoUid) {
       return NextResponse.json(
         { ok: false, motivo: 'dados_invalidos', error: 'wsId, exameId e medicoUid sao obrigatorios' },
+        { status: 400 }
+      );
+    }
+    // S7-T0.3 (E1): chave de idempotencia da tentativa. Opcional (cliente
+    // antigo continua emitindo do mesmo jeito), mas se vier tem que ser UUID —
+    // string livre viraria trava permanente no doc do laudo.
+    if (emissaoKey !== undefined && !emissaoKeyValida(emissaoKey)) {
+      return NextResponse.json(
+        { ok: false, motivo: 'dados_invalidos', error: 'emissaoKey invalida' },
         { status: 400 }
       );
     }
@@ -98,87 +108,23 @@ export async function POST(req: NextRequest) {
     }
 
     // ══ 1. TRANSACAO ATOMICA: emitir + cobrar + ledger ══
-    // O doc de `consumo` entra NA transacao: era um add() depois, dentro de
-    // try/catch silencioso — se falhava, a franquia ficava debitada sem
-    // registro e a devolucao liquida (/api/exame) nao tinha o que devolver.
-    const consumoRef = dbAdmin.collection('consumo').doc();
-    const exameRef = dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`);
-    const resultado = await dbAdmin.runTransaction(async (transaction) => {
-      // Assinatura por contaId (fallback legado) — mesma chave do /api/exame.
-      const assinatura = await resolverAssinatura(dbAdmin, wsId);
-      if (!assinatura) {
-        return { ok: false, motivo: 'sem_plano' as const };
-      }
-      const subRef = assinatura.ref;
-      // Leituras ANTES de qualquer escrita (exigencia da transacao).
-      const [subSnap, exameSnap] = await Promise.all([
-        transaction.get(subRef),
-        transaction.get(exameRef),
-      ]);
-      if (!subSnap.exists) {
-        return { ok: false, motivo: 'sem_plano' as const };
-      }
-      if (!exameSnap.exists) {
-        return { ok: false, motivo: 'nao_encontrado' as const };
-      }
-      // Caneta do autor (D2): laudo com autor definido so o proprio emite —
-      // igual a regra publicada ("autor ou sem autor"). Sem autor pode assumir.
-      const autor = exameSnap.data()!.medicoUid as string | undefined;
-      if (autor && autor !== uid) {
-        return { ok: false, motivo: 'exame_de_outro_medico' as const };
-      }
-
-      const sub = subSnap.data()!;
-      const agora = new Date();
-      const cicloFim = sub.cicloFim ? (sub.cicloFim as Timestamp).toDate() : null;
-      const franquiaUsada = (sub.franquiaUsada as number) || 0;
-      const franquiaMensal = (sub.franquiaMensal as number) || 0;
-      const creditosExtras = (sub.creditosExtras as number) || 0;
-
-      let tipo: 'franquia' | 'creditos' | null = null;
-      if (cicloFim && agora <= cicloFim && franquiaUsada < franquiaMensal) {
-        tipo = 'franquia';
-      } else if (creditosExtras > 0) {
-        tipo = 'creditos';
-      } else if (cicloFim && agora > cicloFim && creditosExtras <= 0) {
-        return { ok: false, motivo: 'expirado' as const };
-      } else {
-        return { ok: false, motivo: 'sem_saldo' as const };
-      }
-
-      transaction.update(exameRef, {
-        ...dadosFinais,
-        ...carimboMotor,
-        status: 'emitido',
-        emitidoEm: FieldValue.serverTimestamp(),
-        medicoUid,
-        atualizadoEm: FieldValue.serverTimestamp(),
-      });
-
-      if (tipo === 'franquia') {
-        transaction.update(subRef, { franquiaUsada: FieldValue.increment(1) });
-      } else {
-        transaction.update(subRef, { creditosExtras: FieldValue.increment(-1) });
-      }
-
-      transaction.set(consumoRef, {
-        workspaceId: wsId,
-        exameId,
-        medicoUid,
-        pacienteNome: (dadosFinais.pacienteNome as string) || '',
-        tipoExame: (dadosFinais.tipoExame as string) || '',
-        convenio: (dadosFinais.convenio as string) || '',
-        tipo: tipo === 'franquia' ? 'franquia' : 'credito',
-        reemissao: !!(dadosFinais.reemissao),
-        emitidoEm: FieldValue.serverTimestamp(),
-      });
-
-      return { ok: true, tipo };
+    // Corpo em src/lib/emitir-admin.ts (S7-T0.3): o unico caminho de dinheiro
+    // sem teste de servidor (E9) — extraido pra ganhar bateria, e la mora a
+    // trava anti-cobranca-dupla da `emissaoKey` (E1).
+    const resultado = await emitirComCobranca(dbAdmin, {
+      wsId, exameId, uid, medicoUid, dadosFinais, extras: carimboMotor, emissaoKey,
     });
 
     if (!resultado.ok) {
       const status: Record<string, number> = { nao_encontrado: 404, exame_de_outro_medico: 403 };
-      return NextResponse.json(resultado, { status: status[resultado.motivo ?? ''] ?? 200 });
+      return NextResponse.json(resultado, { status: status[resultado.motivo] ?? 200 });
+    }
+
+    // Retry da MESMA tentativa (E1): a emissao ja commitou antes — devolve o
+    // que existe, sem log novo e sem passar de novo pelo Puppeteer (a 1a
+    // chamada pode estar gerando o PDF neste exato momento).
+    if (resultado.replay) {
+      return NextResponse.json({ ok: true, tipo: resultado.tipo, pdfUrl: resultado.pdfUrl, pdfErro: null, replay: true });
     }
 
     // ══ 2. AUDIT LOG (nao critico) ══
