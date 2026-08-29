@@ -114,10 +114,27 @@ aceita); raiz com VR "≤ N mm" por sexo+idade (WASE); ascendente "≤38/≤35";
 | Item | Decisão | Ref |
 |---|---|---|
 | E/e' na FA | **mantém >15** — CORRIGIDO 27/08 na leitura da F1: o docblock de `calculos/diastologia.ts` registra decisão explícita do Sergio ("E/e' septal isolado: >15, não >14 — esse é pra média septal+lateral"; "antes FA usava >14, agora >15 também"). Decisão documentada vence a recomendação da tabela A18. Vira item de veto **V12** | decisão Sergio registrada no código |
-| Dados insuficientes (sinusal) | exige **≥2 campos avaliados**; abaixo, silêncio (Senna90 vence A19 — falso normal morre) | — |
+| Dados insuficientes (sinusal) | exige **≥2 campos avaliados**; abaixo, ~~silêncio~~ (Senna90 vence A19 — falso normal morre) **[SUPERADO EM PARTE por 28/08: o silêncio vale SÓ para o ramo A (sinusal com FE preservada e massa normal), onde não há o que dizer. No ramo B (FE deprimida ou doença miocárdica) `<2 critérios avaliados` sai **Função Diastólica … Indeterminada**, não silêncio — lá existe achado a declarar (o gatilho sistólico/massa é real) e o que havia antes era um `return` Grau I incondicional, o falso-normal ao contrário]** | A19 · T3/T2c 28/08 |
 | Linha de números (j22) | monta só os campos preenchidos nos DOIS ramos (a lógica do j22FA vale pro sinusal) — mata "Relação E/A= ; " (B8) | — |
 | Detector de divergência manual | comparação por **chave exata** (índice), não `includes` — Grau I deixa de ser substring de Grau III (B6) | — |
 | Estado duplicado | UM adaptador `montarD` e UMA cópia do estado manual (B30) | — |
+
+**ANOTAÇÃO 28/08/2026 — onda "Diastologia conforme ASE/EACVI 2016"** (plano
+`docs/planos/2026-08-28-diastologia-guideline-ase2016.md` · anexo normativo com as
+reproduções `docs/planos/2026-08-28-auditoria-diastologia-ase2016.md` · divergências
+esperadas da sombra `docs/planos/2026-08-27-senna93-divergencias-esperadas.md` linhas
+`F6-T1..F6-T3`). **Regra permanente do Dr. Sérgio: "não existe decisão pessoal — os
+resultados seguem os guidelines; nos cabe apenas implementar as recomendações."** Onde o
+texto acima conflitar com uma destas linhas, valem estas:
+
+| Item | Decisão 28/08 | Ref |
+|---|---|---|
+| Seleção de ramo | FE de referência é a **Simpson** quando medida (Teichholz não atropela Simpson normal); **FE ausente NÃO é FE deprimida** → segue o algoritmo A. O ramo B fica sendo o que o guideline diz: FE deprimida OU doença miocárdica (massa) | D1/D3 · T1 |
+| Contagem de critérios (ramo A) | **maioria dos critérios AVALIADOS**, não contagem fixa: >50% positivos → gradua · exatamente 50% → Indeterminada · <50% → preservados. O `c<=1` (falso-normal) e o `c===2` (Indeterminada eterna) morrem; cutoffs e a régua de ≥2 avaliados intactos | D4/D5 · T2 |
+| Graduação exige fluxo mitral | E/A ausente — ou E/A ≤0,8 com onda E ausente — **não recebe grau**: o padrão do fluxo é o que define I/II/III (ASE 2016 Fig. 8). Classe NOVA nos dois ramos: achado "Disfunção Diastólica do ventrículo esquerdo presente, de grau não determinado (fluxo mitral não avaliado)." e conclusão "…de grau não determinado." Mata o fallthrough que afirmava "Pseudonormal" com zero fluxo mitral medido | anexo §8.2 · T2b/T2c |
+| Ramo B (suficiência) | regras diretas do fluxo mitral intactas (E/A ≥2 → III · E/A ≤0,8 com E ≤50 → I); a zona média exige **≥2 critérios avaliados** e a maioria decide — empate ou insuficiente → **Indeterminada** (ver supersessão na linha "Dados insuficientes" acima); maioria positiva sem E/A → classe "grau não determinado" | D2 · T3/T2c |
+| Empate na FA | maioria dos avaliados também na FA: empate 50% (2/4, 1/2) → **indeterminada**, não "pressão elevada". O `elevados >= 2` fixo chamava 2 de 4 de elevada e 1 de 2 de normal | T3 |
+| Sexo ausente (gatilho do ramo B) | as réguas dependentes de sexo (FE 52♂/54♀ · imVE 115♂/95♀) só decidem onde as **duas concordam**; na faixa discordante o gatilho é não-avaliável e não dispara — régua masculina calada é proibida (postura C8). O aviso é de **TELA** (`SEXO_AUSENTE`, `MASSA_NAO_INDEXAVEL`); nenhuma frase de laudo nova — o laudo descreve, não recomenda | D6/NOVO-1/NOVO-2 · T4 |
 
 ### 2.5 Valvas
 

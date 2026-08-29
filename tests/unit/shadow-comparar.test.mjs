@@ -225,9 +225,74 @@ describe('compararFrases', () => {
     assert.equal(divs[0].ref, 'F1-T6 Diastólica');
   });
 
-  test('flip de ramo A12/B12: SUMIÇO da mesma frase (reverso) sai INESPERADA (direcional)', () => {
+  // REESCRITO na onda "Diastologia ASE/EACVI 2016" (28/08, regra do Sergio
+  // "os resultados seguem os guidelines"): quando o pin nasceu (F4), o SUMIÇO
+  // de "Indeterminada" não tinha causa conhecida e alarmava de propósito. A T2
+  // deu causa — com maioria dos avaliados positiva (n=2,c=2 · n=3,c=2) o exame
+  // passa a GRADUAR, e a Indeterminada sai de cena (visto no retroativo real,
+  // exame v6Hx8jn5qBzG5OoceoL6). Vira linha F6-T2 do md da allowlist.
+  test('SUMIÇO de "Indeterminada" agora é esperado (F6-T2: maioria passou a graduar)', () => {
     const divs = compararFrases(
       { ...vazio, achados: ['Função diastólica do ventrículo esquerdo Indeterminada.'] },
+      vazio
+    );
+    assert.equal(divs.length, 1);
+    assert.equal(divs[0].esperada, true);
+    assert.equal(divs[0].ref, 'F6-T2 Diastológica');
+  });
+
+  // O flip mais comum da onda no histórico real (4 exames): o ramo mudou (T1),
+  // o grau some e "preservados" entra. As duas pontas têm que sair esperadas.
+  test('flip da T1: grau some (F6-T1) e "preservados" entra (F1-T6)', () => {
+    const divs = compararFrases(
+      {
+        achados: ['Disfunção Diastólica do ventrículo esquerdo de Grau I (Alteração de Relaxamento)'],
+        conclusoes: ['Disfunção diastólica de grau I do ventrículo esquerdo (alteração de relaxamento).'],
+      },
+      { achados: ['Índices diastólicos do ventrículo esquerdo preservados'], conclusoes: [] }
+    );
+    assert.equal(divs.length, 3, JSON.stringify(divs));
+    assert.ok(divs.every((d) => d.esperada), JSON.stringify(divs));
+    assert.deepEqual(
+      divs.map((d) => d.ref).sort(),
+      ['F1-T6 Diastólica', 'F6-T1 Diastológica', 'F6-T1 Diastológica']
+    );
+  });
+
+  // concLARS: a frase do strain atrial entra/sai junto com a classe diastólica
+  // (aparece quando volta a "preservados" na T1, cala no empate da T2).
+  test('strain atrial (concLARS) é esperado nos dois sentidos (F6-T1)', () => {
+    const lars = 'Strain atrial esquerdo preservado (24%).';
+    for (const divs of [
+      compararFrases(vazio, { ...vazio, conclusoes: [lars] }),
+      compararFrases({ ...vazio, conclusoes: [lars] }, vazio),
+    ]) {
+      assert.equal(divs.length, 1);
+      assert.equal(divs[0].esperada, true);
+      assert.equal(divs[0].ref, 'F6-T1 Diastológica');
+    }
+  });
+
+  // O guarda direcional continua vivo onde ainda faz sentido: a frase NOVA da
+  // T2b só pode APARECER (o motor antigo nunca a escreveu) — sumiço é bug.
+  test('frase nova "grau não determinado": aparição esperada, sumiço INESPERADO', () => {
+    const nova = 'Disfunção diastólica do ventrículo esquerdo de grau não determinado.';
+    const apareceu = compararFrases(vazio, { ...vazio, conclusoes: [nova] });
+    assert.equal(apareceu.length, 1);
+    assert.equal(apareceu[0].esperada, true);
+    assert.equal(apareceu[0].ref, 'F6-T2b Diastológica');
+
+    const sumiu = compararFrases({ ...vazio, conclusoes: [nova] }, vazio);
+    assert.equal(sumiu.length, 1);
+    assert.equal(sumiu[0].esperada, false);
+    assert.equal(sumiu[0].ref, null);
+  });
+
+  // Modo MANUAL do médico (DIAST_SENTENCAS, minúsculo) não é flip do motor —
+  // os matchers da onda são case-sensitive de propósito.
+  test('redação manual do grau NÃO é engolida pelos matchers da F6', () => {
+    const divs = compararFrases(
+      { ...vazio, achados: ['Disfunção diastólica do ventrículo esquerdo de grau I (alteração de relaxamento).'] },
       vazio
     );
     assert.equal(divs.length, 1);
