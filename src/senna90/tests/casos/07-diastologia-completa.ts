@@ -225,7 +225,7 @@ export const casosDiastologiaCompleta: CasoTeste[] = [
 
   {
     id: 'DC10',
-    descricao: 'FA — Pressão elevada (apenas 2 critérios elevados — limite)',
+    descricao: 'FA — 2 elevados de 4 avaliados = empate → indeterminada',
     inputs: (() => {
       const m = diastBase();
       m.gerais.ritmo = 'N';
@@ -237,8 +237,12 @@ export const casosDiastologiaCompleta: CasoTeste[] = [
       return m;
     })(),
     esperado: {
+      // Reescrito 28/08/2026 — Task 3 do plano 2026-08-28-diastologia-guideline-ase2016.md,
+      // regra permanente do Sergio: "os resultados seguem os guidelines". 2 elevados
+      // em 4 avaliados é empate 50% — o mesmo empate que o ramo sinusal resolve como
+      // "Indeterminada". A contagem fixa `elevados >= 2` chamava isso de "elevada".
       achados: ['Avaliação da função diastólica limitada devido arritmia cardíaca.'],
-      conclusoes: ['Parâmetros sugestivos de pressão de enchimento elevada.'],
+      conclusoes: ['Pressão de enchimento indeterminada (dados insuficientes para avaliação em arritmia cardíaca).'],
     },
   },
 
@@ -317,7 +321,7 @@ export const casosDiastologiaCompleta: CasoTeste[] = [
 
   {
     id: 'DC15',
-    descricao: 'FA — LARS isolado reduzido conta como elevado',
+    descricao: 'FA — LARS + IT elevados de 4 avaliados = empate → indeterminada',
     inputs: (() => {
       const m = diastBase();
       m.gerais.ritmo = 'N';
@@ -329,7 +333,11 @@ export const casosDiastologiaCompleta: CasoTeste[] = [
       return m;
     })(),
     esperado: {
-      conclusoes: ['Parâmetros sugestivos de pressão de enchimento elevada.'],
+      // Reescrito 28/08/2026 — Task 3 do plano 2026-08-28-diastologia-guideline-ase2016.md,
+      // regra permanente do Sergio: "os resultados seguem os guidelines". O LARS continua
+      // votando (cutoff intacto), mas 2 de 4 avaliados é empate → indeterminada. O voto do
+      // LARS numa maioria real está coberto em tests/unit/diastologia-ramo-b-suficiencia.test.mjs (f2).
+      conclusoes: ['Pressão de enchimento indeterminada (dados insuficientes para avaliação em arritmia cardíaca).'],
     },
   },
 

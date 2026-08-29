@@ -106,22 +106,52 @@ export function calcularJ21(inputs: InputsDiastologia): ResultadoJ21 {
 
   // ── Algoritmo simplificado / B (FE deprimida OU doença miocárdica) ──
   if (feBaixa || massaAlta) {
-    // Critérios diretos
+    // Regras DIRETAS do fluxo mitral (ASE 2016, Fig. 8) — decidem sozinhas, sem
+    // exigir critério de pressão de enchimento.
     if (relacaoEA !== null && relacaoEA >= 2) {
       return 'Disfunção Diastólica do ventrículo esquerdo de Grau III (Padrão Restritivo)';
     }
     if (relacaoEA !== null && relacaoEA <= 0.8 && ondaE !== null && ondaE <= 50) {
       return 'Disfunção Diastólica do ventrículo esquerdo de Grau I (Alteração de Relaxamento)';
     }
-    // Contagem de critérios pra Grau II vs Grau I
-    let p = 0;
-    if (relacaoEEseptal !== null && relacaoEEseptal > 15) p++;
-    if (velocidadeIT !== null && velocidadeIT > 2.8) p++;
-    if (volAEindex !== null && volAEindex > 34) p++;
-    if (p >= 2) {
-      return 'Disfunção Diastólica do ventrículo esquerdo de Grau II (Pseudonormal)';
+
+    // Critérios de pressão de enchimento: decide a MAIORIA dos AVALIADOS (D2).
+    // Antes, campo ausente contava como normal e o `return` final era Grau I
+    // incondicional — o ramo B graduava com 0 critério medido.
+    let avaliadosB = 0;
+    let positivosB = 0;
+    if (relacaoEEseptal !== null) {
+      avaliadosB++;
+      if (relacaoEEseptal > 15) positivosB++;
     }
-    return 'Disfunção Diastólica do ventrículo esquerdo de Grau I (Alteração de Relaxamento)';
+    if (velocidadeIT !== null) {
+      avaliadosB++;
+      if (velocidadeIT > 2.8) positivosB++;
+    }
+    if (volAEindex !== null) {
+      avaliadosB++;
+      if (volAEindex > 34) positivosB++;
+    }
+    if (avaliadosB < 2 || positivosB * 2 === avaliadosB) {
+      return 'Função Diastólica do ventrículo esquerdo Indeterminada';
+    }
+    const maioriaPositiva = positivosB * 2 > avaliadosB;
+
+    // Zona média do algoritmo B — só existe com fluxo mitral: E/A ≤0,8 com
+    // E >50, ou 0,8 < E/A < 2 (E/A ≥2 e E/A ≤0,8 com E ≤50 já retornaram).
+    const zonaMedia = relacaoEA !== null && (relacaoEA > 0.8 || ondaE !== null);
+    if (zonaMedia) {
+      return maioriaPositiva
+        ? 'Disfunção Diastólica do ventrículo esquerdo de Grau II (Pseudonormal)'
+        : 'Disfunção Diastólica do ventrículo esquerdo de Grau I (Alteração de Relaxamento)';
+    }
+    // Sem fluxo mitral utilizável (anexo §8.2): a maioria positiva prova pressão
+    // de enchimento elevada — disfunção presente, mas o GRAU vem do padrão do
+    // fluxo, que não foi medido. Maioria negativa sem E/A não decide nem grau
+    // (E/A ≥2 daria III) nem presença: o gatilho do ramo é sistólico/massa.
+    return maioriaPositiva
+      ? SEM_GRADUACAO
+      : 'Função Diastólica do ventrículo esquerdo Indeterminada';
   }
 
   // ── Algoritmo completo (FE preservada + massa normal) ──
@@ -182,8 +212,9 @@ export function calcularJ21(inputs: InputsDiastologia): ResultadoJ21 {
  *
  * Decisão:
  * - <2 critérios disponíveis → FA_INDETERMINADA
- * - ≥2 elevados → FA_PRESSAO_ELEVADA
- * - <2 elevados → FA_PRESSAO_NORMAL
+ * - maioria dos AVALIADOS elevada → FA_PRESSAO_ELEVADA
+ * - empate 50% → FA_INDETERMINADA (mesma régua do ramo sinusal)
+ * - maioria não-elevada → FA_PRESSAO_NORMAL
  */
 function calcularDiastologiaFA(inputs: {
   relacaoEEseptal: number | null;
@@ -219,7 +250,9 @@ function calcularDiastologiaFA(inputs: {
     if (laStrain < 18) elevados++;
   }
 
-  if (avaliados < 2) return 'FA_INDETERMINADA';
-  if (elevados >= 2) return 'FA_PRESSAO_ELEVADA';
+  // Maioria dos AVALIADOS, não contagem fixa: 2 de 4 é empate (indeterminada),
+  // como no ramo sinusal — o `elevados >= 2` fixo chamava isso de "elevada".
+  if (avaliados < 2 || elevados * 2 === avaliados) return 'FA_INDETERMINADA';
+  if (elevados * 2 > avaliados) return 'FA_PRESSAO_ELEVADA';
   return 'FA_PRESSAO_NORMAL';
 }

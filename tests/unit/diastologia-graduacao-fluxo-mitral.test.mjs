@@ -96,10 +96,11 @@ describe('calcular() — graduação do ramo completo exige fluxo mitral (ASE 20
     assert.ok(r.achados.includes(GRAU_II), `esperado Grau II: ${JSON.stringify(r.achados)}`);
   });
 
-  test('(e) ramo B (FE baixa) intocado: sem E/A + 2 critérios → Grau II do simplificado', () => {
-    // Fora do escopo da T2b (§8.2 também alcança o ramo B — follow-up declarado
-    // no relatório). Este teste TRAVA o ramo B como está, pra que o próximo fix
-    // seja deliberado e não um efeito colateral.
+  test('(e) ramo B sem E/A + 2 critérios(+) → grau não determinado (era Grau II)', () => {
+    // Reescrito na Task 3 (T2c) do mesmo plano: o lock da T2b era deliberado
+    // ("trava o ramo B como está pra que o próximo fix seja deliberado") e o fix
+    // chegou. §8.2 alcança os dois ramos — sem fluxo mitral não há grau.
+    // Cobertura completa do ramo B em tests/unit/diastologia-ramo-b-suficiencia.test.mjs.
     const m = medidasVazias();
     m.gerais.sexo = 'M';
     m.gerais.ritmo = 'S';
@@ -107,6 +108,7 @@ describe('calcular() — graduação do ramo completo exige fluxo mitral (ASE 20
     m.diastolica.velocidadeIT = 2.9;
     m.diastolica.volAEindex = 34.1;
     const r = calcular(m);
-    assert.ok(r.achados.includes(GRAU_II), `ramo B mudou sem querer: ${JSON.stringify(r.achados)}`);
+    assert.ok(r.achados.includes(SEM_GRADUACAO), `esperado sem graduação: ${JSON.stringify(r.achados)}`);
+    assert.ok(!r.achados.includes(GRAU_II), 'Grau II afirmado sem fluxo mitral (ramo B)');
   });
 });
