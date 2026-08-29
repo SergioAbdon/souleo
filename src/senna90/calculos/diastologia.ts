@@ -41,8 +41,8 @@ export interface InputsDiastologia {
  *
  * Lógica:
  * 1. Se ritmo irregular E sem onda A → algoritmo de FA (4 critérios)
- * 2. Se FE baixa OU IMVE alta → classificação direta por E/A e contagem de critérios
- * 3. Se FE preservada + massa normal → contagem de critérios diastológicos
+ * 2. Se FE deprimida OU IMVE alta → classificação direta por E/A e contagem de critérios
+ * 3. Caso contrário (inclusive FE indisponível) → contagem de critérios diastológicos
  *
  * @param inputs Medidas diastológicas
  * @returns String com classificação ou sentinela FA
@@ -87,15 +87,18 @@ export function calcularJ21(inputs: InputsDiastologia): ResultadoJ21 {
   const limFEteich = sexo === 'F' ? 0.54 : 0.52;
   const limIMVE = sexo === 'F' ? 95 : 115;
 
-  let feBaixa = false;
-  if (feSimpson !== null && feSimpson < limFEsimpson) feBaixa = true;
-  else if (feT !== null && feT < limFEteich) feBaixa = true;
+  // ASE 2016: Simpson é o método recomendado — quando medido, ele DECIDE sozinho
+  // (Teichholz não atropela um Simpson normal, D1). Sem Simpson, Teichholz decide.
+  // Sem nenhuma FE não há evidência de FE deprimida: não é gatilho do algoritmo B (D3).
+  const feBaixa =
+    feSimpson !== null ? feSimpson < limFEsimpson :
+    feT !== null ? feT < limFEteich :
+    false;
 
   const massaAlta = imVE !== null && imVE > limIMVE;
-  const feVide = feSimpson === null && feT === null;
 
-  // ── Algoritmo simplificado (FE baixa, massa alta ou FE indisponível) ──
-  if (feBaixa || massaAlta || feVide) {
+  // ── Algoritmo simplificado / B (FE deprimida OU doença miocárdica) ──
+  if (feBaixa || massaAlta) {
     // Critérios diretos
     if (relacaoEA !== null && relacaoEA >= 2) {
       return 'Disfunção Diastólica do ventrículo esquerdo de Grau III (Padrão Restritivo)';

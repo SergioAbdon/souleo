@@ -612,7 +612,10 @@ export const casosDiastologiaCompleta: CasoTeste[] = [
 
   {
     id: 'DC29',
-    descricao: 'SINUSAL — FE indisponível (feVide) força algoritmo simplificado',
+    // Reescrito 28/08/2026 — regra permanente do Sergio: "os resultados seguem os
+    // guidelines". feVide não é FE baixa (ASE 2016: algoritmo B exige FE deprimida OU
+    // doença miocárdica).
+    descricao: 'SINUSAL — FE indisponível segue o algoritmo completo (A)',
     inputs: (() => {
       const m = diastBase();
       m.gerais.ritmo = 'S';
@@ -629,7 +632,8 @@ export const casosDiastologiaCompleta: CasoTeste[] = [
       return m;
     })(),
     esperado: {
-      // feVide → algoritmo simplificado → 3 critérios elevados → Grau II
+      // Algoritmo A: 3 critérios avaliados (E/e' 18, IT 3.0, LAVI 38), 3 alterados
+      // → gradua por E/A 1,2 → Grau II
       achados: ['Disfunção Diastólica do ventrículo esquerdo de Grau II (Pseudonormal)'],
     },
   },
