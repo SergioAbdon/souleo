@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { resolverPapel, apagarExame, cancelarExame, transferirExame } from '../../src/lib/exame-admin.ts';
+import { refEmissaoPrivada } from '../../src/lib/emitir-admin.ts';
 
 let db;
 const CONTA = 'contaT', WS = 'wsT';
@@ -105,6 +106,13 @@ describe('apagar', () => {
     const r = await apagarExame(db, { wsId: WS, exameId: 'filaAcc', uid: MED, subRef: subRef(), apagarPdf });
     assert.equal(r.ok, true);
     assert.equal((await db.doc(`workspaces/${WS}/accIndex/EX01010000000001`).get()).exists, false, 'reserva de ACC some junto com o exame');
+  });
+  test('apaga a gaveta privada de idempotencia junto — nao deixa satelite orfao (Ruflo M3)', async () => {
+    await db.doc(`workspaces/${WS}/exames/filaPriv`).set({ pacienteNome: 'F', medicoUid: MED, status: 'aguardando' });
+    await refEmissaoPrivada(db, WS, 'filaPriv').set({ emissaoKey: 'x', pdfPendente: false });
+    const r = await apagarExame(db, { wsId: WS, exameId: 'filaPriv', uid: MED, subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, true);
+    assert.equal((await refEmissaoPrivada(db, WS, 'filaPriv').get()).exists, false, 'gaveta privada some junto com o exame');
   });
   test('exame sem acc: apaga normalmente, sem tentar tocar accIndex', async () => {
     await db.doc(`workspaces/${WS}/exames/filaSemAcc`).set({ pacienteNome: 'F', medicoUid: MED, status: 'aguardando' });
