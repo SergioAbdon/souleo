@@ -58,6 +58,15 @@ export type ResultadoEmissao =
   | { ok: true; tipo: 'franquia' | 'creditos' | null; replay: boolean; pdfPendente: boolean; pdfUrl: string | null }
   | { ok: false; motivo: MotivoEmissao };
 
+// Baixa a bandeira de "PDF pendente" (C1) — SO chamar com um PDF salvo de
+// fato, pra bandeira baixa significar exatamente "existe PDF assinado" (a
+// rota decide quando chamar). `pdfPendente` mora so aqui: nenhum outro
+// arquivo escreve esse nome de campo (achado Ruflo I1).
+export async function marcarPdfPronto(db: Firestore, wsId: string, exameId: string): Promise<void> {
+  await refEmissaoPrivada(db, wsId, exameId)
+    .set({ pdfPendente: false, atualizadoEm: FieldValue.serverTimestamp() }, { merge: true });
+}
+
 export async function emitirComCobranca(db: Firestore, p: {
   wsId: string;
   exameId: string;
@@ -147,11 +156,16 @@ export async function emitirComCobranca(db: Firestore, p: {
 
     // Estado de idempotencia na MESMA transacao do debito: cobrou => a key
     // vale e o PDF esta devendo. Sai daqui so quando a rota salvar o PDF.
-    transaction.set(privRef, {
-      emissaoKey: key,
-      pdfPendente: true,
-      atualizadoEm: FieldValue.serverTimestamp(),
-    });
+    // Sem key (cliente legado): nao ha o que travar (nenhuma key pra
+    // comparar num replay futuro) — gravar so criaria um doc morto na
+    // gaveta privada (achado Ponytail R3).
+    if (key) {
+      transaction.set(privRef, {
+        emissaoKey: key,
+        pdfPendente: true,
+        atualizadoEm: FieldValue.serverTimestamp(),
+      });
+    }
 
     if (tipo === 'franquia') {
       transaction.update(subRef, { franquiaUsada: FieldValue.increment(1) });
