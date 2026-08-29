@@ -28,3 +28,14 @@ describe('carimbo de proveniência do motor (F3, achado do teste ao vivo)', () =
     assert.match(src, /update\(\{ pdfUrl \}\)/, 'o update pós-PDF deixou de ser só { pdfUrl }');
   });
 });
+
+// S7 onda-0 (revisão R1): a decisão de replay da rota carrega o achado C1 —
+// `if (resultado.replay)` sem o `!pdfPendente` devolvia "sucesso" com o PDF
+// assinado inexistente. Este pin trava a linha; a semântica está batida em
+// tests/api/emitir-idempotencia.test.mjs (casos f-j).
+describe('replay idempotente (S7 onda-0, C1)', () => {
+  test('a rota só curto-circuita replay quando o PDF já existe (!pdfPendente)', () => {
+    assert.match(src, /resultado\.replay && !resultado\.pdfPendente/,
+      'a decisão de replay perdeu o guard do pdfPendente — C1 voltaria com a bateria verde');
+  });
+});
