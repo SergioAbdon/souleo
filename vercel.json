@@ -8,5 +8,8 @@
       "path": "/api/cron/shadow-diario",
       "schedule": "30 2 * * *"
     }
+  ],
+  "regions": [
+    "gru1"
   ]
 }
