@@ -18,9 +18,8 @@ import { medidasVazias } from '../../src/senna90/tests/helpers.ts';
 const PRESERVADOS = 'Índices diastólicos do ventrículo esquerdo preservados';
 const INDETERMINADA = 'Função Diastólica do ventrículo esquerdo Indeterminada';
 const GRAU_II = 'Disfunção Diastólica do ventrículo esquerdo de Grau II (Pseudonormal)';
-const GRAU_III = 'Disfunção Diastólica do ventrículo esquerdo de Grau III (Padrão Restritivo)';
 const SEM_GRADUACAO =
-  'Disfunção Diastólica do ventrículo esquerdo presente, de grau não determinado (fluxo mitral não avaliado).';
+  'Disfunção Diastólica do ventrículo esquerdo presente, de grau não determinado.';
 
 // Base do algoritmo A: sinusal, sem FE (nem Simpson nem Teichholz) e sem massa
 // → seleção de ramo cai no algoritmo completo (Task 1).
@@ -47,17 +46,10 @@ describe('calcular() — algoritmo A por maioria dos critérios avaliados (ASE 2
     assert.ok(!r.achados.includes(GRAU_II), 'Grau II afirmado sem fluxo mitral (T2b/§8.2)');
   });
 
-  test("(b) e' 6(+) + IT 2,9(+) + LAVI 34(−) + E/A 2,2 — 2/3 (67%) → Grau III (D4 pior caso)", () => {
-    const m = baseAlgoritmoA();
-    m.sistolica.feSimpson = 60; // FE preservada explícita → prende o ramo A (T1)
-    m.diastolica.ondaE = 100;
-    m.diastolica.relacaoEA = 2.2;
-    m.diastolica.eSeptal = 6;
-    m.diastolica.velocidadeIT = 2.9;
-    m.diastolica.volAEindex = 34; // não é >34 → negativo
-    const r = calcular(m);
-    assert.ok(r.achados.includes(GRAU_III), `esperado Grau III: ${JSON.stringify(r.achados)}`);
-  });
+  // (b) removida na revisão da tríade (Ponytail): era byte-a-byte o mesmo caso
+  // do (c) de tests/unit/diastologia-graduacao-fluxo-mitral.test.mjs (mesmos
+  // seis inputs, mesma asserção de Grau III). A gêmea que ficou vive no arquivo
+  // que cobre a graduação — que é o assunto de "E/A 2,2 → Grau III".
 
   test("(c) e' 6(+) + E/e' 12(−) — empate 1/2 (50%) → Indeterminada (D5, falso-normal)", () => {
     const m = baseAlgoritmoA();
@@ -88,5 +80,26 @@ describe('calcular() — algoritmo A por maioria dos critérios avaliados (ASE 2
     m.diastolica.volAEindex = 28; // (−)
     const r = calcular(m);
     assert.ok(r.achados.includes(PRESERVADOS), `esperado preservados: ${JSON.stringify(r.achados)}`);
+  });
+
+  // Revisão da tríade (C-M3): campo não-finito contava como AVALIADO e, como
+  // toda comparação com NaN é `false`, como NEGATIVO — um voto contra a
+  // disfunção vindo de um campo corrompido, e ainda por cima empurrando
+  // `avaliados` acima do piso de 2 que autoriza decidir.
+  test("(f) E/e' 20(+) + IT NaN + LAVI NaN → 1 avaliado, não 3 → silêncio (não 'preservados')", () => {
+    const m = baseAlgoritmoA();
+    m.sistolica.feSimpson = 60; // prende o ramo A
+    m.diastolica.relacaoEEseptal = 20;
+    m.diastolica.velocidadeIT = NaN;
+    m.diastolica.volAEindex = NaN;
+    const r = calcular(m);
+    // Antes: avaliados=3, c=1 → 1×2 < 3 → "preservados", com 1 único critério
+    // realmente medido e ele POSITIVO.
+    assert.ok(!r.achados.includes(PRESERVADOS), `NaN votando como negativo: ${JSON.stringify(r.achados)}`);
+    assert.ok(!r.achados.includes(INDETERMINADA), `silêncio esperado: ${JSON.stringify(r.achados)}`);
+    assert.ok(
+      !r.achados.some((a) => a.includes('Disfunção Diastólica')),
+      `silêncio esperado (1 avaliado < 2): ${JSON.stringify(r.achados)}`
+    );
   });
 });

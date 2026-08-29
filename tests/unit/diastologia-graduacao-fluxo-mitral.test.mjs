@@ -15,7 +15,7 @@ import { calcular } from '../../src/senna90/motor.ts';
 import { medidasVazias } from '../../src/senna90/tests/helpers.ts';
 
 const SEM_GRADUACAO =
-  'Disfunção Diastólica do ventrículo esquerdo presente, de grau não determinado (fluxo mitral não avaliado).';
+  'Disfunção Diastólica do ventrículo esquerdo presente, de grau não determinado.';
 const CONC_SEM_GRADUACAO = 'Disfunção diastólica do ventrículo esquerdo de grau não determinado.';
 const GRAU_I = 'Disfunção Diastólica do ventrículo esquerdo de Grau I (Alteração de Relaxamento)';
 const GRAU_II = 'Disfunção Diastólica do ventrículo esquerdo de Grau II (Pseudonormal)';
