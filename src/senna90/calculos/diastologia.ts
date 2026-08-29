@@ -16,6 +16,13 @@
 import type { ResultadoJ21, Sexo, Ritmo } from '../types';
 
 /**
+ * Disfunção presente por maioria de critérios, mas sem o fluxo mitral que o
+ * ASE 2016 usa para atribuir o grau (anexo §8.2 da auditoria de 28/08/2026).
+ */
+export const SEM_GRADUACAO =
+  'Disfunção Diastólica do ventrículo esquerdo presente, de grau não determinado (fluxo mitral não avaliado).';
+
+/**
  * Inputs necessários para o algoritmo j21
  */
 export interface InputsDiastologia {
@@ -145,12 +152,21 @@ export function calcularJ21(inputs: InputsDiastologia): ResultadoJ21 {
   if (c * 2 < avaliados) return 'Índices diastólicos do ventrículo esquerdo preservados';
   if (c * 2 === avaliados) return 'Função Diastólica do ventrículo esquerdo Indeterminada';
 
-  // Maioria positiva → gradua via E/A e onda E
+  // Maioria positiva → há disfunção. O GRAU, porém, é definido pelo padrão do
+  // FLUXO MITRAL (ASE 2016: E/A ≥2 → III; E/A ≤0,8 com E ≤50 → I; E/A ≤0,8 com
+  // E >50 ou E/A entre 0,8 e 2 → critérios → II). Sem o dado de fluxo que a
+  // decisão consome, o guideline NÃO fornece grau (anexo §8.2) — o laudo
+  // descreve a disfunção sem afirmar um grau que não foi medido.
   if (relacaoEA !== null && relacaoEA >= 2) {
     return 'Disfunção Diastólica do ventrículo esquerdo de Grau III (Padrão Restritivo)';
   }
-  if (relacaoEA !== null && relacaoEA <= 0.8 && ondaE !== null && ondaE <= 50) {
-    return 'Disfunção Diastólica do ventrículo esquerdo de Grau I (Alteração de Relaxamento)';
+  if (relacaoEA === null) return SEM_GRADUACAO; // sem fluxo mitral não há zona
+  if (relacaoEA <= 0.8) {
+    // A separação Grau I × critérios exige a onda E (corte 50 cm/s).
+    if (ondaE === null) return SEM_GRADUACAO;
+    if (ondaE <= 50) {
+      return 'Disfunção Diastólica do ventrículo esquerdo de Grau I (Alteração de Relaxamento)';
+    }
   }
   return 'Disfunção Diastólica do ventrículo esquerdo de Grau II (Pseudonormal)';
 }

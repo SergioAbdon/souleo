@@ -9,7 +9,7 @@
 // ══════════════════════════════════════════════════════════════════
 
 import type { ResultadoJ21, MedidasEcoTT, CalculosDerivados } from '../types';
-import { calcularJ21 as calcularJ21Logic } from '../calculos/diastologia';
+import { calcularJ21 as calcularJ21Logic, SEM_GRADUACAO } from '../calculos/diastologia';
 
 interface DadosDiast {
   ritmo: string;
@@ -112,6 +112,7 @@ export function j43(d: DadosDiast): string {
   // Sinusal
   if (x === 'Índices diastólicos do ventrículo esquerdo preservados') return '';
   if (x === 'Função Diastólica do ventrículo esquerdo Indeterminada') return 'Função diastólica do ventrículo esquerdo Indeterminada.';
+  if (x === SEM_GRADUACAO) return 'Disfunção diastólica do ventrículo esquerdo de grau não determinado.';
   if (typeof x === 'string') {
     if (x.includes('Grau III')) return 'Disfunção diastólica de grau III do ventrículo esquerdo (padrão restritivo).';
     if (x.includes('Grau II')) return 'Disfunção diastólica de grau II do ventrículo esquerdo (padrão pseudo-normal).';

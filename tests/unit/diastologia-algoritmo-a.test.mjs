@@ -19,6 +19,8 @@ const PRESERVADOS = 'Índices diastólicos do ventrículo esquerdo preservados';
 const INDETERMINADA = 'Função Diastólica do ventrículo esquerdo Indeterminada';
 const GRAU_II = 'Disfunção Diastólica do ventrículo esquerdo de Grau II (Pseudonormal)';
 const GRAU_III = 'Disfunção Diastólica do ventrículo esquerdo de Grau III (Padrão Restritivo)';
+const SEM_GRADUACAO =
+  'Disfunção Diastólica do ventrículo esquerdo presente, de grau não determinado (fluxo mitral não avaliado).';
 
 // Base do algoritmo A: sinusal, sem FE (nem Simpson nem Teichholz) e sem massa
 // → seleção de ramo cai no algoritmo completo (Task 1).
@@ -30,17 +32,24 @@ function baseAlgoritmoA() {
 }
 
 describe('calcular() — algoritmo A por maioria dos critérios avaliados (ASE 2016)', () => {
-  test('(a) IT 2,9(+) + LAVI 34,1(+) — 2/2 positivos (100%) → gradua (D4)', () => {
+  // Reescrito na T2b: o alvo desta linha é a ENTRADA por maioria (2/2 = 100%
+  // deixa de ser "Indeterminada"). O GRAU que saía daqui era Grau II por queda
+  // no return final, sem nenhum fluxo mitral medido — o ASE 2016 não gradua sem
+  // E/A (anexo §8.2), então a saída correta é a classe sem graduação.
+  test('(a) IT 2,9(+) + LAVI 34,1(+) — 2/2 positivos (100%) → disfunção, não "Indeterminada" (D4)', () => {
     const m = baseAlgoritmoA();
+    m.sistolica.feSimpson = 60; // FE preservada explícita → prende o ramo A (T1)
     m.diastolica.velocidadeIT = 2.9;
     m.diastolica.volAEindex = 34.1;
     const r = calcular(m);
-    assert.ok(r.achados.includes(GRAU_II), `esperado Grau II: ${JSON.stringify(r.achados)}`);
+    assert.ok(r.achados.includes(SEM_GRADUACAO), `esperado sem graduação: ${JSON.stringify(r.achados)}`);
     assert.ok(!r.achados.includes(INDETERMINADA), 'contagem fixa c===2 ainda viva (D4)');
+    assert.ok(!r.achados.includes(GRAU_II), 'Grau II afirmado sem fluxo mitral (T2b/§8.2)');
   });
 
   test("(b) e' 6(+) + IT 2,9(+) + LAVI 34(−) + E/A 2,2 — 2/3 (67%) → Grau III (D4 pior caso)", () => {
     const m = baseAlgoritmoA();
+    m.sistolica.feSimpson = 60; // FE preservada explícita → prende o ramo A (T1)
     m.diastolica.ondaE = 100;
     m.diastolica.relacaoEA = 2.2;
     m.diastolica.eSeptal = 6;
