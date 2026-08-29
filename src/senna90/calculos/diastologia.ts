@@ -40,6 +40,42 @@ export interface InputsDiastologia {
   imVE: number | null;             // Índice massa VE (g/m²)
 }
 
+/**
+ * Maioria dos 3 critérios de PRESSÃO DE ENCHIMENTO do ASE 2016 (Fig. 8):
+ * E/e' septal >15 · Vel. IT >2,8 m/s · LAVI >34 ml/m². Decide pela maioria dos
+ * AVALIADOS (D2): abaixo de 2 medidos, ou empate 50%, não há decisão.
+ *
+ * É a MESMA régua nos dois ramos — foi extraída na revisão final (F1) porque o
+ * ramo A não a aplicava: depois que a entrada por maioria da Fig. 7 (4 critérios,
+ * inclui o e' septal) dizia "disfunção presente", a zona média caía direto em
+ * Grau II. Com os mesmos dados diastológicos isso dava Grau II com FE preservada
+ * e Indeterminada com FE deprimida — inversão de gravidade contra a própria FE.
+ */
+type MaioriaPressao = 'positiva' | 'negativa' | 'indeterminada';
+
+function maioriaPressaoEnchimento(i: {
+  relacaoEEseptal: number | null;
+  velocidadeIT: number | null;
+  volAEindex: number | null;
+}): MaioriaPressao {
+  let avaliados = 0;
+  let positivos = 0;
+  if (i.relacaoEEseptal !== null) {
+    avaliados++;
+    if (i.relacaoEEseptal > 15) positivos++;
+  }
+  if (i.velocidadeIT !== null) {
+    avaliados++;
+    if (i.velocidadeIT > 2.8) positivos++;
+  }
+  if (i.volAEindex !== null) {
+    avaliados++;
+    if (i.volAEindex > 34) positivos++;
+  }
+  if (avaliados < 2 || positivos * 2 === avaliados) return 'indeterminada';
+  return positivos * 2 > avaliados ? 'positiva' : 'negativa';
+}
+
 /** Gatilhos de seleção do algoritmo B. */
 export interface GatilhosRamoB {
   feBaixa: boolean;
@@ -153,24 +189,11 @@ export function calcularJ21(inputs: InputsDiastologia): ResultadoJ21 {
     // Critérios de pressão de enchimento: decide a MAIORIA dos AVALIADOS (D2).
     // Antes, campo ausente contava como normal e o `return` final era Grau I
     // incondicional — o ramo B graduava com 0 critério medido.
-    let avaliadosB = 0;
-    let positivosB = 0;
-    if (relacaoEEseptal !== null) {
-      avaliadosB++;
-      if (relacaoEEseptal > 15) positivosB++;
-    }
-    if (velocidadeIT !== null) {
-      avaliadosB++;
-      if (velocidadeIT > 2.8) positivosB++;
-    }
-    if (volAEindex !== null) {
-      avaliadosB++;
-      if (volAEindex > 34) positivosB++;
-    }
-    if (avaliadosB < 2 || positivosB * 2 === avaliadosB) {
+    const maioriaB = maioriaPressaoEnchimento({ relacaoEEseptal, velocidadeIT, volAEindex });
+    if (maioriaB === 'indeterminada') {
       return 'Função Diastólica do ventrículo esquerdo Indeterminada';
     }
-    const maioriaPositiva = positivosB * 2 > avaliadosB;
+    const maioriaPositiva = maioriaB === 'positiva';
 
     // Zona média do algoritmo B — só existe com fluxo mitral: E/A ≤0,8 com
     // E >50, ou 0,8 < E/A < 2 (E/A ≥2 e E/A ≤0,8 com E ≤50 já retornaram).
@@ -233,7 +256,25 @@ export function calcularJ21(inputs: InputsDiastologia): ResultadoJ21 {
       return 'Disfunção Diastólica do ventrículo esquerdo de Grau I (Alteração de Relaxamento)';
     }
   }
-  return 'Disfunção Diastólica do ventrículo esquerdo de Grau II (Pseudonormal)';
+
+  // Zona média (E/A ≤0,8 com E >50, ou 0,8 < E/A < 2): o ASE 2016 manda contar
+  // os 3 critérios de PRESSÃO da Fig. 8 — não é a mesma contagem da entrada, que
+  // é a Fig. 7 e inclui o e' septal (critério de disfunção, não de pressão).
+  // Antes daqui o código caía direto em Grau II (revisão final F1): com a entrada
+  // por maioria da T2, que admite 2 de 3, a Fig. 8 podia estar EMPATADA e ainda
+  // assim sair "Grau II" — enquanto o ramo B, com os mesmos dados, dizia
+  // Indeterminada. Mesma régua agora, mesmo resultado.
+  // Nota: com a entrada exigindo maioria da Fig. 7, a saída 'negativa' aqui é
+  // inalcançável por álgebra (para a Fig. 8 ser negativa-maioria a Fig. 7 nunca
+  // fecha maioria, nem com o e' positivo) — mas a regra do guideline fica
+  // escrita inteira, e é ela que sobrevive se a entrada mudar de novo.
+  const maioriaA = maioriaPressaoEnchimento({ relacaoEEseptal, velocidadeIT, volAEindex });
+  if (maioriaA === 'indeterminada') {
+    return 'Função Diastólica do ventrículo esquerdo Indeterminada';
+  }
+  return maioriaA === 'positiva'
+    ? 'Disfunção Diastólica do ventrículo esquerdo de Grau II (Pseudonormal)'
+    : 'Disfunção Diastólica do ventrículo esquerdo de Grau I (Alteração de Relaxamento)';
 }
 
 /**

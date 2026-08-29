@@ -288,9 +288,14 @@ describe('compararFrases', () => {
     assert.equal(sumiu[0].ref, null);
   });
 
-  // Modo MANUAL do médico (DIAST_SENTENCAS, minúsculo) não é flip do motor —
-  // os matchers da onda são case-sensitive de propósito.
-  test('redação manual do grau NÃO é engolida pelos matchers da F6', () => {
+  // Escopo real do case-sensitive (corrigido junto com o md em 7aae57c): o
+  // ACHADO manual do médico (DIAST_SENTENCAS, minúsculo e com ponto final) não
+  // casa o matcher de achado da F6 — é o que este teste prende. A CONCLUSÃO
+  // manual é OUTRA história: `DIAST_SENTENCAS[1..3].conclusao` e o banco de
+  // frases (ids 15-19) são byte-idênticos ao texto do motor automático, então
+  // casam o matcher e SÃO engolidos — inevitável, e não uma proteção. Quem
+  // segura essa ponta são os guardas direcionais (F6-T2b, FA), não o case.
+  test('ACHADO manual em minúsculo não casa o matcher de achado da F6 (conclusão manual casa)', () => {
     const divs = compararFrases(
       { ...vazio, achados: ['Disfunção diastólica do ventrículo esquerdo de grau I (alteração de relaxamento).'] },
       vazio

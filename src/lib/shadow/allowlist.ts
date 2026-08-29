@@ -180,6 +180,10 @@ export const FRASES_ESPERADAS: MatcherFrase[] = [
   // F6-T2 · maioria dos AVALIADOS (calculos/diastologia.ts:216-218): o que
   // SAI de cena — preservados no empate (n=2,c=1) e Indeterminada quando a
   // maioria passa a graduar (n=2,c=2 · n=3,c=2).
+  // Estreitado pelo F1 (29/08): com c=2 puxado pelo e' septal, a zona média do
+  // ramo A recai em Indeterminada (Fig. 8 empatada) e NÃO flipa — o sumiço da
+  // Indeterminada sobra para os casos em que os 2 positivos são critérios de
+  // pressão, e para as regras diretas de E/A (grau III / grau I).
   {
     ref: 'F6-T2 Diastológica',
     casa: (velho, novo) =>
