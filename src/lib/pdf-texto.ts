@@ -5,7 +5,7 @@
 // este arquivo só formata os dados e entrega o corpo à moldura única
 // (`montarPdfMoldura`). O shell duplicado morreu aqui.
 // ══════════════════════════════════════════════════════════════════
-import { montarPdfMoldura } from './pdf-moldura';
+import { montarPdfMoldura, corSegura } from './pdf-moldura';
 import { idadeLabel, fmtData, fmtTel, fmtCep } from './paciente-fmt';
 
 export type ArgsPdfTexto = {
@@ -40,7 +40,12 @@ export type ArgsPdfTexto = {
 // `fmtData`/`idadeLabel`: um dono só pra formatação de dado do local.
 
 export function gerarPdfHtmlTexto(args: ArgsPdfTexto): string {
-  const { p1, clinicaNome, tituloExame, identificacao: id, htmlCorpo, assinatura } = args;
+  const { clinicaNome, tituloExame, identificacao: id, htmlCorpo, assinatura } = args;
+  // X10 follow-up: p1 alimenta cssExtra (linhas abaixo) — vai cru pro
+  // <style> em montarPdfMoldura, sem escape possível ali (é CSS, não texto).
+  // Não dá pra confiar que o único chamador de hoje (laudo-texto/page.tsx)
+  // sempre vai validar antes de chamar — mesmo raciocínio do pdf-params.ts.
+  const p1 = corSegura(args.p1);
   const especialidade = (assinatura.especialidade || '').replace(/\\/g, ' e ').replace(/\//g, ' e ');
   // Idade NA DATA DO EXAME (como o motor) — nunca a de hoje: reemitir
   // um laudo antigo não pode mudar a idade impressa (S5-T10 fix / I1).

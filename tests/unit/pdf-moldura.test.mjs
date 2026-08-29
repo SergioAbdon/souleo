@@ -507,4 +507,21 @@ describe('montarPdfMoldura — cor e imagens travadas na entrada (X10 + P17)', (
     assert.ok(html.includes('<img src="data:image/png;base64,AAA"'));
     assert.ok(html.includes('<img src="data:image/png;base64,BBB"'));
   });
+
+  // X10 follow-up (reviewer): pdf-texto.ts destructurava p1 cru e o
+  // interpolava em cssExtra (.corpo h2/h3) — que montarPdfMoldura injeta
+  // SEM escape dentro de <style> (é CSS, não texto). Seguro hoje só porque
+  // o único chamador (laudo-texto/page.tsx) valida antes de chamar — mesma
+  // brecha que pdf-params.ts já fechava: função exportada não pode confiar
+  // no chamador.
+  test('gerarPdfHtmlTexto: p1 fora do vocabulário hex não vaza pro <style> (X10 follow-up)', () => {
+    const payload = 'red}</style><img src=x onerror=alert(1)><style>';
+    const html = gerarPdfHtmlTexto({
+      p1: payload, clinicaNome: 'X', tituloExame: 'T',
+      identificacao: { nome: 'A' }, htmlCorpo: '<p>x</p>', assinatura: { nome: 'Dr. Y' },
+    });
+    assert.ok(!html.includes(payload), 'payload de p1 vazou cru pro CSS/HTML');
+    assert.ok(!html.includes('<img src=x onerror'), 'payload escapou do <style> e virou markup');
+    assert.ok(html.includes('#8B1A1A'), 'fallback do laudo não foi usado');
+  });
 });
