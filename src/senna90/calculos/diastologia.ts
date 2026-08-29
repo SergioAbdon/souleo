@@ -138,11 +138,14 @@ export function calcularJ21(inputs: InputsDiastologia): ResultadoJ21 {
     if (volAEindex > 34) c++;
   }
 
+  // ASE 2016: decide pela PROPORÇÃO dos critérios AVALIADOS, não por contagem fixa
+  // (>50% positivos → disfunção · 50% → indeterminada · <50% → normal). Abaixo de 2
+  // avaliados não há evidência suficiente (spec §2.4) → silêncio.
   if (avaliados < 2) return '';
-  if (c <= 1) return 'Índices diastólicos do ventrículo esquerdo preservados';
-  if (c === 2) return 'Função Diastólica do ventrículo esquerdo Indeterminada';
+  if (c * 2 < avaliados) return 'Índices diastólicos do ventrículo esquerdo preservados';
+  if (c * 2 === avaliados) return 'Função Diastólica do ventrículo esquerdo Indeterminada';
 
-  // ≥3 critérios → reclassifica via E/A e E/e'
+  // Maioria positiva → gradua via E/A e onda E
   if (relacaoEA !== null && relacaoEA >= 2) {
     return 'Disfunção Diastólica do ventrículo esquerdo de Grau III (Padrão Restritivo)';
   }
