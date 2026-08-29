@@ -15,6 +15,7 @@ const TODOS = [
   'AORTA_SEM_IDADE',
   'WILKINS_INCOMPLETO',
   'SEXO_AUSENTE',
+  'MASSA_NAO_INDEXAVEL',
 ];
 
 describe('alertasVisiveis', () => {
@@ -30,8 +31,8 @@ describe('alertasVisiveis', () => {
     assert.deepEqual(alertasVisiveis(embaralhado).map((a) => a.tipo), TODOS);
   });
 
-  test('os 5 tipos do motor passam (nenhum é descartado)', () => {
-    assert.equal(alertasVisiveis(TODOS.map((t) => A(t))).length, 5);
+  test('os 6 tipos do motor passam (nenhum é descartado)', () => {
+    assert.equal(alertasVisiveis(TODOS.map((t) => A(t))).length, 6);
   });
 
   test('dedupe por tipo — o primeiro do array vence', () => {

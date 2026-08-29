@@ -29,12 +29,14 @@ const POR_ESTRUTURA = [
 ];
 
 test('o markdown parseia (sanidade do regex de extração)', () => {
-  assert.equal(refsMd.length, 38, 'linhas de tabela do md');
+  assert.equal(refsMd.length, 42, 'linhas de tabela do md');
   assert.equal(refsMd.length, (md.match(/^\| F/gm) || []).length, 'linha do md com ref fora do formato extraível');
-  assert.equal(new Set(refsMd).size, 33, 'refs distintas');
+  assert.equal(new Set(refsMd).size, 37, 'refs distintas');
   assert.ok(refsMd.includes('F1-T1 Aorta'));
   assert.ok(refsMd.includes('F3-T5 Tabela · sexo vazio'));
   assert.ok(refsMd.includes('F3-T3fix Rodapé'));
+  // onda diastologia 28/08 — o sufixo "b" tem que sobreviver ao \w+ do regex
+  assert.ok(refsMd.includes('F6-T2b Diastológica'));
 });
 
 test('toda linha do markdown tem cobertura (matcher, par de VR, tolerância ou não-comparável)', () => {

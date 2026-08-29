@@ -147,6 +147,78 @@ export const FRASES_ESPERADAS: MatcherFrase[] = [
     /Alteração contr[aá]til por (hipo|a|dis)cinesia/,
     /Contratilidade preservada nas demais paredes/,
     /(Válvulas atrioventriculares com a|Válvula mitral com) morfologia preservada/),
+
+  // ══ Onda "Diastologia conforme ASE/EACVI 2016" (28/08) ═════════════
+  // Regra permanente do Sergio: "os resultados seguem os guidelines".
+  // Plano: docs/planos/2026-08-28-diastologia-guideline-ase2016.md ·
+  // anexo normativo: docs/planos/2026-08-28-auditoria-diastologia-ase2016.md.
+  // Como o pareamento é por CONJUNTO, cada flip de classificação vira DUAS
+  // divergências de um lado só — por isso cada matcher declara a DIREÇÃO
+  // que aquele lado pode assumir, e nenhum casa "qualquer frase diastólica".
+  // Todos case-SENSITIVE: a redação minúscula do modo manual do médico
+  // (achados/diastologia.ts DIAST_SENTENCAS) não é flip do motor.
+
+  // F6-T1 · sumiço da frase de GRAU. Achado calculos/diastologia.ts:147,150,
+  // 180-181,226,233,236 · conclusão achados/diastologia.ts:117-119. Porta
+  // única do sumiço na onda inteira (T1 troca o ramo; T2b/T3 trocam o grau
+  // por outra classe). A APARIÇÃO de grau é a F6-T2, direção oposta.
+  {
+    ref: 'F6-T1 Diastológica',
+    casa: (velho, novo) =>
+      novo === '' &&
+      (/Disfunção Diastólica do ventrículo esquerdo de Grau (III|II|I) \(/.test(velho) ||
+       /Disfunção diastólica de grau (III|II|I) do ventrículo esquerdo \(/.test(velho)),
+  },
+
+  // F6-T1 · concLARS (conclusoes/index.ts:209-220) só fala do strain atrial
+  // com a diastologia normal/silenciosa: volta a sair quando o exame deixa de
+  // ter grau falso (T1) e silencia quando o empate vira Indeterminada (T2).
+  // Bidirecional de propósito — a frase depende da classe diastológica, que
+  // esta onda mudou nos dois sentidos.
+  fam('F6-T1 Diastológica', /Strain atrial esquerdo (preservado|reduzido)/),
+
+  // F6-T2 · maioria dos AVALIADOS (calculos/diastologia.ts:216-218): o que
+  // SAI de cena — preservados no empate (n=2,c=1) e Indeterminada quando a
+  // maioria passa a graduar (n=2,c=2 · n=3,c=2).
+  // Estreitado pelo F1 (29/08): com c=2 puxado pelo e' septal, a zona média do
+  // ramo A recai em Indeterminada (Fig. 8 empatada) e NÃO flipa — o sumiço da
+  // Indeterminada sobra para os casos em que os 2 positivos são critérios de
+  // pressão, e para as regras diretas de E/A (grau III / grau I).
+  {
+    ref: 'F6-T2 Diastológica',
+    casa: (velho, novo) =>
+      novo === '' &&
+      (/Índices diastólicos do ventrículo esquerdo preservados/.test(velho) ||
+       /Função [Dd]iastólica do ventrículo esquerdo Indeterminada/.test(velho)),
+  },
+
+  // F6-T2 · e o que ENTRA: a frase de grau que a maioria passou a emitir.
+  {
+    ref: 'F6-T2 Diastológica',
+    casa: (velho, novo) =>
+      velho === '' &&
+      (/Disfunção Diastólica do ventrículo esquerdo de Grau (III|II|I) \(/.test(novo) ||
+       /Disfunção diastólica de grau (III|II|I) do ventrículo esquerdo \(/.test(novo)),
+  },
+
+  // F6-T2b · FRASE NOVA (SEM_GRADUACAO, calculos/diastologia.ts:22 +
+  // achados/diastologia.ts:115): graduação exige fluxo mitral (anexo §8.2).
+  // Direcional — o sumiço de uma frase que o motor antigo nunca escreveu
+  // seria bug, e segue alarmando.
+  {
+    ref: 'F6-T2b Diastológica',
+    casa: (velho, novo) => velho === '' && /de grau não determinado/.test(novo),
+  },
+
+  // F6-T3 · empate da FA (calculos/diastologia.ts:290): 2/4 e 1/2 deixam de
+  // ser "elevada"/"normal". O ACHADO da FA é o mesmo texto nas 4 sentinelas
+  // (achados/diastologia.ts:62) — só a conclusão (j43:107-109) flipa.
+  {
+    ref: 'F6-T3 Diastológica',
+    casa: (velho, novo) =>
+      (velho === '' && /Pressão de enchimento indeterminada/.test(novo)) ||
+      (novo === '' && /Parâmetros sugestivos de pressão de enchimento (elevada|normal)/.test(velho)),
+  },
 ];
 
 /**

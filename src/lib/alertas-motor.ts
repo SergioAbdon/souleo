@@ -12,11 +12,12 @@
 //     duas vezes é ruído, não dois problemas);
 //   - ORDEM FIXA, independente da ordem em que o motor empilhou:
 //     IT_SEM_PSAP → REFLUXO_PULM_SEM_PMAP → AORTA_SEM_IDADE →
-//     WILKINS_INCOMPLETO → SEXO_AUSENTE. A lista é curta e a posição
-//     de cada aviso não pode dançar entre uma tecla e a próxima.
+//     WILKINS_INCOMPLETO → SEXO_AUSENTE → MASSA_NAO_INDEXAVEL. A lista
+//     é curta e a posição de cada aviso não pode dançar entre uma tecla
+//     e a próxima.
 //
 // `ORDEM` é um `Record<AlertaUI['tipo'], number>` de propósito: se o
-// motor ganhar um 6º tipo de alerta, o `tsc` quebra AQUI (chave
+// motor ganhar mais um tipo de alerta, o `tsc` quebra AQUI (chave
 // faltando) em vez de o alerta novo sumir calado da tela.
 //
 // Puro (sem DOM, sem window) — testado em tests/unit/alertas-motor.test.mjs.
@@ -30,6 +31,7 @@ const ORDEM: Record<AlertaUI['tipo'], number> = {
   AORTA_SEM_IDADE: 2,
   WILKINS_INCOMPLETO: 3,
   SEXO_AUSENTE: 4,
+  MASSA_NAO_INDEXAVEL: 5,
 };
 
 /**

@@ -205,7 +205,7 @@ export interface ResultadoLaudo {
 
 /** Alertas visuais */
 export interface AlertaUI {
-  tipo: 'IT_SEM_PSAP' | 'REFLUXO_PULM_SEM_PMAP' | 'AORTA_SEM_IDADE' | 'WILKINS_INCOMPLETO' | 'SEXO_AUSENTE';
+  tipo: 'IT_SEM_PSAP' | 'REFLUXO_PULM_SEM_PMAP' | 'AORTA_SEM_IDADE' | 'WILKINS_INCOMPLETO' | 'SEXO_AUSENTE' | 'MASSA_NAO_INDEXAVEL';
   campo: string;
   mensagem: string;
 }
