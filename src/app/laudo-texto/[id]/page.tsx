@@ -31,6 +31,13 @@ export default function LaudoTextoPage() {
   const [emitindo, setEmitindo] = useState(false);
   const editorRef = useRef<EditorLaudoRef>(null);
   const pendingHtml = useRef<string | null>(null);
+  // S7-T0.3 (E1): mesma trava do laudo do motor — chave por TENTATIVA de
+  // emissão, mantida no erro (o retry vira replay sem cobrar) e zerada no
+  // sucesso (reemissão deliberada = chave nova = cobra).
+  // Presa ao id do exame (M1, mesmo padrão do AnexarPdfModal): navegar de
+  // /laudo-texto/A para /laudo-texto/B reusa a instância do componente (mesmo
+  // segmento de rota), e o ref sobreviveria — a chave de A viraria trava no B.
+  const emissaoKeyRef = useRef<{ id: string; key: string } | null>(null);
 
   const exameId = params.id as string;
   // Cabeçalho/rodapé da folha — mesmos dados que vão pro PDF (moldura única).
@@ -190,6 +197,9 @@ export default function LaudoTextoPage() {
           // `nomeArq` sai daqui (S5-T14, I3): o servidor deriva o nome do
           // objeto no Storage a partir do tipo + nome do paciente.
           pdfHtml,
+          emissaoKey: (emissaoKeyRef.current?.id === exameId
+            ? emissaoKeyRef.current
+            : (emissaoKeyRef.current = { id: exameId, key: crypto.randomUUID() })).key,
         }),
       });
       resultado = await res.json();
@@ -215,6 +225,7 @@ export default function LaudoTextoPage() {
       return;
     }
 
+    emissaoKeyRef.current = null;   // S7-T0.3: próxima emissão é intenção nova (cobra)
     alert('Laudo emitido com sucesso!' + (resultado.pdfErro ? '\n(Aviso: o PDF falhou ao gerar — reemita ou contate o suporte.)' : ''));
     router.replace('/agenda');
   }

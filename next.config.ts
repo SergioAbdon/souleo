@@ -7,9 +7,16 @@ const nextConfig: NextConfig = {
 
   // Garantir que o binario do Chromium seja incluido no deploy serverless
   // Sem isso, /var/task/node_modules/@sparticuz/chromium/bin nao existe na Vercel
+  // Quem entra aqui: toda rota que importa `@/lib/pdf-server` (é ela que chama
+  // o Puppeteer). O pin `tests/unit/pdf-tracing-pin.test.mjs` cobra a chave de
+  // rota nova e acusa chave morta — `/api/gerar-pdf` estava listada e a rota
+  // não existe desde antes desta branch (removida na revisão onda-0, I2).
   outputFileTracingIncludes: {
     '/api/emitir': ['./node_modules/@sparticuz/chromium/bin/**/*'],
-    '/api/gerar-pdf': ['./node_modules/@sparticuz/chromium/bin/**/*'],
+    // S7-P2: /api/corrigir-laudo também roda gerarESalvarPdf — sem esta chave o
+    // Chromium não entra naquele lambda e TODA correção administrativa falhava
+    // ao regerar o PDF em produção (achado do levantamento da Seção 7, 29/08).
+    '/api/corrigir-laudo': ['./node_modules/@sparticuz/chromium/bin/**/*'],
   },
 };
 
