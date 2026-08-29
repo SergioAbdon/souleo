@@ -40,6 +40,52 @@ export interface InputsDiastologia {
   imVE: number | null;             // Índice massa VE (g/m²)
 }
 
+/** Gatilhos de seleção do algoritmo B + se a régua ficou ambígua por falta de sexo. */
+export interface GatilhosRamoB {
+  feBaixa: boolean;
+  massaAlta: boolean;
+  /** Alguma régua dependente de sexo foi consultada onde ♂ e ♀ discordam. */
+  sexoAmbiguo: boolean;
+}
+
+/**
+ * Gatilhos do algoritmo B (FE deprimida OU doença miocárdica) — as duas réguas
+ * dependem de sexo (FE Simpson 52♂/54♀ · Teichholz 0,52/0,54 · imVE 115♂/95♀).
+ *
+ * Sem sexo, a régua masculina NÃO roda calada (postura C8 da casa / D6): o
+ * gatilho decide só onde as duas réguas CONCORDAM (FE <52 é baixa em ambas,
+ * ≥54 normal em ambas; imVE >115 alta em ambas, ≤95 normal em ambas). Na faixa
+ * de discordância — FE [52,54) · imVE (95,115] — o gatilho é NÃO-AVALIÁVEL
+ * (não dispara) e o motor emite o alerta SEXO_AUSENTE (NOVO-2).
+ *
+ * ASE 2016: Simpson é o método recomendado — quando medido, ele DECIDE sozinho
+ * (Teichholz não atropela um Simpson normal, D1). Sem Simpson, Teichholz decide.
+ * Sem nenhuma FE não há evidência de FE deprimida: não é gatilho do ramo B (D3).
+ */
+export function gatilhosRamoB(i: {
+  sexo: Sexo;
+  feSimpson: number | null;
+  feT: number | null;
+  imVE: number | null;
+}): GatilhosRamoB {
+  const regua = (alteradoM: boolean, alteradoF: boolean): boolean | 'ambiguo' =>
+    i.sexo === 'M' ? alteradoM :
+    i.sexo === 'F' ? alteradoF :
+    alteradoM === alteradoF ? alteradoM : 'ambiguo';
+
+  const fe =
+    i.feSimpson !== null ? regua(i.feSimpson < 52, i.feSimpson < 54) :
+    i.feT !== null ? regua(i.feT < 0.52, i.feT < 0.54) :
+    false;
+  const massa = i.imVE !== null ? regua(i.imVE > 115, i.imVE > 95) : false;
+
+  return {
+    feBaixa: fe === true,
+    massaAlta: massa === true,
+    sexoAmbiguo: fe === 'ambiguo' || massa === 'ambiguo',
+  };
+}
+
 /**
  * Algoritmo j21 — núcleo da classificação diastológica.
  *
@@ -90,19 +136,7 @@ export function calcularJ21(inputs: InputsDiastologia): ResultadoJ21 {
   if (semDados) return '';
 
   // Pré-condições para algoritmo simplificado (FE baixa OU IMVE alta)
-  const limFEsimpson = sexo === 'F' ? 54 : 52;
-  const limFEteich = sexo === 'F' ? 0.54 : 0.52;
-  const limIMVE = sexo === 'F' ? 95 : 115;
-
-  // ASE 2016: Simpson é o método recomendado — quando medido, ele DECIDE sozinho
-  // (Teichholz não atropela um Simpson normal, D1). Sem Simpson, Teichholz decide.
-  // Sem nenhuma FE não há evidência de FE deprimida: não é gatilho do algoritmo B (D3).
-  const feBaixa =
-    feSimpson !== null ? feSimpson < limFEsimpson :
-    feT !== null ? feT < limFEteich :
-    false;
-
-  const massaAlta = imVE !== null && imVE > limIMVE;
+  const { feBaixa, massaAlta } = gatilhosRamoB({ sexo, feSimpson, feT, imVE });
 
   // ── Algoritmo simplificado / B (FE deprimida OU doença miocárdica) ──
   if (feBaixa || massaAlta) {

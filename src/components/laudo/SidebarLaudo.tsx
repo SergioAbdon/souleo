@@ -291,8 +291,9 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
       <div className="flex-1 overflow-y-auto pb-10" onKeyDown={navTeclado}>
 
       {/* ═══ ALERTAS DO MOTOR (F3 Task 2) ═══
-          Os 5 alertas estruturados (IT_SEM_PSAP, REFLUXO_PULM_SEM_PMAP,
-          AORTA_SEM_IDADE, WILKINS_INCOMPLETO, SEXO_AUSENTE) chegavam pela
+          Os alertas estruturados (IT_SEM_PSAP, REFLUXO_PULM_SEM_PMAP,
+          AORTA_SEM_IDADE, WILKINS_INCOMPLETO, SEXO_AUSENTE,
+          MASSA_NAO_INDEXAVEL) chegavam pela
           ponte e eram descartados pela page. Agora aparecem aqui, no topo,
           com a MESMA pele do `#alerta-psap` (âmbar) — o médico já conhece
           esse visual. `paramsOn` OFF → este bloco não existe. */}

@@ -123,7 +123,7 @@ function LaudoPageInner() {
   // true quando médico desbloqueou um 'emitido'. handleEmitir reseta;
   // handleVoltar avisa se ainda true (edição não reemitida será perdida).
   const [reedicaoAtiva, setReedicaoAtiva] = useState(false);
-  // F3 Task 2 — os 5 alertas estruturados do motor. Chegavam em
+  // F3 Task 2 — os alertas estruturados do motor. Chegavam em
   // `ResultadoLaudo.alertas` a cada rodada da ponte e eram DESCARTADOS aqui
   // (a page só lia `achados`/`conclusoes`). Agora descem pra sidebar.
   const [alertasMotor, setAlertasMotor] = useState<AlertaUI[]>([]);

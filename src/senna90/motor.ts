@@ -18,6 +18,7 @@ import {
   classificarEstenoseTricuspide, classificarEstenosePulmonar,
 } from './calculos/valvas';
 import { calcWilkinsScore } from './achados/wilkins';
+import { gatilhosRamoB } from './calculos/diastologia';
 import { gerarAchados, setDiastModo, setDiastManual, setDiastTextoLivre } from './achados/index';
 import { gerarConclusao } from './conclusoes/index';
 
@@ -71,7 +72,7 @@ export function calcularDerivados(medidas: MedidasEcoTT): CalculosDerivados {
 /**
  * Gera lista de alertas visuais.
  */
-function gerarAlertas(m: MedidasEcoTT): AlertaUI[] {
+function gerarAlertas(m: MedidasEcoTT, d: CalculosDerivados): AlertaUI[] {
   const alertas: AlertaUI[] = [];
 
   // Vel IT preenchida sem PSAP
@@ -115,18 +116,38 @@ function gerarAlertas(m: MedidasEcoTT): AlertaUI[] {
     });
   }
 
-  // Sexo ausente: as frases silenciam e (a partir da F3) a tabela fica sem
-  // VR/realce — este alerta explica o porquê em vez de deixar o vazio mudo (C8).
+  // Massa calculável (DDVE+SIV+PP) mas sem ASC: o índice de massa fica null e o
+  // gatilho de HVE da diastologia vira `false` por dado AUSENTE — silêncio mudo
+  // (NOVO-1). Alerta de TELA: orienta o preenchimento, não é frase de laudo.
+  if (d.massa !== null && d.imVE === null) {
+    alertas.push({
+      tipo: 'MASSA_NAO_INDEXAVEL',
+      campo: 'peso',
+      mensagem: 'Massa do VE calculada mas não indexável — informe peso e altura para o índice de massa.',
+    });
+  }
+
+  // Sexo ausente: as frases silenciam, a tabela fica sem VR/realce e as réguas
+  // de FE/imVE da diastologia só decidem onde ♂ e ♀ concordam — este alerta
+  // explica o porquê em vez de deixar o vazio mudo (C8/D6/NOVO-2).
   const temMedidaClinica = [
     m.camaras.raizAo, m.camaras.ae, m.camaras.ddve, m.camaras.septoIV,
     m.camaras.paredePosterior, m.camaras.dsve, m.camaras.vd,
     m.camaras.aoAscendente, m.camaras.arcoAo,
   ].some((v) => v !== null && v > 0);
-  if (!m.gerais.sexo && temMedidaClinica) {
+  // …e também quando uma régua dependente de sexo foi consultada na zona
+  // ambígua (exame só com diastologia/FE não tem medida de câmara nenhuma).
+  const { sexoAmbiguo } = gatilhosRamoB({
+    sexo: m.gerais.sexo,
+    feSimpson: m.sistolica.feSimpson,
+    feT: d.feT,
+    imVE: d.imVE,
+  });
+  if (!m.gerais.sexo && (temMedidaClinica || sexoAmbiguo)) {
     alertas.push({
       tipo: 'SEXO_AUSENTE',
       campo: 'sexo',
-      mensagem: 'Sexo não informado — referências e frases dependentes de sexo estão suprimidas.',
+      mensagem: 'Sexo não informado — referências e classificações dependentes de sexo estão suprimidas ou limitadas.',
     });
   }
 
@@ -159,7 +180,7 @@ export function calcular(medidas: MedidasEcoTT): ResultadoLaudo {
   const derivados = calcularDerivados(medidas);
   const achados = gerarAchados(medidas, derivados);
   const conclusoes = gerarConclusao(medidas, derivados);
-  const alertas = gerarAlertas(medidas);
+  const alertas = gerarAlertas(medidas, derivados);
 
   return {
     derivados,
