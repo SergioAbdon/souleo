@@ -43,7 +43,7 @@ import { montarLaudoHtml } from '@/lib/senna90-render';
 import { mesclarLinhas } from '@/lib/laudo-merge';
 import { checkboxParaMedida, medidaParaChecked } from '@/lib/checkbox-codec';
 import { TIPOS_LAUDO_PADRAO, modalidadeDe, type TipoLaudo } from '@/lib/tipos-laudo';
-import { montarPdfMoldura } from '@/lib/pdf-moldura';
+import { montarPdfMoldura, corSegura } from '@/lib/pdf-moldura';
 import { montarParamsHtml, paramsParaTexto, paramsParaDocx } from '@/lib/pdf-params';
 // F3-T5 (a virada do cabo): com `senna93Params()` ON, quem pinta #out-*,
 // #calc-* e #params-tbody é o Senna93 — os MESMOS nós, o mesmo formato de
@@ -230,7 +230,7 @@ function LaudoPageInner() {
   const [tipo, setTipo] = useState<TipoLaudo | null>(null);
 
   const exameId = params.id as string;
-  const p1 = (workspace?.corPrimaria as string) || '#8B1A1A';
+  const p1 = corSegura((workspace?.corPrimaria as string) || '#8B1A1A');
   const clinicaNome = (workspace?.nomeClinica as string) || 'Consultório';
   const clinicaSlogan = (workspace?.slogan as string) || '';
   const clinicaEndRaw = (workspace?.endereco as string) || '';

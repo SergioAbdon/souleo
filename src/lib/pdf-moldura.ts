@@ -57,6 +57,22 @@ export function escaparHtml(v: string): string {
   return v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// X10: a cor vem do doc do workspace (o dono escreve pelo navegador e a regra
+// não valida formato) e entra em atributo style sem escape. Cor é vocabulário
+// fechado: valida em vez de escapar. Fallback = o default das telas do laudo.
+export function corSegura(cor: unknown, fallback = '#8B1A1A'): string {
+  return typeof cor === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(cor) ? cor : fallback;
+}
+
+// P17: logo/assinatura vêm do upload do dono do workspace e viram `<img
+// src=…>` renderizado pelo Chrome do servidor a cada emissão/correção. Uma
+// URL `https://` ali é um beacon de rede pro servidor buscar toda vez que
+// monta o PDF. Vocabulário fechado: só `data:` entra; qualquer outra coisa
+// some do laudo (sem busca de rede), como um workspace sem logo cadastrado.
+function soDataUri(v: string | undefined): string {
+  return v && v.startsWith('data:') ? escaparHtml(v) : '';
+}
+
 // Valor entra sem `|| '—'`, como nos dois templates legados: o travessão de
 // campo vazio é do chamador (o motor lê os `#out-*` já com `|| '—'`, o
 // pdf-texto defaulta na hora de montar). Um `|| '—'` aqui divergiria do
@@ -67,7 +83,7 @@ function campo(c: CampoId, p1: string): string {
 }
 
 export function montarPdfMoldura(a: ArgsMoldura): string {
-  const { p1 } = a.cfg;
+  const p1 = corSegura(a.cfg.p1);
   // Dados do local/médico também são texto (vêm do cadastro do workspace e do
   // perfil) — mesmo tratamento dos campos de identificação. `titulo`,
   // `corpoHtml`, `cssExtra` e `htmlPosTabela` são HTML de propósito e ficam
@@ -77,10 +93,11 @@ export function montarPdfMoldura(a: ArgsMoldura): string {
   const clinicaSlogan = escaparHtml(a.cfg.clinicaSlogan || '');
   const clinicaEnd = escaparHtml(a.cfg.clinicaEnd || '');
   const telCompleto = escaparHtml(a.cfg.clinicaTel || '');
-  // Atributo src: escapar fecha o ultimo par de valores crus do arquivo.
-  // base64/data-uri legitimos nao contem &<>" — saida byte-identica.
-  const logoB64 = escaparHtml(a.cfg.logoB64 || '');
-  const sigB64 = escaparHtml(a.cfg.sigB64 || '');
+  // Atributo src: só data: entra (P17, soDataUri); escapar fecha o ultimo
+  // par de valores crus do arquivo. base64/data-uri legitimos nao contem
+  // &<>" — saida byte-identica pro caso real (data: já cadastrado).
+  const logoB64 = soDataUri(a.cfg.logoB64);
+  const sigB64 = soDataUri(a.cfg.sigB64);
 
   // Todas as linhas menos a última levam `margin-bottom:2px` — era assim nos
   // dois templates originais (1ª linha com, 2ª sem).

@@ -25,6 +25,9 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { rodapeFontes } from '../senna90/classificacoes/fontes';
+// X10: mesma validação da moldura — sem ciclo (pdf-moldura.ts não importa
+// nada, ver cabeçalho do arquivo), então UMA definição só, importada aqui.
+import { corSegura } from './pdf-moldura';
 
 export type ParamsHtmlOpts = {
   /** true = tabela do PDF (impressão): !important + print-color-adjust
@@ -45,7 +48,11 @@ export function escHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-export function montarParamsHtml(rows: string[][], p1: string, opts: ParamsHtmlOpts): string {
+export function montarParamsHtml(rows: string[][], p1raw: string, opts: ParamsHtmlOpts): string {
+  // X10: cor entra aqui vinda da page (já validada lá) — revalida de novo
+  // porque esta função também é chamável direto (é exportada e testada
+  // isolada); não dá pra confiar que todo chamador passou pela page.
+  const p1 = corSegura(p1raw);
   const paramsRows = rows
     .map((cells, i) => {
       let rowHTML = '<tr>';

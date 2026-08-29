@@ -209,3 +209,15 @@ describe('montarParamsHtml — quinta coluna (idx 4) leva o divisor', () => {
     assert.equal(dividerHeader, 1);
   });
 });
+
+// X10 (tríade onda-0): esta função também é chamável direto (exportada) —
+// não dá pra confiar que todo chamador já validou p1 (a page valida, mas
+// isolada ela tem que se defender sozinha).
+describe('montarParamsHtml — cor travada na entrada (X10)', () => {
+  test('p1 fora do vocabulário hex cai no fallback, não entra cru no style', () => {
+    const payload = '#fff"><img src=x onerror=alert(1)>';
+    const html = montarParamsHtml(ROWS, payload, { pdf: true });
+    assert.ok(!html.includes(payload));
+    assert.ok(html.includes('#8B1A1A'));
+  });
+});
