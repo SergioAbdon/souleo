@@ -38,6 +38,7 @@ type ExameItem = Record<string, unknown> & {
   convenio?: string; solicitante?: string; sexo?: string; origem?: string;
   feegowAppointId?: string | number; medicoUid?: string;
   acc?: string; cpf?: string; imagensDicom?: string[]; mwlStatus?: string;
+  pdfUrl?: string; pdfErro?: string;
 };
 
 export default function Worklist() {
@@ -66,6 +67,7 @@ export default function Worklist() {
   const [admConvenio, setAdmConvenio] = useState('');
   const [admSolicitante, setAdmSolicitante] = useState('');
   const [admSalvando, setAdmSalvando] = useState(false);
+  const [regerandoPdf, setRegerandoPdf] = useState<string | null>(null);   // exameId em voo
   const [editPacId, setEditPacId] = useState<string | null>(null);
   const [editExameId, setEditExameId] = useState<string | null>(null);
 
@@ -489,6 +491,39 @@ export default function Worklist() {
     }
   }
 
+  // ── Regerar PDF (Task 6, P4/E4): a emissao falhou DEPOIS de cobrar a
+  // franquia (laudo `emitido` sem `pdfUrl`, marcado com `pdfErro`). Reusa a
+  // MESMA rota da correcao administrativa, com o convenio/solicitante ATUAIS
+  // do exame (sem mudar nada) — regera o PDF a partir do snapshot congelado
+  // na emissao, sem transacao de billing e sem 2a franquia.
+  async function regerarPdf(item: ExameItem) {
+    if (!workspace?.id || regerandoPdf) return;
+    setRegerandoPdf(item.id);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/corrigir-laudo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
+        body: JSON.stringify({
+          wsId: workspace.id, exameId: item.id,
+          convenio: item.convenio || '', solicitante: item.solicitante || '',
+        }),
+      });
+      const r = await res.json();
+      // Snapshot ausente (emitido antigo) ou falha nova do Puppeteer: honesto
+      // — nao ha o que recuperar aqui, so reemitir de novo (2a franquia).
+      if (!r.ok || r.pdfDesatualizado || r.pdfErro) {
+        alert('Snapshot indisponível — reemita o laudo.');
+        return;
+      }
+      alert('PDF regerado com sucesso.');
+    } catch {
+      alert('Erro de conexão ao regerar o PDF.');
+    } finally {
+      setRegerandoPdf(null);
+    }
+  }
+
   async function checarBillingOuAvisar(): Promise<boolean> {
     if (!workspace?.id) return true;
     const check = await checkEmissao(workspace.id);
@@ -751,6 +786,14 @@ export default function Worklist() {
                                 sem crédito e sem encostar no corpo do laudo. */}
                             {podeCorrigirAdministrativo(papel) && (
                               <Btn cor="gray" onClick={() => abrirCorrecaoAdm(item)}>✏️ convênio/solicitante</Btn>
+                            )}
+                            {/* P4/E4 (Task 6): laudo emitido (franquia ja cobrada) sem
+                                PDF — a rota marcou pdfErro no catch. Regenera do
+                                snapshot pela mesma rota da correcao, sem 2a franquia. */}
+                            {podeCorrigirAdministrativo(papel) && item.pdfErro && !item.pdfUrl && (
+                              <Btn cor="red" onClick={() => regerarPdf(item)}>
+                                {regerandoPdf === item.id ? 'Regerando...' : '🔁 Regerar PDF'}
+                              </Btn>
                             )}
                             <Btn cor="gray" onClick={() => imprimirPdf(item.id)}>🖨️ Imprimir</Btn>
                           </>

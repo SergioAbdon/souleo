@@ -6,7 +6,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
-import { gerarESalvarPdf, salvarPdfBuffer } from '@/lib/pdf-server';
+import { gerarESalvarPdf, salvarPdfBuffer, salvarSnapshotHtml } from '@/lib/pdf-server';
+import { sanitizarNomeArq } from '@/lib/pdf-path';
 import { validarPdfBase64 } from '@/lib/pdf-validacao';
 import { adminDb, requireUid } from '@/lib/auth-admin';
 import { resolverPapel } from '@/lib/exame-admin';
@@ -156,18 +157,27 @@ export async function POST(req: NextRequest) {
     if (pdfAnexadoBuf) {
       try {
         pdfUrl = await salvarPdfBuffer(pdfAnexadoBuf, wsId, exameId, nomeArq);
-        await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfUrl });
+        await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfUrl, pdfErro: FieldValue.delete() });
       } catch (e) {
-        pdfErro = e instanceof Error ? e.message : 'erro_pdf';
-        console.error('PDF anexo save error:', pdfErro);
+        pdfErro = 'erro_pdf';   // P10: detalhe (bucket/path) so no log do servidor
+        console.error('PDF anexo save error:', e);
+        // P4/E4: a emissao JA cobrou. Sem HTML aqui (e anexo pronto) — nao ha
+        // o que congelar em snapshot, so a marca no doc pra tela deixar de
+        // mentir que o laudo emitido tem PDF.
+        await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfErro: 'erro_pdf' }).catch(() => {});
       }
     } else if (pdfHtml) {
       try {
         pdfUrl = await gerarESalvarPdf(pdfHtml, wsId, exameId, nomeArq);
-        await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfUrl });
+        await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfUrl, pdfErro: FieldValue.delete() });
       } catch (e) {
-        pdfErro = e instanceof Error ? e.message : 'erro_pdf';
-        console.error('PDF gen error:', pdfErro);
+        pdfErro = 'erro_pdf';   // P10: detalhe so no log do servidor
+        console.error('PDF gen error:', e);
+        // P4/E4: a emissao JA cobrou. Congela o snapshot (sem ele a correcao
+        // administrativa deste exame morre pra sempre) e deixa marca no doc —
+        // a tela passa a ver o laudo emitido-sem-PDF em vez de ninguem saber.
+        await salvarSnapshotHtml(pdfHtml, wsId, exameId, sanitizarNomeArq(nomeArq, exameId)).catch(() => {});
+        await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfErro: 'erro_pdf' }).catch(() => {});
       }
     }
 

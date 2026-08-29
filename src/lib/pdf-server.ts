@@ -72,7 +72,11 @@ function pathSnapshotHtml(wsId: string, exameId: string): string {
 // que a correção regrava. Guardar isso no doc do exame seria dar o volante
 // de volta ao cliente — o médico-autor pode editar o doc emitido e apontar
 // pro PDF de outro paciente (fix I1).
-async function salvarSnapshotHtml(html: string, wsId: string, exameId: string, nomeArq: string): Promise<void> {
+// Exportada (Task 6 / P4+E4): o catch do /api/emitir também precisa congelar
+// o snapshot quando o Puppeteer falha DEPOIS da franquia cobrada — sem ele a
+// correção administrativa deste exame (única via de recuperação sem 2a
+// franquia) morre pra sempre.
+export async function salvarSnapshotHtml(html: string, wsId: string, exameId: string, nomeArq: string): Promise<void> {
   try {
     const filePath = pathSnapshotHtml(wsId, exameId);
     await getStorage().bucket().file(filePath).save(html, {
@@ -126,8 +130,10 @@ export async function gerarESalvarPdf(
   // Sem a barra final: a URL canonica gravada codifica o path inteiro
   // (encodeURIComponent), entao ela aparece como `/dicom%2F...` — `/dicom`
   // cobre as duas formas.
+  // P4/E4: a esta altura a emissão JÁ foi cobrada — o texto antigo ("emissão
+  // abortada") mentia dizendo que nada tinha acontecido.
   if (htmlAssinado.includes(`https://storage.googleapis.com/${bucket.name}/dicom`)) {
-    throw new Error('imagem não assinada — emissão abortada');
+    throw new Error('imagem não assinada — PDF abortado');
   }
   // S7-T0.2: uma página por emissão, num browser que sobrevive à invocação.
   // Política de retry: UMA repetição, e só se o erro for de conexão — o
