@@ -107,10 +107,11 @@ export async function emitirComCobranca(db: Firestore, p: {
 
     // E8: laudo cancelado nao revive por emissao — o cancelamento ja devolveu
     // o consumo; emitir por cima criaria um doc emitido+cancelado ao mesmo
-    // tempo. Voltar do cancelado e ato deliberado (recriar/transferir), nao
-    // um POST. ANTES do bloco de replay (abaixo): uma key reusada de uma
-    // emissao que foi cancelada DEPOIS nao pode devolver "sucesso" — replay
-    // so vale pra exame que continua emitido de verdade.
+    // tempo. Voltar do cancelado e ato deliberado — recriar o exame (transferir
+    // NAO tira o status 'cancelado': transferirExame so muda status quando o
+    // exame estava 'emitido'). ANTES do bloco de replay (abaixo): uma key
+    // reusada de uma emissao que foi cancelada DEPOIS nao pode devolver
+    // "sucesso" — replay so vale pra exame que continua emitido de verdade.
     if (exame.status === 'cancelado') return { ok: false, motivo: 'cancelado' };
 
     // ── TRAVA ANTI-COBRANCA-DUPLA (E1) ──

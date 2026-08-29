@@ -7,7 +7,7 @@
 // `subRef` vem do chamador (resolverAssinatura de billing-admin) e
 // `apagarPdf` tambem — DI que mantem Storage fora dos testes.
 // ══════════════════════════════════════════════════════════════════
-import type { Firestore, DocumentReference, Timestamp } from 'firebase-admin/firestore';
+import type { Firestore, DocumentReference, DocumentSnapshot, Timestamp, Transaction } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
 import { refEmissaoPrivada } from './emitir-admin';
 
@@ -83,55 +83,73 @@ export function podeCorrigir(
 // Devolve o SALDO LIQUIDO dos consumos do exame (P1/D8): tudo que foi
 // consumido MENOS o que ja foi devolvido em registros 'cancelamento'
 // anteriores. Idempotente por construcao — retry apos falha parcial e
-// reemissao pos-cancelamento devolvem so a diferenca. O registro da
-// devolucao entra NA MESMA transacao dos contadores: ou os dois existem,
-// ou nenhum.
+// reemissao pos-cancelamento devolvem so a diferenca.
+// Dividida em leitura (lerDevolucaoLiquida) e escrita (aplicarDevolucaoLiquida)
+// pra poder rodar DENTRO da transacao do CAS de cancelar/transferir (FIX 1 da
+// revisao E6) sem duplicar a conta — mesma logica, mesmas 2 funcoes, chamadas
+// tanto por `devolverConsumo` (transacao propria, usada por apagarExame) quanto
+// inline pelo CAS.
+async function lerDevolucaoLiquida(t: Transaction, db: Firestore, p: Params) {
+  const snap = await t.get(db.collection('consumo').where('exameId', '==', p.exameId));
+  // P7: sem indice composto — filtra o workspace em codigo.
+  const doExame = snap.docs.map(d => d.data()).filter(c => c.workspaceId === p.wsId);
+  const gastoFranquia = doExame.filter(c => c.tipo === 'franquia').length;
+  const gastoCredito = doExame.filter(c => c.tipo === 'credito').length;
+  const devolvidos = doExame.filter(c => c.tipo === 'cancelamento');
+  const jaFranquia = devolvidos.reduce((s, c) => s + ((c.devolvidoFranquia as number) || 0), 0);
+  const jaCredito = devolvidos.reduce((s, c) => s + ((c.devolvidoCreditos as number) || 0), 0);
+  const nFranquia = Math.max(0, gastoFranquia - jaFranquia);
+  const nCredito = Math.max(0, gastoCredito - jaCredito);
+  // Le a assinatura AQUI (antes de qualquer escrita, exigencia de transacao)
+  // mesmo quando nFranquia/nCredito derem 0 — quem decide se usa e o chamador.
+  const subSnap = p.subRef ? await t.get(p.subRef) : null;
+  return { nFranquia, nCredito, subSnap };
+}
+
+function aplicarDevolucaoLiquida(
+  t: Transaction, db: Firestore, p: Params, acao: string,
+  nFranquia: number, nCredito: number, subSnap: DocumentSnapshot | null,
+) {
+  if (!nFranquia && !nCredito) return;
+  // O ledger registra o que FOI APLICADO, nao o que era devido: sem
+  // assinatura (subRef null ou doc apagado) nada volta, e gravar n>0
+  // faria o liquido achar que ja devolveu — bloqueando a correcao depois.
+  let feitoFranquia = 0, feitoCredito = 0;
+  if (p.subRef && subSnap?.exists) {
+    const usada = (subSnap.data()!.franquiaUsada as number) || 0;
+    t.update(p.subRef, {
+      franquiaUsada: Math.max(0, usada - nFranquia),
+      creditosExtras: FieldValue.increment(nCredito),
+    });
+    feitoFranquia = nFranquia;
+    feitoCredito = nCredito;
+  }
+  t.set(db.collection('consumo').doc(), {
+    workspaceId: p.wsId, exameId: p.exameId, tipo: 'cancelamento', acao,
+    devolvidoFranquia: feitoFranquia, devolvidoCreditos: feitoCredito,
+    por: p.uid, emitidoEm: FieldValue.serverTimestamp(),
+  });
+}
+
+// Usado so por apagarExame (fora do escopo do CAS — o doc some de qualquer
+// jeito, nao ha corrida "emissao x cancelamento" pra fechar ali).
 async function devolverConsumo(db: Firestore, p: Params, acao: string) {
   await db.runTransaction(async (t) => {
-    const snap = await t.get(db.collection('consumo').where('exameId', '==', p.exameId));
-    // P7: sem indice composto — filtra o workspace em codigo.
-    const doExame = snap.docs.map(d => d.data()).filter(c => c.workspaceId === p.wsId);
-    const gastoFranquia = doExame.filter(c => c.tipo === 'franquia').length;
-    const gastoCredito = doExame.filter(c => c.tipo === 'credito').length;
-    const devolvidos = doExame.filter(c => c.tipo === 'cancelamento');
-    const jaFranquia = devolvidos.reduce((s, c) => s + ((c.devolvidoFranquia as number) || 0), 0);
-    const jaCredito = devolvidos.reduce((s, c) => s + ((c.devolvidoCreditos as number) || 0), 0);
-    const nFranquia = Math.max(0, gastoFranquia - jaFranquia);
-    const nCredito = Math.max(0, gastoCredito - jaCredito);
-    if (!nFranquia && !nCredito) return;
-
-    // O ledger registra o que FOI APLICADO, nao o que era devido: sem
-    // assinatura (subRef null ou doc apagado) nada volta, e gravar n>0
-    // faria o liquido achar que ja devolveu — bloqueando a correcao depois.
-    let feitoFranquia = 0, feitoCredito = 0;
-    if (p.subRef) {
-      const sub = await t.get(p.subRef);
-      if (sub.exists) {
-        const usada = (sub.data()!.franquiaUsada as number) || 0;
-        t.update(p.subRef, {
-          franquiaUsada: Math.max(0, usada - nFranquia),
-          creditosExtras: FieldValue.increment(nCredito),
-        });
-        feitoFranquia = nFranquia;
-        feitoCredito = nCredito;
-      }
-    }
-    t.set(db.collection('consumo').doc(), {
-      workspaceId: p.wsId, exameId: p.exameId, tipo: 'cancelamento', acao,
-      devolvidoFranquia: feitoFranquia, devolvidoCreditos: feitoCredito,
-      por: p.uid, emitidoEm: FieldValue.serverTimestamp(),
-    });
+    const { nFranquia, nCredito, subSnap } = await lerDevolucaoLiquida(t, db, p);
+    aplicarDevolucaoLiquida(t, db, p, acao, nFranquia, nCredito, subSnap);
   });
 }
 
 // E6: o get la em cima (carregar) e FORA de transacao — entre ele e a
 // escrita final uma emissao pode commitar (cobranca nova + pdfUrl novo).
-// O update final vira CAS: so aplica se status e emitidoEm ainda sao os que
-// decidimos cancelar/transferir. Perdendo a corrida: ja devolvemos o
-// consumo antigo (liquido, idempotente — devolverConsumo so debita a
-// diferenca), a emissao nova fica de pe com o PDF dela intacto porque
-// limparPdf so roda DEPOIS do CAS confirmar. Estado consistente: 1 cobranca
-// pro 1 laudo que ficou emitido.
+// O update final vira CAS DENTRO da mesma transacao da devolucao (FIX 1): so
+// devolve/escreve se status e emitidoEm ainda sao os que decidimos
+// cancelar/transferir — senao nem a devolucao roda (return true antes de
+// aplicarDevolucaoLiquida). Perdendo a corrida: NADA e devolvido (a emissao
+// vencedora fica com a cobranca dela intacta) e o PDF dela fica de pe porque
+// limparPdf so roda DEPOIS do CAS confirmar, com a URL RE-LIDA na mesma
+// transacao (FIX 2). Estado consistente: 1 cobranca pro 1 laudo que ficou
+// emitido — nunca um laudo de graca.
 function mesmaEmissao(a: unknown, b: unknown): boolean {
   if (!a && !b) return true;
   return !!a && !!b && typeof (a as Timestamp).isEqual === 'function'
@@ -221,15 +239,21 @@ export async function cancelarExame(db: Firestore, p: Params): Promise<Resultado
     : papel === 'dono' || (papel === 'medico' && medicoAlcanca(exame, p.uid));
   if (!pode) return { ok: false, motivo: 'sem_permissao' };
 
-  if (emitido) await devolverConsumo(db, p, 'cancelar');
-
-  // CAS (E6): re-le o exame e so escreve se status/emitidoEm ainda batem com
-  // o que foi lido em `carregar` — senao uma emissao commitou no meio.
+  // FIX 1 (revisao E6): devolucao e CAS entram na MESMA transacao. Com os
+  // dois separados, uma emissao vencendo a corrida DEPOIS que a devolucao ja
+  // rodou (mas ANTES do CAS) devolvia o consumo da emissao nova — laudo de
+  // graca. Agora: le exame + consumo + assinatura (nesta ordem, todas as
+  // leituras antes de qualquer escrita); SO SE o status/emitidoEm ainda
+  // baterem com o que `carregar` leu e que a devolucao devolve e o exame
+  // vira cancelado — no mesmo commit.
+  let pdfDoCommit: string | null = null;
   const conflito = await db.runTransaction(async (t) => {
     const agora = await t.get(exameSnap.ref);
     if (!agora.exists) return true;
     const d = agora.data()!;
+    const netos = emitido ? await lerDevolucaoLiquida(t, db, p) : null;
     if (d.status !== exame.status || !mesmaEmissao(d.emitidoEm, exame.emitidoEm)) return true;
+    if (emitido && netos) aplicarDevolucaoLiquida(t, db, p, 'cancelar', netos.nFranquia, netos.nCredito, netos.subSnap);
     t.update(exameSnap.ref, {
       status: 'cancelado',
       canceladoEm: FieldValue.serverTimestamp(),
@@ -237,13 +261,22 @@ export async function cancelarExame(db: Firestore, p: Params): Promise<Resultado
       motivoCancelamento: p.motivo ?? '',
       ...(emitido ? { pdfUrl: FieldValue.delete() } : {}),
     });
+    pdfDoCommit = (d.pdfUrl as string) || null;   // FIX 2: pdfUrl fresco (re-lido), nao o `exame` de fora
     return false;
   });
-  if (conflito) return { ok: false, motivo: 'conflito_emissao' };
-  // PDF so e apagado DEPOIS do CAS confirmar — apagar antes (ordem antiga)
-  // e o que matava o PDF de uma emissao nova que tivesse vencido a corrida.
-  if (emitido) await limparPdf(exame, p);
-  await log(db, 'cancelamento_laudo', p, exame, { motivo: p.motivo ?? '', estavaEmitido: emitido });
+  if (conflito) {
+    // FIX 6: aborto tambem fica auditavel — inclusive o pdfUrl que ficou de
+    // pe (a emissao vencedora), pra rastrear se um crash aqui deixar orfao.
+    await log(db, 'cancelamento_laudo', p, exame, {
+      motivo: p.motivo ?? '', estavaEmitido: emitido, conflito: true, pdfUrl: (exame.pdfUrl as string) || null,
+    });
+    return { ok: false, motivo: 'conflito_emissao' };
+  }
+  // PDF so e apagado DEPOIS do CAS confirmar, com a URL RE-LIDA na transacao
+  // (FIX 2) — apagar antes ou com a URL velha e o que matava/mataria o PDF
+  // de uma emissao nova que tivesse vencido a corrida.
+  if (emitido && pdfDoCommit) await limparPdf({ pdfUrl: pdfDoCommit }, p);
+  await log(db, 'cancelamento_laudo', p, exame, { motivo: p.motivo ?? '', estavaEmitido: emitido, pdfUrl: pdfDoCommit });
   return { ok: true };
 }
 
@@ -263,23 +296,33 @@ export async function transferirExame(db: Firestore, p: Params): Promise<Resulta
 
   const emitido = exame.status === 'emitido';
   // D8: o laudo anterior sai da conta; o novo medico consome ao emitir.
-  if (emitido) await devolverConsumo(db, p, 'transferir');
-
-  // CAS (E6): mesma corrida do cancelar — emissao commitando no meio.
+  // FIX 1 (revisao E6): devolucao + CAS na MESMA transacao — mesmo raciocinio
+  // do cancelarExame (ver comentario la): devolver fora e deixar a emissao
+  // vencedora sem cobranca liquida.
+  let pdfDoCommit: string | null = null;
   const conflito = await db.runTransaction(async (t) => {
     const agora = await t.get(exameSnap.ref);
     if (!agora.exists) return true;
     const d = agora.data()!;
+    const netos = emitido ? await lerDevolucaoLiquida(t, db, p) : null;
     if (d.status !== exame.status || !mesmaEmissao(d.emitidoEm, exame.emitidoEm)) return true;
+    if (emitido && netos) aplicarDevolucaoLiquida(t, db, p, 'transferir', netos.nFranquia, netos.nCredito, netos.subSnap);
     t.update(exameSnap.ref, {
       medicoUid: p.novoMedicoUid,
       ...(emitido ? { status: 'andamento', pdfUrl: FieldValue.delete() } : {}),
       atualizadoEm: FieldValue.serverTimestamp(),
     });
+    pdfDoCommit = (d.pdfUrl as string) || null;   // FIX 2: pdfUrl fresco
     return false;
   });
-  if (conflito) return { ok: false, motivo: 'conflito_emissao' };
-  if (emitido) await limparPdf(exame, p);
-  await log(db, 'transferencia_exame', p, exame, { de: (exame.medicoUid as string) ?? null, para: p.novoMedicoUid, estavaEmitido: emitido });
+  if (conflito) {
+    await log(db, 'transferencia_exame', p, exame, {   // FIX 6
+      de: (exame.medicoUid as string) ?? null, para: p.novoMedicoUid, estavaEmitido: emitido,
+      conflito: true, pdfUrl: (exame.pdfUrl as string) || null,
+    });
+    return { ok: false, motivo: 'conflito_emissao' };
+  }
+  if (emitido && pdfDoCommit) await limparPdf({ pdfUrl: pdfDoCommit }, p);   // FIX 2
+  await log(db, 'transferencia_exame', p, exame, { de: (exame.medicoUid as string) ?? null, para: p.novoMedicoUid, estavaEmitido: emitido, pdfUrl: pdfDoCommit });
   return { ok: true };
 }

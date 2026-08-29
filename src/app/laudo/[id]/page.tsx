@@ -1520,7 +1520,7 @@ function LaudoPageInner() {
         nao_medico: 'Somente perfil medico assina laudo.',
         exame_de_outro_medico: 'Este laudo e de outro medico. Peca a transferencia ao responsavel.',
         nao_encontrado: 'Exame nao encontrado. Recarregue a lista.',
-        cancelado: 'Este laudo foi cancelado. Emitir de novo exige recriar ou transferir o exame.',
+        cancelado: 'Este laudo foi cancelado. Emitir de novo exige recriar o exame.',
         erro: 'Erro ao emitir. Tente novamente.',
       };
       toast(msgs[resultado.motivo || 'erro'] || 'Erro ao emitir.');

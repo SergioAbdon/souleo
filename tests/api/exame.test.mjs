@@ -6,19 +6,22 @@ import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { resolverPapel, apagarExame, cancelarExame, transferirExame } from '../../src/lib/exame-admin.ts';
 import { refEmissaoPrivada } from '../../src/lib/emitir-admin.ts';
 
-// E6: simula outra emissao commitando ENTRE a leitura de fora (carregar) e o
-// CAS final. cancelarExame/transferirExame fazem 2 runTransaction quando o
-// exame esta emitido: 1a e devolverConsumo, 2a e o CAS. Intercepta so a 2a
-// e, antes de deixar rodar, escreve de verdade no exame — exatamente o que
-// uma 2a requisicao concorrente (uma emissao) teria feito.
+// E6/FIX1: simula outra emissao commitando ENTRE a leitura de fora (carregar)
+// e a transacao unica devolucao+CAS de cancelarExame/transferirExame (desde
+// o FIX1 da revisao, devolucao e CAS sao UMA SO transacao — so ha 1 chamada
+// a runTransaction no braco emitido). Intercepta essa unica chamada e, ANTES
+// de deixar rodar de verdade, escreve no exame — exatamente o que uma 2a
+// requisicao concorrente (uma emissao) teria feito no meio da corrida. O
+// primeiro `t.get` de dentro da transacao ja enxerga o estado pos-corrida
+// (consistente com o snapshot do Firestore), enquanto a comparacao do CAS
+// segue usando o `exame` capturado ANTES (fora da transacao) — é essa
+// diferenca que o CAS tem que pegar.
 function dbComEmissaoNoMeio(dbReal, exameRef, novosCampos) {
-  let chamadas = 0;
   return new Proxy(dbReal, {
     get(target, prop) {
       if (prop === 'runTransaction') {
         return async (fn) => {
-          chamadas++;
-          if (chamadas === 2) await exameRef.update(novosCampos);
+          await exameRef.update(novosCampos);
           return target.runTransaction(fn);
         };
       }
@@ -248,6 +251,25 @@ describe('cancelar', () => {
     assert.equal(ex.status, 'emitido', 'nao virou cancelado');
     assert.equal(ex.pdfUrl, 'https://storage.googleapis.com/bucket-t/laudos/wsT/laudo_novo.pdf', 'pdf da emissao nova NAO foi apagado');
     assert.equal(pdfsApagados.length, 0, 'apagarPdf nao foi chamado');
+    // FIX 1: devolucao e CAS na mesma transacao — no conflito, NADA e
+    // devolvido (senao a emissao vencedora ficaria com laudo de graca).
+    assert.equal((await subRef().get()).data().franquiaUsada, 10, 'nao devolveu a franquia da emissao vencedora');
+  });
+
+  // FIX 3 (revisao E6): o braco feliz de mesmaEmissao (Timestamp real,
+  // .isEqual verdadeiro) nao tinha teste proprio — so o undefined/undefined
+  // (seedEmitido sem emitidoEm) e o mismatch (teste acima). Sem isto, um
+  // duck-type quebrado em isEqual devolveria conflito em TODO cancelamento
+  // real (emitidoEm sempre setado em producao via serverTimestamp).
+  test('mesmaEmissao com Timestamp real igual: CAS aplica normalmente (devolve consumo, cancela, apaga pdf)', async () => {
+    await seedEmitido('casOk1');
+    await db.doc(`workspaces/${WS}/exames/casOk1`).update({ emitidoEm: FieldValue.serverTimestamp() });
+    const r = await cancelarExame(db, { wsId: WS, exameId: 'casOk1', uid: DONO, motivo: 'x', subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, true);
+    const ex = (await db.doc(`workspaces/${WS}/exames/casOk1`).get()).data();
+    assert.equal(ex.status, 'cancelado');
+    assert.equal((await subRef().get()).data().franquiaUsada, 9, 'devolucao aplicada com emitidoEm real (isEqual funcionando)');
+    assert.equal(pdfsApagados.length, 1);
   });
 });
 
@@ -309,6 +331,7 @@ describe('transferir', () => {
     assert.equal(ex.medicoUid, MED, 'nao transferiu');
     assert.equal(ex.pdfUrl, 'https://storage.googleapis.com/bucket-t/laudos/wsT/laudo_novo_t.pdf');
     assert.equal(pdfsApagados.length, 0);
+    assert.equal((await subRef().get()).data().franquiaUsada, 10, 'nao devolveu a franquia da emissao vencedora');
   });
 });
 

@@ -101,16 +101,20 @@ describe('trava única do emitido — CSS e disabled-setter concordam', () => {
     assert.match(pageSrc, /const docFechado = \['emitido', 'cancelado'\]\.includes/);
     assert.ok(!/const docFechado = !!exame\?\.emitidoEm/.test(pageSrc));
     // transferirExame: status volta pra 'andamento' e emitidoEm FICA — é isso
-    // que torna `emitidoEm` o predicado errado pra este gate. E6 passou a LER
-    // emitidoEm pro CAS (mesmaEmissao, corrida cancelar/transferir x emitir) —
-    // a checagem que importa aqui é a ESCRITA (t.update), não a leitura.
+    // que torna `emitidoEm` o predicado errado pra este gate. E6 (CAS) passou
+    // a LER emitidoEm pra comparar (mesmaEmissao) — leitura legítima, não é
+    // o que este canário protege. Mascara ESSA leitura conhecida e faz o
+    // grep no corpo INTEIRO que sobrar: qualquer `emitidoEm` que apareça
+    // depois disso é escrita nova (ou leitura nova) que o revisor não previu.
     const adminSrc = fs.readFileSync(path.join(root, 'src', 'lib', 'exame-admin.ts'), 'utf8');
     const transf = adminSrc.split('export async function transferirExame')[1] || '';
     assert.match(transf, /status: 'andamento'/);
-    const escrita = transf.match(/t\.update\(exameSnap\.ref, \{([\s\S]*?)\n {4}\}\);/)?.[1] || '';
-    assert.ok(escrita.length > 0, 'payload do t.update de transferirExame não encontrado');
-    assert.ok(!/emitidoEm/.test(escrita),
-      'se a transferência passar a limpar emitidoEm na ESCRITA, este gate pode voltar a ser por emitidoEm');
+    const mascarado = transf
+      .split('return { ok: true }')[0]
+      .replace(/mesmaEmissao\(d\.emitidoEm, exame\.emitidoEm\)/g, '');
+    assert.ok(!/emitidoEm/.test(mascarado),
+      'apareceu um emitidoEm novo em transferirExame fora da leitura conhecida do CAS — ' +
+      'se for escrita (limpar/setar emitidoEm), este gate pode voltar a ser por emitidoEm');
   });
 
   test('a emissão grava o laudoHtml assinado no doc (tela do emitido = PDF)', () => {
