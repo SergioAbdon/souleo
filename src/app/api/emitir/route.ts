@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!resultado.ok) {
-      const status: Record<string, number> = { nao_encontrado: 404, exame_de_outro_medico: 403 };
+      const status: Record<string, number> = { nao_encontrado: 404, exame_de_outro_medico: 403, cancelado: 409 };
       return NextResponse.json(resultado, { status: status[resultado.motivo] ?? 200 });
     }
 

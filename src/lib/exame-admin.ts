@@ -7,7 +7,7 @@
 // `subRef` vem do chamador (resolverAssinatura de billing-admin) e
 // `apagarPdf` tambem — DI que mantem Storage fora dos testes.
 // ══════════════════════════════════════════════════════════════════
-import type { Firestore, DocumentReference } from 'firebase-admin/firestore';
+import type { Firestore, DocumentReference, Timestamp } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
 import { refEmissaoPrivada } from './emitir-admin';
 
@@ -124,6 +124,20 @@ async function devolverConsumo(db: Firestore, p: Params, acao: string) {
   });
 }
 
+// E6: o get la em cima (carregar) e FORA de transacao — entre ele e a
+// escrita final uma emissao pode commitar (cobranca nova + pdfUrl novo).
+// O update final vira CAS: so aplica se status e emitidoEm ainda sao os que
+// decidimos cancelar/transferir. Perdendo a corrida: ja devolvemos o
+// consumo antigo (liquido, idempotente — devolverConsumo so debita a
+// diferenca), a emissao nova fica de pe com o PDF dela intacto porque
+// limparPdf so roda DEPOIS do CAS confirmar. Estado consistente: 1 cobranca
+// pro 1 laudo que ficou emitido.
+function mesmaEmissao(a: unknown, b: unknown): boolean {
+  if (!a && !b) return true;
+  return !!a && !!b && typeof (a as Timestamp).isEqual === 'function'
+    && (a as Timestamp).isEqual(b as Timestamp);
+}
+
 async function limparPdf(exame: Record<string, unknown>, p: Params) {
   if (typeof exame.pdfUrl === 'string' && exame.pdfUrl) {
     try { await p.apagarPdf(exame.pdfUrl); }
@@ -207,17 +221,28 @@ export async function cancelarExame(db: Firestore, p: Params): Promise<Resultado
     : papel === 'dono' || (papel === 'medico' && medicoAlcanca(exame, p.uid));
   if (!pode) return { ok: false, motivo: 'sem_permissao' };
 
-  if (emitido) {
-    await devolverConsumo(db, p, 'cancelar');
-    await limparPdf(exame, p);
-  }
-  await exameSnap.ref.update({
-    status: 'cancelado',
-    canceladoEm: FieldValue.serverTimestamp(),
-    canceladoPor: p.uid,
-    motivoCancelamento: p.motivo ?? '',
-    ...(emitido ? { pdfUrl: FieldValue.delete() } : {}),
+  if (emitido) await devolverConsumo(db, p, 'cancelar');
+
+  // CAS (E6): re-le o exame e so escreve se status/emitidoEm ainda batem com
+  // o que foi lido em `carregar` — senao uma emissao commitou no meio.
+  const conflito = await db.runTransaction(async (t) => {
+    const agora = await t.get(exameSnap.ref);
+    if (!agora.exists) return true;
+    const d = agora.data()!;
+    if (d.status !== exame.status || !mesmaEmissao(d.emitidoEm, exame.emitidoEm)) return true;
+    t.update(exameSnap.ref, {
+      status: 'cancelado',
+      canceladoEm: FieldValue.serverTimestamp(),
+      canceladoPor: p.uid,
+      motivoCancelamento: p.motivo ?? '',
+      ...(emitido ? { pdfUrl: FieldValue.delete() } : {}),
+    });
+    return false;
   });
+  if (conflito) return { ok: false, motivo: 'conflito_emissao' };
+  // PDF so e apagado DEPOIS do CAS confirmar — apagar antes (ordem antiga)
+  // e o que matava o PDF de uma emissao nova que tivesse vencido a corrida.
+  if (emitido) await limparPdf(exame, p);
   await log(db, 'cancelamento_laudo', p, exame, { motivo: p.motivo ?? '', estavaEmitido: emitido });
   return { ok: true };
 }
@@ -237,16 +262,24 @@ export async function transferirExame(db: Firestore, p: Params): Promise<Resulta
   if (!(await ehMedicoDeVerdade(db, p.novoMedicoUid))) return { ok: false, motivo: 'alvo_invalido' };
 
   const emitido = exame.status === 'emitido';
-  if (emitido) {
-    // D8: o laudo anterior sai da conta; o novo medico consome ao emitir.
-    await devolverConsumo(db, p, 'transferir');
-    await limparPdf(exame, p);
-  }
-  await exameSnap.ref.update({
-    medicoUid: p.novoMedicoUid,
-    ...(emitido ? { status: 'andamento', pdfUrl: FieldValue.delete() } : {}),
-    atualizadoEm: FieldValue.serverTimestamp(),
+  // D8: o laudo anterior sai da conta; o novo medico consome ao emitir.
+  if (emitido) await devolverConsumo(db, p, 'transferir');
+
+  // CAS (E6): mesma corrida do cancelar — emissao commitando no meio.
+  const conflito = await db.runTransaction(async (t) => {
+    const agora = await t.get(exameSnap.ref);
+    if (!agora.exists) return true;
+    const d = agora.data()!;
+    if (d.status !== exame.status || !mesmaEmissao(d.emitidoEm, exame.emitidoEm)) return true;
+    t.update(exameSnap.ref, {
+      medicoUid: p.novoMedicoUid,
+      ...(emitido ? { status: 'andamento', pdfUrl: FieldValue.delete() } : {}),
+      atualizadoEm: FieldValue.serverTimestamp(),
+    });
+    return false;
   });
+  if (conflito) return { ok: false, motivo: 'conflito_emissao' };
+  if (emitido) await limparPdf(exame, p);
   await log(db, 'transferencia_exame', p, exame, { de: (exame.medicoUid as string) ?? null, para: p.novoMedicoUid, estavaEmitido: emitido });
   return { ok: true };
 }

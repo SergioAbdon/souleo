@@ -23,6 +23,7 @@ const MENSAGENS_ERRO: Record<string, string> = {
   sem_plano: 'Nenhum plano ativo encontrado.',
   exame_de_outro_medico: 'Este exame já tem outro médico como autor.',
   sem_permissao: 'Sem permissão para emitir neste local.',
+  cancelado: 'Este exame foi cancelado. Anexar de novo exige recriar ou transferir o exame.',
 };
 
 // X21: `tipoExame` aqui é o ID do catálogo (vai em `dadosFinais` pro

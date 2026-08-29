@@ -2,9 +2,31 @@
 import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeApp, getApps } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { resolverPapel, apagarExame, cancelarExame, transferirExame } from '../../src/lib/exame-admin.ts';
 import { refEmissaoPrivada } from '../../src/lib/emitir-admin.ts';
+
+// E6: simula outra emissao commitando ENTRE a leitura de fora (carregar) e o
+// CAS final. cancelarExame/transferirExame fazem 2 runTransaction quando o
+// exame esta emitido: 1a e devolverConsumo, 2a e o CAS. Intercepta so a 2a
+// e, antes de deixar rodar, escreve de verdade no exame — exatamente o que
+// uma 2a requisicao concorrente (uma emissao) teria feito.
+function dbComEmissaoNoMeio(dbReal, exameRef, novosCampos) {
+  let chamadas = 0;
+  return new Proxy(dbReal, {
+    get(target, prop) {
+      if (prop === 'runTransaction') {
+        return async (fn) => {
+          chamadas++;
+          if (chamadas === 2) await exameRef.update(novosCampos);
+          return target.runTransaction(fn);
+        };
+      }
+      const v = target[prop];
+      return typeof v === 'function' ? v.bind(target) : v;
+    },
+  });
+}
 
 let db;
 const CONTA = 'contaT', WS = 'wsT';
@@ -210,6 +232,23 @@ describe('cancelar', () => {
     assert.equal(r.ok, false);
     assert.equal(r.motivo, 'nao_emitido');
   });
+
+  test('E6/CAS: aborta se uma emissao commitou no meio — doc fica emitido, pdf novo intacto', async () => {
+    await seedEmitido('cas1');
+    const exameRef = db.doc(`workspaces/${WS}/exames/cas1`);
+    await exameRef.update({ emitidoEm: FieldValue.serverTimestamp() });
+    const dbRace = dbComEmissaoNoMeio(db, exameRef, {
+      status: 'emitido',
+      emitidoEm: Timestamp.fromMillis(Date.now() + 60000),   // garante diferenca do lido
+      pdfUrl: 'https://storage.googleapis.com/bucket-t/laudos/wsT/laudo_novo.pdf',
+    });
+    const r = await cancelarExame(dbRace, { wsId: WS, exameId: 'cas1', uid: DONO, motivo: 'x', subRef: subRef(), apagarPdf });
+    assert.deepEqual(r, { ok: false, motivo: 'conflito_emissao' });
+    const ex = (await exameRef.get()).data();
+    assert.equal(ex.status, 'emitido', 'nao virou cancelado');
+    assert.equal(ex.pdfUrl, 'https://storage.googleapis.com/bucket-t/laudos/wsT/laudo_novo.pdf', 'pdf da emissao nova NAO foi apagado');
+    assert.equal(pdfsApagados.length, 0, 'apagarPdf nao foi chamado');
+  });
 });
 
 describe('transferir', () => {
@@ -253,6 +292,23 @@ describe('transferir', () => {
     const r = await transferirExame(db, { wsId: WS, exameId: 'trBarra', uid: DONO, novoMedicoUid: 'a/b', subRef: subRef(), apagarPdf });
     assert.equal(r.ok, false);
     assert.equal(r.motivo, 'alvo_invalido');
+  });
+
+  test('E6/CAS: aborta se uma emissao commitou no meio — nao transfere, pdf novo intacto', async () => {
+    await seedEmitido('cast1');
+    const exameRef = db.doc(`workspaces/${WS}/exames/cast1`);
+    await exameRef.update({ emitidoEm: FieldValue.serverTimestamp() });
+    const dbRace = dbComEmissaoNoMeio(db, exameRef, {
+      status: 'emitido',
+      emitidoEm: Timestamp.fromMillis(Date.now() + 60000),
+      pdfUrl: 'https://storage.googleapis.com/bucket-t/laudos/wsT/laudo_novo_t.pdf',
+    });
+    const r = await transferirExame(dbRace, { wsId: WS, exameId: 'cast1', uid: DONO, novoMedicoUid: MED2, subRef: subRef(), apagarPdf });
+    assert.deepEqual(r, { ok: false, motivo: 'conflito_emissao' });
+    const ex = (await exameRef.get()).data();
+    assert.equal(ex.medicoUid, MED, 'nao transferiu');
+    assert.equal(ex.pdfUrl, 'https://storage.googleapis.com/bucket-t/laudos/wsT/laudo_novo_t.pdf');
+    assert.equal(pdfsApagados.length, 0);
   });
 });
 

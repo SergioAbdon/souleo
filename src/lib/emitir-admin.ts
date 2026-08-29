@@ -49,7 +49,7 @@ export function emissaoKeyValida(k: unknown): boolean {
 }
 
 export type MotivoEmissao =
-  | 'sem_plano' | 'nao_encontrado' | 'exame_de_outro_medico' | 'expirado' | 'sem_saldo';
+  | 'sem_plano' | 'nao_encontrado' | 'exame_de_outro_medico' | 'expirado' | 'sem_saldo' | 'cancelado';
 
 export type ResultadoEmissao =
   // `pdfPendente`: o PDF assinado desta emissao ainda NAO esta salvo. Numa
@@ -104,6 +104,14 @@ export async function emitirComCobranca(db: Firestore, p: {
     // igual a regra publicada ("autor ou sem autor"). Sem autor pode assumir.
     const autor = exame.medicoUid as string | undefined;
     if (autor && autor !== p.uid) return { ok: false, motivo: 'exame_de_outro_medico' };
+
+    // E8: laudo cancelado nao revive por emissao — o cancelamento ja devolveu
+    // o consumo; emitir por cima criaria um doc emitido+cancelado ao mesmo
+    // tempo. Voltar do cancelado e ato deliberado (recriar/transferir), nao
+    // um POST. ANTES do bloco de replay (abaixo): uma key reusada de uma
+    // emissao que foi cancelada DEPOIS nao pode devolver "sucesso" — replay
+    // so vale pra exame que continua emitido de verdade.
+    if (exame.status === 'cancelado') return { ok: false, motivo: 'cancelado' };
 
     // ── TRAVA ANTI-COBRANCA-DUPLA (E1) ──
     // Mesma tentativa, exame ja emitido: devolve o estado que existe. Sem

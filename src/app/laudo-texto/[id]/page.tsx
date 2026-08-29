@@ -221,6 +221,7 @@ export default function LaudoTextoPage() {
         nao_medico: 'Somente perfil médico assina laudo.',
         exame_de_outro_medico: 'Este laudo é de outro médico. Peça a transferência ao responsável.',
         nao_encontrado: 'Exame não encontrado. Recarregue a lista.',
+        cancelado: 'Este laudo foi cancelado. Emitir de novo exige recriar ou transferir o exame.',
       };
       alert(msgs[resultado.motivo || ''] || 'Erro ao emitir. Tente novamente.');
       return;

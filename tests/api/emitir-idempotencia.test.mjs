@@ -221,6 +221,29 @@ describe('cliente antigo / key invalida — comportamento legado (aditivo)', () 
   });
 });
 
+describe('E8 — laudo cancelado recusa emissao (nao revive cobrando)', () => {
+  test('status cancelado: recusa sem cobrar, sem tocar consumo/gaveta privada', async () => {
+    const id = await seedExame();
+    await db.doc(`workspaces/${WS}/exames/${id}`).update({ status: 'cancelado' });
+    const r = await emitir(id, KEY_A);
+    assert.deepEqual(r, { ok: false, motivo: 'cancelado' });
+    assert.equal(await usada(), 0);
+    assert.equal(await consumos(id), 0);
+    assert.equal(await privDoc(id), undefined, 'nada gravado na gaveta privada');
+  });
+
+  test('guard vem ANTES do replay: key de uma emissao cancelada depois nao vira "sucesso"', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);                     // emite e cobra 1
+    assert.equal(await usada(), 1);
+    await db.doc(`workspaces/${WS}/exames/${id}`).update({ status: 'cancelado' });
+    const r = await emitir(id, KEY_A);            // mesma key, exame agora cancelado
+    assert.deepEqual(r, { ok: false, motivo: 'cancelado' },
+      'replay nao pode devolver sucesso pra um exame que foi cancelado depois');
+    assert.equal(await usada(), 1, 'nao cobrou de novo');
+  });
+});
+
 describe('billing e autoria seguem intactos (E9: primeira rede do caminho de dinheiro)', () => {
   test('exame de outro medico → exame_de_outro_medico, sem cobrar', async () => {
     const id = await seedExame();
