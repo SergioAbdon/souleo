@@ -173,16 +173,32 @@ test.describe('Seção 5 — roteiro de fechamento', () => {
 
   test('item 8 — alerta PSAP aparece e some', async ({ page }) => {
     await abrirLaudo(page, NOME_A);
-    // ⚠️ GATE DA VIRADA F3 (I1 da revisão F3-T2): este item testa o nó LEGADO
-    // #alerta-psap, que com leo:params-engine ON sai da árvore quando a lista de
-    // alertas do motor chega (o aviso vira o bloco #alertas-motor). Este spec só
-    // liga leo:primary-engine, então segue válido ATÉ a virada — na virada,
-    // ramificar este item pela flag (esperar o bloco novo com params ON).
+    // Caminho com params OFF (legado pinta): o nó LEGADO #alerta-psap avisa.
+    // O caminho com params ON é o item 8-ON abaixo (gate da virada F5a fechado
+    // — o item foi ramificado pela flag como a revisão F3-T2 I1 pediu).
     // Gatilho real (alertaIT): Vel. IT (#b23) preenchida SEM PSAP (#b37)
     await setMedida(page, 'b23', '2.8');
     await expect(page.locator('#alerta-psap')).toBeVisible({ timeout: 10000 });
     await setMedida(page, 'b37', '36');
     await expect(page.locator('#alerta-psap')).toBeHidden({ timeout: 10000 });
+  });
+
+  test('item 8-ON — alerta PSAP estruturado com params senna93 (F5a)', async ({ page }) => {
+    // Mesmo gatilho, metade dos números LIGADA: quem avisa é a lista
+    // estruturada do motor (#alertas-motor, F3-T2); o nó legado #alerta-psap
+    // SAI da árvore quando a lista chega (SidebarLaudo, guard !alertasMotor).
+    await page.addInitScript(() => localStorage.setItem('leo:params-engine', 'senna93'));
+    await abrirLaudo(page, NOME_A);
+    await setMedida(page, 'b23', '2.8');
+    await expect(page.locator('#alertas-motor'))
+      .toContainText('Velocidade IT preenchida sem PSAP', { timeout: 15000 });
+    // enquanto a lista tem itens, o nó legado nem existe (não duplica aviso)
+    await expect(page.locator('#alerta-psap')).toHaveCount(0);
+    await setMedida(page, 'b37', '36');
+    // PSAP preenchida → lista esvazia e o CONTAINER sai do DOM (render
+    // condicional do SidebarLaudo). not.toContainText falharia com
+    // "element(s) not found" — a asserção certa é o container sumir.
+    await expect(page.locator('#alertas-motor')).toHaveCount(0, { timeout: 15000 });
   });
 
   test('item 9 — troca rápida de exame não vaza texto nem identidade', async ({ page }) => {
