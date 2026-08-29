@@ -18,7 +18,6 @@ import {
   classificarEstenoseTricuspide, classificarEstenosePulmonar,
 } from './calculos/valvas';
 import { calcWilkinsScore } from './achados/wilkins';
-import { gatilhosRamoB } from './calculos/diastologia';
 import { gerarAchados, setDiastModo, setDiastManual, setDiastTextoLivre } from './achados/index';
 import { gerarConclusao } from './conclusoes/index';
 
@@ -130,20 +129,17 @@ function gerarAlertas(m: MedidasEcoTT, d: CalculosDerivados): AlertaUI[] {
   // Sexo ausente: as frases silenciam, a tabela fica sem VR/realce e as réguas
   // de FE/imVE da diastologia só decidem onde ♂ e ♀ concordam — este alerta
   // explica o porquê em vez de deixar o vazio mudo (C8/D6/NOVO-2).
+  // A frase da FE Simpson (achados/sistolica.ts:jFE_Simpson) TAMBÉM silencia
+  // sem sexo, mesmo fora da zona ambígua da régua do ramo B (ex.: Simpson 45
+  // ou 60) — por isso o gate dispara sempre que a régua da FE Simpson foi
+  // consultada (`feSimpson !== null`), não só na faixa onde ♂/♀ discordam
+  // (revisão T4, achado Important).
   const temMedidaClinica = [
     m.camaras.raizAo, m.camaras.ae, m.camaras.ddve, m.camaras.septoIV,
     m.camaras.paredePosterior, m.camaras.dsve, m.camaras.vd,
     m.camaras.aoAscendente, m.camaras.arcoAo,
   ].some((v) => v !== null && v > 0);
-  // …e também quando uma régua dependente de sexo foi consultada na zona
-  // ambígua (exame só com diastologia/FE não tem medida de câmara nenhuma).
-  const { sexoAmbiguo } = gatilhosRamoB({
-    sexo: m.gerais.sexo,
-    feSimpson: m.sistolica.feSimpson,
-    feT: d.feT,
-    imVE: d.imVE,
-  });
-  if (!m.gerais.sexo && (temMedidaClinica || sexoAmbiguo)) {
+  if (!m.gerais.sexo && (temMedidaClinica || m.sistolica.feSimpson !== null)) {
     alertas.push({
       tipo: 'SEXO_AUSENTE',
       campo: 'sexo',

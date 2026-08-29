@@ -2,11 +2,18 @@
 // docs/planos/2026-08-28-diastologia-guideline-ase2016.md (D6 + NOVO-1 + NOVO-2).
 //
 // Postura C8 da casa: régua dependente de sexo NÃO roda calada no default
-// masculino. Sem sexo, o gatilho decide só onde ♂ e ♀ CONCORDAM:
+// masculino. Sem sexo, o GATILHO do ramo B (gatilhosRamoB) decide só onde
+// ♂ e ♀ CONCORDAM:
 //  - FE Simpson <52 (baixa nas duas) dispara · ≥54 (normal nas duas) não dispara
-//    · [52,54) discordam → não-avaliável + alerta SEXO_AUSENTE
-//  - imVE >115 dispara · ≤95 não · (95,115] discordam → não-avaliável + alerta
+//    · [52,54) discordam → não-avaliável
+//  - imVE >115 dispara · ≤95 não · (95,115] discordam → não-avaliável
 // NOVO-1: massa calculável com imVE null (sem peso/altura) → MASSA_NAO_INDEXAVEL.
+//
+// Revisão T4 (Important): o ALERTA SEXO_AUSENTE não fica mais preso à faixa
+// ambígua do gatilho — a frase da FE Simpson (achados/sistolica.ts:jFE_Simpson)
+// silencia sozinha sem sexo, em QUALQUER valor de Simpson. O motor dispara o
+// alerta sempre que a régua da FE Simpson foi consultada sem sexo
+// (`feSimpson !== null`), concordante ou não.
 //
 // Valores de reprodução do anexo normativo
 // (docs/planos/2026-08-28-auditoria-diastologia-ase2016.md, D6 e ADENDO NOVO-1/2).
@@ -45,7 +52,7 @@ describe('calcular() — sexo ausente: dupla concordância nos gatilhos (D6/NOVO
     assert.ok(tipos(r).includes('SEXO_AUSENTE'), `alerta ausente: ${JSON.stringify(tipos(r))}`);
   });
 
-  test('(b) sexo "" + Simpson 45 (baixa nas DUAS réguas) → ramo B decide; sem alerta de ambiguidade', () => {
+  test('(b) sexo "" + Simpson 45 (baixa nas DUAS réguas, zona CONCORDANTE) → ramo B decide E alerta SEXO_AUSENTE dispara', () => {
     const m = diastoleNormal();
     m.sistolica.feSimpson = 45;
     const r = calcular(m);
@@ -53,9 +60,23 @@ describe('calcular() — sexo ausente: dupla concordância nos gatilhos (D6/NOVO
       r.achados.some((a) => a.includes('Grau') || a.includes('Indeterminada') || a.includes('não determinado')),
       `ramo B deveria decidir: ${JSON.stringify(r.achados)}`
     );
-    // Comportamento declarado: exame só com diastologia/FE (nenhuma medida de
-    // câmara) e régua CONCORDANTE → nada a avisar sobre sexo.
-    assert.ok(!tipos(r).includes('SEXO_AUSENTE'), `alerta indevido: ${JSON.stringify(tipos(r))}`);
+    // Achado da revisão T4 (Important): a régua do gatilho concorda (♂/♀ ambos
+    // <52), mas a FRASE da FE Simpson (achados/sistolica.ts:jFE_Simpson) checa
+    // `!sexo` sozinha e SILENCIA de qualquer forma — exame só-diastologia/FE
+    // (nenhuma medida de câmara) fica sem nenhuma frase de FE e sem nenhum
+    // aviso, se o gate não disparasse aqui. Corrigido: o gate agora dispara
+    // sempre que `feSimpson !== null` sem sexo, não só na faixa ambígua do
+    // gatilho do ramo B.
+    assert.ok(tipos(r).includes('SEXO_AUSENTE'), `alerta ausente: ${JSON.stringify(tipos(r))}`);
+  });
+
+  test('(b2) sexo "" + Simpson 60 (normal nas DUAS réguas, zona CONCORDANTE) → alerta SEXO_AUSENTE dispara mesmo assim (contra-exemplo do revisor)', () => {
+    const m = diastoleNormal();
+    m.sistolica.feSimpson = 60;
+    const r = calcular(m);
+    // jFE_Simpson silencia a frase de FE sem sexo mesmo com FE normal — o
+    // médico precisa do aviso independente do valor de Simpson.
+    assert.ok(tipos(r).includes('SEXO_AUSENTE'), `alerta ausente: ${JSON.stringify(tipos(r))}`);
   });
 
   test('(c) sexo "" + imVE na zona ambígua (95,115] → massaAlta não dispara + alerta', () => {

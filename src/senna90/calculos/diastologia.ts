@@ -40,12 +40,10 @@ export interface InputsDiastologia {
   imVE: number | null;             // Índice massa VE (g/m²)
 }
 
-/** Gatilhos de seleção do algoritmo B + se a régua ficou ambígua por falta de sexo. */
+/** Gatilhos de seleção do algoritmo B. */
 export interface GatilhosRamoB {
   feBaixa: boolean;
   massaAlta: boolean;
-  /** Alguma régua dependente de sexo foi consultada onde ♂ e ♀ discordam. */
-  sexoAmbiguo: boolean;
 }
 
 /**
@@ -56,7 +54,11 @@ export interface GatilhosRamoB {
  * gatilho decide só onde as duas réguas CONCORDAM (FE <52 é baixa em ambas,
  * ≥54 normal em ambas; imVE >115 alta em ambas, ≤95 normal em ambas). Na faixa
  * de discordância — FE [52,54) · imVE (95,115] — o gatilho é NÃO-AVALIÁVEL
- * (não dispara) e o motor emite o alerta SEXO_AUSENTE (NOVO-2).
+ * (não dispara). O alerta SEXO_AUSENTE do motor (motor.ts) não depende mais
+ * dessa ambiguidade: dispara sempre que a régua da FE Simpson foi consultada
+ * sem sexo (`feSimpson !== null`), porque a FRASE da FE Simpson já silencia
+ * fora dessa faixa também (revisão T4 — `sexoAmbiguo` removido daqui, ficou
+ * morto no motor).
  *
  * ASE 2016: Simpson é o método recomendado — quando medido, ele DECIDE sozinho
  * (Teichholz não atropela um Simpson normal, D1). Sem Simpson, Teichholz decide.
@@ -82,7 +84,6 @@ export function gatilhosRamoB(i: {
   return {
     feBaixa: fe === true,
     massaAlta: massa === true,
-    sexoAmbiguo: fe === 'ambiguo' || massa === 'ambiguo',
   };
 }
 
