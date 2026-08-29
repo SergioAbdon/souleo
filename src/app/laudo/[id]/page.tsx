@@ -284,8 +284,17 @@ function LaudoPageInner() {
   // ia parar no motor de eco — tabela de medidas e conclusões que não são
   // desse exame. Só redireciona se AINDA NÃO foi emitido: carótidas já
   // assinadas pelo motor continuam abrindo/reimprimindo onde nasceram.
+  //
+  // X20: `jaEmitidoDoc` era `!!emitidoEm` — campo que `transferirExame`
+  // MANTÉM de propósito mesmo devolvendo o exame pro rascunho (status volta
+  // a 'andamento', ver `docFechado` abaixo). Um exame de texto transferido
+  // chegava aqui com `emitidoEm` ainda setado → guarda achava "já assinado,
+  // fica onde está" e NÃO redirecionava pro editor certo. Por `status`, o
+  // transferido (andamento) e o de texto genuinamente emitido passam a ser
+  // julgados pelo estado ATUAL do doc, não por um campo que sobrevive à
+  // transferência.
   const tipoId = (exame?.tipoExame as string) || '';
-  const jaEmitidoDoc = !!exame?.emitidoEm;
+  const jaEmitidoDoc = (exame?.status as string) === 'emitido';
   // Documento FECHADO pro rascunho (gate de `salvarLaudo`, fix2/n1). Não é
   // `emitidoEm`: `transferirExame` devolve o consumo, apaga o `pdfUrl` e põe
   // `status:'andamento'`, mas MANTÉM o `emitidoEm` — o médico que recebeu o

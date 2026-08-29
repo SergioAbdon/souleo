@@ -20,7 +20,7 @@ import { checkEmissao } from '@/lib/billing';
 import DicomGallery from '@/components/laudo/DicomGallery';
 import { podeEditarLaudo, podeRemoverDaFila, podeCorrigirAdministrativo, ehMedico } from '@/lib/permissoes';
 import StatusPill from '@/components/shell/StatusPill';
-import { TIPOS_LAUDO_PADRAO, modalidadeDe, type TipoLaudo } from '@/lib/tipos-laudo';
+import { TIPOS_LAUDO_PADRAO, modalidadeDe, rotaDoLaudo, type TipoLaudo } from '@/lib/tipos-laudo';
 import type { AcaoFeegow } from '@/lib/feegow-admin';
 
 // v3: helper pra enviar token Firebase nas chamadas Feegow
@@ -424,10 +424,13 @@ export default function Worklist() {
         abrirPdfUrl(dados.pdfUrl as string);
       } else {
         // Fallback: abrir o laudo em modo leitura (PDF ainda não foi gerado)
-        router.push('/laudo/' + exameId);
+        // — despacha pela modalidade real do tipo (X20), não sempre pro motor.
+        router.push(rotaDoLaudo(exameId, dados?.tipoExame as string | undefined, tiposMap));
       }
     } catch (e) {
       console.error('Erro ao abrir PDF:', e);
+      // Sem `dados` (a leitura falhou) não há tipo pra despachar — mesmo
+      // fallback de sempre, equivalente ao default de rotaDoLaudo p/ tipo ausente.
       router.push('/laudo/' + exameId);
     }
   }
@@ -442,11 +445,7 @@ export default function Worklist() {
       setAnexarPdf(item);
       return;
     }
-    if (modalidade === 'texto') {
-      router.push('/laudo-texto/' + item.id);
-    } else {
-      router.push('/laudo/' + item.id);
-    }
+    router.push(rotaDoLaudo(item.id, tipoId, tiposMap));
   }
 
   // ── Correção administrativa (S5-T5/D4) ──
@@ -518,7 +517,7 @@ export default function Worklist() {
       return;
     }
     if (!(await checarBillingOuAvisar())) return;
-    router.push(modalidade === 'texto' ? '/laudo-texto/' + item.id : '/laudo/' + item.id);
+    router.push(rotaDoLaudo(item.id, tipoId, tiposMap));
   }
 
   // Filtrar por status + busca texto
@@ -928,7 +927,13 @@ export default function Worklist() {
         exame={anexarPdf ? {
           id: anexarPdf.id,
           pacienteNome: anexarPdf.pacienteNome as string,
-          tipoExame: tiposMap[(anexarPdf.tipoExame as string) || '']?.nome || (anexarPdf.tipoExame as string),
+          // X21: `tipoExame` tem que continuar sendo o ID do catálogo — vai
+          // em `dadosFinais` pro /api/emitir, que grava por cima do campo no
+          // doc. Mandar o NOME (nome de exibição) corrompia o dado: a
+          // próxima leitura de `modalidadeDe` não reconhecia o id e caía no
+          // default 'motor'. Nome de exibição vai à parte, em `tipoNome`.
+          tipoExame: anexarPdf.tipoExame as string,
+          tipoNome: tiposMap[(anexarPdf.tipoExame as string) || '']?.nome,
           convenio: anexarPdf.convenio as string,
         } : null}
         wsId={workspace?.id || ''}

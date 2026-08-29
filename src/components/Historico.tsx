@@ -10,8 +10,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getHistorico, getExame, type HistoricoResult } from '@/lib/firestore';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
 import { podeCancelarLaudo } from '@/lib/permissoes';
-import { DocumentSnapshot } from 'firebase/firestore';
+import { DocumentSnapshot, collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
+import { db } from '@/lib/firebase';
+import { TIPOS_LAUDO_PADRAO, rotaDoLaudo, type TipoLaudo } from '@/lib/tipos-laudo';
 
 type ExameItem = Record<string, unknown> & {
   id: string; pacienteNome?: string; tipoExame?: string;
@@ -47,6 +49,27 @@ export default function Historico() {
   // Anti-corrida: troca de local dispara nova busca; a resposta lenta do local
   // anterior nao pode sobrescrever a lista do local atual.
   const genRef = useRef(0);
+
+  // Catálogo de tipos de laudo (X20) — mesmo padrão do Worklist/ficha do
+  // paciente: lido 1x no mount, fallback pro default embutido. Sem isso,
+  // "Ver"/imprimir não tinham como saber a modalidade real do tipo e caíam
+  // sempre no motor de eco (rotaDoLaudo precisa do catálogo pra decidir).
+  const [tipos, setTipos] = useState<TipoLaudo[]>(TIPOS_LAUDO_PADRAO);
+  useEffect(() => {
+    if (!wsIdSel) return;
+    (async () => {
+      try {
+        const snap = await getDocs(query(collection(db, 'workspaces', wsIdSel, 'tiposLaudo'), orderBy('ordem', 'asc')));
+        const lista = snap.docs.map(d => d.data() as TipoLaudo);
+        setTipos(lista.length > 0 ? lista : TIPOS_LAUDO_PADRAO);
+      } catch (e) {
+        console.error('carregar tiposLaudo:', e);
+        setTipos(TIPOS_LAUDO_PADRAO);
+      }
+    })();
+  }, [wsIdSel]);
+  const tiposMap: Record<string, TipoLaudo> = {};
+  for (const t of tipos) tiposMap[t.id] = t;
 
   // v3: Buscar dados com paginacao
   const fetchData = useCallback(async () => {
@@ -108,10 +131,12 @@ export default function Historico() {
       if (dados?.pdfUrl) {
         abrirPdfUrl(dados.pdfUrl as string);
       } else {
-        router.push('/laudo/' + exameId);
+        // X20: despacha pela modalidade real do tipo, não sempre pro motor.
+        router.push(rotaDoLaudo(exameId, dados?.tipoExame as string | undefined, tiposMap));
       }
     } catch (e) {
       console.error('Erro ao abrir PDF:', e);
+      // Sem `dados` (a leitura falhou) não há tipo pra despachar.
       router.push('/laudo/' + exameId);
     }
   }
@@ -247,7 +272,9 @@ export default function Historico() {
                   <td className="py-3 px-3 text-gray-400 text-xs">{fmtEmitido(ex)}</td>
                   <td className="py-3 px-3 text-right">
                     <div className="flex items-center justify-end gap-1.5">
-                      <button onClick={() => router.push('/laudo/' + ex.id)}
+                      {/* X20: rota por modalidade (rotaDoLaudo) — antes ia sempre pro
+                          motor de eco, mesmo com laudo de texto/pdf. */}
+                      <button onClick={() => router.push(rotaDoLaudo(ex.id, ex.tipoExame, tiposMap))}
                         className="bg-green-100 text-green-700 px-2.5 py-1 rounded text-xs font-semibold hover:bg-green-200 transition">
                         👁 Ver
                       </button>

@@ -25,7 +25,10 @@ const MENSAGENS_ERRO: Record<string, string> = {
   sem_permissao: 'Sem permissão para emitir neste local.',
 };
 
-type ExameRef = { id: string; pacienteNome?: string; tipoExame?: string; convenio?: string };
+// X21: `tipoExame` aqui é o ID do catálogo (vai em `dadosFinais` pro
+// /api/emitir tal como está — nunca o nome de exibição, que corrompia o
+// campo no doc). `tipoNome` é só pra exibição na UI deste modal.
+type ExameRef = { id: string; pacienteNome?: string; tipoExame?: string; tipoNome?: string; convenio?: string };
 
 type Props = {
   open: boolean;
@@ -119,7 +122,7 @@ export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid }
         <div className="p-5 space-y-3">
           <p className="text-sm text-gray-600">
             {exame.pacienteNome || 'Paciente'}
-            {exame.tipoExame ? ` · ${exame.tipoExame}` : ''}
+            {(exame.tipoNome ?? exame.tipoExame) ? ` · ${exame.tipoNome ?? exame.tipoExame}` : ''}
           </p>
 
           {erro && <div className="bg-red-50 text-red-700 text-sm p-2 rounded">{erro}</div>}

@@ -17,7 +17,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getPaciente, getExames } from '@/lib/firestore';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, orderBy, query } from 'firebase/firestore';
-import { TIPOS_LAUDO_PADRAO, TipoLaudo, modalidadeDe } from '@/lib/tipos-laudo';
+import { TIPOS_LAUDO_PADRAO, TipoLaudo, modalidadeDe, rotaDoLaudo } from '@/lib/tipos-laudo';
 import { fmtData, calcIdade, formatCpf } from '@/lib/paciente-fmt';
 import PageHeader from '@/components/shell/PageHeader';
 import StatusPill, { statusConhecido } from '@/components/shell/StatusPill';
@@ -86,9 +86,7 @@ export default function FichaPacientePage() {
   const naoRealizadosTotal = exames.filter(e => e.status === 'nao-realizado').length;
 
   function abrirLaudo(item: Exame) {
-    const tipoId = (item.tipoExame as string) || '';
-    const modalidade = modalidadeDe(tiposMap[tipoId], tipoId);
-    router.push(modalidade === 'texto' ? '/laudo-texto/' + item.id : '/laudo/' + item.id);
+    router.push(rotaDoLaudo(item.id, item.tipoExame as string | undefined, tiposMap));
   }
 
   // `st` vem de `statusConhecido()` — a MESMA normalização que a StatusPill
