@@ -68,12 +68,14 @@ describe('obterBrowser — reuso entre invocações', () => {
 });
 
 describe('ehErroDeConexao — só browser morto autoriza o retry', () => {
+  // Ponytail R2: só frases que o puppeteer-core REALMENTE lança — "target
+  // detached", "session detached" e "browser has disconnected" saíram da
+  // regex (nunca vêm dele) e saem daqui também.
   for (const msg of [
-    'Protocol error (Page.navigate): Target closed',
-    'Session closed. Most likely the page has been closed.',
-    'Connection closed',
+    'Connection closed.',
+    'Protocol error (X): Session closed.',
+    'Target closed',
     'Navigating frame was detached',
-    'Browser has disconnected',
   ]) {
     test(`retry em: ${msg}`, () => assert.equal(ehErroDeConexao(new Error(msg)), true));
   }

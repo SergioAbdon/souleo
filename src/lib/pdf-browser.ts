@@ -10,7 +10,7 @@
 import chromium from '@sparticuz/chromium';
 import puppeteer, { type Browser } from 'puppeteer-core';
 
-export type Lancador = () => Promise<Browser>;
+type Lancador = () => Promise<Browser>;
 
 // ── Resolver executável do Chrome (Vercel ou local) ──
 async function resolverExecutavel(): Promise<{ executablePath: string; args: string[]; headless: boolean }> {
@@ -44,7 +44,7 @@ async function resolverExecutavel(): Promise<{ executablePath: string; args: str
 // O viewport 1240×1754 é o mesmo de sempre e continua amarrado ao
 // `height:calc(100vh - 16mm)` das páginas de imagem (`laudo/[id]/page.tsx`):
 // mudar um sem o outro reflowa o grid 2×4 de imagens.
-export const lancarChromium: Lancador = async () => {
+const lancarChromium: Lancador = async () => {
   const { executablePath, args, headless } = await resolverExecutavel();
   return puppeteer.launch({
     args,
@@ -57,6 +57,9 @@ export const lancarChromium: Lancador = async () => {
 // ponytail: browser quente sem teto de vida — a instância pode acumular
 // memória do Chromium até o lambda reciclar. Teto conhecido; medir no Sentry
 // pós-deploy e, se aparecer OOM, expirar o browser por idade/nº de páginas.
+// ponytail: obterBrowser é público sem retry embutido — no 2º chamador que
+// precisar de página, extrair comPagina(fn) para não copiar o try/catch de
+// pdf-server.
 let browser: Browser | null = null;
 let lancando: Promise<Browser> | null = null;   // trava: 2 invocações simultâneas → 1 launch
 
@@ -88,7 +91,11 @@ export function descartarBrowser(): void {
 // detached from document") — um erro do próprio laudo virava relançamento do
 // Chromium e um segundo render de 15-60s pra falhar igual. Todo erro real de
 // conexão traz um dos fechamentos abaixo no texto.
-const ERRO_DE_CONEXAO = /target closed|session closed|connection closed|target detached|session detached|frame was detached|browser has disconnected/i;
+// Ponytail R2: só as frases que o puppeteer-core REALMENTE lança (Connection
+// closed / Session closed / Target closed / frame was detached) — "target
+// detached", "session detached" e "browser has disconnected" nunca saem
+// dele, eram cobertura morta que só alargava o retry sem motivo real.
+const ERRO_DE_CONEXAO = /target closed|session closed|connection closed|frame was detached/i;
 export function ehErroDeConexao(e: unknown): boolean {
   return ERRO_DE_CONEXAO.test(e instanceof Error ? e.message : String(e));
 }
