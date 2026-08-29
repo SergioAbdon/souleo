@@ -3,41 +3,18 @@
 // Extraído de /api/emitir em 17/05 — reusado por /api/emitir e
 // /api/corrigir-laudo (1 pipeline de PDF só, fonte única).
 // ══════════════════════════════════════════════════════════════════
-import chromium from '@sparticuz/chromium';
-import puppeteer, { type Browser } from 'puppeteer-core';
 import { getStorage } from 'firebase-admin/storage';
 import { getFirestore } from 'firebase-admin/firestore';
 import { assinarImagensExame, assinarUrlsNoHtml } from './imagens-dicom-admin';
 import { sanitizarNomeArq, pathPdf } from './pdf-path';
+import { obterBrowser, descartarBrowser, ehErroDeConexao } from './pdf-browser';
 
-// ── Resolver executável do Chrome (Vercel ou local) ──
-async function resolverExecutavel(): Promise<{ executablePath: string; args: string[]; headless: boolean }> {
-  const isVercel = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
-  if (isVercel) {
-    return {
-      executablePath: await chromium.executablePath(),
-      args: chromium.args,
-      headless: true,
-    };
-  }
-  // Dev local: Chrome do sistema
-  const localPaths = [
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/usr/bin/google-chrome',
-    '/usr/bin/chromium-browser',
-  ];
-  for (const path of localPaths) {
-    try {
-      const fs = await import('fs');
-      if (fs.existsSync(path)) {
-        return { executablePath: path, args: ['--no-sandbox', '--disable-setuid-sandbox'], headless: true };
-      }
-    } catch { /* tenta proximo */ }
-  }
-  throw new Error('Chrome nao encontrado');
-}
+// Teto da espera pelas fontes (S7-T0.2, achado P8). A moldura carrega IBM Plex
+// do fonts.googleapis.com em TODO render; `document.fonts.ready` espera o woff2
+// chegar. Com CDN fora do ar isso não pode segurar a emissão: estourado o teto,
+// o PDF sai na fonte de fallback — exatamente o que já acontecia hoje, só que
+// depois de 30s do `networkidle0` (e, pelo P4, com a franquia já cobrada).
+const TETO_FONTES_MS = 8000;
 
 // ── Salvar buffer de PDF pronto no Storage (Task 5: reusado pelo caminho
 // Puppeteer abaixo E pelo caminho de anexo direto em /api/emitir) ──
@@ -122,63 +99,75 @@ export async function gerarESalvarPdf(
   // `false` → nada é escrito e a função devolve null.
   podeSalvar?: () => Promise<boolean>,
 ): Promise<string | null> {
-  let browser: Browser | null = null;
-  try {
-    const { executablePath, args, headless } = await resolverExecutavel();
-    browser = await puppeteer.launch({
-      args,
-      executablePath,
-      headless,
-      defaultViewport: { width: 1240, height: 1754 },
-    });
-
-    const page = await browser.newPage();
-    // D5b: imagens DICOM nascem privadas no Storage — troca a URL canonica
-    // embutida no HTML (imagensSelecionadasPdf) por signed URL ANTES do
-    // Puppeteer buscar. Sem isso o <img src> da 403: o Chrome headless busca
-    // por rede, sem a credencial do Admin SDK. Ponto unico — cobre /api/emitir
-    // e /api/corrigir-laudo, os dois chamadores desta funcao.
-    const bucket = getStorage().bucket();
-    const urlsAssinadas = await assinarImagensExame(getFirestore(), bucket, wsId, exameId);
-    const htmlAssinado = assinarUrlsNoHtml(pdfHtml, urlsAssinadas);
-    // FAIL-LOUD (S4-T15 fix X4): se sobrou URL canonica de imagem DICOM, a
-    // assinatura nao cobriu tudo (imagem fora do exame, doc dessincronizado).
-    // Sem isto o Chrome headless toma 403 naquele <img> e o PDF ASSINADO sai
-    // com um retangulo vazio no lugar da imagem — sem erro nenhum. Melhor
-    // abortar a emissao que publicar laudo com buraco silencioso.
-    // Sem a barra final: a URL canonica gravada codifica o path inteiro
-    // (encodeURIComponent), entao ela aparece como `/dicom%2F...` — `/dicom`
-    // cobre as duas formas.
-    if (htmlAssinado.includes(`https://storage.googleapis.com/${bucket.name}/dicom`)) {
-      throw new Error('imagem não assinada — emissão abortada');
-    }
-    await page.setContent(htmlAssinado, { waitUntil: 'networkidle0', timeout: 30000 });
-    await page.evaluateHandle('document.fonts.ready');
-
-    const pdfBuffer = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: { top: 0, right: 0, bottom: 0, left: 0 },
-      preferCSSPageSize: true,
-    });
-
-    await browser.close();
-    browser = null;
-
-    if (podeSalvar && !(await podeSalvar())) return null;
-
-    const url = await salvarPdfBuffer(Buffer.from(pdfBuffer), wsId, exameId, nomeArq);
-    // Congela o HTML ORIGINAL (URLs canônicas, não as assinadas — signed URL
-    // expira) + o alvo real da escrita. Depois do PDF salvo e sem poder
-    // derrubá-lo. O alvo é o MESMO nome que `salvarPdfBuffer` acabou de usar
-    // (mesma função de sanitização, idempotente) — antes ele era redescoberto
-    // fazendo parse da URL lá em `correcao-admin.ts`, com o formato do path
-    // sabido em dois lugares.
-    await salvarSnapshotHtml(pdfHtml, wsId, exameId, sanitizarNomeArq(nomeArq, exameId));
-    return url;
-  } finally {
-    if (browser) {
-      try { await browser.close(); } catch { /* */ }
-    }
+  // D5b: imagens DICOM nascem privadas no Storage — troca a URL canonica
+  // embutida no HTML (imagensSelecionadasPdf) por signed URL ANTES do
+  // Puppeteer buscar. Sem isso o <img src> da 403: o Chrome headless busca
+  // por rede, sem a credencial do Admin SDK. Ponto unico — cobre /api/emitir
+  // e /api/corrigir-laudo, os dois chamadores desta funcao.
+  const bucket = getStorage().bucket();
+  const urlsAssinadas = await assinarImagensExame(getFirestore(), bucket, wsId, exameId);
+  const htmlAssinado = assinarUrlsNoHtml(pdfHtml, urlsAssinadas);
+  // FAIL-LOUD (S4-T15 fix X4): se sobrou URL canonica de imagem DICOM, a
+  // assinatura nao cobriu tudo (imagem fora do exame, doc dessincronizado).
+  // Sem isto o Chrome headless toma 403 naquele <img> e o PDF ASSINADO sai
+  // com um retangulo vazio no lugar da imagem — sem erro nenhum. Melhor
+  // abortar a emissao que publicar laudo com buraco silencioso.
+  // Sem a barra final: a URL canonica gravada codifica o path inteiro
+  // (encodeURIComponent), entao ela aparece como `/dicom%2F...` — `/dicom`
+  // cobre as duas formas.
+  if (htmlAssinado.includes(`https://storage.googleapis.com/${bucket.name}/dicom`)) {
+    throw new Error('imagem não assinada — emissão abortada');
   }
+  // S7-T0.2: uma página por emissão, num browser que sobrevive à invocação.
+  // Política de retry: UMA repetição, e só se o erro for de conexão — o
+  // browser reusado pode ter morrido entre invocações (instância congelada,
+  // OOM) e a gente só descobre ao usar. Erro do laudo ou timeout de fonte
+  // NÃO repete (dobraria a espera sem chance de dar certo).
+  const renderizar = async (): Promise<Uint8Array> => {
+    const page = await (await obterBrowser()).newPage();
+    try {
+      // `load` (não `networkidle0`): o evento já espera o CSS do <link> das
+      // fontes e as imagens do laudo — que é o que o PDF precisa —, sem os
+      // 500ms de silêncio de rede nem ficar refém de uma conexão pendurada.
+      // As fontes em si continuam esperadas explicitamente logo abaixo.
+      await page.setContent(htmlAssinado, { waitUntil: 'load', timeout: 30000 });
+      let teto: NodeJS.Timeout | undefined;
+      await Promise.race([
+        page.evaluateHandle('document.fonts.ready'),
+        new Promise<void>((r) => { teto = setTimeout(() => { console.warn('fontes: teto estourado, PDF sai em fallback'); r(); }, TETO_FONTES_MS); }),
+      ]);
+      clearTimeout(teto);
+      return await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: { top: 0, right: 0, bottom: 0, left: 0 },
+        preferCSSPageSize: true,
+      });
+    } finally {
+      // Fecha só a PÁGINA. O browser fica de pé para a próxima invocação.
+      await page.close().catch(() => { /* browser já morreu */ });
+    }
+  };
+
+  let pdfBuffer: Uint8Array;
+  try {
+    pdfBuffer = await renderizar();
+  } catch (e) {
+    if (!ehErroDeConexao(e)) throw e;
+    console.warn('browser reusado morreu, relançando:', e);
+    descartarBrowser();
+    pdfBuffer = await renderizar();
+  }
+
+  if (podeSalvar && !(await podeSalvar())) return null;
+
+  const url = await salvarPdfBuffer(Buffer.from(pdfBuffer), wsId, exameId, nomeArq);
+  // Congela o HTML ORIGINAL (URLs canônicas, não as assinadas — signed URL
+  // expira) + o alvo real da escrita. Depois do PDF salvo e sem poder
+  // derrubá-lo. O alvo é o MESMO nome que `salvarPdfBuffer` acabou de usar
+  // (mesma função de sanitização, idempotente) — antes ele era redescoberto
+  // fazendo parse da URL lá em `correcao-admin.ts`, com o formato do path
+  // sabido em dois lugares.
+  await salvarSnapshotHtml(pdfHtml, wsId, exameId, sanitizarNomeArq(nomeArq, exameId));
+  return url;
 }
