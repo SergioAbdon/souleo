@@ -114,7 +114,7 @@ aceita); raiz com VR "≤ N mm" por sexo+idade (WASE); ascendente "≤38/≤35";
 | Item | Decisão | Ref |
 |---|---|---|
 | E/e' na FA | **mantém >15** — CORRIGIDO 27/08 na leitura da F1: o docblock de `calculos/diastologia.ts` registra decisão explícita do Sergio ("E/e' septal isolado: >15, não >14 — esse é pra média septal+lateral"; "antes FA usava >14, agora >15 também"). Decisão documentada vence a recomendação da tabela A18. Vira item de veto **V12** | decisão Sergio registrada no código |
-| Dados insuficientes (sinusal) | exige **≥2 campos avaliados**; abaixo, ~~silêncio~~ (Senna90 vence A19 — falso normal morre) **[SUPERADO EM PARTE por 28/08: o silêncio vale SÓ para o ramo A (sinusal com FE preservada e massa normal), onde não há o que dizer. No ramo B (FE deprimida ou doença miocárdica) `<2 critérios avaliados` sai **Função Diastólica … Indeterminada**, não silêncio — lá existe achado a declarar (o gatilho sistólico/massa é real) e o que havia antes era um `return` Grau I incondicional, o falso-normal ao contrário]** | A19 · T3/T2c 28/08 |
+| Dados insuficientes (sinusal) | exige **≥2 campos avaliados**; abaixo, ~~silêncio~~ (Senna90 vence A19 — falso normal morre) **[SUPERADO EM PARTE por 28/08: o silêncio vale SÓ para o ramo A (sinusal com FE preservada e massa normal), onde não há o que dizer. No ramo B (FE deprimida ou doença miocárdica) `<2 critérios avaliados` sai "Função Diastólica … Indeterminada", não silêncio — lá existe achado a declarar (o gatilho sistólico/massa é real) e o que havia antes era um `return` Grau I incondicional, o falso-normal ao contrário]** | A19 · T3/T2c 28/08 |
 | Linha de números (j22) | monta só os campos preenchidos nos DOIS ramos (a lógica do j22FA vale pro sinusal) — mata "Relação E/A= ; " (B8) | — |
 | Detector de divergência manual | comparação por **chave exata** (índice), não `includes` — Grau I deixa de ser substring de Grau III (B6) | — |
 | Estado duplicado | UM adaptador `montarD` e UMA cópia do estado manual (B30) | — |
@@ -135,6 +135,13 @@ texto acima conflitar com uma destas linhas, valem estas:
 | Ramo B (suficiência) | regras diretas do fluxo mitral intactas (E/A ≥2 → III · E/A ≤0,8 com E ≤50 → I); a zona média exige **≥2 critérios avaliados** e a maioria decide — empate ou insuficiente → **Indeterminada** (ver supersessão na linha "Dados insuficientes" acima); maioria positiva sem E/A → classe "grau não determinado" | D2 · T3/T2c |
 | Empate na FA | maioria dos avaliados também na FA: empate 50% (2/4, 1/2) → **indeterminada**, não "pressão elevada". O `elevados >= 2` fixo chamava 2 de 4 de elevada e 1 de 2 de normal | T3 |
 | Sexo ausente (gatilho do ramo B) | as réguas dependentes de sexo (FE 52♂/54♀ · imVE 115♂/95♀) só decidem onde as **duas concordam**; na faixa discordante o gatilho é não-avaliável e não dispara — régua masculina calada é proibida (postura C8). O aviso é de **TELA** (`SEXO_AUSENTE`, `MASSA_NAO_INDEXAVEL`); nenhuma frase de laudo nova — o laudo descreve, não recomenda | D6/NOVO-1/NOVO-2 · T4 |
+
+**CORRIGIDO na revisão T5:** a linha F6-T1 da allowlist (`docs/planos/2026-08-27-senna93-divergencias-esperadas.md`)
+alegava que o matcher ser case-sensitive já bastava para não pegar o modo manual do médico. Falso —
+`DIAST_SENTENCAS[1..3].conclusao` e o banco de frases de fábrica (`src/lib/banco-frases.ts` ids 15-19) usam a
+MESMA capitalização do motor automático, então casam igual no matcher (inevitável para texto byte-idêntico,
+não uma proteção real). A mitigação de fato é: sumiço de grau em linha própria, o guarda vivo da frase nova
+da T2b, e os guardas de FA.
 
 ### 2.5 Valvas
 
