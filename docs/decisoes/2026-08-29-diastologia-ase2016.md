@@ -37,7 +37,7 @@ Memória: `feedback_guidelines_mandam.md`.
 - Achado: **"Disfunção Diastólica do ventrículo esquerdo presente, de grau não determinado."**
 - Conclusão: **"Disfunção diastólica do ventrículo esquerdo de grau não determinado."**
 - Alerta novo (tela): "Massa do VE calculada mas não indexável — informe peso e altura para o índice de massa."
-- Alerta alterado (tela): "Sexo não informado — referências e classificações dependentes de sexo estão suprimidas ou limitadas."
+- Alerta alterado (tela): "Sexo não informado — referências e classificações dependentes de sexo podem ficar suprimidas ou limitadas."
 
 ## Prova de segurança
 
@@ -73,6 +73,13 @@ permanente ("os resultados seguem os guidelines"):
 | C-I1 | O achado terminava em "(fluxo mitral não avaliado)", mas 2 das 3 saídas disparam com **E/A medido** — e o laudo imprime esse E/A na linha de cima. O parêntese contradizia a própria folha | Parêntese removido. Frase final: **"Disfunção Diastólica do ventrículo esquerdo presente, de grau não determinado."** Conclusão inalterada |
 | C-I2 | Inversão de PRESENÇA entre ramos: mesmos dados (e' 5 · LAVI 40 · sem E/A) davam "disfunção presente" com FE 60 (ramo A) e "Indeterminada" com FE 40 (ramo B) — o ventrículo pior recebia a frase mais branda | Fecha o item 3 do "Registrado": **split por gatilho**. Sem fluxo mitral, `feBaixa` afirma a presença (premissa do Algoritmo B do ASE 2016) → grau não determinado, em maioria+/−/empate/<2. Gatilho só de MASSA (HVE não prova disfunção diastólica) mantém Indeterminada fora da maioria+ |
 | C-M3 | Campo `NaN`/`undefined` contava como critério AVALIADO e NEGATIVO (toda comparação com NaN é `false`) — voto silencioso contra a disfunção, e ainda empurrava `avaliados` acima do piso de 2 | Predicado único `medido()` (`Number.isFinite`) nas três contagens: Fig. 8, Fig. 7 e FA |
+
+Escopo honesto da C-I2 (contagem da re-verificação): TODAS as células feBaixa sem fluxo
+mitral afirmam presença agora — 239/324 flipparam de Indeterminada, inclusive as de
+critérios de pressão negativos (defensável pela premissa do Algoritmo B: FE deprimida
+implica disfunção; registrado para o Sergio como afirmação nova, não como '3 células').
+Mensagem do SEXO_AUSENTE ajustada na re-verificação: "podem ficar suprimidas ou
+limitadas" (o "estão" afirmava supressão em exames onde nada foi suprimido).
 
 Zona média (fluxo mitral medido) **não** mudou: empate/insuficiente segue Indeterminada
 nos dois ramos — é o pino anti-inversão da revisão final F1, e ele continua verde.

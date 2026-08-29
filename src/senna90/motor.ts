@@ -157,7 +157,7 @@ function gerarAlertas(m: MedidasEcoTT, d: CalculosDerivados): AlertaUI[] {
     alertas.push({
       tipo: 'SEXO_AUSENTE',
       campo: 'sexo',
-      mensagem: 'Sexo não informado — referências e classificações dependentes de sexo estão suprimidas ou limitadas.',
+      mensagem: 'Sexo não informado — referências e classificações dependentes de sexo podem ficar suprimidas ou limitadas.',
     });
   }
 
