@@ -289,7 +289,7 @@ rodapeFontes: string exata pinada + as 4 chaves de FONTES_POR_DOMINIO.
     alertas.push({
       tipo: 'SEXO_AUSENTE',
       campo: 'sexo',
-      mensagem: 'Sexo não informado — referências e classificações dependentes de sexo estão suprimidas ou limitadas.',
+      mensagem: 'Sexo não informado — referências e classificações dependentes de sexo podem ficar suprimidas ou limitadas.',
       // (atualizada na T4 da onda diastologia 28/08)
     });
   }

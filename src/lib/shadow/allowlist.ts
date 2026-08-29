@@ -28,6 +28,20 @@ function fam(ref: string, ...res: RegExp[]): MatcherFrase {
   return { ref, casa: (velho, novo) => res.some((r) => r.test(velho) || r.test(novo)) };
 }
 
+/**
+ * Frase de GRAU diastológico, nas duas redações (achado do motor novo × conclusão
+ * herdada do legado). Usada pelos matchers de SUMIÇO (F6-T1) e de APARIÇÃO
+ * (F6-T2) — direções opostas da MESMA família, que precisam reconhecer
+ * exatamente o mesmo conjunto de frases (revisão da tríade, Ponytail P-2: a
+ * dupla estava copiada nos dois lugares e podia divergir numa edição só).
+ */
+const REGEX_GRAU: RegExp[] = [
+  /Disfunção Diastólica do ventrículo esquerdo de Grau (III|II|I) \(/,
+  /Disfunção diastólica de grau (III|II|I) do ventrículo esquerdo \(/,
+];
+
+const ehGrau = (s: string): boolean => REGEX_GRAU.some((r) => r.test(s));
+
 // ── ORDEM IMPORTA: o comparador usa o PRIMEIRO matcher que casar ──
 export const FRASES_ESPERADAS: MatcherFrase[] = [
   // Rodapé unificado (B20) — só aparece se o texto comparado carregar o rodapé.
@@ -158,16 +172,16 @@ export const FRASES_ESPERADAS: MatcherFrase[] = [
   // Todos case-SENSITIVE: a redação minúscula do modo manual do médico
   // (achados/diastologia.ts DIAST_SENTENCAS) não é flip do motor.
 
-  // F6-T1 · sumiço da frase de GRAU. Achado calculos/diastologia.ts:147,150,
-  // 180-181,226,233,236 · conclusão achados/diastologia.ts:117-119. Porta
-  // única do sumiço na onda inteira (T1 troca o ramo; T2b/T3 trocam o grau
-  // por outra classe). A APARIÇÃO de grau é a F6-T2, direção oposta.
+  // F6-T1 · sumiço da frase de GRAU. Achado: as saídas de grau de `ramoA` e
+  // `ramoB` (calculos/diastologia.ts) · conclusão: `j43` (achados/diastologia.ts).
+  // Citação por SÍMBOLO, não por linha (revisão da tríade, R-I1: as três
+  // citações :161/:180/:213 já apontavam para o código errado depois da
+  // extração dos ramos — número de linha apodrece, nome de função não).
+  // Porta única do sumiço na onda inteira (T1 troca o ramo; T2b/T3 trocam o
+  // grau por outra classe). A APARIÇÃO de grau é a F6-T2, direção oposta.
   {
     ref: 'F6-T1 Diastológica',
-    casa: (velho, novo) =>
-      novo === '' &&
-      (/Disfunção Diastólica do ventrículo esquerdo de Grau (III|II|I) \(/.test(velho) ||
-       /Disfunção diastólica de grau (III|II|I) do ventrículo esquerdo \(/.test(velho)),
+    casa: (velho, novo) => novo === '' && ehGrau(velho),
   },
 
   // F6-T1 · concLARS (conclusoes/index.ts:209-220) só fala do strain atrial
@@ -177,9 +191,10 @@ export const FRASES_ESPERADAS: MatcherFrase[] = [
   // esta onda mudou nos dois sentidos.
   fam('F6-T1 Diastológica', /Strain atrial esquerdo (preservado|reduzido)/),
 
-  // F6-T2 · maioria dos AVALIADOS (calculos/diastologia.ts:216-218): o que
-  // SAI de cena — preservados no empate (n=2,c=1) e Indeterminada quando a
-  // maioria passa a graduar (n=2,c=2 · n=3,c=2).
+  // F6-T2 · maioria dos AVALIADOS (`maioriaPressaoEnchimento` + a contagem de
+  // entrada de `ramoA`, calculos/diastologia.ts — citação por símbolo, R-I1):
+  // o que SAI de cena — preservados no empate (n=2,c=1) e Indeterminada quando
+  // a maioria passa a graduar (n=2,c=2 · n=3,c=2).
   // Estreitado pelo F1 (29/08): com c=2 puxado pelo e' septal, a zona média do
   // ramo A recai em Indeterminada (Fig. 8 empatada) e NÃO flipa — o sumiço da
   // Indeterminada sobra para os casos em que os 2 positivos são critérios de
@@ -195,22 +210,28 @@ export const FRASES_ESPERADAS: MatcherFrase[] = [
   // F6-T2 · e o que ENTRA: a frase de grau que a maioria passou a emitir.
   {
     ref: 'F6-T2 Diastológica',
-    casa: (velho, novo) =>
-      velho === '' &&
-      (/Disfunção Diastólica do ventrículo esquerdo de Grau (III|II|I) \(/.test(novo) ||
-       /Disfunção diastólica de grau (III|II|I) do ventrículo esquerdo \(/.test(novo)),
+    casa: (velho, novo) => velho === '' && ehGrau(novo),
   },
 
-  // F6-T2b · FRASE NOVA (SEM_GRADUACAO, calculos/diastologia.ts:22 +
-  // achados/diastologia.ts:115): graduação exige fluxo mitral (anexo §8.2).
-  // Direcional — o sumiço de uma frase que o motor antigo nunca escreveu
-  // seria bug, e segue alarmando.
+  // F6-T2b · FRASE NOVA (`SEM_GRADUACAO` em calculos/diastologia.ts + o ramo
+  // dela em `j43`, achados/diastologia.ts): graduação exige fluxo mitral
+  // (anexo §8.2). Direcional — o sumiço de uma frase que o motor antigo nunca
+  // escreveu seria bug, e segue alarmando.
+  //
+  // A regex ancora no trecho "de grau não determinado", que é o núcleo comum
+  // do achado e da conclusão — sobreviveu à queda do parêntese "(fluxo mitral
+  // não avaliado)" na revisão da tríade (C-I1), conferida contra a constante.
+  // Cobre também a AMPLIAÇÃO da classe pela C-I2 (ramo B sem fluxo mitral com
+  // FE deprimida agora cai aqui em vez de "Indeterminada"): mesma frase, mesma
+  // direção de aparição — o sumiço da "Indeterminada" do lado velho sai pelo
+  // matcher da F6-T2 acima.
   {
     ref: 'F6-T2b Diastológica',
     casa: (velho, novo) => velho === '' && /de grau não determinado/.test(novo),
   },
 
-  // F6-T3 · empate da FA (calculos/diastologia.ts:290): 2/4 e 1/2 deixam de
+  // F6-T3 · empate da FA (`calcularDiastologiaFA`, calculos/diastologia.ts —
+  // citação por símbolo, R-I1): 2/4 e 1/2 deixam de
   // ser "elevada"/"normal". O ACHADO da FA é o mesmo texto nas 4 sentinelas
   // (achados/diastologia.ts:62) — só a conclusão (j43:107-109) flipa.
   {

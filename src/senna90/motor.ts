@@ -69,6 +69,21 @@ export function calcularDerivados(medidas: MedidasEcoTT): CalculosDerivados {
 }
 
 /**
+ * O exame tem ALGUMA medida numérica preenchida, em qualquer grupo?
+ *
+ * Varre os grupos em vez de listar campo a campo (revisão da tríade, R-I2):
+ * régua nova entra no motor sem precisar ser lembrada aqui. Fora da varredura:
+ * `selecaoManual` (escolha de FRASE do médico no modo manual, não medida) e o
+ * grupo `wilkins` (pontuação 0-4 de escore, com alerta próprio).
+ */
+function temAlgumaMedida(m: MedidasEcoTT): boolean {
+  const { selecaoManual: _sel, ...diastolica } = m.diastolica;
+  return [m.gerais, m.camaras, diastolica, m.sistolica, m.valvas, m.estenoses]
+    .some((grupo) => Object.values(grupo)
+      .some((v) => typeof v === 'number' && Number.isFinite(v) && v > 0));
+}
+
+/**
  * Gera lista de alertas visuais.
  */
 function gerarAlertas(m: MedidasEcoTT, d: CalculosDerivados): AlertaUI[] {
@@ -131,19 +146,18 @@ function gerarAlertas(m: MedidasEcoTT, d: CalculosDerivados): AlertaUI[] {
   // explica o porquê em vez de deixar o vazio mudo (C8/D6/NOVO-2).
   // A frase da FE Simpson (achados/sistolica.ts:jFE_Simpson) TAMBÉM silencia
   // sem sexo, mesmo fora da zona ambígua da régua do ramo B (ex.: Simpson 45
-  // ou 60) — por isso o gate dispara sempre que a régua da FE Simpson foi
-  // consultada (`feSimpson !== null`), não só na faixa onde ♂/♀ discordam
-  // (revisão T4, achado Important).
-  const temMedidaClinica = [
-    m.camaras.raizAo, m.camaras.ae, m.camaras.ddve, m.camaras.septoIV,
-    m.camaras.paredePosterior, m.camaras.dsve, m.camaras.vd,
-    m.camaras.aoAscendente, m.camaras.arcoAo,
-  ].some((v) => v !== null && v > 0);
-  if (!m.gerais.sexo && (temMedidaClinica || m.sistolica.feSimpson !== null)) {
+  // ou 60) — por isso o gate não olha faixa de valor (revisão T4).
+  //
+  // Revisão da tríade (R-I2, 29/08): a lista à mão (9 câmaras + `feSimpson`)
+  // era a mesma classe de bug duas vezes seguida — cada régua nova dependente
+  // de sexo tinha de ser lembrada aqui, e a T4 já teve de emendar a FE Simpson.
+  // A regra honesta não enumera: o exame tem ALGUMA medida e não tem sexo →
+  // avisa. Um exame em branco continua calado (AL11).
+  if (!m.gerais.sexo && temAlgumaMedida(m)) {
     alertas.push({
       tipo: 'SEXO_AUSENTE',
       campo: 'sexo',
-      mensagem: 'Sexo não informado — referências e classificações dependentes de sexo estão suprimidas ou limitadas.',
+      mensagem: 'Sexo não informado — referências e classificações dependentes de sexo podem ficar suprimidas ou limitadas.',
     });
   }
 

@@ -134,7 +134,7 @@ FE ≥54 normal em ambas; imVE >115 alto em ambos; ≤95 normal em ambos). Zona 
 
 - [ ] `docs/planos/2026-08-27-senna93-divergencias-esperadas.md`: UMA linha nova por
   mudança de frase observável (ref `F6-diast` ou continuação do padrão — conferir o
-  formato que o tripwire extrai `F[0-9]-\w+`; usar `F6-T1..T4` com Domínio Diastológica)
+  formato que o tripwire extrai `F[0-9]-\w+`; usar `F6-T1/T2/T2b/T3` com Domínio Diastológica)
   + matchers correspondentes em `src/lib/shadow/allowlist.ts` (DIRECIONAIS onde couber,
   como o precedente A12/B12). Pins do teste de cobertura (38 → N) sobem juntos.
 - [ ] Spec anotada (`docs/superpowers/specs/2026-08-27-senna93-unificacao.md` §2.4):

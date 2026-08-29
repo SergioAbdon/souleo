@@ -23,7 +23,7 @@ import { calcular } from '../../src/senna90/motor.ts';
 import { medidasVazias } from '../../src/senna90/tests/helpers.ts';
 
 const PRESERVADOS = 'Índices diastólicos do ventrículo esquerdo preservados';
-const MSG_SEXO = 'Sexo não informado — referências e classificações dependentes de sexo estão suprimidas ou limitadas.';
+const MSG_SEXO = 'Sexo não informado — referências e classificações dependentes de sexo podem ficar suprimidas ou limitadas.';
 const MSG_MASSA = 'Massa do VE calculada mas não indexável — informe peso e altura para o índice de massa.';
 
 const tipos = (r) => r.alertas.map((a) => a.tipo);

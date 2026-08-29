@@ -14,3 +14,4 @@ Ordem cronológica. Ler o(s) recente(s) antes de mexer na área relacionada.
 | 2026-08-09 | [Seção 1: contas, acesso e regras do Firestore](2026-08-09-secao1-contas-e-acesso.md) ⚠️ **Fase 6 é do Claude da clínica** | Contas / auth / segurança |
 | 2026-08-10 | [Seção "Integrações"](2026-08-10-secao-integracoes.md) 💡 ideia registrada, não implementada | Integrações / Feegow / Orthanc / Wader |
 | 2026-08-10 | [Conta duplicada Yahoo×Gmail trava a clínica](2026-08-10-conta-duplicada-yahoo-gmail-quebra-clinica.md) ⚠️ **login da clínica = Yahoo; Gmail órfã** | Contas / auth / Feegow / segurança |
+| 2026-08-29 | [Diastologia conforme ASE/EACVI 2016](2026-08-29-diastologia-ase2016.md) — regra permanente "os resultados seguem os guidelines" | Senna90 / motor / diastologia |
