@@ -10,7 +10,7 @@ import { gerarESalvarPdf, salvarPdfBuffer } from '@/lib/pdf-server';
 import { validarPdfBase64 } from '@/lib/pdf-validacao';
 import { adminDb, requireUid } from '@/lib/auth-admin';
 import { resolverPapel } from '@/lib/exame-admin';
-import { emitirComCobranca, emissaoKeyValida, refEmissaoPrivada } from '@/lib/emitir-admin';
+import { emitirComCobranca, emissaoKeyValida, marcarPdfPronto } from '@/lib/emitir-admin';
 import { prefixoArquivoPorTipo } from '@/lib/dicom-sr-mapping';
 
 // ── Config Next.js ──
@@ -177,8 +177,7 @@ export async function POST(req: NextRequest) {
     // (ou o lambda morrer aqui), o pior caso e o proximo retry regerar o PDF:
     // mesmo efeito, nunca cobranca nova.
     if (pdfUrl) {
-      await refEmissaoPrivada(dbAdmin, wsId, exameId)
-        .set({ pdfPendente: false, atualizadoEm: FieldValue.serverTimestamp() }, { merge: true })
+      await marcarPdfPronto(dbAdmin, wsId, exameId)
         .catch((e) => console.error('marcar PDF pronto (nao-critico):', e));
     }
 

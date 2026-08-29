@@ -169,6 +169,10 @@ function LaudoPageInner() {
   // manda a mesma chave e o servidor devolve a emissão que existe em vez de
   // debitar de novo. Só zera no sucesso: reemissão deliberada = chave nova,
   // e essa cobra (política registrada).
+  // Ref simples (sem o exameId junto) é seguro aqui porque esta página
+  // remonta por exame — `key={String(params.id)}` no wrapper (linha ~82)
+  // — então trocar de laudo já reseta o ref sozinho; laudo-texto/[id] e o
+  // modal de anexar PDF não remontam por id e por isso guardam `{id, key}`.
   const emissaoKeyRef = useRef<string | null>(null);
   // Wrapper único do motor (S5-T7, nº12): `sc()` (declarado dentro de
   // `motorInicializar`) é calc() + disparo do Senna90 + shadow mode — só

@@ -207,13 +207,15 @@ describe('cliente antigo / key invalida — comportamento legado (aditivo)', () 
     assert.equal(await usada(), 2);
     assert.equal(await consumos(id), 2);
     assert.equal((await exameDoc(id)).emissaoKeyAtual, undefined);
-    assert.equal((await privDoc(id)).emissaoKey, null, 'sem key nao cria trava');
+    // Ponytail R3: sem key nao ha o que travar — a gaveta privada nem chega
+    // a ser criada (doc morto seria pior que "sem trava").
+    assert.equal(await privDoc(id), undefined, 'sem key nao cria doc na gaveta privada');
   });
 
   test('(d) key malformada nao vira trava (a rota ja devolveu 400; a lib ignora)', async () => {
     const id = await seedExame();
     await emitir(id, 'nao-e-uuid');
-    assert.equal((await privDoc(id)).emissaoKey, null);
+    assert.equal(await privDoc(id), undefined);
     await emitir(id, 'nao-e-uuid');
     assert.equal(await usada(), 2);
   });

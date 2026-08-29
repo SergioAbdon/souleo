@@ -9,6 +9,7 @@
 // ══════════════════════════════════════════════════════════════════
 import type { Firestore, DocumentReference } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
+import { refEmissaoPrivada } from './emitir-admin';
 
 // Ids interpolados no path do Admin SDK (workspaces/${wsId}, profissionais/${uid}):
 // um id com '/' remonta o path e escaparia da colecao. Duplicado de convite-server.ts
@@ -178,6 +179,10 @@ export async function apagarExame(db: Firestore, p: Params): Promise<Resultado> 
   const lote = db.batch();
   lote.delete(exameSnap.ref);
   if (acc && idValido(acc)) lote.delete(db.doc(`workspaces/${p.wsId}/accIndex/${acc}`));
+  // Ruflo M3: a gaveta privada de idempotencia (emitir-admin.ts) e outro
+  // satelite do mesmo tipo do accIndex acima — sem isto ficava orfa (doc
+  // morto em privado/emissao/exames/{exameId}, nunca mais lido nem apagado).
+  lote.delete(refEmissaoPrivada(db, p.wsId, p.exameId));
   await lote.commit();
   await log(db, 'exclusao_exame', p, exame, { estavaEmitido: emitido });
   return { ok: true };
