@@ -54,6 +54,9 @@ export const lancarChromium: Lancador = async () => {
   });
 };
 
+// ponytail: browser quente sem teto de vida — a instância pode acumular
+// memória do Chromium até o lambda reciclar. Teto conhecido; medir no Sentry
+// pós-deploy e, se aparecer OOM, expirar o browser por idade/nº de páginas.
 let browser: Browser | null = null;
 let lancando: Promise<Browser> | null = null;   // trava: 2 invocações simultâneas → 1 launch
 
@@ -80,7 +83,12 @@ export function descartarBrowser(): void {
 // Erro de "o browser reusado morreu no meio" — CDP fecha a sessão/conexão.
 // Só ESTES autorizam o retry: um timeout de fonte ou um erro do laudo não
 // pode ser repetido (dobraria a espera sem chance de dar certo).
-const ERRO_DE_CONEXAO = /target closed|session closed|connection closed|protocol error|disconnected|detached/i;
+// Frases INTEIRAS, não palavras soltas (M5): `protocol error` e `detached`
+// sozinhos pegavam erro de DOM ("Protocol error (DOM.describeNode): Node is
+// detached from document") — um erro do próprio laudo virava relançamento do
+// Chromium e um segundo render de 15-60s pra falhar igual. Todo erro real de
+// conexão traz um dos fechamentos abaixo no texto.
+const ERRO_DE_CONEXAO = /target closed|session closed|connection closed|target detached|session detached|frame was detached|browser has disconnected/i;
 export function ehErroDeConexao(e: unknown): boolean {
   return ERRO_DE_CONEXAO.test(e instanceof Error ? e.message : String(e));
 }

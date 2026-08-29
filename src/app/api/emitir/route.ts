@@ -10,7 +10,7 @@ import { gerarESalvarPdf, salvarPdfBuffer } from '@/lib/pdf-server';
 import { validarPdfBase64 } from '@/lib/pdf-validacao';
 import { adminDb, requireUid } from '@/lib/auth-admin';
 import { resolverPapel } from '@/lib/exame-admin';
-import { emitirComCobranca, emissaoKeyValida } from '@/lib/emitir-admin';
+import { emitirComCobranca, emissaoKeyValida, refEmissaoPrivada } from '@/lib/emitir-admin';
 import { prefixoArquivoPorTipo } from '@/lib/dicom-sr-mapping';
 
 // ── Config Next.js ──
@@ -120,25 +120,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(resultado, { status: status[resultado.motivo] ?? 200 });
     }
 
-    // Retry da MESMA tentativa (E1): a emissao ja commitou antes — devolve o
-    // que existe, sem log novo e sem passar de novo pelo Puppeteer (a 1a
-    // chamada pode estar gerando o PDF neste exato momento).
-    if (resultado.replay) {
+    // Retry da MESMA tentativa (E1): a emissao ja commitou antes.
+    // PDF JA SALVO → devolve o que existe, sem log novo e sem Puppeteer.
+    if (resultado.replay && !resultado.pdfPendente) {
       return NextResponse.json({ ok: true, tipo: resultado.tipo, pdfUrl: resultado.pdfUrl, pdfErro: null, replay: true });
     }
+    // PDF PENDENTE (C1) → cai no bloco 3 e GERA. Era aqui que o retry dizia
+    // "sucesso" com `pdfUrl: null`: a 1a chamada morria no Puppeteer depois da
+    // transacao (lambda estourou o maxDuration, aba fechada) e o laudo ficava
+    // emitido, cobrado e sem PDF assinado — com as 3 telas dizendo que deu
+    // certo. Quem manda regerar e a gaveta server-only, nao a requisicao.
 
     // ══ 2. AUDIT LOG (nao critico) ══
-    try {
-      await dbAdmin.collection('logs').add({
-        tipo: 'emissao',
-        exameId,
-        wsId,
-        reemissao: !!(dadosFinais.reemissao),
-        identificacaoAlterada: !!(dadosFinais.identificacaoAlterada),
-        ts: FieldValue.serverTimestamp(),
-        medicoUid,
-      });
-    } catch { /* log nao pode quebrar emissao */ }
+    // So na emissao NOVA: o replay nao e um ato novo de emissao.
+    if (!resultado.replay) {
+      try {
+        await dbAdmin.collection('logs').add({
+          tipo: 'emissao',
+          exameId,
+          wsId,
+          reemissao: !!(dadosFinais.reemissao),
+          identificacaoAlterada: !!(dadosFinais.identificacaoAlterada),
+          ts: FieldValue.serverTimestamp(),
+          medicoUid,
+        });
+      } catch { /* log nao pode quebrar emissao */ }
+    }
 
     // ══ 3. PDF: gerado do HTML (motor/texto) OU anexado pronto (modalidade
     // 'pdf') — nao critico, a emissao ja foi confirmada na transacao acima.
@@ -164,11 +171,23 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Baixa a bandeira de "PDF pendente" (C1) — SO com um PDF salvo de fato,
+    // pra bandeira baixa significar exatamente "existe PDF assinado". Dai em
+    // diante o retry da mesma tentativa e replay puro. Se esta escrita falhar
+    // (ou o lambda morrer aqui), o pior caso e o proximo retry regerar o PDF:
+    // mesmo efeito, nunca cobranca nova.
+    if (pdfUrl) {
+      await refEmissaoPrivada(dbAdmin, wsId, exameId)
+        .set({ pdfPendente: false, atualizadoEm: FieldValue.serverTimestamp() }, { merge: true })
+        .catch((e) => console.error('marcar PDF pronto (nao-critico):', e));
+    }
+
     return NextResponse.json({
       ok: true,
       tipo: resultado.tipo,
       pdfUrl,
       pdfErro,
+      ...(resultado.replay ? { replay: true } : {}),
     });
   } catch (e) {
     console.error('API /emitir error:', e);

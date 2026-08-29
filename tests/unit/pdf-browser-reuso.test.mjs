@@ -81,6 +81,9 @@ describe('ehErroDeConexao — só browser morto autoriza o retry', () => {
     'imagem não assinada — emissão abortada',
     'Navigation timeout of 30000 ms exceeded',
     'Chrome nao encontrado',
+    // M5: erro do DOM do laudo, não do browser. Com `protocol error`/`detached`
+    // soltos na regex isto relançava o Chromium e pagava outro render inteiro.
+    'Protocol error (DOM.describeNode): Node is detached from document',
   ]) {
     test(`NÃO repete: ${msg}`, () => assert.equal(ehErroDeConexao(new Error(msg)), false));
   }

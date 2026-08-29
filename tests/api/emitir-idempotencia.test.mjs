@@ -8,12 +8,17 @@
 // debitada -> clica de novo -> 2a franquia. Com a emissaoKey, o retry da
 // MESMA tentativa e replay (nao cobra); reemissao deliberada (outra key)
 // continua cobrando (politica P3/I2, registrada).
+//
+// Revisao onda-0 (C1+I1): o estado de idempotencia mora na gaveta
+// `workspaces/{ws}/privado/emissao/exames/{exameId}` (deny-by-default pra todo
+// cliente) e carrega `pdfPendente` — replay de emissao com PDF pendente manda
+// a rota REGERAR em vez de dizer "sucesso" com pdfUrl nulo.
 // ══════════════════════════════════════════════════════════════════
 import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
-import { emitirComCobranca, emissaoKeyValida } from '../../src/lib/emitir-admin.ts';
+import { emitirComCobranca, emissaoKeyValida, refEmissaoPrivada } from '../../src/lib/emitir-admin.ts';
 
 let db;
 const CONTA = 'contaE', WS = 'wsE';
@@ -55,6 +60,11 @@ const usada = async () => ((await db.doc(`subscriptions/${CONTA}`).get()).data()
 const consumos = async (exameId) =>
   (await db.collection('consumo').where('exameId', '==', exameId).get()).size;
 const exameDoc = async (exameId) => (await db.doc(`workspaces/${WS}/exames/${exameId}`).get()).data();
+// Gaveta server-only: a fonte da verdade da idempotencia (I1).
+const privDoc = async (exameId) => (await refEmissaoPrivada(db, WS, exameId).get()).data();
+// O que a rota faz depois de salvar o PDF (baixa a bandeira de pendente).
+const pdfSalvo = (exameId) =>
+  refEmissaoPrivada(db, WS, exameId).set({ pdfPendente: false }, { merge: true });
 
 describe('emissaoKeyValida (formato UUID — rota devolve 400 no resto)', () => {
   test('UUID v4 passa', () => assert.equal(emissaoKeyValida(KEY_A), true));
@@ -83,18 +93,37 @@ describe('E1 — replay da MESMA tentativa nao cobra de novo', () => {
     assert.equal(await consumos(id), 1, 'ledger com consumo duplicado');
   });
 
-  test('replay devolve o pdfUrl ja gravado (o retry nao regera nada)', async () => {
+  test('(g) PDF ja salvo: replay devolve o pdfUrl que existe e NAO manda regerar', async () => {
     const id = await seedExame();
     await emitir(id, KEY_A);
     await db.doc(`workspaces/${WS}/exames/${id}`).update({ pdfUrl: 'https://x/laudo.pdf' });
+    await pdfSalvo(id);
     const r = await emitir(id, KEY_A);
     assert.equal(r.replay, true);
+    assert.equal(r.pdfPendente, false, 'replay com PDF pronto nao pode pedir regeracao');
     assert.equal(r.pdfUrl, 'https://x/laudo.pdf');
+  });
+
+  test('(f) C1 — PDF pendente: replay manda REGERAR, sem cobrar e sem escrever', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);           // a rota morreu no Puppeteer: pdfPendente fica true
+    const antes = await exameDoc(id);
+    const r = await emitir(id, KEY_A, { convenio: 'OUTRO' });
+    assert.equal(r.ok, true);
+    assert.equal(r.replay, true);
+    assert.equal(r.pdfPendente, true, 'sem isto a rota devolve "sucesso" com pdfUrl nulo (C1)');
+    assert.equal(r.pdfUrl, null);
+    assert.equal(await usada(), 1, 'replay cobrou de novo');
+    assert.equal(await consumos(id), 1);
+    const depois = await exameDoc(id);
+    assert.equal(depois.convenio, 'PART', 'replay reescreveu o laudo assinado');
+    assert.equal(depois.emitidoEm.toMillis(), antes.emitidoEm.toMillis(), 'emitidoEm remexido');
   });
 
   test('replay NAO reescreve o laudo assinado (dadosFinais do retry sao ignorados)', async () => {
     const id = await seedExame();
     await emitir(id, KEY_A);
+    await pdfSalvo(id);
     const antes = await exameDoc(id);
     await emitir(id, KEY_A, { convenio: 'OUTRO' });
     const depois = await exameDoc(id);
@@ -102,12 +131,46 @@ describe('E1 — replay da MESMA tentativa nao cobra de novo', () => {
     assert.equal(depois.emitidoEm.toMillis(), antes.emitidoEm.toMillis(), 'emitidoEm remexido');
   });
 
-  test('(c) a key e gravada NA MESMA transacao do debito', async () => {
+  test('(i) a key vai pra gaveta privada NA MESMA transacao do debito', async () => {
     const id = await seedExame();
     await emitir(id, KEY_A);
-    const exame = await exameDoc(id);
-    assert.equal(exame.emissaoKeyAtual, KEY_A);
-    assert.equal(exame.status, 'emitido');
+    const priv = await privDoc(id);
+    assert.equal(priv.emissaoKey, KEY_A);
+    assert.equal(priv.pdfPendente, true, 'emissao nova nasce devendo o PDF');
+    assert.equal((await exameDoc(id)).status, 'emitido');
+    assert.equal(await usada(), 1);
+  });
+
+  test('(j) I1 — o doc do exame (editavel pelo medico-autor) NAO guarda a key', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    assert.equal((await exameDoc(id)).emissaoKeyAtual, undefined,
+      'a key voltou pro doc que o cliente escreve pelo SDK');
+  });
+
+  // (h) I1 — o medico-autor consegue carimbar campos no PROPRIO exame pelo SDK
+  // (firestore.rules:204-208). Se a autoridade do replay fosse o doc do exame,
+  // plantar key/bandeira ali daria reemissao (ou regeracao) de graca.
+  test('(h) key forjada no doc do exame nao vira replay — cobra como reemissao', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    await pdfSalvo(id);
+    await db.doc(`workspaces/${WS}/exames/${id}`).update({ emissaoKeyAtual: KEY_B });
+    const r = await emitir(id, KEY_B);
+    assert.equal(r.replay, false, 'key plantada no doc do exame virou replay');
+    assert.equal(await usada(), 2);
+  });
+
+  test('(h) bandeira pdfPendente forjada no doc do exame nao autoriza regeracao', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    await db.doc(`workspaces/${WS}/exames/${id}`).update({ pdfUrl: 'https://x/laudo.pdf' });
+    await pdfSalvo(id);                                        // gaveta: pdfPendente = false
+    await db.doc(`workspaces/${WS}/exames/${id}`).update({ pdfPendente: true });   // forjado
+    const r = await emitir(id, KEY_A);
+    assert.equal(r.replay, true);
+    assert.equal(r.pdfPendente, false, 'a bandeira do cliente mandou na regeracao');
+    assert.equal(r.pdfUrl, 'https://x/laudo.pdf');
     assert.equal(await usada(), 1);
   });
 
@@ -130,7 +193,9 @@ describe('E2 — reemissao deliberada continua cobrando', () => {
     assert.equal(r.replay, false);
     assert.equal(await usada(), 2);
     assert.equal(await consumos(id), 2);
-    assert.equal((await exameDoc(id)).emissaoKeyAtual, KEY_B, 'key da reemissao nao assumiu');
+    const priv = await privDoc(id);
+    assert.equal(priv.emissaoKey, KEY_B, 'key da reemissao nao assumiu');
+    assert.equal(priv.pdfPendente, true, 'reemissao volta a dever o PDF');
   });
 });
 
@@ -142,12 +207,13 @@ describe('cliente antigo / key invalida — comportamento legado (aditivo)', () 
     assert.equal(await usada(), 2);
     assert.equal(await consumos(id), 2);
     assert.equal((await exameDoc(id)).emissaoKeyAtual, undefined);
+    assert.equal((await privDoc(id)).emissaoKey, null, 'sem key nao cria trava');
   });
 
   test('(d) key malformada nao vira trava (a rota ja devolveu 400; a lib ignora)', async () => {
     const id = await seedExame();
     await emitir(id, 'nao-e-uuid');
-    assert.equal((await exameDoc(id)).emissaoKeyAtual, undefined);
+    assert.equal((await privDoc(id)).emissaoKey, null);
     await emitir(id, 'nao-e-uuid');
     assert.equal(await usada(), 2);
   });

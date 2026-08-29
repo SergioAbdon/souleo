@@ -134,7 +134,9 @@ export async function gerarESalvarPdf(
       let teto: NodeJS.Timeout | undefined;
       await Promise.race([
         page.evaluateHandle('document.fonts.ready'),
-        new Promise<void>((r) => { teto = setTimeout(() => { console.warn('fontes: teto estourado, PDF sai em fallback'); r(); }, TETO_FONTES_MS); }),
+        // Com wsId/exameId (M2): sem eles o aviso e anonimo no Sentry e nao da
+        // pra saber QUAL laudo saiu em fonte de fallback quando o medico reclama.
+        new Promise<void>((r) => { teto = setTimeout(() => { console.warn(`fontes: teto estourado, PDF sai em fallback (ws=${wsId} exame=${exameId})`); r(); }, TETO_FONTES_MS); }),
       ]);
       clearTimeout(teto);
       return await page.pdf({
