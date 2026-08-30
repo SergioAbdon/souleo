@@ -1,7 +1,13 @@
-# DRAFT — Seção 7 · Onda 2 · Task 11 (E10 + E22 + E14 + E19)
+# ADR — Seção 7 · Onda 2 · Task 11 (E10 + E22 + E14 + E19)
 ## Regra do `status` do exame + whitelist do `dadosFinais`
 
-**Status: RASCUNHO — aguardando OK do Dr. Sergio. Nada de código/regra foi alterado.**
+**Status: DECIDIDO 30/08 (Sergio) · IMPLEMENTADO na onda 2b (regra publicada no
+deploy da onda).** Código: `firestore.rules` (helper `statusSoDoServidor()`,
+`allow create`/`allow update` de `match /exames/`) + `src/lib/emitir-admin.ts`
+(`CAMPOS_DADOS_FINAIS`) + `tests/rules/regras.test.mjs` + `tests/api/
+emitir-idempotencia.test.mjs` — commit `feat(secao7): E10/E14/E22`. Fix-wave
+da tríade 2b fechou o furo remanescente do `allow create` (`emitidoEm`/
+`pdfUrl` plantados no nascimento) — ver `docs/decisoes/INDEX.md`.
 Data: 30/08/2026 · Branch: `feat/secao7-onda2`
 
 ---
