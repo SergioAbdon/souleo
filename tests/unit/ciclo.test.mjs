@@ -71,4 +71,8 @@ describe('vigente — "essa assinatura ainda conta como ativa" (dinheiro/churn)'
   test('sem cicloFim e sem franquia paga -> nao vigente', () => {
     assert.equal(vigente({}, new Date()), false);
   });
+  test('paga, nao-trial, SEM cicloFim -> nao vigente (nao gira, nao emite por franquia, sem MRR)', () => {
+    assert.equal(vigente({ franquiaMensal: 600, tipo: 'paid' }, new Date()), false,
+      'sem cicloFim nao ha ciclo pago pra contar como mensalidade — mesmo com franquia/creditos');
+  });
 });

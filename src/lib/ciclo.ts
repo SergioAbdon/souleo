@@ -60,5 +60,9 @@ export function proximoCicloFim(cicloFimVelhoMs: number, agoraMs: number): numbe
 // sinonimo de inativa: conta paga gira sozinha no proximo emitir.
 export function vigente(sub: SubCiclo, agora: Date): boolean {
   const fim = comoData(sub.cicloFim);
-  return (!!fim && agora <= fim) || ((sub.franquiaMensal || 0) > 0 && sub.tipo !== 'trial');
+  // Sem cicloFim nao ha vigencia pra contar: nao gira (podeGirar exige a
+  // data) nem emite por franquia — mesmo com creditos, sem ciclo pago nao ha
+  // mensalidade (MRR/ativo) a declarar.
+  if (!fim) return false;
+  return agora <= fim || ((sub.franquiaMensal || 0) > 0 && sub.tipo !== 'trial');
 }

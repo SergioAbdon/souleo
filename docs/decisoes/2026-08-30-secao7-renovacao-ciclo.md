@@ -45,7 +45,9 @@ deste draft onde ele deixava aberto — nenhuma é política nova):
   fica de fora do predicado (`sub.tipo !== 'trial'`), então uma conta paga antiga sem
   esse campo não fica presa pra sempre.
 - **Assinatura sem `cicloFim`** não gira (guard `cicloFim &&` — nunca compara contra
-  null/Invalid Date).
+  null/Invalid Date) **nem conta como vigente** (`ciclo.ts` `vigente()`, fix-wave
+  tríade 2b — Codex Important: sem ciclo pago não há mensalidade a contar no MRR,
+  mesmo com franquia/créditos).
 - Gap de múltiplos ciclos parados: rola em passos de +30d a partir do `cicloFim`
   ANTIGO (não de "agora") num loop, até ficar no futuro — um único +30d não bastaria.
 
