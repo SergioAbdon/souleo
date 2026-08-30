@@ -7,6 +7,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+// E11 achado extra (ADR 2026-08-30, §1a): a assinatura da conta criada pelo
+// cadastro novo mora em `subscriptions/{contaId}`, SEM `workspaceId`
+// (signup-server.ts — deliberado, ver comentario la). `resolverAssinatura` e
+// a chave CANONICA (workspace→contaId→subscriptions/{contaId}, com fallback
+// pra `where('workspaceId','==',wsId)` legado) ja usada por emitir-admin.ts —
+// mesma funcao aqui, nao uma segunda implementacao do mesmo join.
+import { resolverAssinatura } from '@/lib/billing-admin';
 
 // ── Firebase Admin (server-side) ──
 if (!getApps().length) {
@@ -470,11 +477,14 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const ws = wsSnap.docs.find(d => (d.data().nomeClinica || '').toLowerCase().includes(nome));
         if (!ws) return JSON.stringify({ erro: 'Workspace nao encontrado' });
 
-        const subSnap = await dbAdmin.collection('subscriptions').where('workspaceId', '==', ws.id).limit(1).get();
-        if (subSnap.empty) return JSON.stringify({ erro: 'Sem subscription' });
+        // Achado extra do E11 (ADR §1a): a query antiga por workspaceId nao
+        // achava a assinatura de conta criada pelo cadastro novo (sem esse
+        // campo) — "estender" na mao ficava mudo pra toda conta nova.
+        const assinatura = await resolverAssinatura(dbAdmin, ws.id);
+        if (!assinatura) return JSON.stringify({ erro: 'Sem subscription' });
 
         const novaData = new Date(Date.now() + dias * 864e5);
-        await subSnap.docs[0].ref.update({ cicloFim: Timestamp.fromDate(novaData) });
+        await assinatura.ref.update({ cicloFim: Timestamp.fromDate(novaData) });
         await dbAdmin.collection('logs').add({
           tipo: 'renovacao_trial', wsId: ws.id, dias, novaExpiracao: novaData.toLocaleDateString('pt-BR'),
           ts: Timestamp.now(), medicoUid: 'marina-ia',

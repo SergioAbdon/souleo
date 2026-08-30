@@ -35,8 +35,8 @@
 //    de regerar deriva de estado que so o servidor escreve.
 // Sem imports @/ (testado direto pelo node --test — ver exame-admin.ts).
 // ══════════════════════════════════════════════════════════════════
-import type { Firestore, Timestamp } from 'firebase-admin/firestore';
-import { FieldValue } from 'firebase-admin/firestore';
+import type { Firestore } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { resolverAssinatura } from './billing-admin';
 import { emissaoMudou } from './correcao-admin';
 
@@ -78,9 +78,15 @@ export type ResultadoEmissao =
   // `reemissao`/`identificacaoAlterada` (E3): carimbos de auditoria DERIVADOS
   // no servidor (nao mais copiados do cliente) — replay devolve false nos
   // dois, replay nao e um ato novo de emissao.
+  // `girou`/`cicloFimAnterior`/`cicloFimNovo` (E11 opcao D, ADR 2026-08-30):
+  // true quando ESTA emissao girou o ciclo (achou a assinatura vencida e
+  // elegivel). A rota (mesmo padrao do log 'emissao') grava o log
+  // 'renovacao_ciclo' FORA da transacao com esses dois campos — o giro em si
+  // ja commitou aqui dentro, o log e so auditoria, nao critico.
   | {
       ok: true; tipo: 'franquia' | 'creditos' | null; replay: boolean; pdfPendente: boolean; pdfUrl: string | null;
       reemissao: boolean; identificacaoAlterada: boolean;
+      girou: boolean; cicloFimAnterior?: string; cicloFimNovo?: string;
     }
   | { ok: false; motivo: MotivoEmissao };
 
@@ -362,15 +368,45 @@ export async function emitirComCobranca(db: Firestore, p: {
         // Replay nao e um ato novo de emissao — os carimbos da tentativa
         // VENCEDORA ja foram gravados no consumo/log dela, nao aqui de novo.
         reemissao: false, identificacaoAlterada: false,
+        girou: false,
       };
     }
 
     const sub = subSnap.data()!;
     const agora = new Date();
-    const cicloFim = sub.cicloFim ? (sub.cicloFim as Timestamp).toDate() : null;
-    const franquiaUsada = (sub.franquiaUsada as number) || 0;
+    let cicloFim = sub.cicloFim ? (sub.cicloFim as Timestamp).toDate() : null;
+    let franquiaUsada = (sub.franquiaUsada as number) || 0;
     const franquiaMensal = (sub.franquiaMensal as number) || 0;
     const creditosExtras = (sub.creditosExtras as number) || 0;
+
+    // ── E11 opcao D (ADR docs/decisoes/2026-08-30-secao7-renovacao-ciclo,
+    // decisao do Sergio 30/08) — o giro do ciclo acontece AQUI DENTRO, na
+    // MESMA transacao que ja cobra: sem cron, sem escritor novo de
+    // `subscriptions/{id}` (o 4o escritor do ADR vira "o proprio
+    // emitirComCobranca", nao uma rota nova).
+    // So gira quando as 3 condicoes batem:
+    //  - ciclo vencido (`agora > cicloFim`)
+    //  - conta NAO suspensa: nao existe campo `status` na assinatura (ADR
+    //    §1b) — o unico interruptor que existe hoje e o efeito colateral que
+    //    `marina/route.ts` (bloquear_workspace) ja usa pra bloquear:
+    //    `franquiaMensal: 0`. `franquiaMensal > 0` e o marcador de "ativa".
+    //  - NAO e trial (`sub.tipo !== 'trial'`) — ADR §3 "Contas em trial":
+    //    girar trial sem filtro vira trial ETERNO (pior resultado possivel).
+    //    Trial mantem os 30 dias fixos; o Direx converte na mao.
+    // Gap de N ciclos ausentes (conta parada 3 meses e so DEPOIS alguem
+    // emite): rola em passos de 30d a partir do cicloFim ANTIGO (nao de
+    // "agora" — mesma razao do cron da opcao A: as datas nao escorregam) ATE
+    // ficar no futuro — um `+30d` unico nao bastaria pra um gap multiplo.
+    const cicloFimAnterior = cicloFim;
+    let girou = false;
+    if (cicloFim && agora > cicloFim && franquiaMensal > 0 && sub.tipo !== 'trial') {
+      let novoFimMs = cicloFim.getTime();
+      const TRINTA_DIAS_MS = 30 * 864e5;
+      do { novoFimMs += TRINTA_DIAS_MS; } while (novoFimMs <= agora.getTime());
+      cicloFim = new Date(novoFimMs);
+      franquiaUsada = 0; // reinicia ANTES do +1 desta emissao, abaixo
+      girou = true;
+    }
 
     let tipo: 'franquia' | 'creditos' | null = null;
     if (cicloFim && agora <= cicloFim && franquiaUsada < franquiaMensal) {
@@ -416,7 +452,14 @@ export async function emitirComCobranca(db: Firestore, p: {
       atualizadoEm: FieldValue.serverTimestamp(),
     });
 
-    if (tipo === 'franquia') {
+    if (girou) {
+      // Giro + cobranca no MESMO update (`tipo` so pode ser 'franquia' aqui:
+      // o giro acabou de garantir `franquiaUsada(0) < franquiaMensal(>0)` e
+      // `agora <= cicloFim` novo). Literal `1`, nao `increment(1)`: a
+      // transacao ja leu `subRef` acima (read set), entao esta escrita e
+      // exclusiva desta invocacao — increment seria redundante.
+      transaction.update(subRef, { franquiaUsada: 1, cicloFim: Timestamp.fromDate(cicloFim!) });
+    } else if (tipo === 'franquia') {
       transaction.update(subRef, { franquiaUsada: FieldValue.increment(1) });
     } else {
       transaction.update(subRef, { creditosExtras: FieldValue.increment(-1) });
@@ -437,6 +480,11 @@ export async function emitirComCobranca(db: Firestore, p: {
     return {
       ok: true, tipo, replay: false, pdfPendente: true, pdfUrl: (exame.pdfUrl as string) || null,
       reemissao, identificacaoAlterada,
+      girou,
+      ...(girou ? {
+        cicloFimAnterior: cicloFimAnterior!.toISOString(),
+        cicloFimNovo: cicloFim!.toISOString(),
+      } : {}),
     };
   });
 }

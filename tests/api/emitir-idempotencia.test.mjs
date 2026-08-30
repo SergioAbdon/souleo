@@ -37,9 +37,12 @@ before(async () => {
 });
 
 beforeEach(async () => {
+  // E11: tipo:'paid' e o default aqui (conta ja convertida, o caso comum)
+  // porque agora `sub.tipo` entra na decisao de giro do ciclo (opcao D) —
+  // os testes que precisam de trial setam `tipo: 'trial'` explicitamente.
   await db.doc(`subscriptions/${CONTA}`).set({
     contaId: CONTA, franquiaMensal: 600, franquiaUsada: 0, creditosExtras: 0,
-    cicloFim: new Date(Date.now() + 30 * 864e5),
+    cicloFim: new Date(Date.now() + 30 * 864e5), tipo: 'paid',
   });
 });
 
@@ -404,10 +407,15 @@ describe('billing e autoria seguem intactos (E9: primeira rede do caminho de din
     assert.equal((await emitir(id, KEY_A)).motivo, 'sem_saldo');
     assert.equal(await consumos(id), 0);
   });
-  test('ciclo vencido sem credito → expirado', async () => {
-    await db.doc(`subscriptions/${CONTA}`).update({ cicloFim: new Date(Date.now() - 864e5) });
+  // E11 opcao D: trial vencido NAO gira (ADR §3 "Contas em trial" — girar
+  // sem filtro vira trial eterno). Continua caindo no braco 'expirado' de
+  // sempre. (Conta paid vencida agora RENOVA em vez disso — describe abaixo.)
+  test('trial vencido sem credito → expirado (nao renova)', async () => {
+    await db.doc(`subscriptions/${CONTA}`).update({ cicloFim: new Date(Date.now() - 864e5), tipo: 'trial' });
     const id = await seedExame();
-    assert.equal((await emitir(id, KEY_A)).motivo, 'expirado');
+    const r = await emitir(id, KEY_A);
+    assert.equal(r.motivo, 'expirado');
+    assert.equal(await usada(), 0);
   });
   test('workspace sem assinatura → sem_plano', async () => {
     await db.doc('workspaces/wsSemPlanoE').set({ contaId: 'contaSemPlanoE' });
@@ -416,6 +424,84 @@ describe('billing e autoria seguem intactos (E9: primeira rede do caminho de din
       wsId: 'wsSemPlanoE', exameId: 'e1', uid: MED, medicoUid: MED, dadosFinais: {}, emissaoKey: KEY_A,
     });
     assert.equal(r.motivo, 'sem_plano');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════
+// E11 — renovacao do ciclo de franquia, OPCAO D (docs/decisoes/
+// 2026-08-30-secao7-renovacao-ciclo-DRAFT.md, decisao do Sergio 30/08).
+// Sem cron: o proprio emitirComCobranca gira o ciclo DENTRO da transacao de
+// emissao quando acha a assinatura vencida e elegivel (paid, franquiaMensal
+// > 0 — o marcador de "nao suspensa" que existe hoje, ver ADR §1b). Testes
+// diretos contra o emulador, mesmo padrao do resto do arquivo.
+// ══════════════════════════════════════════════════════════════════
+describe('E11 — renovacao do ciclo (opcao D, giro dentro da transacao)', () => {
+  test('(a) ciclo vencido + conta ativa: renova, franquiaUsada reinicia (1 apos esta emissao), cicloFim rola +30d', async () => {
+    const cicloVencido = new Date(Date.now() - 5 * 864e5);
+    await db.doc(`subscriptions/${CONTA}`).update({ cicloFim: cicloVencido, franquiaUsada: 599 });
+    const id = await seedExame();
+    const r = await emitir(id, KEY_A);
+    assert.equal(r.ok, true);
+    assert.equal(r.tipo, 'franquia');
+    assert.equal(r.girou, true);
+    assert.equal(await usada(), 1, 'franquiaUsada devia reiniciar (0) e so contar esta emissao');
+    const novoFim = (await db.doc(`subscriptions/${CONTA}`).get()).data().cicloFim.toDate();
+    assert.ok(novoFim.getTime() > Date.now(), 'cicloFim novo tem que estar no futuro');
+    assert.ok(
+      Math.abs(novoFim.getTime() - (cicloVencido.getTime() + 30 * 864e5)) < 1000,
+      'giro de 1 ciclo: +30d a partir do cicloFim ANTIGO, nao de "agora"',
+    );
+  });
+
+  test('(b) gap de 3 ciclos parado: cicloFim rola em passos de 30d ate o futuro (loop, nao so +30d uma vez)', async () => {
+    const cicloVencidoHaMuito = new Date(Date.now() - 95 * 864e5); // ~3 ciclos sem ninguem emitir
+    await db.doc(`subscriptions/${CONTA}`).update({ cicloFim: cicloVencidoHaMuito });
+    const id = await seedExame();
+    const r = await emitir(id, KEY_A);
+    assert.equal(r.ok, true);
+    assert.equal(r.girou, true);
+    const novoFim = (await db.doc(`subscriptions/${CONTA}`).get()).data().cicloFim.toDate();
+    assert.ok(novoFim.getTime() > Date.now(), 'um unico +30d nao bastaria pra um gap de ~3 ciclos');
+    assert.ok(novoFim.getTime() - Date.now() < 30 * 864e5, 'nao pode pular alem do proximo ciclo futuro');
+  });
+
+  test('(d) suspensa (franquiaMensal=0) com ciclo vencido: nao gira, recusa expirado', async () => {
+    await db.doc(`subscriptions/${CONTA}`).update({ cicloFim: new Date(Date.now() - 864e5), franquiaMensal: 0 });
+    const id = await seedExame();
+    const r = await emitir(id, KEY_A);
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'expirado');
+    assert.equal(await usada(), 0);
+  });
+
+  test('(e) creditos extras nao zeram na renovacao do ciclo', async () => {
+    await db.doc(`subscriptions/${CONTA}`).update({ cicloFim: new Date(Date.now() - 864e5), creditosExtras: 7 });
+    const id = await seedExame();
+    const r = await emitir(id, KEY_A);
+    assert.equal(r.ok, true);
+    assert.equal(r.girou, true);
+    assert.equal(r.tipo, 'franquia', 'giro da franquia nova nao consome credito');
+    assert.equal((await db.doc(`subscriptions/${CONTA}`).get()).data().creditosExtras, 7, 'creditos intactos');
+  });
+
+  test('(f) ciclo vigente: nao gira, franquiaUsada acumula normal', async () => {
+    await db.doc(`subscriptions/${CONTA}`).update({ franquiaUsada: 50 }); // cicloFim do beforeEach ja e futuro
+    const id = await seedExame();
+    const r = await emitir(id, KEY_A);
+    assert.equal(r.ok, true);
+    assert.equal(r.girou, false);
+    assert.equal(await usada(), 51);
+  });
+
+  test('emitir 2x seguidas apos vencer: gira so na 1a (a 2a ja ve cicloFim futuro)', async () => {
+    await db.doc(`subscriptions/${CONTA}`).update({ cicloFim: new Date(Date.now() - 864e5) });
+    const id1 = await seedExame();
+    const r1 = await emitir(id1, KEY_A);
+    assert.equal(r1.girou, true);
+    const id2 = await seedExame();
+    const r2 = await emitir(id2, KEY_B);
+    assert.equal(r2.girou, false, 'cicloFim ja rolou pro futuro na 1a emissao');
+    assert.equal(await usada(), 2);
   });
 });
 
