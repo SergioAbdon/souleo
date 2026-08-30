@@ -9,16 +9,18 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getHistorico, getExame, type HistoricoResult } from '@/lib/firestore';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
-import { podeCancelarLaudo } from '@/lib/permissoes';
+import { podeCancelarLaudo, podeCorrigirAdministrativo } from '@/lib/permissoes';
 import { DocumentSnapshot, collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { db } from '@/lib/firebase';
 import { TIPOS_LAUDO_PADRAO, rotaDoLaudo, type TipoLaudo } from '@/lib/tipos-laudo';
+import { postCorrigirLaudo, msgErroCorrecao } from '@/lib/corrigir-laudo-client';
 
 type ExameItem = Record<string, unknown> & {
   id: string; pacienteNome?: string; tipoExame?: string;
   dataExame?: string; convenio?: string; solicitante?: string;
   emitidoEm?: { toDate?: () => Date }; medicoUid?: string; status?: string;
+  pdfUrl?: string; pdfErro?: string;
 };
 
 const TIPOS_EXAME: Record<string, string> = {
@@ -46,6 +48,11 @@ export default function Historico() {
   const [deleteNome, setDeleteNome] = useState('');
   const [cancelId, setCancelId] = useState<string | null>(null);
   const [cancelMotivo, setCancelMotivo] = useState('');
+  // Ruflo-2: espelho do botao "Regerar PDF" do Worklist — laudo emitido
+  // (franquia ja cobrada) sem PDF por falha do Puppeteer. Sem isto a
+  // recuperacao so existia no mesmo dia (Worklist filtra por `dataSel`); o
+  // Historico e onde o laudo emitido continua vivo depois que o dia vira.
+  const [regerandoPdf, setRegerandoPdf] = useState<string | null>(null);
   // Anti-corrida: troca de local dispara nova busca; a resposta lenta do local
   // anterior nao pode sobrescrever a lista do local atual.
   const genRef = useRef(0);
@@ -130,14 +137,52 @@ export default function Historico() {
       const dados = ex as Record<string, unknown>;
       if (dados?.pdfUrl) {
         abrirPdfUrl(dados.pdfUrl as string);
-      } else {
-        // X20: despacha pela modalidade real do tipo, não sempre pro motor.
-        router.push(rotaDoLaudo(exameId, dados?.tipoExame as string | undefined, tiposMap));
+        return;
       }
+      // X20: despacha pela modalidade real do tipo, não sempre pro motor.
+      const rota = rotaDoLaudo(exameId, dados?.tipoExame as string | undefined, tiposMap);
+      if (rota) { router.push(rota); return; }
+      // Ruflo-1: modalidade 'pdf' nao tem editor proprio (e o pdfUrl acima ja
+      // era nulo) — nao ha o que abrir aqui, so anexar pela Worklist.
+      alert('Exame de anexo — use a Worklist para anexar o PDF.');
     } catch (e) {
       console.error('Erro ao abrir PDF:', e);
       // Sem `dados` (a leitura falhou) não há tipo pra despachar.
       router.push('/laudo/' + exameId);
+    }
+  }
+
+  // Botão "👁 Ver" da tabela: mesma lógica do fallback de imprimirPdf, mas
+  // parte do que já está carregado na lista (sem round-trip ao Firestore).
+  function verLaudo(ex: ExameItem) {
+    const rota = rotaDoLaudo(ex.id, ex.tipoExame, tiposMap);
+    if (rota) { router.push(rota); return; }
+    if (ex.pdfUrl) { abrirPdfUrl(ex.pdfUrl); return; }
+    alert('Exame de anexo — use a Worklist para anexar o PDF.');
+  }
+
+  // Ruflo-2: mesmo botão/rota do Worklist (Task 6, P4/E4) — regenera o PDF a
+  // partir do snapshot congelado na emissão, sem 2a franquia. Usa os
+  // helpers compartilhados (Ponytail-6) em vez de reimplementar fetch+token.
+  async function regerarPdf(ex: ExameItem) {
+    if (!wsIdSel || regerandoPdf) return;
+    setRegerandoPdf(ex.id);
+    try {
+      const r = await postCorrigirLaudo({ wsId: wsIdSel, exameId: ex.id, acao: 'regerar' });
+      if (!r.ok) {
+        alert(msgErroCorrecao(r.error, 'regerar'));
+        return;
+      }
+      if (r.pdfDesatualizado || r.pdfErro) {
+        alert('Snapshot indisponível — reemita o laudo.');
+        return;
+      }
+      setExames(prev => prev.map(e => e.id === ex.id ? { ...e, pdfUrl: r.pdfUrl ?? undefined, pdfErro: undefined } : e));
+      alert('PDF regerado com sucesso.');
+    } catch {
+      alert('Erro de conexão ao regerar o PDF.');
+    } finally {
+      setRegerandoPdf(null);
     }
   }
 
@@ -274,7 +319,7 @@ export default function Historico() {
                     <div className="flex items-center justify-end gap-1.5">
                       {/* X20: rota por modalidade (rotaDoLaudo) — antes ia sempre pro
                           motor de eco, mesmo com laudo de texto/pdf. */}
-                      <button onClick={() => router.push(rotaDoLaudo(ex.id, ex.tipoExame, tiposMap))}
+                      <button onClick={() => verLaudo(ex)}
                         className="bg-green-100 text-green-700 px-2.5 py-1 rounded text-xs font-semibold hover:bg-green-200 transition">
                         👁 Ver
                       </button>
@@ -282,6 +327,16 @@ export default function Historico() {
                         className="bg-gray-100 text-gray-600 px-2.5 py-1 rounded text-xs font-semibold hover:bg-gray-200 transition">
                         🖨️
                       </button>
+                      {/* Ruflo-2 (espelho do Worklist, Task 6/P4/E4): laudo
+                          emitido com franquia ja cobrada e sem PDF (falha do
+                          Puppeteer). Mesmo gate — dono/recepcao OU o
+                          medico-autor, que a rota tambem autoriza. */}
+                      {(podeCorrigirAdministrativo(papel) || ex.medicoUid === user?.uid) && ex.pdfErro && !ex.pdfUrl && ex.status === 'emitido' && (
+                        <button onClick={() => regerarPdf(ex)}
+                          className="bg-red-50 text-red-500 px-2.5 py-1 rounded text-xs font-semibold hover:bg-red-100 transition">
+                          {regerandoPdf === ex.id ? 'Regerando...' : '🔁 Regerar PDF'}
+                        </button>
+                      )}
                       <button onClick={() => abrirConfirmDelete(ex)}
                         className="bg-red-50 text-red-500 px-2.5 py-1 rounded text-xs font-semibold hover:bg-red-100 transition">
                         🗑

@@ -50,6 +50,11 @@ export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid }
 
   if (!open || !exame) return null;
 
+  // Ponytail-12: `||` em vez do par `??` repetido no JSX — tipoNome/tipoExame
+  // sao string opcional, entao string vazia cai no mesmo default de "sem
+  // tipo" que null/undefined.
+  const rotulo = exame.tipoNome || exame.tipoExame;
+
   function onSelecionar(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0] || null;
     setErro('');
@@ -123,7 +128,7 @@ export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid }
         <div className="p-5 space-y-3">
           <p className="text-sm text-gray-600">
             {exame.pacienteNome || 'Paciente'}
-            {(exame.tipoNome ?? exame.tipoExame) ? ` · ${exame.tipoNome ?? exame.tipoExame}` : ''}
+            {rotulo ? ` · ${rotulo}` : ''}
           </p>
 
           {erro && <div className="bg-red-50 text-red-700 text-sm p-2 rounded">{erro}</div>}

@@ -17,9 +17,9 @@ describe('rotaDoLaudo', () => {
     assert.equal(rotaDoLaudo('e3', undefined, tipos), '/laudo/e3');
   });
 
-  test('modalidade pdf tambem vai pra tela de texto (sem editor proprio)', () => {
+  test('modalidade pdf nao tem editor proprio — null, nao /laudo-texto (Ruflo-1)', () => {
     const tipos = { ecg: { id: 'ecg', nome: 'ECG', icone: '📈', ativo: true, ordem: 1, modalidade: 'pdf' } };
-    assert.equal(rotaDoLaudo('e4', 'ecg', tipos), '/laudo-texto/e4');
+    assert.equal(rotaDoLaudo('e4', 'ecg', tipos), null);
   });
 
   test('tipo sem doc no catalogo (seed parcial) segue o mesmo default de modalidadeDe', () => {

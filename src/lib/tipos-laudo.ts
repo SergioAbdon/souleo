@@ -33,16 +33,20 @@ export function modalidadeDe(
 // X20: 3 telas (Worklist, Histórico, ficha do paciente) decidiam a rota do
 // laudo por conta própria e 2 delas caíam sempre no motor de eco pra
 // qualquer modalidade (a ficha do paciente já fazia certo — esta função é
-// aquela lógica, promovida a dono único). 'pdf' também vai pra
-// /laudo-texto: não tem editor próprio, e /laudo/[id] é o motor de eco, que
-// abriria com tabela de medidas vazia.
+// aquela lógica, promovida a dono único).
+// Ruflo-1 (fix-wave triade pre-merge): modalidade 'pdf' devolve `null` — NÃO
+// tem editor próprio (é anexo puro), e mandar pra /laudo-texto abria o
+// TipTap com um corpo vazio que ninguém preenche. `null` = "sem tela pra
+// abrir"; cada chamador decide o que fazer (mostrar o pdfUrl que já existe,
+// ou avisar que é preciso anexar pela Worklist).
 export function rotaDoLaudo(
   exameId: string,
   tipoExame: string | undefined,
   tiposMap: Record<string, TipoLaudo>,
-): string {
+): string | null {
   const m = modalidadeDe(tiposMap[tipoExame ?? ''], tipoExame ?? '');
-  return (m === 'texto' || m === 'pdf') ? `/laudo-texto/${exameId}` : `/laudo/${exameId}`;
+  if (m === 'pdf') return null;
+  return m === 'texto' ? `/laudo-texto/${exameId}` : `/laudo/${exameId}`;
 }
 
 export const MODELO_CAROTIDAS = [

@@ -21,6 +21,7 @@ import DicomGallery from '@/components/laudo/DicomGallery';
 import { podeEditarLaudo, podeRemoverDaFila, podeCorrigirAdministrativo, ehMedico } from '@/lib/permissoes';
 import StatusPill from '@/components/shell/StatusPill';
 import { TIPOS_LAUDO_PADRAO, modalidadeDe, rotaDoLaudo, type TipoLaudo } from '@/lib/tipos-laudo';
+import { postCorrigirLaudo, msgErroCorrecao } from '@/lib/corrigir-laudo-client';
 import type { AcaoFeegow } from '@/lib/feegow-admin';
 
 // v3: helper pra enviar token Firebase nas chamadas Feegow
@@ -424,11 +425,15 @@ export default function Worklist() {
       const dados = ex as Record<string, unknown>;
       if (dados?.pdfUrl) {
         abrirPdfUrl(dados.pdfUrl as string);
-      } else {
-        // Fallback: abrir o laudo em modo leitura (PDF ainda não foi gerado)
-        // — despacha pela modalidade real do tipo (X20), não sempre pro motor.
-        router.push(rotaDoLaudo(exameId, dados?.tipoExame as string | undefined, tiposMap));
+        return;
       }
+      // Fallback: abrir o laudo em modo leitura (PDF ainda não foi gerado)
+      // — despacha pela modalidade real do tipo (X20), não sempre pro motor.
+      const rota = rotaDoLaudo(exameId, dados?.tipoExame as string | undefined, tiposMap);
+      if (rota) { router.push(rota); return; }
+      // Ruflo-1: modalidade 'pdf' nao tem editor proprio — nao ha o que
+      // abrir; os botoes "✏️ Editar"/"🔁 Regerar PDF" da mesma linha anexam.
+      alert('Este exame é de anexo (PDF do aparelho) — use "✏️ Editar" ou "🔁 Regerar PDF" para anexar.');
     } catch (e) {
       console.error('Erro ao abrir PDF:', e);
       // Sem `dados` (a leitura falhou) não há tipo pra despachar — mesmo
@@ -447,7 +452,8 @@ export default function Worklist() {
       setAnexarPdf(item);
       return;
     }
-    router.push(rotaDoLaudo(item.id, tipoId, tiposMap));
+    const rota = rotaDoLaudo(item.id, tipoId, tiposMap);
+    if (rota) router.push(rota);
   }
 
   // ── Correção administrativa (S5-T5/D4) ──
@@ -463,19 +469,11 @@ export default function Worklist() {
     if (!corrigirAdm || !workspace?.id || admSalvando) return;
     setAdmSalvando(true);
     try {
-      const token = await auth.currentUser?.getIdToken();
-      const res = await fetch('/api/corrigir-laudo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
-        body: JSON.stringify({ wsId: workspace.id, exameId: corrigirAdm.id, convenio: admConvenio, solicitante: admSolicitante }),
+      const r = await postCorrigirLaudo({
+        wsId: workspace.id, exameId: corrigirAdm.id, convenio: admConvenio, solicitante: admSolicitante,
       });
-      const r = await res.json();
       if (!r.ok) {
-        alert(r.error === 'nao_emitido' ? 'Este laudo não está emitido.'
-          : r.error === 'sem_permissao' ? 'Você não tem permissão para corrigir aqui.'
-          : r.error === 'reemitido_durante_correcao'
-            ? 'O médico reemitiu o laudo neste instante — a reemissão usa os dados da tela dele e pode ter desfeito esta correção. Confira o laudo novo e refaça se preciso.'
-          : 'Não foi possível salvar a correção. Tente de novo.');
+        alert(msgErroCorrecao(r.error, 'correcao'));
         if (r.error === 'reemitido_durante_correcao') setCorrigirAdm(null);
         return;
       }
@@ -500,25 +498,9 @@ export default function Worklist() {
     if (!workspace?.id || regerandoPdf) return;
     setRegerandoPdf(item.id);
     try {
-      const token = await auth.currentUser?.getIdToken();
-      const res = await fetch('/api/corrigir-laudo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
-        // Ruflo-4: `acao:'regerar'` avisa o servidor que isto NAO e correcao —
-        // convenio/solicitante nem precisam ir no corpo, o servidor usa o que
-        // ja esta gravado no exame (fonte de verdade).
-        body: JSON.stringify({ wsId: workspace.id, exameId: item.id, acao: 'regerar' }),
-      });
-      const r = await res.json();
+      const r = await postCorrigirLaudo({ wsId: workspace.id, exameId: item.id, acao: 'regerar' });
       if (!r.ok) {
-        // Mesmo mapa motivo→mensagem do salvarCorrecaoAdm (linha ~474) — um
-        // erro de permissao/corrida NAO e "sem snapshot", e mandar reemitir
-        // nesses casos cobraria uma 2a franquia por engano (achado do reviewer).
-        alert(r.error === 'nao_emitido' ? 'Este laudo não está emitido.'
-          : r.error === 'sem_permissao' ? 'Você não tem permissão para regerar aqui.'
-          : r.error === 'reemitido_durante_correcao'
-            ? 'O médico reemitiu o laudo neste instante — a reemissão usa os dados da tela dele e pode ter desfeito esta correção. Confira o laudo novo e refaça se preciso.'
-          : 'Snapshot indisponível — reemita o laudo.');
+        alert(msgErroCorrecao(r.error, 'regerar'));
         return;
       }
       // Snapshot ausente (emitido antigo) ou falha nova do Puppeteer: honesto
@@ -563,7 +545,8 @@ export default function Worklist() {
       return;
     }
     if (!(await checarBillingOuAvisar())) return;
-    router.push(rotaDoLaudo(item.id, tipoId, tiposMap));
+    const rota = rotaDoLaudo(item.id, tipoId, tiposMap);
+    if (rota) router.push(rota);
   }
 
   // Filtrar por status + busca texto

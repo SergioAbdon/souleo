@@ -86,7 +86,11 @@ export default function FichaPacientePage() {
   const naoRealizadosTotal = exames.filter(e => e.status === 'nao-realizado').length;
 
   function abrirLaudo(item: Exame) {
-    router.push(rotaDoLaudo(item.id, item.tipoExame as string | undefined, tiposMap));
+    // So chamado quando acaoLaudo ja filtrou modalidade 'pdf' (Link pra
+    // Agenda, abaixo) — mas rotaDoLaudo devolve string|null (Ruflo-1) e o
+    // TS nao sabe disso aqui, entao guarda mesmo assim.
+    const rota = rotaDoLaudo(item.id, item.tipoExame as string | undefined, tiposMap);
+    if (rota) router.push(rota);
   }
 
   // `st` vem de `statusConhecido()` — a MESMA normalização que a StatusPill
