@@ -11,7 +11,7 @@ import { sanitizarNomeArq } from '@/lib/pdf-path';
 import { validarPdfBase64 } from '@/lib/pdf-validacao';
 import { adminDb, requireUid } from '@/lib/auth-admin';
 import { resolverPapel } from '@/lib/exame-admin';
-import { emitirComCobranca, emissaoKeyValida, marcarPdfPronto } from '@/lib/emitir-admin';
+import { emitirComCobranca, emissaoKeyValida, marcarPdfPronto, refEmissaoPrivada } from '@/lib/emitir-admin';
 import { prefixoArquivoPorTipo } from '@/lib/dicom-sr-mapping';
 
 // ── Config Next.js ──
@@ -154,23 +154,61 @@ export async function POST(req: NextRequest) {
     // ledger e log num lugar so (decisao: anexo CONSOME franquia, 15/08/2026).
     let pdfUrl: string | null = null;
     let pdfErro: string | null = null;
+
+    // Cerca de publicacao (triade C1/C2): a transacao acima commitou ha
+    // 15-60s quando o Puppeteer termina — nesse meio tempo o exame pode ter
+    // sido CANCELADO ou TRANSFERIDO (limparPdf ja rodou; publicar agora
+    // ressuscitaria um PDF publico de laudo cancelado) ou REEMITIDO com key
+    // nova (publicar agora poria o PDF da emissao velha por cima da nova, um
+    // Puppeteer mais lento terminando depois do mais rapido). So publica se
+    // o exame ainda esta emitido E, quando ha key, se a gaveta privada ainda
+    // pertence a ESTA tentativa. Cliente legado sem key: cerca so de status
+    // (janela aceita — sem key nao ha como distinguir a tentativa da corrida).
+    const podePublicar = async (): Promise<boolean> => {
+      const [d, g] = await Promise.all([
+        dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).get(),
+        refEmissaoPrivada(dbAdmin, wsId, exameId).get(),
+      ]);
+      if (d.data()?.status !== 'emitido') return false;
+      return !emissaoKey || g.data()?.emissaoKey === emissaoKey;
+    };
+
     if (pdfAnexadoBuf) {
-      try {
-        pdfUrl = await salvarPdfBuffer(pdfAnexadoBuf, wsId, exameId, nomeArq);
-        await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfUrl, pdfErro: FieldValue.delete() });
-      } catch (e) {
-        pdfErro = 'erro_pdf';   // P10: detalhe (bucket/path) so no log do servidor
-        console.error('PDF anexo save error:', e);
-        // P4/E4: a emissao JA cobrou. Sem HTML aqui (e anexo pronto) — nao ha
-        // o que congelar em snapshot, so a marca no doc pra tela deixar de
-        // mentir que o laudo emitido tem PDF.
-        await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfErro: 'erro_pdf' })
-          .catch((e2) => console.error('marcar pdfErro (nao-critico):', e2));
+      // Sem Puppeteer aqui — janela menor, mas o mesmo buraco (achado C1/C2):
+      // confere a cerca ANTES de publicar.
+      if (await podePublicar()) {
+        try {
+          pdfUrl = await salvarPdfBuffer(pdfAnexadoBuf, wsId, exameId, nomeArq);
+          await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfUrl, pdfErro: FieldValue.delete() });
+        } catch (e) {
+          pdfErro = 'erro_pdf';   // P10: detalhe (bucket/path) so no log do servidor
+          console.error('PDF anexo save error:', e);
+          // P4/E4: a emissao JA cobrou. Sem HTML aqui (e anexo pronto) — nao ha
+          // o que congelar em snapshot, so a marca no doc pra tela deixar de
+          // mentir que o laudo emitido tem PDF.
+          await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfErro: 'erro_pdf' })
+            .catch((e2) => console.error('marcar pdfErro (nao-critico):', e2));
+        }
+      } else {
+        // C1/C2: o exame ja nao e mais desta emissao (cancelado/transferido/
+        // reemitido) — nao escreve NADA no doc, ele nao pertence mais a esta
+        // tentativa.
+        pdfErro = 'conflito_pos_emissao';
       }
     } else if (pdfHtml) {
       try {
-        pdfUrl = await gerarESalvarPdf(pdfHtml, wsId, exameId, nomeArq);
-        await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfUrl, pdfErro: FieldValue.delete() });
+        // podeSalvar (I4, mesmo mecanismo de corrigir-laudo): checado DEPOIS
+        // do page.pdf e ANTES de salvarPdfBuffer, dentro de gerarESalvarPdf —
+        // ordem certa, nao reordenar. O TOCTOU residual entre o check e o
+        // save e a mesma janela ja aceita pelo fix I4/P15.
+        pdfUrl = await gerarESalvarPdf(pdfHtml, wsId, exameId, nomeArq, podePublicar);
+        if (pdfUrl === null) {
+          // C1/C2: podePublicar recusou — mesmo raciocinio do braco de anexo
+          // acima, nao escreve nada no doc.
+          pdfErro = 'conflito_pos_emissao';
+        } else {
+          await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfUrl, pdfErro: FieldValue.delete() });
+        }
       } catch (e) {
         pdfErro = 'erro_pdf';   // P10: detalhe so no log do servidor
         console.error('PDF gen error:', e);
