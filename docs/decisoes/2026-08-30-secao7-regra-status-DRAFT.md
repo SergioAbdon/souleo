@@ -20,9 +20,12 @@ dentro do pacote `dadosFinais`, inclusive o endereço do PDF oficial (E14).
 **O remédio:** `status` passa a ser campo de **dono único do servidor**. Pelo navegador
 só sobra a única transição que as telas realmente fazem hoje — "abri o laudo, salvei"
 (→ `andamento`). Emitir, cancelar, transferir e reabrir passam a ser exclusividade das
-rotas de servidor, que é onde já moram a franquia e o log. E o `dadosFinais` passa por
-uma **lista de campos permitidos** montada a partir do que as 3 telas de emissão de
-fato enviam.
+rotas de servidor, que é onde já moram a franquia e o log. Junto travam `emitidoEm` e
+`pdfUrl` no mesmo braço (triade onda 2, Ruflo-3) — sem isso o carimbo de emissão
+continuava meio-forjável mesmo com `status` fechado: o autor não escrevia mais
+`status:'emitido'` puro, mas ainda plantava `emitidoEm`/`pdfUrl` direto. E o
+`dadosFinais` passa por uma **lista de campos permitidos** montada a partir do que as
+3 telas de emissão de fato enviam.
 
 **O que muda na clínica no dia a dia: NADA.** Nenhum botão do LEO faz hoje o que a
 regra vai passar a proibir — o levantamento tela por tela está na seção 3. Emitir,
@@ -141,27 +144,11 @@ menos `emitido` e `cancelado`"** em vez de enumerar origens.
 ### 4.1 Helper novo (dentro de `match /exames/{exameId}`, antes dos `allow`)
 
 ```
-        // ── `status` é campo de DONO ÚNICO do servidor (E10/E22, 30/08) ──
-        // Emitir (/api/emitir), cancelar e transferir (/api/exame) mexem em
-        // `status` JUNTO com franquia, ledger `consumo`, log e PDF. Pelo
-        // navegador existe UMA transição legítima, levantada tela por tela
-        // (ADR 30/08 §3): o médico abrindo/salvando o laudo, que grava
-        // 'andamento' (salvarLaudo em laudo/[id]:1204 e handleSalvarRascunho
-        // em laudo-texto/[id]:131). Todo o resto tem que chegar INTACTO.
-        //  • fecha E10: o autor carimbava status:'emitido' pelo SDK — laudo
-        //    com cara de assinado, sem PDF, sem log e sem franquia debitada
-        //    (o gadget pronto era emitExame(), apagado no mesmo commit).
-        //  • fecha E22: o autor reabria o próprio emitido para 'andamento' —
-        //    limbo de billing (cancelar não estorna, corrigir dá 409, e só
-        //    apagar resolve, destruindo sem devolver o crédito).
-        //  • 'cancelado' vira terminal de verdade: hoje a regra só olha o
-        //    valor NOVO, então update({status:'andamento'}) num cancelado
-        //    ressuscitava o exame — só o cliente guardava disso
-        //    (laudo/[id]:302-304).
-        // A ORIGEM fica propositalmente aberta (qualquer status que não seja
-        // emitido/cancelado) porque existem status legados em produção
-        // ('imagens-recebidas'/'erro-imagens', Worklist.tsx:715-734) e
-        // 'nao-realizado' do cron — todos abrem o laudo e salvam.
+        // `status` é DONO ÚNICO do servidor (fecha E10/E22) — motivo,
+        // levantamento tela por tela e a lista de status legados que
+        // obrigam a origem aberta: docs/decisoes/2026-08-30-secao7-regra-
+        // status-DRAFT.md §2-3. Única transição legítima do navegador:
+        // abrir/salvar o laudo (`status:'andamento'`).
         function statusSoDoServidor() {
           return resource.data.get('status', '') != 'cancelado'
             && (intacto('status')
@@ -191,13 +178,14 @@ menos `emitido` e `cancelado`"** em vez de enumerar origens.
         allow update: if statusSoDoServidor()
                       && ((ehMedicoDeVerdade(uid()) && ehMedicoNoLocal(wsId)
                             && (!('medicoUid' in resource.data) || resource.data.medicoUid == uid())
-                            && ('medicoUid' in resource.data ? intacto('medicoUid') : true))
+                            && ('medicoUid' in resource.data ? intacto('medicoUid') : true)
+                            && intacto('emitidoEm') && intacto('pdfUrl'))
                           || (alcancaLocal(wsId) && intacto('medicoUid')
                               && resource.data.get('status', '') != 'emitido'
                               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(camposAdministrativos())));
 ```
 
-Três linhas mexidas:
+Quatro linhas mexidas:
 - a guarda de topo `request... != 'cancelado'` vira `statusSoDoServidor()` (mais forte:
   também cobre o doc que **já está** cancelado);
 - some `request.resource.data.get('status','') != 'emitido'` do segundo braço — virou
@@ -205,7 +193,15 @@ Três linhas mexidas:
   `regras.test.mjs:605` (recepção) e `:543` (gestor) continuam provando isso;
 - fica `resource.data.get('status','') != 'emitido'` no segundo braço: continua sendo
   o que impede a recepção/dono de mexer no administrativo de um laudo **já assinado**
-  (isso vai pela `/api/corrigir-laudo`).
+  (isso vai pela `/api/corrigir-laudo`);
+- **nova** (triade onda 2, Ruflo-3): `intacto('emitidoEm') && intacto('pdfUrl')` no
+  braço do médico-autor. `statusSoDoServidor()` sozinha só tranca o CAMPO `status` —
+  o autor continuava livre pra escrever `emitidoEm`/`pdfUrl` direto no doc, plantando
+  metade do carimbo de emissão (data + ponteiro do PDF) sem passar pela cobrança nem
+  pelo log. `intacto()` é o mesmo helper que já protege `medicoUid` na linha de cima
+  (`firestore.rules:77-81`) — nada novo, só os mesmos dois campos que hoje só o
+  servidor grava (`emitidoEm` em `emitir-admin.ts:390`, `pdfUrl` em
+  `publicarPdfSeAindaDono`, `emitir-admin.ts:154`).
 
 **Resistência a `setDoc` sem merge:** coberta. Nesse caso `request.resource.data` só tem
 os campos enviados; se `status` sumir, `intacto('status')` devolve `false` (mesma lógica
@@ -283,7 +279,9 @@ São 13 campos e **é exatamente isso que sai dos 3 clientes hoje** — conferid
 `src/components/agenda/AnexarPdfModal.tsx:96-100`. O brief mencionava
 `incluirImagensNoPdf`: **não existe** no corpo — a escolha de imagens vive em
 `imagensSelecionadasPdf`, gravado à parte pelo próprio médico (`laudo/[id]:441`), e o
-`incluirImagens` da emissão só decide o HTML do PDF, não vai no `dadosFinais`.
+`incluirImagens` da emissão só decide o HTML do PDF, não vai no `dadosFinais`. Nota: se
+`incluirImagensNoPdf` passar a viajar em `dadosFinais` numa onda futura (planejado pra
+onda 4), entra na whitelist junto — não é um "esquecido", é um "ainda não existe".
 
 ### 5.2 NUNCA aceitos (a whitelist já nega por construção; a lista é para a revisão)
 
@@ -323,30 +321,43 @@ entram em `CAMPOS_IDENTIDADE` (`emitir-admin.ts:93`), que carimba
 `identificacaoAlterada`. É o comportamento de hoje e a Seção 5 decidiu assim —
 identidade auditada = nome, nascimento, data do exame e convênio.
 
+### 5.4 Notas da revisão (Ruflo)
+
+- **Ruflo-8** — semântica do `false`: `identificacaoAlterada:false` não quer dizer
+  "nada mudou" — quer dizer "nenhum dos campos que ESTE cliente mandou em
+  `dadosFinais` mudou". Um cliente que omite um campo (ex.: `laudo-texto/[id]` não
+  manda `pacienteDtnasc`) não aciona a comparação dele — ver `c in p.dadosFinais` em
+  `CAMPOS_IDENTIDADE.some(...)`, `emitir-admin.ts`.
+- **Ruflo-10** — contrato do 402: é o **corpo** da resposta (`motivo`), não o código
+  HTTP sozinho — `sem_plano`/`sem_saldo`/`expirado` compartilham o mesmo 402; quem
+  trata o erro no cliente tem que ler `motivo`, não só o `status`.
+
 ---
 
-## 6. Mortos a deletar (E19) — prova de zero chamadores
+## 6. Mortos (E19) — JÁ DELETADOS na triade da onda 2
 
-Grep em todo o repo (excluindo `node_modules`, `legacy/` e docs):
+**Atualização (30/08, commit `fix(secao7): triade onda-2 — jaEmitido enxerga
+emitidoEm, confirm so no reanexo, mortos E19 fora, fonte do carimbo invertida`):**
+deleção de código morto não é decisão de produto — só a REGRA (seção 4) segue
+esperando o OK do Sergio. As 5 funções abaixo (as 3 do grep original + as 2 caronas
+que este documento já apontava) foram apagadas nesse commit, com zero chamadores
+reconfirmado antes de cada delete:
 
-| Função | Onde | Chamadores em `src/` |
+| Função | Onde (antes de apagar) | Chamadores em `src/` |
 |---|---|---|
 | `emitExame` | `src/lib/firestore.ts:341-352` | **0** — só a própria definição |
 | `consumirEmissao` | `src/lib/billing.ts:207-222` | **0** |
 | `registrarConsumo` | `src/lib/billing.ts:294-310` | **0** |
+| `DadosConsumo` (tipo) | `src/lib/billing.ts:45` | **0** — usado só por `registrarConsumo`, foi junto |
+| `checkWorkspaceLimit` + `CheckWorkspaceResult` | `src/lib/billing.ts:233-253` | **0** — a carona opcional que a seção mencionava, apagada junto (era a mesma linha de faxina) |
 
 As ocorrências restantes são: `legacy/prototipos/**` (protótipo HTML/JS antigo, que
 chama as versões *dele*, não estas), `legacy/scripts-py/**` (geradores de diagrama) e
-docs de plano — nenhuma importa de `src/`. A própria `firestore.rules:308-311` já
-documenta que `registrarConsumo` é morto, e a remoção estava agendada desde o Plano 3
-(`docs/decisoes/2026-08-09-secao1-contas-e-acesso.md:434`).
+docs de plano — nenhuma importa de `src/`. `firestore.rules:308-311` foi atualizada
+(só o comentário — nenhuma mudança de regra) pra parar de citar `registrarConsumo`
+como morto-mas-presente e passar a dizer que foi apagado.
 
-Some junto: o tipo `DadosConsumo` (`billing.ts:45`), usado **só** por
-`registrarConsumo`. `checkEmissao` **fica** (tem chamador: `Worklist.tsx:505`).
-
-Carona opcional, mesma linha, fora do escopo declarado da Task 11:
-`checkWorkspaceLimit` (`billing.ts:233-253`) também está com zero chamadores. Digo o
-que penso e deixo a decisão: apagar junto (1 função a menos) ou deixar para o Plano 3.
+`checkEmissao` **ficou** (tem chamador: `Worklist.tsx:505`).
 
 ---
 
@@ -361,8 +372,8 @@ Tudo num **commit único** (regra de ouro: regra + código + teste com payload r
 2. **`firestore.rules`**: helper `statusSoDoServidor()` + `allow update` + `allow create`
    (seção 4).
 3. **`src/lib/emitir-admin.ts`**: whitelist (seção 5).
-4. **Apagar** `emitExame`, `consumirEmissao`, `registrarConsumo`, `DadosConsumo`
-   (seção 6).
+4. ~~Apagar `emitExame`, `consumirEmissao`, `registrarConsumo`, `DadosConsumo`~~ —
+   **já feito** na triade da onda 2 (seção 6); não é passo deste plano.
 5. **Bateria**: `npm run test:rules` + `test:api` + `test:unit` verdes.
 6. Publicar a regra **junto do deploy da onda**, nunca antes do código.
 
@@ -416,7 +427,9 @@ publicada junto do deploy da onda)?
 - **`status` do exame passa a ser do servidor.** Pelo navegador só sobra "abri o laudo
   e salvei" (→ *em andamento*). **Emitir, reabrir um emitido, cancelar e ressuscitar
   um cancelado passam a ser exclusividade das rotas de servidor** — que é onde a
-  franquia é cobrada/devolvida e o log é escrito. Nenhum botão do LEO faz isso hoje
+  franquia é cobrada/devolvida e o log é escrito. Junto travam `emitidoEm` e `pdfUrl`
+  no mesmo braço do médico-autor — sem isso o autor continuava plantando esses dois
+  campos direto no doc, mesmo com `status` fechado. Nenhum botão do LEO faz isso hoje
   pelo navegador, então na clínica **nada muda**.
 - **Ninguém mais cria exame já "emitido" pelo navegador, nem o médico** (hoje a regra
   deixa, e o teste `regras.test.mjs:356` chama isso de "caminho legítimo" — o grep
@@ -424,6 +437,7 @@ publicada junto do deploy da onda)?
 - **A rota `/api/emitir` passa a aceitar só 13 campos do pacote que a tela manda**
   (medidas, achados, conclusões, textos do laudo, identificação do paciente, convênio,
   solicitante, tipo de exame, snapshot da clínica) — **o endereço do PDF oficial, o
-  ACC, o CPF e os carimbos de auditoria deixam de poder vir do navegador**. Junto vão
-  para o lixo 3 funções mortas (`emitExame`, `consumirEmissao`, `registrarConsumo`),
-  sendo a primeira o gadget pronto para o furo E10.
+  ACC, o CPF e os carimbos de auditoria deixam de poder vir do navegador**. (As 5
+  funções mortas — `emitExame`, `consumirEmissao`, `registrarConsumo`, `DadosConsumo`,
+  `checkWorkspaceLimit` — já foram apagadas na triade da onda 2, seção 6; não fazem
+  mais parte do que está pendente aqui.)
