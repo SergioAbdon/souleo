@@ -45,9 +45,14 @@ describe('/api/emitir — wiring do catch de PDF (Step 2)', () => {
     assert.equal(marcasNoDoc.length, 2, 'os 2 catches tem que gravar pdfErro no doc');
     assert.ok(!/pdfErro = e instanceof Error \? e\.message/.test(src),
       'detalhe do erro nao pode vazar pra resposta/doc — so pro log');
+    // Follow-up (reviewer): a falha dessa escrita nao-critica nao pode ser
+    // engolida em silencio — loga, mesmo sem poder fazer mais nada.
+    const catchesLogados = src.match(/\.catch\(\(e2\) => console\.error\('marcar pdfErro \(nao-critico\):', e2\)\)/g) || [];
+    assert.equal(catchesLogados.length, 2, 'os 2 catches tem que logar falha da marca, nao engolir com .catch(() => {})');
 
-    // So o braco pdfHtml tem HTML pra congelar; o de anexo nao.
-    assert.ok(/await salvarSnapshotHtml\(pdfHtml, wsId, exameId, sanitizarNomeArq\(nomeArq, exameId\)\)\.catch/.test(src),
+    // So o braco pdfHtml tem HTML pra congelar; o de anexo nao. Sem .catch
+    // aqui: salvarSnapshotHtml nunca lanca (contrato proprio, pdf-server.ts).
+    assert.ok(/await salvarSnapshotHtml\(pdfHtml, wsId, exameId, sanitizarNomeArq\(nomeArq, exameId\)\);/.test(src),
       'catch do braco pdfHtml tem que congelar o snapshot (unica via de recuperacao sem 2a franquia)');
     const chamadasSnapshot = src.match(/salvarSnapshotHtml\(/g) || [];
     assert.equal(chamadasSnapshot.length, 1, 'braco de anexo nao tem HTML — nao pode chamar snapshot');

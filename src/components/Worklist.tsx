@@ -510,9 +510,20 @@ export default function Worklist() {
         }),
       });
       const r = await res.json();
+      if (!r.ok) {
+        // Mesmo mapa motivo→mensagem do salvarCorrecaoAdm (linha ~474) — um
+        // erro de permissao/corrida NAO e "sem snapshot", e mandar reemitir
+        // nesses casos cobraria uma 2a franquia por engano (achado do reviewer).
+        alert(r.error === 'nao_emitido' ? 'Este laudo não está emitido.'
+          : r.error === 'sem_permissao' ? 'Você não tem permissão para regerar aqui.'
+          : r.error === 'reemitido_durante_correcao'
+            ? 'O médico reemitiu o laudo neste instante — a reemissão usa os dados da tela dele e pode ter desfeito esta correção. Confira o laudo novo e refaça se preciso.'
+          : 'Snapshot indisponível — reemita o laudo.');
+        return;
+      }
       // Snapshot ausente (emitido antigo) ou falha nova do Puppeteer: honesto
       // — nao ha o que recuperar aqui, so reemitir de novo (2a franquia).
-      if (!r.ok || r.pdfDesatualizado || r.pdfErro) {
+      if (r.pdfDesatualizado || r.pdfErro) {
         alert('Snapshot indisponível — reemita o laudo.');
         return;
       }
@@ -789,8 +800,12 @@ export default function Worklist() {
                             )}
                             {/* P4/E4 (Task 6): laudo emitido (franquia ja cobrada) sem
                                 PDF — a rota marcou pdfErro no catch. Regenera do
-                                snapshot pela mesma rota da correcao, sem 2a franquia. */}
-                            {podeCorrigirAdministrativo(papel) && item.pdfErro && !item.pdfUrl && (
+                                snapshot pela mesma rota da correcao, sem 2a franquia.
+                                Gate: dono/recepcao (podeCorrigirAdministrativo) OU o
+                                medico-autor — mesma dupla que a rota /api/corrigir-laudo
+                                autoriza no servidor (podeCorrigir); sem o 2o braco o
+                                medico que pagou a franquia nao via o proprio botao. */}
+                            {(podeCorrigirAdministrativo(papel) || item.medicoUid === user?.uid) && item.pdfErro && !item.pdfUrl && (
                               <Btn cor="red" onClick={() => regerarPdf(item)}>
                                 {regerandoPdf === item.id ? 'Regerando...' : '🔁 Regerar PDF'}
                               </Btn>

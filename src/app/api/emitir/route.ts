@@ -164,7 +164,8 @@ export async function POST(req: NextRequest) {
         // P4/E4: a emissao JA cobrou. Sem HTML aqui (e anexo pronto) — nao ha
         // o que congelar em snapshot, so a marca no doc pra tela deixar de
         // mentir que o laudo emitido tem PDF.
-        await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfErro: 'erro_pdf' }).catch(() => {});
+        await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfErro: 'erro_pdf' })
+          .catch((e2) => console.error('marcar pdfErro (nao-critico):', e2));
       }
     } else if (pdfHtml) {
       try {
@@ -176,8 +177,11 @@ export async function POST(req: NextRequest) {
         // P4/E4: a emissao JA cobrou. Congela o snapshot (sem ele a correcao
         // administrativa deste exame morre pra sempre) e deixa marca no doc —
         // a tela passa a ver o laudo emitido-sem-PDF em vez de ninguem saber.
-        await salvarSnapshotHtml(pdfHtml, wsId, exameId, sanitizarNomeArq(nomeArq, exameId)).catch(() => {});
-        await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfErro: 'erro_pdf' }).catch(() => {});
+        // Sem .catch aqui: salvarSnapshotHtml nunca lanca (proprio contrato
+        // da funcao, pdf-server.ts) — o .catch(() => {}) era morto.
+        await salvarSnapshotHtml(pdfHtml, wsId, exameId, sanitizarNomeArq(nomeArq, exameId));
+        await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfErro: 'erro_pdf' })
+          .catch((e2) => console.error('marcar pdfErro (nao-critico):', e2));
       }
     }
 

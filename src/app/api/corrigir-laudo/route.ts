@@ -124,7 +124,11 @@ export async function POST(req: NextRequest) {
           reemitido = true;
           pdfDesatualizado = true;
         } else {
-          await ref.update({ pdfUrl });
+          // Follow-up Task 6 (P4/E4): um exame recuperado por aqui (regerado
+          // depois de uma falha de PDF no /api/emitir) nao pode ficar com a
+          // marca `pdfErro` velha pra sempre — a tela voltaria a mostrar
+          // "Regerar PDF" num laudo que ja tem PDF de novo.
+          await ref.update({ pdfUrl, pdfErro: FieldValue.delete() });
         }
       } catch (e) {
         pdfErro = 'erro_pdf';   // detalhe (bucket/path) só no log do servidor
