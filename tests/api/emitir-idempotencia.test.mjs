@@ -358,6 +358,61 @@ describe('E3 — reemissao e identificacaoAlterada derivados no servidor (nao do
   });
 });
 
+// ══════════════════════════════════════════════════════════════════
+// E14: dadosFinais e corpo CRU do cliente — antes entrava inteiro no
+// update que assina o laudo (so reemissao/identificacaoAlterada eram
+// filtrados, M3). Um cliente adulterado plantava pdfUrl/status/emitidoEm/
+// acc/cpf/medicoUid direto ali. Whitelist (ADR 2026-08-30 §5): so os 13
+// campos que os 3 clientes de producao de fato mandam sobrevivem.
+// ══════════════════════════════════════════════════════════════════
+describe('E14 — whitelist de dadosFinais (campos forjados nao chegam ao doc)', () => {
+  test('pdfUrl/status/emitidoEm/acc/cpf/medicoUid em dadosFinais NAO chegam ao doc', async () => {
+    const id = await seedExame();
+    const r = await emitir(id, KEY_A, {
+      pdfUrl: 'https://forjado.example/laudo.pdf',
+      status: 'x',
+      emitidoEm: new Date('2020-01-01'),
+      acc: 'FORJADO',
+      cpf: '00000000000',
+      medicoUid: 'outroUid',
+      canceladoEm: new Date(),
+      pdfHtmlPath: 'lixo',
+    });
+    assert.equal(r.ok, true);
+    const doc = await exameDoc(id);
+    assert.equal(doc.pdfUrl, undefined, 'pdfUrl forjado nao pode chegar ao doc');
+    assert.equal(doc.status, 'emitido', 'status vem do servidor, nao do cliente');
+    assert.equal(doc.acc, undefined, 'acc nao esta na whitelist');
+    assert.equal(doc.cpf, undefined, 'cpf nao esta na whitelist');
+    assert.equal(doc.medicoUid, MED, 'medicoUid vem de p.medicoUid, nao de dadosFinais');
+    assert.equal(doc.canceladoEm, undefined);
+    assert.equal(doc.pdfHtmlPath, undefined);
+    assert.ok(doc.emitidoEm, 'emitidoEm existe mas e o do serverTimestamp, nao o forjado');
+    assert.notEqual(doc.emitidoEm.toMillis(), new Date('2020-01-01').getTime());
+  });
+
+  test('os 13 campos legitimos continuam chegando ao doc (payload real dos 3 clientes)', async () => {
+    const id = await seedExame();
+    const r = await emitir(id, KEY_A, {
+      medidas: { ddve: 50 }, achados: 'achado x', conclusoes: 'conclusao x',
+      laudoHtml: '<p>a</p>', laudoTextoHtml: '<p>b</p>', cfgSnapshot: { clinica: 'X' },
+      pacienteDtnasc: '1980-01-02', dataExame: '2026-08-30', solicitante: 'DR FULANO', sexo: 'F',
+    });
+    assert.equal(r.ok, true);
+    const doc = await exameDoc(id);
+    assert.deepEqual(doc.medidas, { ddve: 50 });
+    assert.equal(doc.achados, 'achado x');
+    assert.equal(doc.conclusoes, 'conclusao x');
+    assert.equal(doc.laudoHtml, '<p>a</p>');
+    assert.equal(doc.laudoTextoHtml, '<p>b</p>');
+    assert.deepEqual(doc.cfgSnapshot, { clinica: 'X' });
+    assert.equal(doc.pacienteDtnasc, '1980-01-02');
+    assert.equal(doc.dataExame, '2026-08-30');
+    assert.equal(doc.solicitante, 'DR FULANO');
+    assert.equal(doc.sexo, 'F');
+  });
+});
+
 describe('E8 — laudo cancelado recusa emissao (nao revive cobrando)', () => {
   test('status cancelado: recusa sem cobrar, sem tocar consumo/gaveta privada', async () => {
     const id = await seedExame();

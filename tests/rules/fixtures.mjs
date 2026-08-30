@@ -70,6 +70,28 @@ export const payloadEditarExame = (extra = {}) => ({
 });
 
 /**
+ * Payload identico ao que `salvarLaudo('andamento', {laudoHtml})` envia
+ * (src/app/laudo/[id]/page.tsx:1221, via saveExame → firestore.ts:293) — o
+ * autosave de 60s e o botao "Salvar rascunho", os DOIS unicos chamadores.
+ * saveExame acrescenta `atualizadoEm` sempre (firestore.ts:295).
+ */
+export const payloadSalvarLaudo = (extra = {}) => ({
+  id: 'exNovo',
+  medidas: { ddve: 50 },
+  pacienteNome: 'PACIENTE NOVO',
+  pacienteDtnasc: '1980-01-02',
+  dataExame: '2026-08-12',
+  convenio: 'UNIMED',
+  solicitante: '',
+  sexo: 'F',
+  status: 'andamento',
+  medicoUid: 'uidMedico',
+  laudoHtml: '<p>laudo</p>',
+  atualizadoEm: new Date(),
+  ...extra,
+});
+
+/**
  * Payload identico ao que a tela Clinica→Tipos de laudo grava (Task 3).
  */
 export const payloadTipoLaudo = (extra = {}) => ({

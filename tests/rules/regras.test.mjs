@@ -5,7 +5,7 @@ import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebas
 import {
   doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection, getDocs, query, where,
 } from 'firebase/firestore';
-import { payloadCreateProfile, payloadCadastroExame, payloadEditarExame, payloadTipoLaudo } from './fixtures.mjs';
+import { payloadCreateProfile, payloadCadastroExame, payloadEditarExame, payloadTipoLaudo, payloadSalvarLaudo } from './fixtures.mjs';
 
 let env;
 
@@ -69,10 +69,20 @@ before(async () => {
     await setDoc(doc(db, `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), {
       pacienteNome: 'Rascunho do Dr A', status: 'rascunho', medicoUid: DR_A,
     });
-    // Dedicado a secao 14: 'ex1' e mutado pela secao 12 (reabre p/ 'andamento')
-    // antes da secao 14 rodar, entao nao serve mais pra testar "emitido".
+    // Dedicado a secao 14: doc emitido proprio, sem depender do estado de 'ex1'
+    // apos outras secoes mexerem nele.
     await setDoc(doc(db, `workspaces/${LOCAL_A1}/exames`, 'exEmitidoS14'), {
       pacienteNome: 'Emitido Intocado', status: 'emitido', medicoUid: DR_A,
+    });
+    // Status legado (Worklist.tsx:715-734, casos EDWALDO/CARMEN): a origem tem
+    // que ficar aberta, senao "▶ Continuar" -> salvarLaudo('andamento') quebra
+    // pra exame real em producao (E10/E22 DRAFT §3).
+    await setDoc(doc(db, `workspaces/${LOCAL_A1}/exames`, 'exImagensRecebidas'), {
+      pacienteNome: 'Legado Imagens', status: 'imagens-recebidas', medicoUid: DR_A,
+    });
+    // Cancelado (secao 12): prova que 'cancelado' nao ressuscita para 'andamento'.
+    await setDoc(doc(db, `workspaces/${LOCAL_A1}/exames`, 'exCancelado'), {
+      pacienteNome: 'Cancelado', status: 'cancelado', medicoUid: DR_A,
     });
 
     // Log ja existente, pra testar update contra um doc real (secao 8, item 3).
@@ -353,8 +363,8 @@ describe('7.1 sincronia com a regra publicada (achados da auditoria)', () => {
     }));
   });
 
-  test('medico cria exame ja emitido (caminho legitimo)', async () => {
-    await assertSucceeds(setDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/exames`, 'exMedico'), {
+  test('ninguem cria exame ja emitido — nem o medico (E10, create fechado)', async () => {
+    await assertFails(setDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/exames`, 'exMedico'), {
       pacienteNome: 'Emitido', status: 'emitido', medicoUid: DR_A2,
     }));
   });
@@ -491,9 +501,30 @@ describe('12. triade do Plano 2A: ledger e cancelamento sao do servidor', () => 
       status: 'cancelado', motivoCancelamento: 'sem devolver franquia',
     }));
   });
-  test('autor AINDA reabre o proprio emitido para andamento', async () => {
-    await assertSucceeds(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'ex1'), {
+  test('autor NAO reabre o proprio emitido para andamento (E22, status e do servidor)', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'ex1'), {
       status: 'andamento',
+    }));
+  });
+  test('autor NAO carimba o proprio exame como emitido pelo navegador (E10)', async () => {
+    await assertFails(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exFila1'), {
+      status: 'emitido',
+    }));
+    await assertFails(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), {
+      status: 'emitido', conclusoes: 'assinado de graca',
+    }));
+  });
+  test('autor NAO ressuscita exame cancelado para andamento', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'exCancelado'), {
+      status: 'andamento',
+    }));
+  });
+  test('autor NAO planta emitidoEm/pdfUrl direto no doc (metade do carimbo de emissao)', async () => {
+    await assertFails(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), {
+      emitidoEm: new Date(), conclusoes: 'meio-forjado',
+    }));
+    await assertFails(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), {
+      pdfUrl: 'https://forjado.example/laudo.pdf',
     }));
   });
 });
@@ -537,8 +568,11 @@ describe('12. trava do CRM (ato medico) — Plano 2B-B1', () => {
   test('gestor NAO-medico administra a fila (exame nao-emitido)', async () => {
     await assertSucceeds(updateDoc(doc(como(GESTOR), `workspaces/${LOCAL_C}/exames`, 'exCfila'), { convenio: 'BRADESCO' }));
   });
-  test('medico autor edita/reabre o proprio laudo emitido', async () => {
-    await assertSucceeds(updateDoc(doc(como(DR_C), `workspaces/${LOCAL_C}/exames`, 'exCemitido'), { conclusoes: 'ok', status: 'andamento' }));
+  test('medico autor edita o conteudo do proprio laudo emitido (status intacto)', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_C), `workspaces/${LOCAL_C}/exames`, 'exCemitido'), { conclusoes: 'ok' }));
+  });
+  test('medico autor NAO reabre o proprio laudo emitido (E22)', async () => {
+    await assertFails(updateDoc(doc(como(DR_C), `workspaces/${LOCAL_C}/exames`, 'exCemitido'), { conclusoes: 'ok', status: 'andamento' }));
   });
   test('gestor NAO-medico NAO marca exame da fila como emitido', async () => {
     await assertFails(updateDoc(doc(como(GESTOR), `workspaces/${LOCAL_C}/exames`, 'exCfila'), { status: 'emitido' }));
@@ -630,7 +664,11 @@ describe('14. worklist — administracao da fila por membro do local (Secao 2)',
   });
   test('medico assume o orfao no primeiro save do laudo (payload real do salvarLaudo)', async () => {
     await assertSucceeds(updateDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/exames`, 'exNovoRita'),
-      { medidas: { ddve: 50 }, pacienteNome: 'PACIENTE NOVO', status: 'andamento', medicoUid: DR_A2 }));
+      payloadSalvarLaudo({ id: 'exNovoRita', medicoUid: DR_A2 })));
+  });
+  test('medico salva o laudo (payload real) num exame com status legado imagens-recebidas (EDWALDO/CARMEN)', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'exImagensRecebidas'),
+      payloadSalvarLaudo({ id: 'exImagensRecebidas', medicoUid: DR_A })));
   });
 
   test('recepcao grava mwlStatus (resultado do envio ao aparelho)', async () => {

@@ -104,6 +104,18 @@ export type ResultadoEmissao =
 // tests/unit/identidade-campos-pin.test.mjs (falha se os nomes divergirem).
 const CAMPOS_IDENTIDADE = ['pacienteNome', 'pacienteDtnasc', 'dataExame', 'convenio'] as const;
 
+// E14: dadosFinais e corpo CRU do cliente e entrava inteiro no update que
+// assina o laudo. Whitelist nascida do grep dos 3 clientes (ADR 2026-08-30
+// §5) — so estes 13 campos saem de fato de laudo/[id], laudo-texto/[id] e
+// AnexarPdfModal. reemissao/identificacaoAlterada ficam de fora de proposito
+// (M3): sao carimbos de auditoria derivados no servidor, o auditado nao os
+// escreve.
+const CAMPOS_DADOS_FINAIS = new Set([
+  'medidas', 'achados', 'conclusoes', 'laudoHtml', 'laudoTextoHtml', 'cfgSnapshot',
+  'tipoExame', 'pacienteNome', 'pacienteDtnasc', 'dataExame', 'convenio',
+  'solicitante', 'sexo',
+]);
+
 // pacienteNome normalizado (trim+uppercase) — mesmo tratamento do
 // identificacaoMudou() do cliente. feegow-admin grava sem trim; sem
 // normalizar aqui, toda reemissao de exame importado do Feegow dava falso
@@ -324,13 +336,13 @@ export async function emitirComCobranca(db: Firestore, p: {
           )
     );
 
-    // M3 (revisao E3): reemissao/identificacaoAlterada eram lidos do corpo
-    // cru do cliente por outro codigo (ja corrigido acima) — mas se o
-    // cliente mandasse esses NOMES de campo em dadosFinais, o spread abaixo
-    // ainda gravava o carimbo AUTODECLARADO no doc do exame. Descartado
-    // ANTES do spread: o doc nunca guarda um carimbo de auditoria escrito
-    // pelo proprio auditado.
-    const { reemissao: _reemissaoDoCliente, identificacaoAlterada: _identAlteradaDoCliente, ...dadosFinaisSemCarimbo } = p.dadosFinais;
+    // E14: whitelist substitui o destructuring de reemissao/
+    // identificacaoAlterada (M3) — qualquer chave fora de CAMPOS_DADOS_FINAIS
+    // e descartada, entao os dois carimbos de auditoria (e pdfUrl, status,
+    // emitidoEm, acc, cpf, medicoUid...) somem daqui junto, de graca.
+    const dadosFinaisSemCarimbo = Object.fromEntries(
+      Object.entries(p.dadosFinais).filter(([k]) => CAMPOS_DADOS_FINAIS.has(k)),
+    );
 
     // Caneta do autor (D2): laudo com autor definido so o proprio emite —
     // igual a regra publicada ("autor ou sem autor"). Sem autor pode assumir.
