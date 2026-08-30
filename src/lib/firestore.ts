@@ -338,19 +338,6 @@ export async function saveExame(wsId: string, dados: Record<string, unknown>, me
   } catch (e) { console.error('saveExame:', e); return null; }
 }
 
-export async function emitExame(wsId: string, exameId: string, dadosFinais: Record<string, unknown>, medicoUid: string) {
-  try {
-    await updateDoc(doc(db, 'workspaces', wsId, 'exames', exameId), {
-      ...dadosFinais,
-      status: 'emitido',
-      emitidoEm: now(),
-      medicoUid,
-      atualizadoEm: now()
-    });
-    return true;
-  } catch (e) { console.error('emitExame:', e); return false; }
-}
-
 // ══ WORKLIST LISTENER (real-time) ════════════════════════════════
 
 export function listenWorklist(wsId: string, callback: (items: Record<string, unknown>[]) => void, data?: string): Unsubscribe {

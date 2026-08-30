@@ -84,13 +84,29 @@ export type ResultadoEmissao =
     }
   | { ok: false; motivo: MotivoEmissao };
 
-// E3: os dois carimbos anti-fraude eram copiados do navegador
+// O SERVIDOR e o dono do carimbo de identidade (E3): reemissao/
+// identificacaoAlterada eram copiados do navegador
 // (dadosFinais.reemissao / dadosFinais.identificacaoAlterada) — cliente
 // adulterado reemitia trocando nome/CPF do paciente e logando
-// identificacaoAlterada:false. Lista de campos ESPELHA identificacaoMudou()
-// em src/app/laudo/[id]/page.tsx (~linha 1192) — a funcao do cliente e a
-// FONTE, isto aqui e copia; se ela ganhar um campo novo, atualizar aqui tambem.
+// identificacaoAlterada:false. Aqui dentro (emitirComCobranca) e onde os
+// dois sao de fato DERIVADOS, do antes (exameSnap/gaveta) x depois
+// (dadosFinais), na mesma transacao que cobra.
+// `identificacaoMudou()` em src/app/laudo/[id]/page.tsx (~linha 1192) e uma
+// PREVIA DE UX da MESMA regra (mostra o aviso pro medico antes de emitir) —
+// nao e a fonte, e um espelho; a lista de campos tem que bater nos dois
+// lados ou a previa mente. Travado por
+// tests/unit/identidade-campos-pin.test.mjs (falha se os nomes divergirem).
 const CAMPOS_IDENTIDADE = ['pacienteNome', 'pacienteDtnasc', 'dataExame', 'convenio'] as const;
+
+// pacienteNome normalizado (trim+uppercase) — mesmo tratamento do
+// identificacaoMudou() do cliente. feegow-admin grava sem trim; sem
+// normalizar aqui, toda reemissao de exame importado do Feegow dava falso
+// positivo por um espaco a mais no nome. Os outros 3 campos ficam crus — o
+// cliente tambem nao normaliza eles.
+const normalizarCampo = (campo: string, v: unknown): string => {
+  const s = String(v ?? '');
+  return campo === 'pacienteNome' ? s.trim().toUpperCase() : s;
+};
 
 // ── Publicacao atomica do PDF (fix-wave round 2, achado Codex C4/check-then-
 // write) ──
@@ -249,11 +265,7 @@ export async function emitirComCobranca(db: Firestore, p: {
     if (!exameSnap.exists) return { ok: false, motivo: 'nao_encontrado' };
     const exame = exameSnap.data()!;
 
-    // E3: os dois carimbos anti-fraude eram copiados do navegador. Derivados
-    // aqui do antes (exameSnap/gaveta/ledger) x depois (dadosFinais) —
-    // cliente adulterado nao esconde mais uma reemissao nem uma troca de
-    // identidade do paciente. Lista de campos espelha identificacaoMudou()
-    // (laudo/[id]/page.tsx).
+    // Carimbos anti-fraude derivados aqui (ver CAMPOS_IDENTIDADE acima).
     //
     // ROUND 2 (Codex Important 1): `exame.emitidoEm` (+ o `privSnap.
     // emissaoKey` do round 1) ainda falhava pra exame PRE-onda-0 sem gaveta
@@ -278,14 +290,6 @@ export async function emitirComCobranca(db: Firestore, p: {
       .length;
     const reemissao = !!exame.emitidoEm || consumosDoExame > 0;
 
-    // pacienteNome normalizado nos dois lados (trim+uppercase) — mesmo
-    // tratamento do identificacaoMudou() do cliente. feegow-admin grava sem
-    // trim; sem normalizar aqui, toda reemissao de exame importado do Feegow
-    // dava falso positivo por um espaco a mais no nome.
-    const normalizarCampo = (campo: string, v: unknown): string => {
-      const s = String(v ?? '');
-      return campo === 'pacienteNome' ? s.trim().toUpperCase() : s;
-    };
     // ROUND 2 (Codex Important 2): comparar contra o DOC do exame era
     // contornavel — o autor edita a identidade no proprio doc pelo SDK
     // ANTES de reemitir, manda o MESMO valor (ja adulterado) em

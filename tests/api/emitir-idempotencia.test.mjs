@@ -222,7 +222,7 @@ describe('E2 — reemissao deliberada continua cobrando', () => {
 // string`, sem revalidar) — o trust boundary e so a rota.
 
 // ══════════════════════════════════════════════════════════════════
-// Task 7 (E3): reemissao e identificacaoAlterada eram COPIADOS do navegador
+// E3: reemissao e identificacaoAlterada eram COPIADOS do navegador
 // (dadosFinais.reemissao / dadosFinais.identificacaoAlterada) pro ledger de
 // consumo e pro log — cliente adulterado reemitia trocando nome/CPF e
 // logando identificacaoAlterada:false. O servidor tem antes (exameSnap) x
@@ -267,14 +267,13 @@ describe('E3 — reemissao e identificacaoAlterada derivados no servidor (nao do
     assert.equal(r.identificacaoAlterada, false);
   });
 
-  // Revisao round 1 (achado Important): exame.emitidoEm sozinho nao e fonte
-  // segura — o medico-autor pode apagar esse campo pelo SDK (firestore.
-  // rules:204-207 nao inclui emitidoEm em `intacto`). Testado direto contra
-  // o emulador, escrita fora de emitirComCobranca (simula o cliente
-  // adulterado). Round 2: a mensagem foi ajustada — o termo que fecha isto
-  // agora e o LEDGER de consumo (`privSnap.emissaoKey` virou redundante e
-  // saiu da derivacao), mas o CENARIO deste teste (ha gaveta E ha consumo)
-  // ja bate contra as duas fontes — mantido, so o texto do assert mudou.
+  // exame.emitidoEm sozinho nao e fonte segura — o medico-autor pode apagar
+  // esse campo pelo SDK (firestore.rules:204-207 nao inclui emitidoEm em
+  // `intacto`). Testado direto contra o emulador, escrita fora de
+  // emitirComCobranca (simula o cliente adulterado). A fonte que fecha isto
+  // e o LEDGER de consumo (privSnap.emissaoKey e redundante — a gaveta e o
+  // consumo sao escritos na mesma transacao, entao este cenario, com gaveta
+  // E consumo, ja bate contra as duas fontes de qualquer forma).
   test('emitidoEm apagado do doc (cliente adulterado) mas ja existe consumo desta emissao — reemissao deriva true mesmo assim', async () => {
     const id = await seedExame();
     await emitir(id, KEY_A);   // 1a emissao real: grava consumo (franquia) + gaveta
@@ -289,12 +288,11 @@ describe('E3 — reemissao e identificacaoAlterada derivados no servidor (nao do
     assert.ok(consumoSnap.docs.some((d) => d.data().reemissao === true), 'ledger tem que ter a reemissao true');
   });
 
-  // Revisao round 1 (Minor): feegow-admin grava pacienteNome sem trim — sem
-  // normalizar os dois lados, toda reemissao de exame importado do Feegow
-  // dava falso positivo de troca de identidade so por um espaco a mais.
-  // Continua valendo no round 2: a gaveta ja guarda o nome NORMALIZADO
-  // (identidadeAssinada usa a mesma normalizarCampo), entao comparar contra
-  // ela em vez do doc nao reabre o falso positivo.
+  // feegow-admin grava pacienteNome sem trim — sem normalizar os dois lados,
+  // toda reemissao de exame importado do Feegow dava falso positivo de troca
+  // de identidade so por um espaco a mais. A gaveta guarda o nome ja
+  // NORMALIZADO (identidadeAssinada usa a mesma normalizarCampo), entao
+  // comparar contra ela em vez do doc nao reabre o falso positivo.
   test('pacienteNome com espaco/caixa diferente (Feegow sem trim) x mesmo nome normalizado — identificacaoAlterada false', async () => {
     const id = await seedExame();
     await emitir(id, KEY_A, { pacienteNome: 'PACIENTE FEEGOW ' });   // grava sem trim (como o Feegow)
@@ -305,17 +303,17 @@ describe('E3 — reemissao e identificacaoAlterada derivados no servidor (nao do
   });
 
   // ══════════════════════════════════════════════════════════════════
-  // ROUND 2 (Codex, tríade onda 2) — 2 Importants:
+  // Dois cenarios que a derivacao acima ainda deixava passar:
   //  1. exame PRE-onda-0 sem gaveta: autor apagava emitidoEm pelo SDK e
-  //     reemitia -> reemissao false (o termo do round 1, privSnap.
-  //     emissaoKey, tambem nao existia nesse exame — nasceu depois). Fix:
-  //     ledger de consumo como fonte definitiva.
+  //     reemitia -> reemissao false (privSnap.emissaoKey tambem nao existia
+  //     nesse exame — nasceu depois). Fix: ledger de consumo como fonte
+  //     definitiva.
   //  2. identificacaoAlterada contornavel: autor editava a identidade no
   //     DOC pelo SDK antes de reemitir e mandava o MESMO valor adulterado —
   //     o "antes" (o doc) ja estava errado, nunca detectava. Fix: identidade
   //     ASSINADA mora na gaveta server-only (privSnap.identidade).
   // ══════════════════════════════════════════════════════════════════
-  test('(round 2, Important 1) exame legado SEM gaveta + consumo existente + emitidoEm apagado -> reemissao true (ledger, nao a gaveta)', async () => {
+  test('exame legado SEM gaveta + consumo existente + emitidoEm apagado -> reemissao true (ledger, nao a gaveta)', async () => {
     const id = await seedExameEmitidoSemGaveta();   // emitido, SEM gaveta (legado pre-onda-0)
     await db.collection('consumo').add({ workspaceId: WS, exameId: id, tipo: 'franquia', emitidoEm: FieldValue.serverTimestamp() });
     await db.doc(`workspaces/${WS}/exames/${id}`).update({ emitidoEm: FieldValue.delete() });   // autor apaga pelo SDK
@@ -323,23 +321,23 @@ describe('E3 — reemissao e identificacaoAlterada derivados no servidor (nao do
     const r = await emitir(id, KEY_A);
     assert.equal(r.ok, true);
     assert.equal(r.reemissao, true,
-      'consumo existente prova a emissao anterior mesmo sem gaveta e sem emitidoEm — o achado do round 2');
+      'consumo existente prova a emissao anterior mesmo sem gaveta e sem emitidoEm');
   });
 
-  test('(round 2, Important 2) autor adultera pacienteNome no doc E manda o MESMO valor adulterado — identificacaoAlterada true (comparado contra a gaveta, nao contra o doc)', async () => {
+  test('autor adultera pacienteNome no doc E manda o MESMO valor adulterado — identificacaoAlterada true (comparado contra a gaveta, nao contra o doc)', async () => {
     const id = await seedExame();
     await emitir(id, KEY_A);   // 1a emissao real: gaveta grava identidade assinada (pacienteNome 'PACIENTE E')
     // Autor edita o doc pelo SDK ANTES de reemitir (escrita direta simula isso).
     await db.doc(`workspaces/${WS}/exames/${id}`).update({ pacienteNome: 'Paciente Trocado' });
     // Reemite mandando o MESMO valor que acabou de plantar no doc — contra o
-    // doc isso pareceria "sem mudanca" (era exatamente o achado do round 2).
+    // doc isso pareceria "sem mudanca"; e exatamente o que a gaveta evita.
     const r = await emitir(id, KEY_B, { pacienteNome: 'Paciente Trocado' });
     assert.equal(r.ok, true);
     assert.equal(r.identificacaoAlterada, true,
       'comparado contra a gaveta (o que foi assinado da ultima vez), nao contra o doc ja adulterado');
   });
 
-  test('(round 2) reemissao sem mudanca nenhuma na identidade — identificacaoAlterada false', async () => {
+  test('reemissao sem mudanca nenhuma na identidade — identificacaoAlterada false', async () => {
     const id = await seedExame();
     await emitir(id, KEY_A);
     const r = await emitir(id, KEY_B);   // helper manda os MESMOS valores da 1a emissao
@@ -348,12 +346,12 @@ describe('E3 — reemissao e identificacaoAlterada derivados no servidor (nao do
     assert.equal(r.identificacaoAlterada, false);
   });
 
-  test('(round 2, item d) exame legado emitido sem gaveta (pre-onda-0): sem identidade assinada anterior, fallback pro doc funciona como no round 1', async () => {
+  test('exame legado emitido sem gaveta (pre-onda-0): sem identidade assinada anterior, fallback pro doc funciona', async () => {
     const id = await seedExameEmitidoSemGaveta();   // pacienteNome: 'Paciente Legado', emitido, SEM gaveta/consumo
     const r = await emitir(id, KEY_A, { pacienteNome: 'Paciente Trocado' });   // reemissao real, nome muda vs o DOC (unico "antes" disponivel)
     assert.equal(r.ok, true);
     assert.equal(r.reemissao, true);
-    assert.equal(r.identificacaoAlterada, true, 'sem gaveta com identidade assinada — fallback contra o doc, igual ao round 1');
+    assert.equal(r.identificacaoAlterada, true, 'sem gaveta com identidade assinada — fallback contra o doc');
   });
 });
 

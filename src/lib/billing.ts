@@ -7,7 +7,7 @@
 import { db } from './firebase';
 import {
   collection, doc, getDoc, setDoc, getDocs, updateDoc, addDoc,
-  query, where, limit, increment, serverTimestamp, Timestamp
+  query, where, limit, serverTimestamp, Timestamp
 } from 'firebase/firestore';
 
 // ══ TIPOS ════════════════════════════════════════════════════════
@@ -40,14 +40,6 @@ export type CheckResult = {
   tipo?: 'franquia' | 'creditos';
   motivo?: 'sem_plano' | 'expirado' | 'sem_saldo' | 'erro';
   sub?: Record<string, unknown>;
-};
-
-export type DadosConsumo = {
-  pacienteNome: string;
-  tipoExame: string;
-  convenio: string;
-  tipo: 'franquia' | 'credito';
-  reemissao: boolean;
 };
 
 export type DadosPagamento = {
@@ -204,54 +196,6 @@ export async function checkEmissao(wsId: string): Promise<CheckResult> {
   } catch (e) { console.error('checkEmissao:', e); return { pode: false, motivo: 'erro' }; }
 }
 
-export async function consumirEmissao(wsId: string, tipo: 'franquia' | 'creditos') {
-  try {
-    const sub = await getSubscription(wsId);
-    if (!sub) return false;
-    if (tipo === 'franquia') {
-      await updateDoc(doc(db, 'subscriptions', sub.id as string), {
-        franquiaUsada: increment(1)
-      });
-    } else {
-      await updateDoc(doc(db, 'subscriptions', sub.id as string), {
-        creditosExtras: increment(-1)
-      });
-    }
-    return true;
-  } catch (e) { console.error('consumirEmissao:', e); return false; }
-}
-
-// ══ CHECK WORKSPACE LIMIT (locais de trabalho) ══════════════════
-
-export type CheckWorkspaceResult = {
-  pode: boolean;
-  atual: number;
-  max: number;
-  custoAdicional: number;
-};
-
-export async function checkWorkspaceLimit(uid: string, wsId: string): Promise<CheckWorkspaceResult> {
-  try {
-    const sub = await getSubscription(wsId);
-    if (!sub) return { pode: false, atual: 0, max: 0, custoAdicional: 0 };
-
-    // Contar vinculos ativos do usuario
-    const vincSnap = await getDocs(
-      query(collection(db, 'vinculos'), where('medicoUid', '==', uid), where('status', '==', 'ativo'))
-    );
-    const atual = vincSnap.size;
-    const max = (sub.maxLocais as number) || 1;
-    const custoAdicional = (sub.localAdicional as number) || 0;
-
-    return {
-      pode: atual < max, // pode adicionar se ainda nao atingiu o limite
-      atual,
-      max,
-      custoAdicional,
-    };
-  } catch (e) { console.error('checkWorkspaceLimit:', e); return { pode: false, atual: 0, max: 0, custoAdicional: 0 }; }
-}
-
 // ══ CHECK EXTRATO LIMIT (extratos financeiros) ══════════════════
 
 export type CheckExtratoResult = {
@@ -287,26 +231,6 @@ export async function checkExtratoLimit(wsId: string): Promise<CheckExtratoResul
     // Pode gerar, mas cobra
     return { pode: true, gratis: false, custo, usados, franquia };
   } catch (e) { console.error('checkExtratoLimit:', e); return { pode: false, gratis: false, custo: 0, usados: 0, franquia: 0 }; }
-}
-
-// ══ CONSUMO (registro detalhado de cada emissao) ════════════════
-
-export async function registrarConsumo(
-  wsId: string, exameId: string, medicoUid: string, dados: DadosConsumo
-) {
-  try {
-    await addDoc(collection(db, 'consumo'), {
-      workspaceId: wsId,
-      exameId,
-      medicoUid,
-      pacienteNome: dados.pacienteNome || '',
-      tipoExame: dados.tipoExame || '',
-      convenio: dados.convenio || '',
-      tipo: dados.tipo,
-      reemissao: dados.reemissao || false,
-      emitidoEm: serverTimestamp()
-    });
-  } catch { /* consumo nao pode quebrar emissao */ }
 }
 
 // ══ PAGAMENTOS ══════════════════════════════════════════════════
