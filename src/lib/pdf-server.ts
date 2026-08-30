@@ -79,8 +79,13 @@ function pathSnapshotHtml(wsId: string, exameId: string): string {
 export async function salvarSnapshotHtml(html: string, wsId: string, exameId: string, nomeArq: string): Promise<void> {
   try {
     const filePath = pathSnapshotHtml(wsId, exameId);
+    // Ruflo-5/Ponytail-11: sanitiza AQUI, ponto único — os 2 callers (route.ts
+    // e gerarESalvarPdf logo abaixo) passam o nomeArq CRU. Idempotente
+    // (sanitizarNomeArq 2x não muda nada), então não há dupla-sanitização —
+    // só um lugar decide o nome do objeto.
+    const nomeSanitizado = sanitizarNomeArq(nomeArq, exameId);
     await getStorage().bucket().file(filePath).save(html, {
-      metadata: { contentType: 'text/html; charset=utf-8', metadata: { nomeArq } },
+      metadata: { contentType: 'text/html; charset=utf-8', metadata: { nomeArq: nomeSanitizado } },
     });   // sem makePublic(): só o Admin SDK lê
     await getFirestore().doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfHtmlPath: filePath });
   } catch (e) {
@@ -196,7 +201,8 @@ export async function gerarESalvarPdf(
   // derrubá-lo. O alvo é o MESMO nome que `salvarPdfBuffer` acabou de usar
   // (mesma função de sanitização, idempotente) — antes ele era redescoberto
   // fazendo parse da URL lá em `correcao-admin.ts`, com o formato do path
-  // sabido em dois lugares.
-  await salvarSnapshotHtml(pdfHtml, wsId, exameId, sanitizarNomeArq(nomeArq, exameId));
+  // sabido em dois lugares. Nome CRU aqui (Ruflo-5): salvarSnapshotHtml
+  // sanitiza sozinha.
+  await salvarSnapshotHtml(pdfHtml, wsId, exameId, nomeArq);
   return url;
 }

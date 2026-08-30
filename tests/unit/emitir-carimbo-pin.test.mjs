@@ -24,13 +24,14 @@ describe('carimbo de proveniência do motor (F3, achado do teste ao vivo)', () =
     assert.match(lib, /\.\.\.\(p\.extras \|\| \{\}\),\s*\n\s*status: 'emitido'/,
       'o carimbo saiu da transação — voltaria a morrer com o PDF');
   });
-  test('o update pós-PDF grava só a URL + limpa pdfErro (Task 6) — carimbo não volta', () => {
-    // Task 6 (P4/E4) acrescentou `pdfErro: FieldValue.delete()` nos DOIS
-    // updates de sucesso — o pin original travava contra o carimbo smuggle,
-    // não contra este campo novo. Continua garantindo que `motorNumeros`/
-    // `carimboMotor` não reaparece aqui (só a URL do PDF e a limpeza da marca).
-    const updates = src.match(/update\(\{ pdfUrl, pdfErro: FieldValue\.delete\(\) \}\)/g) || [];
-    assert.equal(updates.length, 2, 'os 2 bracos (anexo + puppeteer) tem que ter o mesmo update de sucesso');
+  test('carimbo nunca reaparece no update pos-PDF — a marca so mora na transacao', () => {
+    // Ponytail-4: o assert antigo contava `update({ pdfUrl, pdfErro: ... })`
+    // == 2 — literal DUPLICADO do mesmo pin em emitir-pdf-erro.test.mjs
+    // (tests/api). O que ESTE arquivo existe pra travar e outra coisa:
+    // motorNumeros/carimboMotor nao pode ter vazado pro update pos-PDF —
+    // devolveria ao caminho que morre com o Puppeteer (o achado original).
+    assert.ok(!/update\(\{[^}]*carimbo/i.test(src),
+      'carimboMotor/motorNumeros vazou pro update pos-PDF');
   });
 });
 

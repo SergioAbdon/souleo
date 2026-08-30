@@ -14,19 +14,17 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { salvarSnapshotHtml } from '../../src/lib/pdf-server.ts';
-
-describe('salvarSnapshotHtml exportada (Step 1)', () => {
-  test('e uma funcao — o catch da rota consegue importar e chamar', () => {
-    assert.equal(typeof salvarSnapshotHtml, 'function');
-  });
-});
+// Ponytail-2: sem import de salvarSnapshotHtml so pra um typeof — o proprio
+// `import { gerarESalvarPdf, ... } from '@/lib/pdf-server'` do route.ts (e a
+// bateria de emitir-carimbo-pin.test.mjs) ja pinam a existencia do export;
+// um ESM import que falhasse ja quebraria a suite inteira antes do 1o teste.
 
 describe('fail-loud do pdf-server nao mente mais (Step 1)', () => {
   test('mensagem vira "PDF abortado" (a franquia ja foi cobrada neste ponto)', async () => {
     const src = await readFile(new URL('../../src/lib/pdf-server.ts', import.meta.url), 'utf8');
     assert.ok(src.includes("'imagem não assinada — PDF abortado'"));
-    assert.ok(!src.includes('emissão abortada'), 'texto antigo (mentiroso pos-cobranca) ainda no arquivo');
+    // Ponytail-1: o assert do texto antigo ("emissão abortada") saiu — pin
+    // fragil, quebrava em qualquer reescrita do comentario ao redor.
   });
 });
 
@@ -52,12 +50,13 @@ describe('/api/emitir — wiring do catch de PDF (Step 2)', () => {
 
     // So o braco pdfHtml tem HTML pra congelar; o de anexo nao. Sem .catch
     // aqui: salvarSnapshotHtml nunca lanca (contrato proprio, pdf-server.ts).
-    assert.ok(/await salvarSnapshotHtml\(pdfHtml, wsId, exameId, sanitizarNomeArq\(nomeArq, exameId\)\);/.test(src),
+    // Nome CRU (Ruflo-5/Ponytail-11): a sanitizacao mora dentro de
+    // salvarSnapshotHtml agora, nao mais no call site.
+    assert.ok(/await salvarSnapshotHtml\(pdfHtml, wsId, exameId, nomeArq\);/.test(src),
       'catch do braco pdfHtml tem que congelar o snapshot (unica via de recuperacao sem 2a franquia)');
     const chamadasSnapshot = src.match(/salvarSnapshotHtml\(/g) || [];
     assert.equal(chamadasSnapshot.length, 1, 'braco de anexo nao tem HTML — nao pode chamar snapshot');
-
-    assert.ok(src.includes("import { gerarESalvarPdf, salvarPdfBuffer, salvarSnapshotHtml } from '@/lib/pdf-server';"));
-    assert.ok(src.includes("import { sanitizarNomeArq } from '@/lib/pdf-path';"));
+    // Ponytail-3: os 2 asserts que pinavam a linha exata de import saíram —
+    // quebravam so por reordenar/reformatar imports, sem checar comportamento.
   });
 });

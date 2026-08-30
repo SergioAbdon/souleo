@@ -13,15 +13,16 @@ import AnexarPdfModal from '@/components/agenda/AnexarPdfModal';
 import { dataLocalHoje } from '@/lib/utils';
 import { gerarAccessionNumber } from '@/lib/gerarAccessionNumber';
 import { db, auth } from '@/lib/firebase';
-import { doc, writeBatch, serverTimestamp, getDocs, collection, query, orderBy } from 'firebase/firestore';
+import { doc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { soAdministrativos } from '@/lib/campos-exame';
 import { useRouter } from 'next/navigation';
 import { checkEmissao } from '@/lib/billing';
 import DicomGallery from '@/components/laudo/DicomGallery';
 import { podeEditarLaudo, podeRemoverDaFila, podeCorrigirAdministrativo, ehMedico } from '@/lib/permissoes';
 import StatusPill from '@/components/shell/StatusPill';
-import { TIPOS_LAUDO_PADRAO, modalidadeDe, rotaDoLaudo, type TipoLaudo } from '@/lib/tipos-laudo';
+import { modalidadeDe, rotaDoLaudo } from '@/lib/tipos-laudo';
 import { postCorrigirLaudo, msgErroCorrecao } from '@/lib/corrigir-laudo-client';
+import { useTiposLaudo } from '@/hooks/useTiposLaudo';
 import type { AcaoFeegow } from '@/lib/feegow-admin';
 
 // v3: helper pra enviar token Firebase nas chamadas Feegow
@@ -45,14 +46,17 @@ type ExameItem = Record<string, unknown> & {
 export default function Worklist() {
   const { workspace, profile, papel, user } = useAuth();
   const router = useRouter();
+  const wsId = workspace?.id;
 
   // Quem pode nascer como AUTOR de exame: perfil medico E papel dono/medico
   // no local (MEDREC — medico de perfil com papel recepcao — nao assina aqui).
   const assinaComoAutor = ehMedico(profile) && (papel === 'dono' || papel === 'medico');
 
-  // Catálogo de tipos de laudo (Sub-plano 3): coleção vazia ou erro de leitura
-  // cai no default embutido — nunca fica sem opção no select nem sem rótulo.
-  const [tipos, setTipos] = useState<TipoLaudo[]>(TIPOS_LAUDO_PADRAO);
+  // Catálogo de tipos de laudo (Sub-plano 3, Ponytail-7): coleção vazia ou
+  // erro de leitura cai no default embutido — nunca fica sem opção no select
+  // nem sem rótulo. Hook compartilhado com Histórico e a ficha do paciente.
+  const { tipos, tiposMap } = useTiposLaudo(wsId);
+  const tiposAtivos = tipos.filter(t => t.ativo !== false).sort((a, b) => a.ordem - b.ordem);
 
   const [worklist, setWorklist] = useState<ExameItem[]>([]);
   const [naoRealizados, setNaoRealizados] = useState<ExameItem[]>([]);
@@ -127,27 +131,6 @@ export default function Worklist() {
   }, [pacCpf]);
 
   // Listener worklist (reage à data selecionada e ao workspace)
-  const wsId = workspace?.id;
-
-  // Catálogo de tipos de laudo — lido uma vez no mount (não precisa de
-  // onSnapshot aqui; a página de edição em Clínica é quem observa live).
-  useEffect(() => {
-    if (!wsId) return;
-    (async () => {
-      try {
-        const snap = await getDocs(query(collection(db, 'workspaces', wsId, 'tiposLaudo'), orderBy('ordem', 'asc')));
-        const lista = snap.docs.map(d => d.data() as TipoLaudo);
-        setTipos(lista.length > 0 ? lista : TIPOS_LAUDO_PADRAO);
-      } catch (e) {
-        console.error('carregar tiposLaudo:', e);
-        setTipos(TIPOS_LAUDO_PADRAO);
-      }
-    })();
-  }, [wsId]);
-
-  const tiposAtivos = tipos.filter(t => t.ativo !== false).sort((a, b) => a.ordem - b.ordem);
-  const tiposMap: Record<string, TipoLaudo> = {};
-  for (const t of tipos) tiposMap[t.id] = t;
 
   useEffect(() => {
     if (!wsId) return;

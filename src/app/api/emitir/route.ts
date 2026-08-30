@@ -7,7 +7,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { gerarESalvarPdf, salvarPdfBuffer, salvarSnapshotHtml } from '@/lib/pdf-server';
-import { sanitizarNomeArq } from '@/lib/pdf-path';
 import { validarPdfBase64 } from '@/lib/pdf-validacao';
 import { adminDb, requireUid } from '@/lib/auth-admin';
 import { resolverPapel } from '@/lib/exame-admin';
@@ -216,8 +215,9 @@ export async function POST(req: NextRequest) {
         // administrativa deste exame morre pra sempre) e deixa marca no doc —
         // a tela passa a ver o laudo emitido-sem-PDF em vez de ninguem saber.
         // Sem .catch aqui: salvarSnapshotHtml nunca lanca (proprio contrato
-        // da funcao, pdf-server.ts) — o .catch(() => {}) era morto.
-        await salvarSnapshotHtml(pdfHtml, wsId, exameId, sanitizarNomeArq(nomeArq, exameId));
+        // da funcao, pdf-server.ts) — o .catch(() => {}) era morto. Nome CRU
+        // (Ruflo-5): salvarSnapshotHtml sanitiza sozinha, ponto unico.
+        await salvarSnapshotHtml(pdfHtml, wsId, exameId, nomeArq);
         await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfErro: 'erro_pdf' })
           .catch((e2) => console.error('marcar pdfErro (nao-critico):', e2));
       }

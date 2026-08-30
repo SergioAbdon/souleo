@@ -10,11 +10,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getHistorico, getExame, type HistoricoResult } from '@/lib/firestore';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
 import { podeCancelarLaudo, podeCorrigirAdministrativo } from '@/lib/permissoes';
-import { DocumentSnapshot, collection, getDocs, orderBy, query } from 'firebase/firestore';
+import { DocumentSnapshot } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
-import { db } from '@/lib/firebase';
-import { TIPOS_LAUDO_PADRAO, rotaDoLaudo, type TipoLaudo } from '@/lib/tipos-laudo';
+import { rotaDoLaudo } from '@/lib/tipos-laudo';
 import { postCorrigirLaudo, msgErroCorrecao } from '@/lib/corrigir-laudo-client';
+import { useTiposLaudo } from '@/hooks/useTiposLaudo';
 
 type ExameItem = Record<string, unknown> & {
   id: string; pacienteNome?: string; tipoExame?: string;
@@ -57,26 +57,11 @@ export default function Historico() {
   // anterior nao pode sobrescrever a lista do local atual.
   const genRef = useRef(0);
 
-  // Catálogo de tipos de laudo (X20) — mesmo padrão do Worklist/ficha do
-  // paciente: lido 1x no mount, fallback pro default embutido. Sem isso,
-  // "Ver"/imprimir não tinham como saber a modalidade real do tipo e caíam
-  // sempre no motor de eco (rotaDoLaudo precisa do catálogo pra decidir).
-  const [tipos, setTipos] = useState<TipoLaudo[]>(TIPOS_LAUDO_PADRAO);
-  useEffect(() => {
-    if (!wsIdSel) return;
-    (async () => {
-      try {
-        const snap = await getDocs(query(collection(db, 'workspaces', wsIdSel, 'tiposLaudo'), orderBy('ordem', 'asc')));
-        const lista = snap.docs.map(d => d.data() as TipoLaudo);
-        setTipos(lista.length > 0 ? lista : TIPOS_LAUDO_PADRAO);
-      } catch (e) {
-        console.error('carregar tiposLaudo:', e);
-        setTipos(TIPOS_LAUDO_PADRAO);
-      }
-    })();
-  }, [wsIdSel]);
-  const tiposMap: Record<string, TipoLaudo> = {};
-  for (const t of tipos) tiposMap[t.id] = t;
+  // Catálogo de tipos de laudo (X20, Ponytail-7) — hook compartilhado com
+  // Worklist/ficha do paciente. Sem ele, "Ver"/imprimir não tinham como
+  // saber a modalidade real do tipo e caíam sempre no motor de eco
+  // (rotaDoLaudo precisa do catálogo pra decidir).
+  const { tiposMap } = useTiposLaudo(wsIdSel || undefined);
 
   // v3: Buscar dados com paginacao
   const fetchData = useCallback(async () => {

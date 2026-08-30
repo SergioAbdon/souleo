@@ -15,14 +15,13 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { getPaciente, getExames } from '@/lib/firestore';
-import { db } from '@/lib/firebase';
-import { collection, getDocs, orderBy, query } from 'firebase/firestore';
-import { TIPOS_LAUDO_PADRAO, TipoLaudo, modalidadeDe, rotaDoLaudo } from '@/lib/tipos-laudo';
+import { modalidadeDe, rotaDoLaudo } from '@/lib/tipos-laudo';
 import { fmtData, calcIdade, formatCpf } from '@/lib/paciente-fmt';
 import PageHeader from '@/components/shell/PageHeader';
 import StatusPill, { statusConhecido } from '@/components/shell/StatusPill';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
 import EditarPacienteModal from '@/components/pacientes/EditarPacienteModal';
+import { useTiposLaudo } from '@/hooks/useTiposLaudo';
 
 type Paciente = Record<string, unknown> & {
   id: string; nome?: string; cpf?: string; dtnasc?: string;
@@ -45,7 +44,6 @@ export default function FichaPacientePage() {
 
   const [paciente, setPaciente] = useState<Paciente | null>(null);
   const [exames, setExames] = useState<Exame[]>([]);
-  const [tipos, setTipos] = useState<TipoLaudo[]>(TIPOS_LAUDO_PADRAO);
   const [loading, setLoading] = useState(true);
   const [naoEncontrado, setNaoEncontrado] = useState(false);
   const [modalEditar, setModalEditar] = useState(false);
@@ -63,24 +61,9 @@ export default function FichaPacientePage() {
 
   useEffect(carregarFicha, [wsId, pacienteId]);
 
-  // Catálogo de tipos de laudo — carregado 1x no mount (mesmo padrão do
-  // Worklist: getDocs ordenado, fallback pro default embutido).
-  useEffect(() => {
-    if (!wsId) return;
-    (async () => {
-      try {
-        const snap = await getDocs(query(collection(db, 'workspaces', wsId, 'tiposLaudo'), orderBy('ordem', 'asc')));
-        const lista = snap.docs.map(d => d.data() as TipoLaudo);
-        setTipos(lista.length > 0 ? lista : TIPOS_LAUDO_PADRAO);
-      } catch (e) {
-        console.error('carregar tiposLaudo:', e);
-        setTipos(TIPOS_LAUDO_PADRAO);
-      }
-    })();
-  }, [wsId]);
-
-  const tiposMap: Record<string, TipoLaudo> = {};
-  for (const t of tipos) tiposMap[t.id] = t;
+  // Catálogo de tipos de laudo (Ponytail-7) — hook compartilhado com
+  // Worklist/Histórico (mesmo padrão: getDocs ordenado, fallback embutido).
+  const { tiposMap } = useTiposLaudo(wsId || undefined);
 
   const timeline = exames.filter(e => e.status !== 'nao-realizado');
   const naoRealizadosTotal = exames.filter(e => e.status === 'nao-realizado').length;
