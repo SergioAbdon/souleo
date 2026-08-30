@@ -37,9 +37,12 @@ before(async () => {
 });
 
 beforeEach(async () => {
+  // E11: tipo:'paid' e o default aqui (conta ja convertida, o caso comum)
+  // porque agora `sub.tipo` entra na decisao de giro do ciclo (opcao D) —
+  // os testes que precisam de trial setam `tipo: 'trial'` explicitamente.
   await db.doc(`subscriptions/${CONTA}`).set({
     contaId: CONTA, franquiaMensal: 600, franquiaUsada: 0, creditosExtras: 0,
-    cicloFim: new Date(Date.now() + 30 * 864e5),
+    cicloFim: new Date(Date.now() + 30 * 864e5), tipo: 'paid',
   });
 });
 
@@ -355,6 +358,61 @@ describe('E3 — reemissao e identificacaoAlterada derivados no servidor (nao do
   });
 });
 
+// ══════════════════════════════════════════════════════════════════
+// E14: dadosFinais e corpo CRU do cliente — antes entrava inteiro no
+// update que assina o laudo (so reemissao/identificacaoAlterada eram
+// filtrados, M3). Um cliente adulterado plantava pdfUrl/status/emitidoEm/
+// acc/cpf/medicoUid direto ali. Whitelist (ADR 2026-08-30 §5): so os 13
+// campos que os 3 clientes de producao de fato mandam sobrevivem.
+// ══════════════════════════════════════════════════════════════════
+describe('E14 — whitelist de dadosFinais (campos forjados nao chegam ao doc)', () => {
+  test('pdfUrl/status/emitidoEm/acc/cpf/medicoUid em dadosFinais NAO chegam ao doc', async () => {
+    const id = await seedExame();
+    const r = await emitir(id, KEY_A, {
+      pdfUrl: 'https://forjado.example/laudo.pdf',
+      status: 'x',
+      emitidoEm: new Date('2020-01-01'),
+      acc: 'FORJADO',
+      cpf: '00000000000',
+      medicoUid: 'outroUid',
+      canceladoEm: new Date(),
+      pdfHtmlPath: 'lixo',
+    });
+    assert.equal(r.ok, true);
+    const doc = await exameDoc(id);
+    assert.equal(doc.pdfUrl, undefined, 'pdfUrl forjado nao pode chegar ao doc');
+    assert.equal(doc.status, 'emitido', 'status vem do servidor, nao do cliente');
+    assert.equal(doc.acc, undefined, 'acc nao esta na whitelist');
+    assert.equal(doc.cpf, undefined, 'cpf nao esta na whitelist');
+    assert.equal(doc.medicoUid, MED, 'medicoUid vem de p.medicoUid, nao de dadosFinais');
+    assert.equal(doc.canceladoEm, undefined);
+    assert.equal(doc.pdfHtmlPath, undefined);
+    assert.ok(doc.emitidoEm, 'emitidoEm existe mas e o do serverTimestamp, nao o forjado');
+    assert.notEqual(doc.emitidoEm.toMillis(), new Date('2020-01-01').getTime());
+  });
+
+  test('os 13 campos legitimos continuam chegando ao doc (payload real dos 3 clientes)', async () => {
+    const id = await seedExame();
+    const r = await emitir(id, KEY_A, {
+      medidas: { ddve: 50 }, achados: 'achado x', conclusoes: 'conclusao x',
+      laudoHtml: '<p>a</p>', laudoTextoHtml: '<p>b</p>', cfgSnapshot: { clinica: 'X' },
+      pacienteDtnasc: '1980-01-02', dataExame: '2026-08-30', solicitante: 'DR FULANO', sexo: 'F',
+    });
+    assert.equal(r.ok, true);
+    const doc = await exameDoc(id);
+    assert.deepEqual(doc.medidas, { ddve: 50 });
+    assert.equal(doc.achados, 'achado x');
+    assert.equal(doc.conclusoes, 'conclusao x');
+    assert.equal(doc.laudoHtml, '<p>a</p>');
+    assert.equal(doc.laudoTextoHtml, '<p>b</p>');
+    assert.deepEqual(doc.cfgSnapshot, { clinica: 'X' });
+    assert.equal(doc.pacienteDtnasc, '1980-01-02');
+    assert.equal(doc.dataExame, '2026-08-30');
+    assert.equal(doc.solicitante, 'DR FULANO');
+    assert.equal(doc.sexo, 'F');
+  });
+});
+
 describe('E8 — laudo cancelado recusa emissao (nao revive cobrando)', () => {
   test('status cancelado: recusa sem cobrar, sem tocar consumo/gaveta privada', async () => {
     const id = await seedExame();
@@ -404,10 +462,15 @@ describe('billing e autoria seguem intactos (E9: primeira rede do caminho de din
     assert.equal((await emitir(id, KEY_A)).motivo, 'sem_saldo');
     assert.equal(await consumos(id), 0);
   });
-  test('ciclo vencido sem credito → expirado', async () => {
-    await db.doc(`subscriptions/${CONTA}`).update({ cicloFim: new Date(Date.now() - 864e5) });
+  // E11 opcao D: trial vencido NAO gira (ADR §3 "Contas em trial" — girar
+  // sem filtro vira trial eterno). Continua caindo no braco 'expirado' de
+  // sempre. (Conta paid vencida agora RENOVA em vez disso — describe abaixo.)
+  test('trial vencido sem credito → expirado (nao renova)', async () => {
+    await db.doc(`subscriptions/${CONTA}`).update({ cicloFim: new Date(Date.now() - 864e5), tipo: 'trial' });
     const id = await seedExame();
-    assert.equal((await emitir(id, KEY_A)).motivo, 'expirado');
+    const r = await emitir(id, KEY_A);
+    assert.equal(r.motivo, 'expirado');
+    assert.equal(await usada(), 0);
   });
   test('workspace sem assinatura → sem_plano', async () => {
     await db.doc('workspaces/wsSemPlanoE').set({ contaId: 'contaSemPlanoE' });
@@ -416,6 +479,119 @@ describe('billing e autoria seguem intactos (E9: primeira rede do caminho de din
       wsId: 'wsSemPlanoE', exameId: 'e1', uid: MED, medicoUid: MED, dadosFinais: {}, emissaoKey: KEY_A,
     });
     assert.equal(r.motivo, 'sem_plano');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════
+// E11 — renovacao do ciclo de franquia, OPCAO D (docs/decisoes/
+// 2026-08-30-secao7-renovacao-ciclo.md, decisao do Sergio 30/08).
+// Sem cron: o proprio emitirComCobranca gira o ciclo DENTRO da transacao de
+// emissao quando acha a assinatura vencida e elegivel (paid, franquiaMensal
+// > 0 — o marcador de "nao suspensa" que existe hoje, ver ADR §1b). Testes
+// diretos contra o emulador, mesmo padrao do resto do arquivo.
+// ══════════════════════════════════════════════════════════════════
+describe('E11 — renovacao do ciclo (opcao D, giro dentro da transacao)', () => {
+  test('(a) ciclo vencido + conta ativa: renova, franquiaUsada reinicia (1 apos esta emissao), cicloFim rola +30d', async () => {
+    const cicloVencido = new Date(Date.now() - 5 * 864e5);
+    await db.doc(`subscriptions/${CONTA}`).update({ cicloFim: cicloVencido, franquiaUsada: 599 });
+    const id = await seedExame();
+    const r = await emitir(id, KEY_A);
+    assert.equal(r.ok, true);
+    assert.equal(r.tipo, 'franquia');
+    assert.equal(r.girou, true);
+    assert.equal(await usada(), 1, 'franquiaUsada devia reiniciar (0) e so contar esta emissao');
+    const novoFim = (await db.doc(`subscriptions/${CONTA}`).get()).data().cicloFim.toDate();
+    assert.ok(novoFim.getTime() > Date.now(), 'cicloFim novo tem que estar no futuro');
+    assert.ok(
+      Math.abs(novoFim.getTime() - (cicloVencido.getTime() + 30 * 864e5)) < 1000,
+      'giro de 1 ciclo: +30d a partir do cicloFim ANTIGO, nao de "agora"',
+    );
+  });
+
+  test('(b) gap de 3 ciclos parado: cicloFim rola em passos de 30d ate o futuro (loop, nao so +30d uma vez)', async () => {
+    const cicloVencidoHaMuito = new Date(Date.now() - 95 * 864e5); // ~3 ciclos sem ninguem emitir
+    await db.doc(`subscriptions/${CONTA}`).update({ cicloFim: cicloVencidoHaMuito });
+    const id = await seedExame();
+    const r = await emitir(id, KEY_A);
+    assert.equal(r.ok, true);
+    assert.equal(r.girou, true);
+    const novoFim = (await db.doc(`subscriptions/${CONTA}`).get()).data().cicloFim.toDate();
+    assert.ok(novoFim.getTime() > Date.now(), 'um unico +30d nao bastaria pra um gap de ~3 ciclos');
+    assert.ok(novoFim.getTime() - Date.now() < 30 * 864e5, 'nao pode pular alem do proximo ciclo futuro');
+  });
+
+  test('(d) suspensa (franquiaMensal=0) com ciclo vencido: nao gira, recusa expirado', async () => {
+    await db.doc(`subscriptions/${CONTA}`).update({ cicloFim: new Date(Date.now() - 864e5), franquiaMensal: 0 });
+    const id = await seedExame();
+    const r = await emitir(id, KEY_A);
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'expirado');
+    assert.equal(await usada(), 0);
+  });
+
+  test('(e) creditos extras nao zeram na renovacao do ciclo', async () => {
+    await db.doc(`subscriptions/${CONTA}`).update({ cicloFim: new Date(Date.now() - 864e5), creditosExtras: 7 });
+    const id = await seedExame();
+    const r = await emitir(id, KEY_A);
+    assert.equal(r.ok, true);
+    assert.equal(r.girou, true);
+    assert.equal(r.tipo, 'franquia', 'giro da franquia nova nao consome credito');
+    assert.equal((await db.doc(`subscriptions/${CONTA}`).get()).data().creditosExtras, 7, 'creditos intactos');
+  });
+
+  test('(f) ciclo vigente: nao gira, franquiaUsada acumula normal', async () => {
+    await db.doc(`subscriptions/${CONTA}`).update({ franquiaUsada: 50 }); // cicloFim do beforeEach ja e futuro
+    const id = await seedExame();
+    const r = await emitir(id, KEY_A);
+    assert.equal(r.ok, true);
+    assert.equal(r.girou, false);
+    assert.equal(await usada(), 51);
+  });
+
+  test('emitir 2x seguidas apos vencer: gira so na 1a (a 2a ja ve cicloFim futuro)', async () => {
+    await db.doc(`subscriptions/${CONTA}`).update({ cicloFim: new Date(Date.now() - 864e5) });
+    const id1 = await seedExame();
+    const r1 = await emitir(id1, KEY_A);
+    assert.equal(r1.girou, true);
+    const id2 = await seedExame();
+    const r2 = await emitir(id2, KEY_B);
+    assert.equal(r2.girou, false, 'cicloFim ja rolou pro futuro na 1a emissao');
+    assert.equal(await usada(), 2);
+  });
+
+  // Reviewer follow-up (Minor-5, item 4a): replay retorna ANTES de sequer
+  // ler os campos da assinatura (guard da TRAVA ANTI-COBRANCA-DUPLA, mais
+  // acima na funcao) — vencer o ciclo DEPOIS que a 1a emissao ja commitou
+  // nao pode fazer o replay da MESMA tentativa girar nada.
+  test('replay (mesma key) sobre ciclo que venceu DEPOIS da 1a emissao: nao gira, nao mexe no cicloFim', async () => {
+    const id = await seedExame();
+    const r1 = await emitir(id, KEY_A);   // ciclo vigente (beforeEach) — nao gira
+    assert.equal(r1.girou, false);
+    const cicloVencido = new Date(Date.now() - 864e5);
+    await db.doc(`subscriptions/${CONTA}`).update({ cicloFim: cicloVencido });   // vence DEPOIS
+    const r2 = await emitir(id, KEY_A);   // mesma key = replay
+    assert.equal(r2.replay, true);
+    assert.equal(r2.girou, false, 'replay nao e um ato novo de emissao — nao pode girar o ciclo');
+    const cicloAtual = (await db.doc(`subscriptions/${CONTA}`).get()).data().cicloFim.toDate();
+    assert.equal(cicloAtual.getTime(), cicloVencido.getTime(), 'replay nao pode ter mexido no cicloFim');
+    assert.equal(await usada(), 1, 'replay nao cobra de novo');
+  });
+
+  // Reviewer follow-up (Minor-5, item 4b): conta paga LEGADA, criada antes
+  // do campo `tipo` existir na assinatura — `sub.tipo` vem `undefined`, nao
+  // `'paid'`. O predicado do giro e `sub.tipo !== 'trial'`: undefined passa
+  // nesse teste (so trial fica de fora), entao uma conta legada tambem gira.
+  test('tipo undefined (conta paga legada, sem o campo tipo): gira normal — so trial e que NAO gira', async () => {
+    await db.doc(`subscriptions/${CONTA}`).update({
+      tipo: FieldValue.delete(), cicloFim: new Date(Date.now() - 864e5),
+    });
+    const subAntes = (await db.doc(`subscriptions/${CONTA}`).get()).data();
+    assert.equal(subAntes.tipo, undefined, 'sanity: campo tipo realmente ausente');
+    const id = await seedExame();
+    const r = await emitir(id, KEY_A);
+    assert.equal(r.ok, true);
+    assert.equal(r.girou, true, 'legado sem campo tipo nao pode ficar preso pra sempre sem girar');
+    assert.equal(await usada(), 1);
   });
 });
 

@@ -6,7 +6,8 @@
 import { useEffect, useState } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, orderBy, Timestamp } from 'firebase/firestore';
-import { getConfigPlanos, type PlanoConfig } from '@/lib/billing';
+import { getConfigPlanos, acharSub, type PlanoConfig } from '@/lib/billing';
+import { vigente } from '@/lib/ciclo';
 import { saveAs } from 'file-saver';
 import Link from 'next/link';
 
@@ -76,13 +77,13 @@ export default function FinanceiroPage() {
 
   // ── Calculos ──
   const agora = Date.now();
+  const agoraDate = new Date();
   const inicioMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 
-  // MRR: subs pagas ativas × preco
-  const subsPagasAtivas = subsList.filter(s => {
-    const fim = s.cicloFim?.toDate ? s.cicloFim.toDate() : null;
-    return s.tipo === 'paid' && fim && agora <= fim.getTime();
-  });
+  // MRR: subs pagas ATIVAS (ciclo.ts vigente() — vencida nao e mais sinonimo
+  // de inativa: paga+nao-trial gira sozinha no proximo emitir, MRR nao pode
+  // cair sozinho na virada do mes).
+  const subsPagasAtivas = subsList.filter(s => s.tipo === 'paid' && vigente(s, agoraDate));
   const mrr = subsPagasAtivas.reduce((total, sub) => {
     const plano = planos.find(p => p.franquia === sub.franquiaMensal);
     return total + (plano?.preco || 0);
@@ -95,21 +96,16 @@ export default function FinanceiroPage() {
   });
   const receitaMes = pagsMes.reduce((a, p) => a + (p.valor || 0), 0);
 
-  // Cancelamentos: pagas que expiraram
-  const cancelamentos = subsList.filter(s => {
-    const fim = s.cicloFim?.toDate ? s.cicloFim.toDate() : null;
-    return s.tipo === 'paid' && fim && agora > fim.getTime();
-  }).length;
+  // Cancelamentos: pagas que NAO estao mais vigentes (vencidas E sem giro
+  // automatico — franquiaMensal zerada, ex.: bloqueio manual).
+  const cancelamentos = subsList.filter(s => s.tipo === 'paid' && !vigente(s, agoraDate)).length;
 
   // Ticket medio
   const ticketMedio = pagsMes.length > 0 ? receitaMes / pagsMes.length : 0;
 
-  // Inadimplentes
-  const inadimplentes = subsList.filter(s => {
-    const fim = s.cicloFim?.toDate ? s.cicloFim.toDate() : null;
-    return fim && agora > fim.getTime();
-  }).map(s => {
-    const ws = wsList.find(w => w.id === s.workspaceId);
+  // Inadimplentes: tem cicloFim e nao esta mais vigente.
+  const inadimplentes = subsList.filter(s => s.cicloFim && !vigente(s, agoraDate)).map(s => {
+    const ws = wsList.find(w => acharSub(w, [s]) === s);
     const fim = s.cicloFim!.toDate();
     const diasAtras = Math.ceil((agora - fim.getTime()) / 864e5);
     return { sub: s, ws, diasAtras };
@@ -129,9 +125,9 @@ export default function FinanceiroPage() {
   function exportarClientes() {
     const headers = ['Workspace', 'Tipo', 'Dono', 'Email', 'Plano', 'Franquia', 'Usada', 'Creditos', 'Expira', 'Status'];
     const rows = wsList.map(ws => {
-      const sub = subsList.find(s => s.workspaceId === ws.id);
+      const sub = acharSub(ws, subsList);
       const fim = sub?.cicloFim?.toDate ? sub.cicloFim.toDate() : null;
-      const ok = fim && agora <= fim.getTime();
+      const ok = sub ? vigente(sub, agoraDate) : false;
       const status = ok ? (sub?.tipo === 'trial' ? 'Trial' : 'Ativo') : 'Expirado';
       return [
         ws.nomeClinica || ws.id, ws.tipo || '', ownerNome(ws.ownerUid), ownerEmail(ws.ownerUid),

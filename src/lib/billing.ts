@@ -9,6 +9,7 @@ import {
   collection, doc, getDoc, setDoc, getDocs, updateDoc, addDoc,
   query, where, limit, serverTimestamp, Timestamp
 } from 'firebase/firestore';
+import { podeGirar } from './ciclo';
 
 // ══ TIPOS ════════════════════════════════════════════════════════
 
@@ -94,6 +95,19 @@ export async function saveConfigPlanos(config: ConfigPlanos, adminUid: string) {
 export async function getPlanoById(planoId: string): Promise<PlanoConfig | null> {
   const config = await getConfigPlanos();
   return config.planos.find(p => p.id === planoId) || null;
+}
+
+// Ruflo-2 (S7-triade-2b): join CANONICO workspace -> subscription. Os
+// paineis batch do Direx (buscam TODAS as subs de uma vez, sem get() por
+// contaId) faziam so `sub.workspaceId === ws.id` — o fallback LEGADO —
+// e ficavam mudos pra conta do cadastro novo (subscriptions/{contaId}, sem
+// `workspaceId`, mesmo motivo do resolverAssinatura server-side). Mesma
+// ordem de fallback (contaId primeiro, workspaceId depois): zero mudanca
+// pra conta legada.
+export function acharSub<T extends { id: string; workspaceId?: string }>(
+  ws: { id: string; contaId?: string }, subs: T[]
+): T | undefined {
+  return (ws.contaId && subs.find(s => s.id === ws.contaId)) || subs.find(s => s.workspaceId === ws.id);
 }
 
 // ══ SUBSCRIPTION ════════════════════════════════════════════════
@@ -182,6 +196,19 @@ export async function checkEmissao(wsId: string): Promise<CheckResult> {
     const franquiaUsada = (sub.franquiaUsada as number) || 0;
     const franquiaMensal = (sub.franquiaMensal as number) || 0;
     const creditosExtras = (sub.creditosExtras as number) || 0;
+
+    // E11 opcao D (ADR 2026-08-30): o SERVIDOR gira o ciclo dentro da
+    // transacao de emitirComCobranca (src/lib/emitir-admin.ts) quando acha a
+    // assinatura elegivel — isto aqui e SO a previa do cliente (nao escreve
+    // nada). Sem espelhar a MESMA regra, o pre-voo dizia 'expirado' no dia
+    // 31 e o medico nem abria o editor pra chegar na rota que de fato gira
+    // (e a modalidade 'pdf', que pula o pre-voo, renovava sozinha enquanto
+    // ECOTT/motor ficava travado na tela). `podeGirar` (ciclo.ts) e a MESMA
+    // funcao que emitir-admin.ts usa pra girar de verdade — antes disto era
+    // o mesmo predicado escrito 2x em texto (pin cross-file, aposentado).
+    if (podeGirar({ cicloFim, franquiaMensal, tipo: sub.tipo as string }, agora)) {
+      return { pode: true, tipo: 'franquia', sub };
+    }
 
     if (agora > cicloFim && creditosExtras <= 0) {
       return { pode: false, motivo: 'expirado', sub };

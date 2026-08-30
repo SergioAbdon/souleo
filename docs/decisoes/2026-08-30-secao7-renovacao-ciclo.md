@@ -1,9 +1,71 @@
-# DRAFT — E11: renovação do ciclo de franquia (aguardando decisão do Sergio)
+# ADR — E11: renovação do ciclo de franquia
 
-**Data:** 30/08/2026 · **Status:** ⚠️ RASCUNHO — nada implementado, nada decidido
-**Origem:** Seção 7 (emissão), achado E11 · decisão-irmã: E13
-**Natureza:** decisão de **política de cobrança**, não bug de código. Por isso este documento
-para e espera.
+**Data:** 30/08/2026 · **Status:** DECIDIDO 30/08 (Sergio) · IMPLEMENTADO na onda 2b
+(regra publicada no deploy da onda) — Opção D. Predicado/loop do giro e o
+significado de "vigente" viraram fonte única em `src/lib/ciclo.ts` (PURO, zero
+imports de SDK) na fix-wave da tríade 2b; `emitir-admin.ts` e `billing.ts`
+importam de lá — antes eram o mesmo predicado escrito 2x em texto (pin
+cross-file `giro-ciclo-predicado-pin.test.mjs`, aposentado; ver `tests/unit/
+ciclo.test.mjs`). Este arquivo continua sendo o registro de contexto/comparativo
+das 4 opções — o texto abaixo (problema, opções, comparativo) não muda.
+
+## Contrato novo de `cicloFim` (fix-wave triade 2b)
+
+`cicloFim` deixou de significar "prazo que trava emissão" e passou a significar
+**"válido até a ÚLTIMA emissão"** — o servidor gira sozinho dentro da transação
+de `emitirComCobranca` (Opção D). Uma conta paga (`franquiaMensal > 0`,
+`tipo !== 'trial'`) com `cicloFim` vencido **continua ativa**: o próximo emitir
+gira o ciclo sozinho. A **vigência real** para decisões de dinheiro/churn
+(MRR, cancelamentos, inadimplentes, badge Ativo/Expirado) é `vigente()` de
+`ciclo.ts`, não a comparação direta `agora <= cicloFim` — 16 leitores no
+código (painéis do Direx + Marina) liam o significado ANTIGO e foram
+corrigidos na mesma fix-wave (`docs/decisoes/INDEX.md`).
+
+## Lacuna registrada: ledger sem dimensão de ciclo
+
+`consumo` (o ledger de emissão/devolução) não carimba QUAL ciclo cobrou cada
+laudo. Cancelar um exame emitido no ciclo VELHO devolve `franquiaUsada -= 1`
+no ciclo que a assinatura tem **agora** — que já pode ser o ciclo NOVO (girado
+por outra emissão no meio). Efeito: a devolução "vaza" pro ciclo novo em vez
+de ficar presa no antigo. Já era uma pendência conhecida no draft original
+(§ "Pendência para o merge") e segue sem correção — é limitado (nunca devolve
+mais franquia do que existe), favorece o cliente (nunca cobra a mais) e é
+auditável (`consumo`/`logs` mostram os dois ciclos). **Upgrade futuro se virar
+problema real:** carimbar o `cicloFim` vigente no momento da cobrança dentro
+do próprio doc de `consumo`, e a devolução comparar contra esse carimbo antes
+de decidir se ainda vale.
+
+**Decisões de implementação** (tomadas na sessão que codou, seguindo os princípios
+deste draft onde ele deixava aberto — nenhuma é política nova):
+- **"Ativa"** = `franquiaMensal > 0` — não existe campo `status` na assinatura (§1b);
+  este é o mesmo marcador que `bloquear_workspace` (Marina) já usa pra suspender.
+- **Trial** (`sub.tipo === 'trial'`) **não gira** — mantém os 30 dias fixos, o Direx
+  converte na mão (§3, a opção "mais simples" do draft).
+- **Legado sem o campo `tipo`** (`sub.tipo === undefined`) **gira normal** — só trial
+  fica de fora do predicado (`sub.tipo !== 'trial'`), então uma conta paga antiga sem
+  esse campo não fica presa pra sempre.
+- **Assinatura sem `cicloFim`** não gira (guard `cicloFim &&` — nunca compara contra
+  null/Invalid Date) **nem conta como vigente** (`ciclo.ts` `vigente()`, fix-wave
+  tríade 2b — Codex Important: sem ciclo pago não há mensalidade a contar no MRR,
+  mesmo com franquia/créditos).
+- Gap de múltiplos ciclos parados: rola em passos de +30d a partir do `cicloFim`
+  ANTIGO (não de "agora") num loop, até ficar no futuro — um único +30d não bastaria.
+
+**Pendência para o merge (Sergio a confirmar):** devolução cruzada de ciclo —
+cancelar um laudo emitido no ciclo VELHO devolve a franquia (`franquiaUsada -= 1`,
+`exame-admin.ts`) que hoje já pode estar no ciclo NOVO (girado por outra emissão no
+meio). Efeito: a devolução "vaza" pro ciclo novo em vez de ficar presa no antigo —
+limitado (não pode devolver mais franquia do que existe), favorece o cliente (nunca
+cobra a mais), e é auditável (ledger `consumo`/`logs` mostra os dois ciclos). Default
+aceito por ora; upgrade futuro se virar problema real: carimbar o `cicloFim` vigente
+no momento da cobrança dentro do próprio doc de `consumo`, e a devolução comparar
+contra esse carimbo antes de decidir se ainda vale.
+
+**Origem:** Seção 7 (emissão), achado E11 · decisão-irmã: E13 (segue em aberto,
+não tocada por esta implementação)
+**Natureza:** decisão de **política de cobrança**, não bug de código. O texto abaixo
+(problema, as 4 opções, comparativo) é o registro de como se chegou na Opção D —
+mantido como está.
 
 ---
 

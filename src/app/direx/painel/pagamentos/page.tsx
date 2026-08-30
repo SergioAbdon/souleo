@@ -7,7 +7,8 @@
 import { useEffect, useState } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, getDoc, doc, setDoc, query, orderBy, Timestamp } from 'firebase/firestore';
-import { registrarPagamento } from '@/lib/billing';
+import { registrarPagamento, acharSub } from '@/lib/billing';
+import { vigente } from '@/lib/ciclo';
 import { useDirexAuth } from '@/contexts/DirexAuthContext';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 
@@ -78,17 +79,17 @@ export default function PagamentosPage() {
   useEffect(() => { carregarDados(); }, []);
 
   // ── Helpers ──
-  const agora = Date.now();
   const agoraDate = new Date();
   const inicioMes = new Date(agoraDate.getFullYear(), agoraDate.getMonth(), 1);
   const mesAtualKey = `${agoraDate.getFullYear()}-${String(agoraDate.getMonth() + 1).padStart(2, '0')}`;
   const wsPF = wsList.filter(w => w.tipo === 'PF');
   const wsPJ = wsList.filter(w => w.tipo === 'PJ');
 
-  // Subs ativas pagas
-  const subsAtivas = subsList.filter(s => { const f = s.cicloFim?.toDate ? s.cicloFim.toDate() : null; return f && agora <= f.getTime() && s.tipo === 'paid'; });
-  const subsPF = subsAtivas.filter(s => wsPF.some(w => w.id === s.workspaceId));
-  const subsPJ = subsAtivas.filter(s => wsPJ.some(w => w.id === s.workspaceId));
+  // Subs ativas pagas (vigente() — ciclo.ts: vencida nao e mais sinonimo de
+  // inativa, ver comentario la)
+  const subsAtivas = subsList.filter(s => s.tipo === 'paid' && vigente(s, agoraDate));
+  const subsPF = subsAtivas.filter(s => wsPF.some(w => acharSub(w, [s]) === s));
+  const subsPJ = subsAtivas.filter(s => wsPJ.some(w => acharSub(w, [s]) === s));
 
   // Pagamentos do mes
   const pagsMes = pagList.filter(p => { const ts = p.criadoEm?.toDate ? p.criadoEm.toDate() : null; return ts && ts >= inicioMes && p.status === 'confirmado'; });
@@ -110,8 +111,8 @@ export default function PagamentosPage() {
   const ticketMedio = pagsMes.length > 0 ? receitaMes / pagsMes.length : 0;
 
   // Cancelamentos e inadimplentes
-  const cancelamentos = subsList.filter(s => { const f = s.cicloFim?.toDate ? s.cicloFim.toDate() : null; return s.tipo === 'paid' && f && agora > f.getTime(); }).length;
-  const inadimplentes = subsList.filter(s => { const f = s.cicloFim?.toDate ? s.cicloFim.toDate() : null; return f && agora > f.getTime(); }).length;
+  const cancelamentos = subsList.filter(s => s.tipo === 'paid' && !vigente(s, agoraDate)).length;
+  const inadimplentes = subsList.filter(s => s.cicloFim && !vigente(s, agoraDate)).length;
 
   // Excedente laudos + locais adicionais
   const recExcedente = subsList.reduce((a, s) => { const u = s.franquiaUsada || 0; const f = s.franquiaMensal || 0; return a + (u > f ? (u - f) * (s.excedente || 0) : 0); }, 0);

@@ -178,6 +178,23 @@ export async function POST(req: NextRequest) {
           medicoUid,
         });
       } catch { /* log nao pode quebrar emissao */ }
+
+      // E11 opcao D (ADR 2026-08-30): o giro ja commitou DENTRO da transacao
+      // acima — isto e so auditoria, mesmo padrao do log 'emissao' logo
+      // acima (nao critico, fora da transacao).
+      if (resultado.girou) {
+        try {
+          await dbAdmin.collection('logs').add({
+            tipo: 'renovacao_ciclo',
+            wsId,
+            exameId,
+            cicloFimAnterior: resultado.cicloFimAnterior,
+            cicloFimNovo: resultado.cicloFimNovo,
+            ts: FieldValue.serverTimestamp(),
+            medicoUid,
+          });
+        } catch { /* log nao pode quebrar emissao */ }
+      }
     }
 
     // ══ 3. PDF: gerado do HTML (motor/texto) OU anexado pronto (modalidade

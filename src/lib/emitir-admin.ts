@@ -35,10 +35,11 @@
 //    de regerar deriva de estado que so o servidor escreve.
 // Sem imports @/ (testado direto pelo node --test — ver exame-admin.ts).
 // ══════════════════════════════════════════════════════════════════
-import type { Firestore, Timestamp } from 'firebase-admin/firestore';
-import { FieldValue } from 'firebase-admin/firestore';
+import type { Firestore } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { resolverAssinatura } from './billing-admin';
 import { emissaoMudou } from './correcao-admin';
+import { podeGirar, proximoCicloFim } from './ciclo';
 
 // Gaveta server-only do estado de idempotencia (mesmo formato do shadow:
 // `privado/{tipo}/{sub}/{id}`). `firestore.rules` ja tem
@@ -78,9 +79,15 @@ export type ResultadoEmissao =
   // `reemissao`/`identificacaoAlterada` (E3): carimbos de auditoria DERIVADOS
   // no servidor (nao mais copiados do cliente) — replay devolve false nos
   // dois, replay nao e um ato novo de emissao.
+  // `girou`/`cicloFimAnterior`/`cicloFimNovo` (E11 opcao D, ADR 2026-08-30):
+  // true quando ESTA emissao girou o ciclo (achou a assinatura vencida e
+  // elegivel). A rota (mesmo padrao do log 'emissao') grava o log
+  // 'renovacao_ciclo' FORA da transacao com esses dois campos — o giro em si
+  // ja commitou aqui dentro, o log e so auditoria, nao critico.
   | {
       ok: true; tipo: 'franquia' | 'creditos' | null; replay: boolean; pdfPendente: boolean; pdfUrl: string | null;
       reemissao: boolean; identificacaoAlterada: boolean;
+      girou: boolean; cicloFimAnterior?: string; cicloFimNovo?: string;
     }
   | { ok: false; motivo: MotivoEmissao };
 
@@ -97,6 +104,18 @@ export type ResultadoEmissao =
 // lados ou a previa mente. Travado por
 // tests/unit/identidade-campos-pin.test.mjs (falha se os nomes divergirem).
 const CAMPOS_IDENTIDADE = ['pacienteNome', 'pacienteDtnasc', 'dataExame', 'convenio'] as const;
+
+// E14: dadosFinais e corpo CRU do cliente e entrava inteiro no update que
+// assina o laudo. Whitelist nascida do grep dos 3 clientes (ADR 2026-08-30
+// §5) — so estes 13 campos saem de fato de laudo/[id], laudo-texto/[id] e
+// AnexarPdfModal. reemissao/identificacaoAlterada ficam de fora de proposito
+// (M3): sao carimbos de auditoria derivados no servidor, o auditado nao os
+// escreve.
+const CAMPOS_DADOS_FINAIS = new Set([
+  'medidas', 'achados', 'conclusoes', 'laudoHtml', 'laudoTextoHtml', 'cfgSnapshot',
+  'tipoExame', 'pacienteNome', 'pacienteDtnasc', 'dataExame', 'convenio',
+  'solicitante', 'sexo',
+]);
 
 // pacienteNome normalizado (trim+uppercase) — mesmo tratamento do
 // identificacaoMudou() do cliente. feegow-admin grava sem trim; sem
@@ -232,6 +251,7 @@ export async function emitirComCobranca(db: Firestore, p: {
   medicoUid: string;
   dadosFinais: Record<string, unknown>;
   // Campos derivados no servidor que entram na MESMA escrita (carimbo do motor).
+  // server-derived only — NAO passa pela whitelist CAMPOS_DADOS_FINAIS (hoje so carimboMotor).
   extras?: Record<string, unknown>;
   // Round 4: obrigatoria — a rota so chama isto depois de `emissaoKeyValida`
   // recusar 400 sem ela (o formato ja foi validado no trust boundary; aqui
@@ -318,13 +338,13 @@ export async function emitirComCobranca(db: Firestore, p: {
           )
     );
 
-    // M3 (revisao E3): reemissao/identificacaoAlterada eram lidos do corpo
-    // cru do cliente por outro codigo (ja corrigido acima) — mas se o
-    // cliente mandasse esses NOMES de campo em dadosFinais, o spread abaixo
-    // ainda gravava o carimbo AUTODECLARADO no doc do exame. Descartado
-    // ANTES do spread: o doc nunca guarda um carimbo de auditoria escrito
-    // pelo proprio auditado.
-    const { reemissao: _reemissaoDoCliente, identificacaoAlterada: _identAlteradaDoCliente, ...dadosFinaisSemCarimbo } = p.dadosFinais;
+    // E14: whitelist substitui o destructuring de reemissao/
+    // identificacaoAlterada (M3) — qualquer chave fora de CAMPOS_DADOS_FINAIS
+    // e descartada, entao os dois carimbos de auditoria (e pdfUrl, status,
+    // emitidoEm, acc, cpf, medicoUid...) somem daqui junto, de graca.
+    const dadosFinaisPermitidos = Object.fromEntries(
+      Object.entries(p.dadosFinais).filter(([k]) => CAMPOS_DADOS_FINAIS.has(k)),
+    );
 
     // Caneta do autor (D2): laudo com autor definido so o proprio emite —
     // igual a regra publicada ("autor ou sem autor"). Sem autor pode assumir.
@@ -362,15 +382,33 @@ export async function emitirComCobranca(db: Firestore, p: {
         // Replay nao e um ato novo de emissao — os carimbos da tentativa
         // VENCEDORA ja foram gravados no consumo/log dela, nao aqui de novo.
         reemissao: false, identificacaoAlterada: false,
+        girou: false,
       };
     }
 
     const sub = subSnap.data()!;
     const agora = new Date();
-    const cicloFim = sub.cicloFim ? (sub.cicloFim as Timestamp).toDate() : null;
-    const franquiaUsada = (sub.franquiaUsada as number) || 0;
+    let cicloFim = sub.cicloFim ? (sub.cicloFim as Timestamp).toDate() : null;
+    let franquiaUsada = (sub.franquiaUsada as number) || 0;
     const franquiaMensal = (sub.franquiaMensal as number) || 0;
     const creditosExtras = (sub.creditosExtras as number) || 0;
+
+    // ── E11 opcao D (ADR docs/decisoes/2026-08-30-secao7-renovacao-ciclo,
+    // decisao do Sergio 30/08) — o giro do ciclo acontece AQUI DENTRO, na
+    // MESMA transacao que ja cobra: sem cron, sem escritor novo de
+    // `subscriptions/{id}` (o 4o escritor do ADR vira "o proprio
+    // emitirComCobranca", nao uma rota nova).
+    // Predicado (`podeGirar`) e loop (`proximoCicloFim`) moraram em texto
+    // duplicado aqui e em billing.ts ate a triade 2b — agora sao a MESMA
+    // funcao pura (ciclo.ts), so pode haver 1 definicao de "elegivel pra
+    // girar". Motivo das 3 condicoes e do loop +30d: comentario em ciclo.ts.
+    const cicloFimAnterior = cicloFim;
+    let girou = false;
+    if (podeGirar({ cicloFim, franquiaMensal, tipo: sub.tipo as string }, agora)) {
+      cicloFim = new Date(proximoCicloFim(cicloFimAnterior!.getTime(), agora.getTime()));
+      franquiaUsada = 0; // reinicia ANTES do +1 desta emissao, abaixo
+      girou = true;
+    }
 
     let tipo: 'franquia' | 'creditos' | null = null;
     if (cicloFim && agora <= cicloFim && franquiaUsada < franquiaMensal) {
@@ -384,7 +422,7 @@ export async function emitirComCobranca(db: Firestore, p: {
     }
 
     transaction.update(exameRef, {
-      ...dadosFinaisSemCarimbo,
+      ...dadosFinaisPermitidos,
       ...(p.extras || {}),
       status: 'emitido',
       emitidoEm: FieldValue.serverTimestamp(),
@@ -394,7 +432,7 @@ export async function emitirComCobranca(db: Firestore, p: {
 
     // ROUND 2 (Codex Important 2): a identidade ASSINADA desta emissao —
     // vira o "antes" a prova de SDK que a PROXIMA reemissao compara (acima).
-    // Valores FINAIS (dadosFinaisSemCarimbo, com fallback pro doc quando o
+    // Valores FINAIS (dadosFinaisPermitidos, com fallback pro doc quando o
     // campo nao veio nesta requisicao — mesmo raciocinio do resto da funcao:
     // o que nao mudou continua valendo o que ja estava no exame). Mesma
     // normalizacao da comparacao (pacienteNome trim+upper; os outros 3 crus
@@ -402,7 +440,7 @@ export async function emitirComCobranca(db: Firestore, p: {
     // Privacidade: sem PII nova — o ledger `consumo` ja guarda `pacienteNome`
     // (achado X23) e a gaveta e deny-all pra todo cliente.
     const identidadeAssinada = Object.fromEntries(
-      CAMPOS_IDENTIDADE.map((c) => [c, normalizarCampo(c, c in dadosFinaisSemCarimbo ? dadosFinaisSemCarimbo[c] : exame[c])]),
+      CAMPOS_IDENTIDADE.map((c) => [c, normalizarCampo(c, c in dadosFinaisPermitidos ? dadosFinaisPermitidos[c] : exame[c])]),
     ) as Record<(typeof CAMPOS_IDENTIDADE)[number], string>;
 
     // Estado de idempotencia na MESMA transacao do debito: cobrou => a key
@@ -416,7 +454,14 @@ export async function emitirComCobranca(db: Firestore, p: {
       atualizadoEm: FieldValue.serverTimestamp(),
     });
 
-    if (tipo === 'franquia') {
+    if (girou) {
+      // Giro + cobranca no MESMO update (`tipo` so pode ser 'franquia' aqui:
+      // o giro acabou de garantir `franquiaUsada(0) < franquiaMensal(>0)` e
+      // `agora <= cicloFim` novo). Literal `1`, nao `increment(1)`: a
+      // transacao ja leu `subRef` acima (read set), entao esta escrita e
+      // exclusiva desta invocacao — increment seria redundante.
+      transaction.update(subRef, { franquiaUsada: 1, cicloFim: Timestamp.fromDate(cicloFim!) });
+    } else if (tipo === 'franquia') {
       transaction.update(subRef, { franquiaUsada: FieldValue.increment(1) });
     } else {
       transaction.update(subRef, { creditosExtras: FieldValue.increment(-1) });
@@ -437,6 +482,11 @@ export async function emitirComCobranca(db: Firestore, p: {
     return {
       ok: true, tipo, replay: false, pdfPendente: true, pdfUrl: (exame.pdfUrl as string) || null,
       reemissao, identificacaoAlterada,
+      girou,
+      ...(girou ? {
+        cicloFimAnterior: cicloFimAnterior!.toISOString(),
+        cicloFimNovo: cicloFim!.toISOString(),
+      } : {}),
     };
   });
 }
