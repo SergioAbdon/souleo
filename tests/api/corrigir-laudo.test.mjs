@@ -241,7 +241,7 @@ describe('/api/corrigir-laudo — modo regerar (Ruflo-4)', () => {
       'perda de corrida tem que ficar rastreavel pelo log');
     assert.match(src, /await apagarPdfObjeto\(wsId, exameId, snapshot\.nomeArq\);/,
       'round 3 (Codex Critical, item 2): a correcao apaga o objeto que ELA MESMA regravou ao perder a corrida');
-    assert.ok(src.includes("import { gerarESalvarPdf, lerSnapshotHtml, apagarPdfObjeto } from '@/lib/pdf-server';"));
+    assert.ok(src.includes("import { gerarESalvarPdf, lerSnapshotHtml, apagarPdfObjeto, salvarSnapshotHtml } from '@/lib/pdf-server';"));
   });
 });
 

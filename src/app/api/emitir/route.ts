@@ -60,12 +60,16 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    // S7-T0.3 (E1): chave de idempotencia da tentativa. Opcional (cliente
-    // antigo continua emitindo do mesmo jeito), mas se vier tem que ser UUID —
-    // string livre viraria trava permanente no doc do laudo.
-    if (emissaoKey !== undefined && !emissaoKeyValida(emissaoKey)) {
+    // S7-T0.3 (E1): chave de idempotencia da tentativa.
+    // Round 4 (Codex): OBRIGATORIA — os 3 clientes de producao (laudo/[id],
+    // laudo-texto/[id], AnexarPdfModal) mandam desde a onda 0; "legado sem
+    // key" nunca foi um cliente real, so uma janela aberta enquanto a API
+    // aceitasse a chamada sem ela (idempotencia, ponteiro/bandeira atomicos e
+    // path unico por tentativa dependem TODOS da key existir). Aba aberta
+    // antes deste deploy so precisa de F5.
+    if (!emissaoKeyValida(emissaoKey)) {
       return NextResponse.json(
-        { ok: false, motivo: 'dados_invalidos', error: 'emissaoKey invalida' },
+        { ok: false, motivo: 'dados_invalidos', error: 'emissaoKey obrigatoria — recarregue a pagina' },
         { status: 400 }
       );
     }
@@ -78,18 +82,20 @@ export async function POST(req: NextRequest) {
     // ainda leva o exameId (pdf-path.ts), entao nome repetido nao colide.
     const nomeArq = `${prefixoArquivoPorTipo((dadosFinais?.tipoExame as string) || '')} ${String(dadosFinais?.pacienteNome || '').trim().toUpperCase()}`.trim();
 
-    // Round 3 (Codex Critical, item 1): PATH ÚNICO POR TENTATIVA. Sem isto,
-    // 2 uploads do MESMO paciente/tipo (retry, corrida de reemissão) escrevem
-    // o MESMO objeto no Storage — o perdedor podia sobrescrever os BYTES do
-    // vencedor, ou ressuscitar a URL já distribuída de um laudo cancelado
-    // (reemissão → cancel → upload atrasado). Sufixo curto da emissaoKey
-    // ANTES de sanitizar (sanitizarNomeArq só troca espaço por `_`,
-    // sobrevive). Cliente legado sem key: sem sufixo — janela residual
-    // continua só pra ele (mesmo comportamento de sempre). Efeito colateral
-    // cosmético aceito (Ponytail — mudar a assinatura de salvarPdfBuffer só
-    // pra manter o `contentDisposition` limpo não vale a complexidade): o
-    // nome de download que o paciente vê também carrega o sufixo.
-    const nomeArqTentativa = emissaoKey ? `${nomeArq} ${emissaoKey.slice(0, 8)}` : nomeArq;
+    // Round 3 (Codex Critical, item 1) + round 4 (item 2): PATH ÚNICO POR
+    // TENTATIVA. Sem isto, 2 uploads do MESMO paciente/tipo (retry, corrida
+    // de reemissão) escrevem o MESMO objeto no Storage — o perdedor podia
+    // sobrescrever os BYTES do vencedor, ou ressuscitar a URL já distribuída
+    // de um laudo cancelado (reemissão → cancel → upload atrasado). Sufixo
+    // com a emissaoKey INTEIRA (round 4 — 8 chars era colidível de propósito,
+    // a key vem do cliente) ANTES de sanitizar; `sanitizarNomeArq` preserva
+    // hifens/hex (só filtra fora de `[A-Za-z0-9À-ÿ _-]`, e `-` está na
+    // lista). Sempre presente agora — emissaoKey é obrigatória (round 4,
+    // item 1), sem ramo "legado sem sufixo" pra reabrir a janela. Efeito
+    // colateral cosmético aceito (Ponytail — mudar a assinatura de
+    // salvarPdfBuffer só pra manter o `contentDisposition` limpo não vale a
+    // complexidade): o nome de download que o paciente vê também carrega a key.
+    const nomeArqTentativa = `${nomeArq} ${emissaoKey}`;
 
     // PDF anexado (modalidade 'pdf', Task 5): valida ANTES da transacao de
     // billing abaixo — nao debita franquia de um upload invalido.
@@ -174,9 +180,8 @@ export async function POST(req: NextRequest) {
     // exame pode ter sido CANCELADO ou TRANSFERIDO (limparPdf ja rodou;
     // publicar agora ressuscitaria um PDF publico de laudo cancelado) ou
     // REEMITIDO com key nova. So chama Puppeteer/Storage se o exame ainda
-    // esta emitido E, quando ha key, se a gaveta privada ainda pertence a
-    // ESTA tentativa — poupa trabalho na corrida mais comum. Cliente legado
-    // sem key: cerca so de status.
+    // esta emitido E se a gaveta privada ainda pertence a ESTA tentativa —
+    // poupa trabalho na corrida mais comum.
     // ATENCAO (round 2, Codex): esta cerca sozinha e check-then-write — quem
     // decide o PONTEIRO de verdade e `publicarPdfSeAindaDono` mais abaixo,
     // atomica com a baixa da bandeira `pdfPendente` (fecha o C4: reemissao
@@ -187,8 +192,7 @@ export async function POST(req: NextRequest) {
         dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).get(),
         refEmissaoPrivada(dbAdmin, wsId, exameId).get(),
       ]);
-      if (d.data()?.status !== 'emitido') return false;
-      return !emissaoKey || g.data()?.emissaoKey === emissaoKey;
+      return d.data()?.status === 'emitido' && g.data()?.emissaoKey === emissaoKey;
     };
 
     if (pdfAnexadoBuf) {
@@ -232,8 +236,8 @@ export async function POST(req: NextRequest) {
         // do page.pdf e ANTES de salvarPdfBuffer, dentro de gerarESalvarPdf —
         // ordem certa, nao reordenar. O TOCTOU residual entre o check e o
         // save e a mesma janela ja aceita pelo fix I4/P15 — fechado pro
-        // path unico (round 3, item 1): 2 tentativas nunca escrevem o MESMO
-        // objeto, entao a janela vira so higiene de orfao, nao corrupcao.
+        // path unico (round 3+4, item 1/2): 2 tentativas nunca escrevem o
+        // MESMO objeto, entao a janela vira so higiene de orfao, nao corrupcao.
         const url = await gerarESalvarPdf(pdfHtml, wsId, exameId, nomeArqTentativa, podePublicar);
         if (url === null) {
           // C1/C2: podePublicar recusou — mesmo raciocinio do braco de anexo
@@ -241,8 +245,18 @@ export async function POST(req: NextRequest) {
           pdfErro = 'conflito_pos_emissao';
         } else if (await publicarPdfSeAindaDono(dbAdmin, { wsId, exameId, pdfUrl: url, emissaoKey })) {
           pdfUrl = url;
+          // Round 4 (Codex Critical, item 3): o snapshot SO congela DEPOIS
+          // da publicacao CONFIRMADA — gravar antes (dentro de
+          // gerarESalvarPdf, como era ate o round 3) deixava uma tentativa
+          // PERDEDORA sobrescrever o snapshot canonico da VENCEDORA (uma
+          // correcao futura publicaria o corpo clinico ANTIGO por cima do
+          // laudo novo). Nome JA SUFICADO (Ruflo-5 + round 3/4): a
+          // regeneracao via corrigir-laudo tem que mirar o MESMO objeto.
+          await salvarSnapshotHtml(pdfHtml, wsId, exameId, nomeArqTentativa);
         } else {
-          // Round 3 (item 2): mesma limpeza do braco de anexo.
+          // Round 3 (item 2): mesma limpeza do braco de anexo. Perdedor
+          // NUNCA chega perto do snapshot (round 4, item 3) — so o vencedor,
+          // no braco acima.
           pdfErro = 'conflito_pos_emissao';
           await apagarPdfObjeto(wsId, exameId, nomeArqTentativa);
           console.warn(`emitir: PDF perdeu a corrida — objeto orfao apagado (ws=${wsId} exame=${exameId})`);
@@ -253,15 +267,21 @@ export async function POST(req: NextRequest) {
         // P4/E4: a emissao JA cobrou. Congela o snapshot (sem ele a correcao
         // administrativa deste exame morre pra sempre) e deixa marca no doc —
         // a tela passa a ver o laudo emitido-sem-PDF em vez de ninguem saber.
-        // Sem .catch aqui: salvarSnapshotHtml nunca lanca (proprio contrato
-        // da funcao, pdf-server.ts) — o .catch(() => {}) era morto. Nome CRU
-        // e JA COM O SUFIXO da tentativa (Ruflo-5 + round 3 item 1):
-        // salvarSnapshotHtml sanitiza sozinha, e uma regeneracao futura via
-        // corrigir-laudo tem que mirar o MESMO path que esta tentativa usaria.
-        await salvarSnapshotHtml(pdfHtml, wsId, exameId, nomeArqTentativa);
-        // Round 3 (item 3): mesma transacao condicional do braco de anexo.
-        await marcarPdfErroSeAindaDono(dbAdmin, { wsId, exameId, emissaoKey })
-          .catch((e2) => console.error('marcar pdfErro (nao-critico):', e2));
+        // Round 4 (Codex Critical, item 3): o snapshot de RECUPERACAO so e
+        // salvo se marcarPdfErroSeAindaDono confirmar que AINDA somos donos
+        // — antes o snapshot era gravado incondicionalmente aqui, e uma
+        // tentativa perdedora podia sobrescrever o snapshot da vencedora do
+        // MESMO jeito que o braco de sucesso (mesmo bug, caminho de erro).
+        try {
+          if (await marcarPdfErroSeAindaDono(dbAdmin, { wsId, exameId, emissaoKey })) {
+            // Nome CRU e JA COM O SUFIXO da tentativa: salvarSnapshotHtml
+            // sanitiza sozinha (Ruflo-5), e uma regeneracao futura via
+            // corrigir-laudo tem que mirar o MESMO path que esta tentativa usaria.
+            await salvarSnapshotHtml(pdfHtml, wsId, exameId, nomeArqTentativa);
+          }
+        } catch (e2) {
+          console.error('marcar pdfErro (nao-critico):', e2);
+        }
       }
     }
 

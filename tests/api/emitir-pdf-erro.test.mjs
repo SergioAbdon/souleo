@@ -53,20 +53,24 @@ describe('/api/emitir — wiring do catch de PDF (Step 2)', () => {
     assert.ok(!/pdfErro = e instanceof Error \? e\.message/.test(src),
       'detalhe do erro nao pode vazar pra resposta/doc — so pro log');
     // Follow-up (reviewer): a falha dessa escrita nao-critica nao pode ser
-    // engolida em silencio — loga, mesmo sem poder fazer mais nada.
-    const catchesLogados = src.match(/\.catch\(\(e2\) => console\.error\('marcar pdfErro \(nao-critico\):', e2\)\)/g) || [];
-    assert.equal(catchesLogados.length, 2, 'os 2 catches tem que logar falha da marca, nao engolir com .catch(() => {})');
+    // engolida em silencio — loga, mesmo sem poder fazer mais nada. Round 4
+    // (item 3): o braco pdfHtml passou a envolver marcarPdfErroSeAindaDono +
+    // salvarSnapshotHtml num try/catch (precisa do valor de retorno pra
+    // decidir o snapshot) — o log e o mesmo texto, so a forma mudou de
+    // `.catch(e2 => ...)` pra `catch (e2) { ... }`.
+    const catchesLogados = (src.match(/\.catch\(\(e2\) => console\.error\('marcar pdfErro \(nao-critico\):', e2\)\)/g) || [])
+      .concat(src.match(/catch \(e2\) \{\s*console\.error\('marcar pdfErro \(nao-critico\):', e2\);\s*\}/g) || []);
+    assert.equal(catchesLogados.length, 2, 'os 2 catches (anexo + pdfHtml) tem que logar falha da marca, nao engolir em silencio');
 
-    // So o braco pdfHtml tem HTML pra congelar; o de anexo nao. Sem .catch
-    // aqui: salvarSnapshotHtml nunca lanca (contrato proprio, pdf-server.ts).
-    // Nome CRU e JA SUFICADO (Ruflo-5/Ponytail-11 + round 3 item 1): a
-    // sanitizacao mora dentro de salvarSnapshotHtml, e o nome tem que ser o
-    // MESMO que esta tentativa usaria pro PDF (nomeArqTentativa) — senao uma
-    // regeneracao futura via corrigir-laudo mirava o objeto errado.
-    assert.ok(/await salvarSnapshotHtml\(pdfHtml, wsId, exameId, nomeArqTentativa\);/.test(src),
-      'catch do braco pdfHtml tem que congelar o snapshot no MESMO path da tentativa (unica via de recuperacao sem 2a franquia)');
-    const chamadasSnapshot = src.match(/salvarSnapshotHtml\(/g) || [];
-    assert.equal(chamadasSnapshot.length, 1, 'braco de anexo nao tem HTML — nao pode chamar snapshot');
+    // So o braco pdfHtml tem HTML pra congelar; o de anexo nao. Nome CRU e JA
+    // SUFICADO (Ruflo-5/Ponytail-11 + round 3/4): a sanitizacao mora dentro
+    // de salvarSnapshotHtml, e o nome tem que ser o MESMO que esta tentativa
+    // usaria pro PDF (nomeArqTentativa) — senao uma regeneracao futura via
+    // corrigir-laudo mirava o objeto errado. Round 4 (item 3): agora sao 2
+    // chamadas (sucesso confirmado + catch condicional a ainda-ser-dono) —
+    // wiring exato de QUANDO cada uma roda em tests/unit/pdf-snapshot-pos-publicacao.test.mjs.
+    const chamadasSnapshot = src.match(/salvarSnapshotHtml\(pdfHtml, wsId, exameId, nomeArqTentativa\);/g) || [];
+    assert.equal(chamadasSnapshot.length, 2, 'braco de anexo nao tem HTML — so pdfHtml (sucesso + catch) chama snapshot');
     // Ponytail-3: os 2 asserts que pinavam a linha exata de import saíram —
     // quebravam so por reordenar/reformatar imports, sem checar comportamento.
   });

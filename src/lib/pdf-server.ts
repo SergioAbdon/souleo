@@ -96,11 +96,19 @@ function pathSnapshotHtml(wsId: string, exameId: string): string {
 // o snapshot quando o Puppeteer falha DEPOIS da franquia cobrada — sem ele a
 // correção administrativa deste exame (única via de recuperação sem 2a
 // franquia) morre pra sempre.
+// Round 4 (Codex Critical, item 3): chamada SÓ pela ROTA agora — nunca mais
+// de dentro de `gerarESalvarPdf`. O snapshot é canônico POR EXAME (não por
+// tentativa, ao contrário do PDF em si desde o round 3); gravá-lo de dentro
+// de `gerarESalvarPdf`, sem a transação de publicação, deixava uma tentativa
+// PERDEDORA sobrescrever o snapshot da VENCEDORA — uma correção futura
+// regeneraria o corpo clínico ANTIGO por cima do laudo assinado novo. Cada
+// caller só chama isto DEPOIS que a transação de publicação (round 2/3)
+// devolveu `true` — ver /api/emitir e /api/corrigir-laudo.
 export async function salvarSnapshotHtml(html: string, wsId: string, exameId: string, nomeArq: string): Promise<void> {
   try {
     const filePath = pathSnapshotHtml(wsId, exameId);
-    // Ruflo-5/Ponytail-11: sanitiza AQUI, ponto único — os 2 callers (route.ts
-    // e gerarESalvarPdf logo abaixo) passam o nomeArq CRU. Idempotente
+    // Ruflo-5/Ponytail-11: sanitiza AQUI, ponto único — os callers (as duas
+    // rotas, desde o round 4) passam o nomeArq CRU. Idempotente
     // (sanitizarNomeArq 2x não muda nada), então não há dupla-sanitização —
     // só um lugar decide o nome do objeto.
     const nomeSanitizado = sanitizarNomeArq(nomeArq, exameId);
@@ -215,14 +223,11 @@ export async function gerarESalvarPdf(
 
   if (podeSalvar && !(await podeSalvar())) return null;
 
-  const url = await salvarPdfBuffer(Buffer.from(pdfBuffer), wsId, exameId, nomeArq);
-  // Congela o HTML ORIGINAL (URLs canônicas, não as assinadas — signed URL
-  // expira) + o alvo real da escrita. Depois do PDF salvo e sem poder
-  // derrubá-lo. O alvo é o MESMO nome que `salvarPdfBuffer` acabou de usar
-  // (mesma função de sanitização, idempotente) — antes ele era redescoberto
-  // fazendo parse da URL lá em `correcao-admin.ts`, com o formato do path
-  // sabido em dois lugares. Nome CRU aqui (Ruflo-5): salvarSnapshotHtml
-  // sanitiza sozinha.
-  await salvarSnapshotHtml(pdfHtml, wsId, exameId, nomeArq);
-  return url;
+  // Round 4 (Codex Critical, item 3): o snapshot NÃO é mais congelado aqui —
+  // essa escrita saiu pra fora, pro caller chamar SÓ depois que a transação
+  // de publicação confirmar que esta tentativa ainda é a dona (ver
+  // salvarSnapshotHtml em pdf-server.ts e o wiring em /api/emitir e
+  // /api/corrigir-laudo). Gravar aqui, sem transação, deixava uma tentativa
+  // perdedora sobrescrever o snapshot canônico da vencedora.
+  return await salvarPdfBuffer(Buffer.from(pdfBuffer), wsId, exameId, nomeArq);
 }

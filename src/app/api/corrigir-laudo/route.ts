@@ -14,7 +14,7 @@
 // ══════════════════════════════════════════════════════════════════
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
-import { gerarESalvarPdf, lerSnapshotHtml, apagarPdfObjeto } from '@/lib/pdf-server';
+import { gerarESalvarPdf, lerSnapshotHtml, apagarPdfObjeto, salvarSnapshotHtml } from '@/lib/pdf-server';
 import { requireUid, adminDb } from '@/lib/auth-admin';
 import { resolverPapel, podeCorrigir, idValido } from '@/lib/exame-admin';
 import { substituirCamposAdministrativos, emissaoMudou } from '@/lib/correcao-admin';
@@ -164,6 +164,16 @@ export async function POST(req: NextRequest) {
           // e a baixa de `pdfPendente` (Codex-4) saem no MESMO commit de
           // `pdfUrl` agora — publicarCorrecaoSeAindaEmitido cuida dos dois.
           pdfUrl = pdfCandidato;
+          // Round 4 (Codex Critical, item 3): o snapshot SO congela DEPOIS
+          // da publicacao CONFIRMADA — antes gerarESalvarPdf gravava o
+          // snapshot incondicionalmente, e uma correcao que perdesse a
+          // corrida (objeto ja apagado por apagarPdfObjeto no braco `else`)
+          // podia mesmo assim ter deixado o snapshot com o corpo CORRIGIDO
+          // por cima do que uma reemissao concorrente tivesse acabado de
+          // publicar. Congela `htmlCorrigido` (o corpo JA com o convenio/
+          // solicitante novos) no MESMO nome do snapshot anterior — proxima
+          // correcao parte do texto mais recente.
+          await salvarSnapshotHtml(htmlCorrigido, wsId, exameId, snapshot.nomeArq);
         } else {
           // Round 3 (Codex Critical, item 2): perdeu a corrida DEPOIS da
           // cerca pre-upload — apaga o objeto que ELA MESMA acabou de

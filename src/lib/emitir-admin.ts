@@ -12,7 +12,12 @@
 // Aqui dentro: key igual a do exame JA emitido = replay (devolve o que
 // existe, nao cobra, nao reescreve o laudo assinado); key diferente =
 // reemissao de verdade e COBRA (politica P3/I2, registrada).
-// Requisicao sem key = comportamento legado (cliente antigo), aditivo.
+//
+// ROUND 4 (Codex, 30/08): emissaoKey e OBRIGATORIA — a rota recusa 400 sem
+// ela. Clientes de producao mandam desde a onda 0 (laudo/[id], laudo-texto/
+// [id], AnexarPdfModal); "legado sem key" nunca foi dado do mundo real, so
+// janela aberta enquanto a API aceitasse. O ramo condicional morreu daqui
+// (Ponytail R3 aposentado): a gaveta e gravada SEMPRE.
 //
 // REVISAO ONDA-0 (C1+I1, 29/08): a key NAO mora mais no doc do exame.
 //  - C1: o replay devolvia `pdfUrl: null` quando a 1a chamada morreu no
@@ -44,7 +49,7 @@ export function refEmissaoPrivada(db: Firestore, wsId: string, exameId: string) 
 // Formato do `crypto.randomUUID()` do navegador. Vem do cliente e vira
 // chave de idempotencia: qualquer outra coisa e recusada (a rota devolve
 // 400) e ignorada aqui — garantia para todo chamador, nao so a rota.
-export function emissaoKeyValida(k: unknown): boolean {
+export function emissaoKeyValida(k: unknown): k is string {
   return typeof k === 'string'
     && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(k);
 }
@@ -77,22 +82,17 @@ export type ResultadoEmissao =
 // `pdfPendente` mora so aqui: nenhum outro arquivo escreve esse nome de
 // campo (achado Ruflo I1, mantido).
 //
-// ponytail: janela residual aceita (item 4, round 2) — bytes-no-path. Entre
-// a cerca pre-upload e a transacao abaixo, uma corrida rara ainda pode
-// deixar o OBJETO no Storage sobrescrito pelo perdedor (2 tentativas com o
-// MESMO nome de arquivo, sub-segundo entre a cerca dele e o upload). O
-// PONTEIRO (pdfUrl no doc) e a BANDEIRA nunca mentem — so o objeto orfao no
-// bucket pode, e fica rastreavel pelo `console.warn` do caller quando a
-// transacao devolve false. Upgrade: path do PDF versionado por emissaoKey
-// (pdf-path.ts) — cada tentativa nasceria no proprio objeto, sem como pisar
-// no do vencedor.
+// Janela bytes-no-path FECHADA (era ponytail no round 2, resolvida nos
+// rounds 3+4): o path do PDF em /api/emitir e sufixado com a emissaoKey
+// INTEIRA (route.ts) — nenhuma outra tentativa escreve no mesmo objeto, e
+// emissaoKey virou obrigatoria (round 4), entao nao ha mais ramo "legado
+// sem key" pra reabrir a janela. Perder a corrida so deixa um objeto orfao
+// (apagado por `apagarPdfObjeto`, pdf-server.ts) — nunca corrupcao.
 
-// /api/emitir: gate por emissaoKey (a "tentativa" desta rota).
+// /api/emitir: gate por emissaoKey (a "tentativa" desta rota). Round 4:
+// emissaoKey virou obrigatoria na rota — sem ramo "legado sem key" aqui.
 export async function publicarPdfSeAindaDono(db: Firestore, p: {
-  wsId: string; exameId: string; pdfUrl: string;
-  // undefined/null = cliente legado sem key — so a cerca de status vale
-  // (mesmo criterio que a cerca pre-upload ja usava).
-  emissaoKey?: string | null;
+  wsId: string; exameId: string; pdfUrl: string; emissaoKey: string;
 }): Promise<boolean> {
   const exameRef = db.doc(`workspaces/${p.wsId}/exames/${p.exameId}`);
   const privRef = refEmissaoPrivada(db, p.wsId, p.exameId);
@@ -100,7 +100,7 @@ export async function publicarPdfSeAindaDono(db: Firestore, p: {
     const [exameSnap, privSnap] = await Promise.all([t.get(exameRef), t.get(privRef)]);
     const exame = exameSnap.data();
     if (exame?.status !== 'emitido') return false;
-    if (p.emissaoKey && privSnap.data()?.emissaoKey !== p.emissaoKey) return false;
+    if (privSnap.data()?.emissaoKey !== p.emissaoKey) return false;
     t.update(exameRef, { pdfUrl: p.pdfUrl, pdfErro: FieldValue.delete() });
     t.set(privRef, { pdfPendente: false, atualizadoEm: FieldValue.serverTimestamp() }, { merge: true });
     return true;
@@ -112,11 +112,21 @@ export async function publicarPdfSeAindaDono(db: Firestore, p: {
 // mesma janela das outras escritas desta rodada: o catch da tentativa A podia
 // carimbar pdfErro no exame que a tentativa B acabou de reemitir com sucesso
 // ENQUANTO A ainda falhava. Usada pelos catches de /api/emitir (com a
-// emissaoKey da tentativa) e pelo catch de /api/corrigir-laudo (com
-// `keyNoGuard` — se a key da gaveta mudou desde o guard, uma emissao NOVA
-// esta em curso e a marca de erro nao e nossa).
+// emissaoKey da tentativa, sempre string a partir do round 4) e pelo catch de
+// /api/corrigir-laudo (com `keyNoGuard`, que PODE ser null — exame emitido
+// antes da onda-0 nunca teve gaveta).
+// `emissaoKey` continua nullable aqui (diferente de publicarPdfSeAindaDono):
+// correcao nao e uma "tentativa" com key propria, so empresta a key que a
+// gaveta tinha no momento do guard.
+// Round 4 (Codex Important): a comparacao e NULL-SAFE — a versao anterior
+// (`if (p.emissaoKey && ...)`) PULAVA a checagem inteira quando p.emissaoKey
+// era null/undefined, deixando uma correcao iniciada com gaveta SEM key
+// (exame pre-onda-0) carimbar pdfErro no exame que uma emissao NOVA (com
+// key) tivesse acabado de vencer. Agora null e um valor comparavel como
+// qualquer outro: gaveta ainda sem key (os dois lados null) = dono confirma;
+// gaveta que GANHOU key durante a correcao = bloqueia.
 export async function marcarPdfErroSeAindaDono(db: Firestore, p: {
-  wsId: string; exameId: string; emissaoKey?: string | null;
+  wsId: string; exameId: string; emissaoKey: string | null;
 }): Promise<boolean> {
   const exameRef = db.doc(`workspaces/${p.wsId}/exames/${p.exameId}`);
   const privRef = refEmissaoPrivada(db, p.wsId, p.exameId);
@@ -124,7 +134,7 @@ export async function marcarPdfErroSeAindaDono(db: Firestore, p: {
     const [exameSnap, privSnap] = await Promise.all([t.get(exameRef), t.get(privRef)]);
     const exame = exameSnap.data();
     if (exame?.status !== 'emitido') return false;
-    if (p.emissaoKey && privSnap.data()?.emissaoKey !== p.emissaoKey) return false;
+    if ((privSnap.data()?.emissaoKey ?? null) !== (p.emissaoKey ?? null)) return false;
     t.update(exameRef, { pdfErro: 'erro_pdf' });
     return true;
   });
@@ -162,9 +172,12 @@ export async function emitirComCobranca(db: Firestore, p: {
   dadosFinais: Record<string, unknown>;
   // Campos derivados no servidor que entram na MESMA escrita (carimbo do motor).
   extras?: Record<string, unknown>;
-  emissaoKey?: unknown;
+  // Round 4: obrigatoria — a rota so chama isto depois de `emissaoKeyValida`
+  // recusar 400 sem ela (o formato ja foi validado no trust boundary; aqui
+  // dentro e so o dado, sem revalidar).
+  emissaoKey: string;
 }): Promise<ResultadoEmissao> {
-  const key = emissaoKeyValida(p.emissaoKey) ? (p.emissaoKey as string) : null;
+  const key = p.emissaoKey;
   // O doc de `consumo` entra NA transacao: era um add() depois, dentro de
   // try/catch silencioso — se falhava, a franquia ficava debitada sem
   // registro e a devolucao liquida (/api/exame) nao tinha o que devolver.
@@ -211,7 +224,7 @@ export async function emitirComCobranca(db: Firestore, p: {
     // Admin SDK escreve ali, entao "esta emissao ainda deve um PDF" e um fato
     // do servidor. Um cliente adulterado que plante campos no proprio exame
     // nao consegue forjar `pdfPendente` e ganhar regeracao de graca.
-    if (key && exame.status === 'emitido' && privSnap.data()?.emissaoKey === key) {
+    if (exame.status === 'emitido' && privSnap.data()?.emissaoKey === key) {
       return {
         ok: true, tipo: null, replay: true,
         // C1: PDF pendente => a rota REGERA a partir do pdfHtml desta
@@ -252,16 +265,13 @@ export async function emitirComCobranca(db: Firestore, p: {
 
     // Estado de idempotencia na MESMA transacao do debito: cobrou => a key
     // vale e o PDF esta devendo. Sai daqui so quando a rota salvar o PDF.
-    // Sem key (cliente legado): nao ha o que travar (nenhuma key pra
-    // comparar num replay futuro) — gravar so criaria um doc morto na
-    // gaveta privada (achado Ponytail R3).
-    if (key) {
-      transaction.set(privRef, {
-        emissaoKey: key,
-        pdfPendente: true,
-        atualizadoEm: FieldValue.serverTimestamp(),
-      });
-    }
+    // Round 4: SEMPRE grava (emissaoKey e obrigatoria agora — o ramo "sem
+    // key nao ha o que travar" morreu junto com o cliente legado).
+    transaction.set(privRef, {
+      emissaoKey: key,
+      pdfPendente: true,
+      atualizadoEm: FieldValue.serverTimestamp(),
+    });
 
     if (tipo === 'franquia') {
       transaction.update(subRef, { franquiaUsada: FieldValue.increment(1) });
