@@ -959,6 +959,10 @@ export default function Worklist() {
           tipoExame: anexarPdf.tipoExame as string,
           tipoNome: tiposMap[(anexarPdf.tipoExame as string) || '']?.nome,
           convenio: anexarPdf.convenio as string,
+          // Ruflo-2: só `status === 'emitido'` divergia do servidor num
+          // exame reaberto pra 'andamento' — `emitidoEm` continua no doc
+          // (E22), então reanexar ali TAMBÉM é reemissão de verdade.
+          jaEmitido: anexarPdf.status === 'emitido' || !!anexarPdf.emitidoEm,
         } : null}
         wsId={workspace?.id || ''}
         medicoUid={user?.uid || ''}

@@ -75,8 +75,38 @@ export type ResultadoEmissao =
   // `pdfPendente`: o PDF assinado desta emissao ainda NAO esta salvo. Numa
   // emissao nova e sempre true (a rota vai gerar agora); num replay diz se a
   // rota deve REGERAR (C1) ou so devolver o pdfUrl que existe.
-  | { ok: true; tipo: 'franquia' | 'creditos' | null; replay: boolean; pdfPendente: boolean; pdfUrl: string | null }
+  // `reemissao`/`identificacaoAlterada` (E3): carimbos de auditoria DERIVADOS
+  // no servidor (nao mais copiados do cliente) — replay devolve false nos
+  // dois, replay nao e um ato novo de emissao.
+  | {
+      ok: true; tipo: 'franquia' | 'creditos' | null; replay: boolean; pdfPendente: boolean; pdfUrl: string | null;
+      reemissao: boolean; identificacaoAlterada: boolean;
+    }
   | { ok: false; motivo: MotivoEmissao };
+
+// O SERVIDOR e o dono do carimbo de identidade (E3): reemissao/
+// identificacaoAlterada eram copiados do navegador
+// (dadosFinais.reemissao / dadosFinais.identificacaoAlterada) — cliente
+// adulterado reemitia trocando nome/CPF do paciente e logando
+// identificacaoAlterada:false. Aqui dentro (emitirComCobranca) e onde os
+// dois sao de fato DERIVADOS, do antes (exameSnap/gaveta) x depois
+// (dadosFinais), na mesma transacao que cobra.
+// `identificacaoMudou()` em src/app/laudo/[id]/page.tsx (~linha 1192) e uma
+// PREVIA DE UX da MESMA regra (mostra o aviso pro medico antes de emitir) —
+// nao e a fonte, e um espelho; a lista de campos tem que bater nos dois
+// lados ou a previa mente. Travado por
+// tests/unit/identidade-campos-pin.test.mjs (falha se os nomes divergirem).
+const CAMPOS_IDENTIDADE = ['pacienteNome', 'pacienteDtnasc', 'dataExame', 'convenio'] as const;
+
+// pacienteNome normalizado (trim+uppercase) — mesmo tratamento do
+// identificacaoMudou() do cliente. feegow-admin grava sem trim; sem
+// normalizar aqui, toda reemissao de exame importado do Feegow dava falso
+// positivo por um espaco a mais no nome. Os outros 3 campos ficam crus — o
+// cliente tambem nao normaliza eles.
+const normalizarCampo = (campo: string, v: unknown): string => {
+  const s = String(v ?? '');
+  return campo === 'pacienteNome' ? s.trim().toUpperCase() : s;
+};
 
 // ── Publicacao atomica do PDF (fix-wave round 2, achado Codex C4/check-then-
 // write) ──
@@ -222,15 +252,80 @@ export async function emitirComCobranca(db: Firestore, p: {
     const subRef = assinatura.ref;
     // Leituras ANTES de qualquer escrita (exigencia da transacao). A gaveta
     // privada entra no read set: se outra invocacao gravar a mesma chave no
-    // meio, esta transacao repete em vez de cobrar por cima.
-    const [subSnap, exameSnap, privSnap] = await Promise.all([
+    // meio, esta transacao repete em vez de cobrar por cima. `consumoSnap`
+    // (round 2, achado Important 1) entra pelo mesmo motivo — vira a fonte
+    // de `reemissao`, ver comentario abaixo.
+    const [subSnap, exameSnap, privSnap, consumoSnap] = await Promise.all([
       transaction.get(subRef),
       transaction.get(exameRef),
       transaction.get(privRef),
+      transaction.get(db.collection('consumo').where('exameId', '==', p.exameId)),
     ]);
     if (!subSnap.exists) return { ok: false, motivo: 'sem_plano' };
     if (!exameSnap.exists) return { ok: false, motivo: 'nao_encontrado' };
     const exame = exameSnap.data()!;
+
+    // Carimbos anti-fraude derivados aqui (ver CAMPOS_IDENTIDADE acima).
+    //
+    // ROUND 2 (Codex Important 1): `exame.emitidoEm` (+ o `privSnap.
+    // emissaoKey` do round 1) ainda falhava pra exame PRE-onda-0 sem gaveta
+    // — o autor apaga `emitidoEm` pelo SDK (rules:204-207 nao protege esse
+    // campo) e a gaveta desse exame nunca teve `emissaoKey` nenhuma pra
+    // compensar (o mecanismo nasceu depois da onda-0). Fonte definitiva: o
+    // LEDGER de `consumo` — toda emissao cobrada grava 1 doc ali na MESMA
+    // transacao que esta rodando agora (ver `transaction.set(consumoRef,
+    // ...)` mais abaixo); se ja existe um consumo de franquia/credito pra
+    // este exame, ele ja foi emitido/cobrado antes, ponto — nao ha SDK que
+    // apague um doc de outra colecao que o cliente nem enxerga.
+    // `privSnap.emissaoKey` (round 1) virou REDUNDANTE e foi removido daqui:
+    // a gaveta e o `consumo` sao escritos na MESMA transacao (a de baixo),
+    // entao "gaveta tem key" e sempre um subconjunto de "ha consumo" —
+    // uma fonte so, mais simples.
+    const consumosDoExame = consumoSnap.docs
+      .map((d) => d.data())
+      // P7 (mesmo padrao de lerDevolucaoLiquida em exame-admin.ts): sem
+      // indice composto por workspace — filtra em codigo. So conta cobranca
+      // de verdade (franquia/credito); 'cancelamento' nao e emissao.
+      .filter((c) => c.workspaceId === p.wsId && (c.tipo === 'franquia' || c.tipo === 'credito'))
+      .length;
+    const reemissao = !!exame.emitidoEm || consumosDoExame > 0;
+
+    // ROUND 2 (Codex Important 2): comparar contra o DOC do exame era
+    // contornavel — o autor edita a identidade no proprio doc pelo SDK
+    // ANTES de reemitir, manda o MESMO valor (ja adulterado) em
+    // `dadosFinais`, e o "antes" contra o qual comparamos ja estava errado
+    // (nunca detectava nada). Fix: a identidade ASSINADA passa a morar na
+    // gaveta server-only (`privSnap.identidade`, gravada mais abaixo na
+    // MESMA transacao de CADA emissao — deny-all pra todo cliente, so Admin
+    // SDK escreve). Se ela existe, compara contra ELA (a prova de SDK).
+    // Exame emitido ANTES desta mudanca nunca teve gaveta com `identidade`
+    // — fallback pro doc (legado, best-effort, mesmo criterio do round 1).
+    // Nota de semantica: se a recepcao corrigir um typo no DOC entre duas
+    // emissoes (fluxo administrativo legitimo, pre-assinatura), a PROXIMA
+    // reemissao agora flagra `identificacaoAlterada:true` mesmo que
+    // `dadosFinais` bata com o doc corrigido — CORRETO: a identidade que sai
+    // assinada de fato mudou em relacao a ultima vez que foi assinada, e e
+    // exatamente isso que o carimbo existe pra registrar.
+    const identidadeAnterior = privSnap.data()?.identidade as Record<string, string> | undefined;
+    const identificacaoAlterada = reemissao && (
+      identidadeAnterior
+        ? CAMPOS_IDENTIDADE.some(
+            (c) => c in p.dadosFinais
+              && normalizarCampo(c, p.dadosFinais[c]) !== normalizarCampo(c, identidadeAnterior[c]),
+          )
+        : CAMPOS_IDENTIDADE.some(
+            (c) => c in p.dadosFinais && normalizarCampo(c, p.dadosFinais[c]) !== normalizarCampo(c, exame[c]),
+          )
+    );
+
+    // M3 (revisao E3): reemissao/identificacaoAlterada eram lidos do corpo
+    // cru do cliente por outro codigo (ja corrigido acima) — mas se o
+    // cliente mandasse esses NOMES de campo em dadosFinais, o spread abaixo
+    // ainda gravava o carimbo AUTODECLARADO no doc do exame. Descartado
+    // ANTES do spread: o doc nunca guarda um carimbo de auditoria escrito
+    // pelo proprio auditado.
+    const { reemissao: _reemissaoDoCliente, identificacaoAlterada: _identAlteradaDoCliente, ...dadosFinaisSemCarimbo } = p.dadosFinais;
+
     // Caneta do autor (D2): laudo com autor definido so o proprio emite —
     // igual a regra publicada ("autor ou sem autor"). Sem autor pode assumir.
     const autor = exame.medicoUid as string | undefined;
@@ -264,6 +359,9 @@ export async function emitirComCobranca(db: Firestore, p: {
         // novo aqui, e o direito de regerar morre no primeiro PDF salvo.
         pdfPendente: privSnap.data()?.pdfPendente === true,
         pdfUrl: (exame.pdfUrl as string) || null,
+        // Replay nao e um ato novo de emissao — os carimbos da tentativa
+        // VENCEDORA ja foram gravados no consumo/log dela, nao aqui de novo.
+        reemissao: false, identificacaoAlterada: false,
       };
     }
 
@@ -286,13 +384,26 @@ export async function emitirComCobranca(db: Firestore, p: {
     }
 
     transaction.update(exameRef, {
-      ...p.dadosFinais,
+      ...dadosFinaisSemCarimbo,
       ...(p.extras || {}),
       status: 'emitido',
       emitidoEm: FieldValue.serverTimestamp(),
       medicoUid: p.medicoUid,
       atualizadoEm: FieldValue.serverTimestamp(),
     });
+
+    // ROUND 2 (Codex Important 2): a identidade ASSINADA desta emissao —
+    // vira o "antes" a prova de SDK que a PROXIMA reemissao compara (acima).
+    // Valores FINAIS (dadosFinaisSemCarimbo, com fallback pro doc quando o
+    // campo nao veio nesta requisicao — mesmo raciocinio do resto da funcao:
+    // o que nao mudou continua valendo o que ja estava no exame). Mesma
+    // normalizacao da comparacao (pacienteNome trim+upper; os outros 3 crus
+    // — identificacaoMudou() do cliente tambem so normaliza o nome).
+    // Privacidade: sem PII nova — o ledger `consumo` ja guarda `pacienteNome`
+    // (achado X23) e a gaveta e deny-all pra todo cliente.
+    const identidadeAssinada = Object.fromEntries(
+      CAMPOS_IDENTIDADE.map((c) => [c, normalizarCampo(c, c in dadosFinaisSemCarimbo ? dadosFinaisSemCarimbo[c] : exame[c])]),
+    ) as Record<(typeof CAMPOS_IDENTIDADE)[number], string>;
 
     // Estado de idempotencia na MESMA transacao do debito: cobrou => a key
     // vale e o PDF esta devendo. Sai daqui so quando a rota salvar o PDF.
@@ -301,6 +412,7 @@ export async function emitirComCobranca(db: Firestore, p: {
     transaction.set(privRef, {
       emissaoKey: key,
       pdfPendente: true,
+      identidade: identidadeAssinada,
       atualizadoEm: FieldValue.serverTimestamp(),
     });
 
@@ -318,10 +430,13 @@ export async function emitirComCobranca(db: Firestore, p: {
       tipoExame: (p.dadosFinais.tipoExame as string) || '',
       convenio: (p.dadosFinais.convenio as string) || '',
       tipo: tipo === 'franquia' ? 'franquia' : 'credito',
-      reemissao: !!(p.dadosFinais.reemissao),
+      reemissao,
       emitidoEm: FieldValue.serverTimestamp(),
     });
 
-    return { ok: true, tipo, replay: false, pdfPendente: true, pdfUrl: (exame.pdfUrl as string) || null };
+    return {
+      ok: true, tipo, replay: false, pdfPendente: true, pdfUrl: (exame.pdfUrl as string) || null,
+      reemissao, identificacaoAlterada,
+    };
   });
 }

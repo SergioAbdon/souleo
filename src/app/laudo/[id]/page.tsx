@@ -1188,7 +1188,12 @@ function LaudoPageInner() {
     };
   }
 
-  /** Detecta se identificação mudou em relação ao exame original */
+  /** Prévia de UX da regra que o SERVIDOR aplica de verdade — quem deriva o
+   * carimbo `identificacaoAlterada` é `emitirComCobranca` (src/lib/
+   * emitir-admin.ts, CAMPOS_IDENTIDADE), comparando a gaveta server-only x
+   * `dadosFinais`. Isto aqui só mostra o aviso pro médico ANTES de emitir —
+   * a lista de campos tem que bater com a de lá (travado por
+   * tests/unit/identidade-campos-pin.test.mjs). */
   function identificacaoMudou(): boolean {
     if (!exame) return false;
     const atual = coletarIdentificacao();
@@ -1452,8 +1457,12 @@ function LaudoPageInner() {
       // do DOM = o que o médico vê). A linha antiga jogava o `exame.convenio`
       // STALE por cima → topo gravava "" mesmo com convênio digitado (bug
       // 16/05: laudo mostrava PARTICULAR, Worklist/Extrato viam vazio).
-      reemissao: jaEmitido,
-      identificacaoAlterada: idMudou,
+      // `reemissao`/`identificacaoAlterada` NÃO vão mais no corpo — o
+      // servidor deriva os dois sozinho (exameSnap × dadosFinais, na mesma
+      // transação); mandar os flags daqui só reabriria o canal que o
+      // achado E3 fechou do lado do cliente. `jaEmitido`/`idMudou` acima
+      // continuam vivos como a prévia de UX da mesma regra (comentário em
+      // identificacaoMudou()).
     };
 
     // F3-T5 (revisão, I2): com a flag ON a tabela de medidas vem da ponte —

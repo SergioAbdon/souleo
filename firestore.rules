@@ -305,10 +305,11 @@ service cloud.firestore {
       allow update, delete: if false;
     }
     // Ledger de franquia/creditos: SO o servidor Admin escreve (/api/emitir
-    // debita, /api/exame devolve). O `registrarConsumo` do cliente
-    // (src/lib/billing.ts) e codigo morto — nenhum chamador. Com `auth()`
-    // aqui, qualquer logado forjava devolucao ('cancelamento') e zerava a
-    // conta de consumo da propria clinica.
+    // debita, /api/exame devolve). O `registrarConsumo` do cliente que existia
+    // em src/lib/billing.ts era codigo morto sem chamador — apagado na
+    // triade da onda 2 (fix-wave, 30/08). Com `auth()` aqui, qualquer logado
+    // forjava devolucao ('cancelamento') e zerava a conta de consumo da
+    // propria clinica.
     match /consumo/{consumoId} {
       allow create: if false;
       allow read:   if superadmin();

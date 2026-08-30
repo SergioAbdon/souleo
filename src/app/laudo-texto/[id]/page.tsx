@@ -193,7 +193,9 @@ export default function LaudoTextoPage() {
               clinica: clinicaNome,
               medNome: profile?.nome, medCrm: profile?.crm, medUf: profile?.ufCrm, p1,
             },
-            ...(jaEmitido ? { reemissao: true } : {}),
+            // `reemissao` não vai mais no corpo — o servidor deriva sozinho
+            // (exameSnap × dadosFinais na transação); mandar o flag daqui só
+            // reabriria o canal que o achado E3 fechou do lado do cliente.
           },
           // `nomeArq` sai daqui (S5-T14, I3): o servidor deriva o nome do
           // objeto no Storage a partir do tipo + nome do paciente.

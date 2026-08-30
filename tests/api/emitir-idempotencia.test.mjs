@@ -221,6 +221,140 @@ describe('E2 — reemissao deliberada continua cobrando', () => {
 // emitir-pdf-erro.test.mjs); emitirComCobranca confia no tipo (`emissaoKey:
 // string`, sem revalidar) — o trust boundary e so a rota.
 
+// ══════════════════════════════════════════════════════════════════
+// E3: reemissao e identificacaoAlterada eram COPIADOS do navegador
+// (dadosFinais.reemissao / dadosFinais.identificacaoAlterada) pro ledger de
+// consumo e pro log — cliente adulterado reemitia trocando nome/CPF e
+// logando identificacaoAlterada:false. O servidor tem antes (exameSnap) x
+// depois (dadosFinais) na MESMA transacao: derivado aqui, o cliente nao
+// controla mais o carimbo.
+// ══════════════════════════════════════════════════════════════════
+describe('E3 — reemissao e identificacaoAlterada derivados no servidor (nao do cliente)', () => {
+  test('reemissao deriva de emitidoEm do exame — cliente nao manda o flag e mesmo assim vem true', async () => {
+    const id = await seedExameEmitidoSemGaveta();   // ja emitido (legado, sem gaveta)
+    const r = await emitir(id, KEY_A);               // helper NAO manda dadosFinais.reemissao
+    assert.equal(r.ok, true);
+    assert.equal(r.reemissao, true, 'exame ja tinha emitidoEm — e reemissao de verdade');
+    const consumoSnap = await db.collection('consumo').where('exameId', '==', id).get();
+    assert.equal(consumoSnap.docs.length, 1);
+    assert.equal(consumoSnap.docs[0].data().reemissao, true, 'ledger precisa refletir o servidor, nao o cliente');
+  });
+
+  test('identificacaoAlterada deriva comparando antes (exame) x depois (dadosFinais) — cliente mentindo false e ignorado', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);   // 1a emissao: pacienteNome 'Paciente E'
+    const r = await emitir(id, KEY_B, { pacienteNome: 'Paciente Trocado', identificacaoAlterada: false });
+    assert.equal(r.ok, true);
+    assert.equal(r.replay, false);
+    assert.equal(r.reemissao, true);
+    assert.equal(r.identificacaoAlterada, true, 'cliente mandou false, mas o nome mudou de verdade — servidor nao confia');
+  });
+
+  test('primeira emissao (sem emitidoEm antes): reemissao e identificacaoAlterada vem false', async () => {
+    const id = await seedExame();
+    const r = await emitir(id, KEY_A);
+    assert.equal(r.ok, true);
+    assert.equal(r.reemissao, false);
+    assert.equal(r.identificacaoAlterada, false);
+  });
+
+  test('replay (mesma key) devolve false nos dois carimbos — replay nao e um ato novo de emissao', async () => {
+    const id = await seedExameEmitidoSemGaveta();
+    await emitir(id, KEY_A);   // vira reemissao real, pdfPendente:true
+    const r = await emitir(id, KEY_A);   // replay da mesma tentativa
+    assert.equal(r.replay, true);
+    assert.equal(r.reemissao, false, 'replay nao e um ato novo de emissao');
+    assert.equal(r.identificacaoAlterada, false);
+  });
+
+  // exame.emitidoEm sozinho nao e fonte segura — o medico-autor pode apagar
+  // esse campo pelo SDK (firestore.rules:204-207 nao inclui emitidoEm em
+  // `intacto`). Testado direto contra o emulador, escrita fora de
+  // emitirComCobranca (simula o cliente adulterado). A fonte que fecha isto
+  // e o LEDGER de consumo (privSnap.emissaoKey e redundante — a gaveta e o
+  // consumo sao escritos na mesma transacao, entao este cenario, com gaveta
+  // E consumo, ja bate contra as duas fontes de qualquer forma).
+  test('emitidoEm apagado do doc (cliente adulterado) mas ja existe consumo desta emissao — reemissao deriva true mesmo assim', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);   // 1a emissao real: grava consumo (franquia) + gaveta
+    await db.doc(`workspaces/${WS}/exames/${id}`).update({ emitidoEm: FieldValue.delete() });
+    const r = await emitir(id, KEY_B);   // key nova = reemissao deliberada, emitidoEm sumiu do doc
+    assert.equal(r.ok, true);
+    assert.equal(r.replay, false);
+    assert.equal(r.reemissao, true,
+      'o ledger de consumo (server-only, colecao que o cliente nem enxerga) ainda prova a emissao anterior');
+    const consumoSnap = await db.collection('consumo').where('exameId', '==', id).get();
+    assert.equal(consumoSnap.docs.length, 2);
+    assert.ok(consumoSnap.docs.some((d) => d.data().reemissao === true), 'ledger tem que ter a reemissao true');
+  });
+
+  // feegow-admin grava pacienteNome sem trim — sem normalizar os dois lados,
+  // toda reemissao de exame importado do Feegow dava falso positivo de troca
+  // de identidade so por um espaco a mais. A gaveta guarda o nome ja
+  // NORMALIZADO (identidadeAssinada usa a mesma normalizarCampo), entao
+  // comparar contra ela em vez do doc nao reabre o falso positivo.
+  test('pacienteNome com espaco/caixa diferente (Feegow sem trim) x mesmo nome normalizado — identificacaoAlterada false', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A, { pacienteNome: 'PACIENTE FEEGOW ' });   // grava sem trim (como o Feegow)
+    const r = await emitir(id, KEY_B, { pacienteNome: 'Paciente Feegow' });   // mesmo nome, so trim/caixa diferentes
+    assert.equal(r.ok, true);
+    assert.equal(r.reemissao, true);
+    assert.equal(r.identificacaoAlterada, false, 'so trim/caixa diferente — nao e troca de identidade de verdade');
+  });
+
+  // ══════════════════════════════════════════════════════════════════
+  // Dois cenarios que a derivacao acima ainda deixava passar:
+  //  1. exame PRE-onda-0 sem gaveta: autor apagava emitidoEm pelo SDK e
+  //     reemitia -> reemissao false (privSnap.emissaoKey tambem nao existia
+  //     nesse exame — nasceu depois). Fix: ledger de consumo como fonte
+  //     definitiva.
+  //  2. identificacaoAlterada contornavel: autor editava a identidade no
+  //     DOC pelo SDK antes de reemitir e mandava o MESMO valor adulterado —
+  //     o "antes" (o doc) ja estava errado, nunca detectava. Fix: identidade
+  //     ASSINADA mora na gaveta server-only (privSnap.identidade).
+  // ══════════════════════════════════════════════════════════════════
+  test('exame legado SEM gaveta + consumo existente + emitidoEm apagado -> reemissao true (ledger, nao a gaveta)', async () => {
+    const id = await seedExameEmitidoSemGaveta();   // emitido, SEM gaveta (legado pre-onda-0)
+    await db.collection('consumo').add({ workspaceId: WS, exameId: id, tipo: 'franquia', emitidoEm: FieldValue.serverTimestamp() });
+    await db.doc(`workspaces/${WS}/exames/${id}`).update({ emitidoEm: FieldValue.delete() });   // autor apaga pelo SDK
+    assert.equal(await privDoc(id), undefined, 'sanity: continua sem gaveta nenhuma');
+    const r = await emitir(id, KEY_A);
+    assert.equal(r.ok, true);
+    assert.equal(r.reemissao, true,
+      'consumo existente prova a emissao anterior mesmo sem gaveta e sem emitidoEm');
+  });
+
+  test('autor adultera pacienteNome no doc E manda o MESMO valor adulterado — identificacaoAlterada true (comparado contra a gaveta, nao contra o doc)', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);   // 1a emissao real: gaveta grava identidade assinada (pacienteNome 'PACIENTE E')
+    // Autor edita o doc pelo SDK ANTES de reemitir (escrita direta simula isso).
+    await db.doc(`workspaces/${WS}/exames/${id}`).update({ pacienteNome: 'Paciente Trocado' });
+    // Reemite mandando o MESMO valor que acabou de plantar no doc — contra o
+    // doc isso pareceria "sem mudanca"; e exatamente o que a gaveta evita.
+    const r = await emitir(id, KEY_B, { pacienteNome: 'Paciente Trocado' });
+    assert.equal(r.ok, true);
+    assert.equal(r.identificacaoAlterada, true,
+      'comparado contra a gaveta (o que foi assinado da ultima vez), nao contra o doc ja adulterado');
+  });
+
+  test('reemissao sem mudanca nenhuma na identidade — identificacaoAlterada false', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    const r = await emitir(id, KEY_B);   // helper manda os MESMOS valores da 1a emissao
+    assert.equal(r.ok, true);
+    assert.equal(r.reemissao, true);
+    assert.equal(r.identificacaoAlterada, false);
+  });
+
+  test('exame legado emitido sem gaveta (pre-onda-0): sem identidade assinada anterior, fallback pro doc funciona', async () => {
+    const id = await seedExameEmitidoSemGaveta();   // pacienteNome: 'Paciente Legado', emitido, SEM gaveta/consumo
+    const r = await emitir(id, KEY_A, { pacienteNome: 'Paciente Trocado' });   // reemissao real, nome muda vs o DOC (unico "antes" disponivel)
+    assert.equal(r.ok, true);
+    assert.equal(r.reemissao, true);
+    assert.equal(r.identificacaoAlterada, true, 'sem gaveta com identidade assinada — fallback contra o doc');
+  });
+});
+
 describe('E8 — laudo cancelado recusa emissao (nao revive cobrando)', () => {
   test('status cancelado: recusa sem cobrar, sem tocar consumo/gaveta privada', async () => {
     const id = await seedExame();

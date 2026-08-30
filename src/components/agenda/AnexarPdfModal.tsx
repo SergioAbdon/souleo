@@ -29,7 +29,16 @@ const MENSAGENS_ERRO: Record<string, string> = {
 // X21: `tipoExame` aqui é o ID do catálogo (vai em `dadosFinais` pro
 // /api/emitir tal como está — nunca o nome de exibição, que corrompia o
 // campo no doc). `tipoNome` é só pra exibição na UI deste modal.
-type ExameRef = { id: string; pacienteNome?: string; tipoExame?: string; tipoNome?: string; convenio?: string };
+// jaEmitido (X22+E18, Ruflo-2): mora AQUI dentro, não como prop paralela —
+// o call site (Worklist) já sabe reconstruir a identidade inteira do exame
+// num objeto só; um boolean derivado à parte do MESMO exame divergia dele
+// em cenário de reabertura (status volta a 'andamento' mas `emitidoEm`
+// continua no doc — E22). A cobrança em si é derivada no servidor; isto é
+// só o aviso na tela.
+type ExameRef = {
+  id: string; pacienteNome?: string; tipoExame?: string; tipoNome?: string; convenio?: string;
+  jaEmitido?: boolean;
+};
 
 type Props = {
   open: boolean;
@@ -50,6 +59,8 @@ export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid }
 
   if (!open || !exame) return null;
 
+  const jaEmitido = !!exame.jaEmitido;
+
   // Ponytail-12: `||` em vez do par `??` repetido no JSX — tipoNome/tipoExame
   // sao string opcional, entao string vazia cai no mesmo default de "sem
   // tipo" que null/undefined.
@@ -68,6 +79,10 @@ export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid }
 
   async function enviar() {
     if (!arquivo || !exame) return;
+    // O modal já É a confirmação do caminho feliz (nenhuma outra tela
+    // confirma franquia no primeiro anexo) — o confirm() só entra quando é
+    // de fato uma REEMISSÃO, avisando o custo extra explicitamente.
+    if (jaEmitido && !confirm('Este exame JÁ FOI EMITIDO — reanexar consome UMA NOVA franquia. Continuar?')) return;
     setEnviando(true);
     setErro('');
     try {
@@ -133,6 +148,12 @@ export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid }
 
           {erro && <div className="bg-red-50 text-red-700 text-sm p-2 rounded">{erro}</div>}
 
+          {jaEmitido && (
+            <div className="bg-amber-50 text-amber-800 text-sm p-2 rounded">
+              Este exame JÁ FOI EMITIDO — reanexar consome UMA NOVA franquia.
+            </div>
+          )}
+
           <input
             type="file"
             accept="application/pdf"
@@ -155,7 +176,7 @@ export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid }
             disabled={!arquivo || enviando}
             className="px-4 py-1.5 text-sm rounded-lg bg-p1 text-white font-semibold disabled:opacity-50"
           >
-            {enviando ? 'Enviando…' : 'Emitir laudo'}
+            {enviando ? 'Enviando…' : jaEmitido ? 'Reanexar (consome 1 franquia)' : 'Emitir laudo'}
           </button>
         </div>
       </div>

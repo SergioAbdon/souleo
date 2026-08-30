@@ -137,7 +137,14 @@ export async function POST(req: NextRequest) {
     });
 
     if (!resultado.ok) {
-      const status: Record<string, number> = { nao_encontrado: 404, exame_de_outro_medico: 403, cancelado: 409 };
+      // E16: recusa de billing (sem_plano/sem_saldo/expirado) saia como HTTP
+      // 200 — corpo `ok:false` dizia a verdade, mas o status mentia "deu
+      // certo" pra qualquer proxy/monitoramento que olhasse so o codigo.
+      // 402 (Payment Required) e o status honesto pra recusa de cobranca.
+      const status: Record<string, number> = {
+        nao_encontrado: 404, exame_de_outro_medico: 403, cancelado: 409,
+        sem_plano: 402, sem_saldo: 402, expirado: 402,
+      };
       return NextResponse.json(resultado, { status: status[resultado.motivo] ?? 200 });
     }
 
@@ -154,14 +161,19 @@ export async function POST(req: NextRequest) {
 
     // ══ 2. AUDIT LOG (nao critico) ══
     // So na emissao NOVA: o replay nao e um ato novo de emissao.
+    // E3: os carimbos vem de `resultado` (derivados no servidor dentro da
+    // transacao, exameSnap x dadosFinais) — nao mais de `dadosFinais`, que e
+    // o corpo cru que o cliente mandou e podia mentir (reemitir trocando
+    // nome/CPF e logar identificacaoAlterada:false). Os clientes podem
+    // continuar mandando os flags; o servidor simplesmente ignora.
     if (!resultado.replay) {
       try {
         await dbAdmin.collection('logs').add({
           tipo: 'emissao',
           exameId,
           wsId,
-          reemissao: !!(dadosFinais.reemissao),
-          identificacaoAlterada: !!(dadosFinais.identificacaoAlterada),
+          reemissao: resultado.reemissao,
+          identificacaoAlterada: resultado.identificacaoAlterada,
           ts: FieldValue.serverTimestamp(),
           medicoUid,
         });
@@ -312,8 +324,10 @@ export async function POST(req: NextRequest) {
       ...(resultado.replay ? { replay: true } : {}),
     });
   } catch (e) {
+    // E15: espelho exato de corrigir-laudo — detalhe (stack, path de bucket,
+    // mensagem crua do Firestore/Puppeteer) so no log do servidor. Antes a
+    // mensagem do erro ia inteira pro corpo da resposta (`error: msg`).
     console.error('API /emitir error:', e);
-    const msg = (e as Error).message || 'Erro interno';
-    return NextResponse.json({ ok: false, motivo: 'erro', error: msg }, { status: 500 });
+    return NextResponse.json({ ok: false, motivo: 'erro', error: 'erro_interno' }, { status: 500 });
   }
 }

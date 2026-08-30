@@ -45,3 +45,39 @@ describe('replay idempotente (S7 onda-0, C1)', () => {
       'a decisão de replay perdeu o guard do pdfPendente — C1 voltaria com a bateria verde');
   });
 });
+
+// E3: reemissao/identificacaoAlterada eram lidos
+// de `dadosFinais` (corpo cru do cliente) no bloco de audit log — a
+// semântica de "quem derivou o quê" ganhou bateria em
+// tests/api/emitir-idempotencia.test.mjs, mas o FIO da rota (qual variável o
+// log lê) não tem seam nenhum ali (é `emitirComCobranca` sendo testada, não
+// a rota). Pin de fonte, mesmo padrão dos pins acima.
+describe('audit log usa o carimbo DERIVADO, nao o cru do cliente (E3)', () => {
+  test('log de emissao le resultado.reemissao/resultado.identificacaoAlterada', () => {
+    assert.match(src, /reemissao:\s*resultado\.reemissao/,
+      'o log voltou a ler reemissao de dadosFinais (corpo do cliente)');
+    assert.match(src, /identificacaoAlterada:\s*resultado\.identificacaoAlterada/,
+      'o log voltou a ler identificacaoAlterada de dadosFinais (corpo do cliente)');
+  });
+});
+
+// Task 8 (E15+E16): mascara de erro interno + HTTP honesto na recusa de
+// billing. A rota nao e importavel em node --test (mesma limitacao dos pins
+// acima) — trava por leitura de fonte, igual emitir-pdf-erro.test.mjs.
+describe('E16 — recusa de billing sai com status HTTP honesto (nao mais 200)', () => {
+  test('mapa de status inclui sem_plano/sem_saldo/expirado como 402', () => {
+    // 3 asserts independentes (sem exigir ordem/adjacencia no objeto —
+    // chave:valor de object literal nao tem ordem semantica).
+    assert.match(src, /sem_plano:\s*402/, 'sem_plano parou de virar 402 no mapa de status');
+    assert.match(src, /sem_saldo:\s*402/, 'sem_saldo parou de virar 402 no mapa de status');
+    assert.match(src, /expirado:\s*402/, 'expirado parou de virar 402 no mapa de status');
+  });
+});
+
+describe('E15 — catch-all da rota nao vaza detalhe do erro pro corpo da resposta', () => {
+  test('resposta do catch-all usa motivo fixo erro_interno, nao a mensagem crua da excecao', () => {
+    const semComentarios = src.replace(/^\s*\/\/.*$/gm, '');   // comentarios citam os proprios trechos
+    assert.match(semComentarios, /error:\s*'erro_interno'/,
+      'o catch-all parou de mascarar o erro — espelho de corrigir-laudo (error: "erro_interno")');
+  });
+});
