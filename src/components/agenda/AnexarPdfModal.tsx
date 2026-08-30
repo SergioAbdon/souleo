@@ -37,9 +37,12 @@ type Props = {
   exame: ExameRef | null;
   wsId: string;
   medicoUid: string;
+  // X22+E18: exame já emitido — reanexar é REEMISSÃO, cobra franquia de novo.
+  // A cobrança em si é derivada no servidor (Task 7); isto é só o aviso na tela.
+  jaEmitido?: boolean;
 };
 
-export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid }: Props) {
+export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid, jaEmitido }: Props) {
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [erro, setErro] = useState('');
   const [enviando, setEnviando] = useState(false);
@@ -68,6 +71,10 @@ export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid }
 
   async function enviar() {
     if (!arquivo || !exame) return;
+    const msg = jaEmitido
+      ? 'Este exame JÁ FOI EMITIDO — reanexar consome UMA NOVA franquia. Continuar?'
+      : 'Anexar o PDF? A emissão consome 1 laudo da franquia.';
+    if (!confirm(msg)) return;
     setEnviando(true);
     setErro('');
     try {
@@ -133,6 +140,12 @@ export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid }
 
           {erro && <div className="bg-red-50 text-red-700 text-sm p-2 rounded">{erro}</div>}
 
+          {jaEmitido && (
+            <div className="bg-amber-50 text-amber-800 text-sm p-2 rounded">
+              Este exame JÁ FOI EMITIDO — reanexar consome UMA NOVA franquia.
+            </div>
+          )}
+
           <input
             type="file"
             accept="application/pdf"
@@ -155,7 +168,7 @@ export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid }
             disabled={!arquivo || enviando}
             className="px-4 py-1.5 text-sm rounded-lg bg-p1 text-white font-semibold disabled:opacity-50"
           >
-            {enviando ? 'Enviando…' : 'Emitir laudo'}
+            {enviando ? 'Enviando…' : jaEmitido ? 'Reanexar (consome 1 franquia)' : 'Emitir laudo'}
           </button>
         </div>
       </div>

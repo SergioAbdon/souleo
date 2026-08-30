@@ -962,6 +962,7 @@ export default function Worklist() {
         } : null}
         wsId={workspace?.id || ''}
         medicoUid={user?.uid || ''}
+        jaEmitido={anexarPdf?.status === 'emitido'}
       />
     </div>
   );
