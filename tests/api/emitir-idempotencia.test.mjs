@@ -503,6 +503,41 @@ describe('E11 — renovacao do ciclo (opcao D, giro dentro da transacao)', () =>
     assert.equal(r2.girou, false, 'cicloFim ja rolou pro futuro na 1a emissao');
     assert.equal(await usada(), 2);
   });
+
+  // Reviewer follow-up (Minor-5, item 4a): replay retorna ANTES de sequer
+  // ler os campos da assinatura (guard da TRAVA ANTI-COBRANCA-DUPLA, mais
+  // acima na funcao) — vencer o ciclo DEPOIS que a 1a emissao ja commitou
+  // nao pode fazer o replay da MESMA tentativa girar nada.
+  test('replay (mesma key) sobre ciclo que venceu DEPOIS da 1a emissao: nao gira, nao mexe no cicloFim', async () => {
+    const id = await seedExame();
+    const r1 = await emitir(id, KEY_A);   // ciclo vigente (beforeEach) — nao gira
+    assert.equal(r1.girou, false);
+    const cicloVencido = new Date(Date.now() - 864e5);
+    await db.doc(`subscriptions/${CONTA}`).update({ cicloFim: cicloVencido });   // vence DEPOIS
+    const r2 = await emitir(id, KEY_A);   // mesma key = replay
+    assert.equal(r2.replay, true);
+    assert.equal(r2.girou, false, 'replay nao e um ato novo de emissao — nao pode girar o ciclo');
+    const cicloAtual = (await db.doc(`subscriptions/${CONTA}`).get()).data().cicloFim.toDate();
+    assert.equal(cicloAtual.getTime(), cicloVencido.getTime(), 'replay nao pode ter mexido no cicloFim');
+    assert.equal(await usada(), 1, 'replay nao cobra de novo');
+  });
+
+  // Reviewer follow-up (Minor-5, item 4b): conta paga LEGADA, criada antes
+  // do campo `tipo` existir na assinatura — `sub.tipo` vem `undefined`, nao
+  // `'paid'`. O predicado do giro e `sub.tipo !== 'trial'`: undefined passa
+  // nesse teste (so trial fica de fora), entao uma conta legada tambem gira.
+  test('tipo undefined (conta paga legada, sem o campo tipo): gira normal — so trial e que NAO gira', async () => {
+    await db.doc(`subscriptions/${CONTA}`).update({
+      tipo: FieldValue.delete(), cicloFim: new Date(Date.now() - 864e5),
+    });
+    const subAntes = (await db.doc(`subscriptions/${CONTA}`).get()).data();
+    assert.equal(subAntes.tipo, undefined, 'sanity: campo tipo realmente ausente');
+    const id = await seedExame();
+    const r = await emitir(id, KEY_A);
+    assert.equal(r.ok, true);
+    assert.equal(r.girou, true, 'legado sem campo tipo nao pode ficar preso pra sempre sem girar');
+    assert.equal(await usada(), 1);
+  });
 });
 
 // ══════════════════════════════════════════════════════════════════

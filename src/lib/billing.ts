@@ -183,6 +183,19 @@ export async function checkEmissao(wsId: string): Promise<CheckResult> {
     const franquiaMensal = (sub.franquiaMensal as number) || 0;
     const creditosExtras = (sub.creditosExtras as number) || 0;
 
+    // E11 opcao D (ADR 2026-08-30): o SERVIDOR gira o ciclo dentro da
+    // transacao de emitirComCobranca (src/lib/emitir-admin.ts) quando acha a
+    // assinatura elegivel — isto aqui e SO a previa do cliente (nao escreve
+    // nada). Sem espelhar a MESMA regra, o pre-voo dizia 'expirado' no dia
+    // 31 e o medico nem abria o editor pra chegar na rota que de fato gira
+    // (e a modalidade 'pdf', que pula o pre-voo, renovava sozinha enquanto
+    // ECOTT/motor ficava travado na tela). Predicado tem que bater com o de
+    // emitir-admin.ts — pin cross-file em
+    // tests/unit/giro-ciclo-predicado-pin.test.mjs.
+    if (agora > cicloFim && franquiaMensal > 0 && sub.tipo !== 'trial') {
+      return { pode: true, tipo: 'franquia', sub };
+    }
+
     if (agora > cicloFim && creditosExtras <= 0) {
       return { pode: false, motivo: 'expirado', sub };
     }

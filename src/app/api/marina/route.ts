@@ -242,7 +242,12 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
 
         const rows = wsSnap.docs.map(d => {
           const ws = { id: d.id, ...d.data() } as Record<string, unknown>;
-          const sub = subs.find((s: Record<string, unknown>) => s.workspaceId === ws.id) as Record<string, unknown> | undefined;
+          // E11 achado extra (ADR §1a): mesmo join canonico do painel de
+          // Licencas (contaId primeiro, fallback legado por workspaceId) —
+          // sem isto toda conta do cadastro novo aparecia "sem plano" na
+          // lista, a ferramenta mais usada da Marina.
+          const sub = ((ws.contaId && subs.find((s: Record<string, unknown>) => s.id === ws.contaId))
+            || subs.find((s: Record<string, unknown>) => s.workspaceId === ws.id)) as Record<string, unknown> | undefined;
           const owner = profs.find((p: Record<string, unknown>) => p.uid === ws.ownerUid || p.id === ws.ownerUid) as Record<string, unknown> | undefined;
           const fim = sub?.cicloFim ? (sub.cicloFim as Timestamp).toDate() : null;
           const ativo = fim && agora <= fim.getTime();
@@ -284,10 +289,13 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const ws = wsSnap.docs.find(d => (d.data().nomeClinica || '').toLowerCase().includes(nome));
         if (!ws) return JSON.stringify({ erro: 'Workspace nao encontrado' });
 
-        const subSnap = await dbAdmin.collection('subscriptions').where('workspaceId', '==', ws.id).limit(1).get();
-        if (subSnap.empty) return JSON.stringify({ workspace: ws.data().nomeClinica, erro: 'Sem subscription' });
+        // E11 achado extra (ADR §1a): join canonico — achado numa varredura
+        // do arquivo, mesma classe de bug dos outros handlers acima/abaixo.
+        const assinaturaVer = await resolverAssinatura(dbAdmin, ws.id);
+        if (!assinaturaVer) return JSON.stringify({ workspace: ws.data().nomeClinica, erro: 'Sem subscription' });
 
-        const sub = subSnap.docs[0].data();
+        const subVerSnap = await assinaturaVer.ref.get();
+        const sub = subVerSnap.data()!;
         const fim = sub.cicloFim ? (sub.cicloFim as Timestamp).toDate() : null;
         return JSON.stringify({
           workspace: ws.data().nomeClinica,
@@ -361,14 +369,16 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const ws = wsSnap.docs.find(d => (d.data().nomeClinica || '').toLowerCase().includes(nome));
         if (!ws) return JSON.stringify({ erro: 'Workspace nao encontrado' });
 
-        const subSnap = await dbAdmin.collection('subscriptions').where('workspaceId', '==', ws.id).limit(1).get();
-        if (subSnap.empty) return JSON.stringify({ erro: 'Sem subscription ativa' });
+        // E11 achado extra (ADR §1a): join canonico (resolverAssinatura),
+        // nao a query por workspaceId que fica muda pra conta nova.
+        const assinaturaCreditos = await resolverAssinatura(dbAdmin, ws.id);
+        if (!assinaturaCreditos) return JSON.stringify({ erro: 'Sem subscription ativa' });
 
-        const sub = subSnap.docs[0];
-        const saldoAnterior = sub.data().creditosExtras || 0;
+        const subCreditosSnap = await assinaturaCreditos.ref.get();
+        const saldoAnterior = subCreditosSnap.data()?.creditosExtras || 0;
         const saldoNovo = Math.max(0, saldoAnterior + quantidade);
 
-        await sub.ref.update({ creditosExtras: saldoNovo });
+        await assinaturaCreditos.ref.update({ creditosExtras: saldoNovo });
         await dbAdmin.collection('creditosLog').add({
           workspaceId: ws.id, quantidade, tipo: 'cortesia', motivo,
           saldoAnterior, saldoNovo, dadoPor: 'marina-ia',
@@ -437,11 +447,13 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const ws = wsSnap.docs.find(d => (d.data().nomeClinica || '').toLowerCase().includes(nome));
         if (!ws) return JSON.stringify({ erro: 'Workspace nao encontrado' });
 
-        const subSnap = await dbAdmin.collection('subscriptions').where('workspaceId', '==', ws.id).limit(1).get();
-        if (subSnap.empty) return JSON.stringify({ erro: 'Sem subscription' });
+        // E11 achado extra (ADR §1a): join canonico, nao a query por
+        // workspaceId (muda pra conta criada pelo cadastro novo).
+        const assinaturaBloqueio = await resolverAssinatura(dbAdmin, ws.id);
+        if (!assinaturaBloqueio) return JSON.stringify({ erro: 'Sem subscription' });
 
         // Zerar franquia e creditos = bloqueio efetivo (nao consegue emitir)
-        await subSnap.docs[0].ref.update({ franquiaMensal: 0, creditosExtras: 0 });
+        await assinaturaBloqueio.ref.update({ franquiaMensal: 0, creditosExtras: 0 });
         await dbAdmin.collection('logs').add({
           tipo: 'bloqueio', wsId: ws.id, motivo, ts: Timestamp.now(), medicoUid: 'marina-ia',
         });
@@ -455,14 +467,23 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const ws = wsSnap.docs.find(d => (d.data().nomeClinica || '').toLowerCase().includes(nome));
         if (!ws) return JSON.stringify({ erro: 'Workspace nao encontrado' });
 
-        const subSnap = await dbAdmin.collection('subscriptions').where('workspaceId', '==', ws.id).limit(1).get();
-        if (subSnap.empty) return JSON.stringify({ erro: 'Sem subscription' });
+        // E11 achado extra (ADR §1a): join canonico, nao a query por
+        // workspaceId (muda pra conta criada pelo cadastro novo).
+        const assinaturaDesbloqueio = await resolverAssinatura(dbAdmin, ws.id);
+        if (!assinaturaDesbloqueio) return JSON.stringify({ erro: 'Sem subscription' });
 
-        // Restaurar franquia baseada no plano
-        const planoId = subSnap.docs[0].data().planoId || 'basic';
-        const franquias: Record<string, number> = { trial: 600, remido: 9999, basic: 100, profissional: 350, expert: 600 };
+        // Restaurar franquia baseada no plano — mapa espelha planosMap de
+        // 'editar_licenca' abaixo (PF + PJ). Faltavam os PJ: sem eles,
+        // desbloquear uma clinica PJ Pro (720) devolvia 100 (fallback de
+        // Basic), sacaneando a conta com 1/7 da franquia contratada.
+        const subDesbloqueioSnap = await assinaturaDesbloqueio.ref.get();
+        const planoId = subDesbloqueioSnap.data()?.planoId || 'basic';
+        const franquias: Record<string, number> = {
+          trial: 600, remido: 9999, basic: 100, profissional: 350, expert: 600,
+          pj_starter: 300, pj_pro: 720, pj_enterprise: 1500,
+        };
         const franquiaRestaurada = franquias[planoId] || 100;
-        await subSnap.docs[0].ref.update({ franquiaMensal: franquiaRestaurada });
+        await assinaturaDesbloqueio.ref.update({ franquiaMensal: franquiaRestaurada });
         await dbAdmin.collection('logs').add({
           tipo: 'desbloqueio', wsId: ws.id, planoId, ts: Timestamp.now(), medicoUid: 'marina-ia',
         });
@@ -484,7 +505,13 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         if (!assinatura) return JSON.stringify({ erro: 'Sem subscription' });
 
         const novaData = new Date(Date.now() + dias * 864e5);
-        await assinatura.ref.update({ cicloFim: Timestamp.fromDate(novaData) });
+        // Minor-6 (follow-up E11-D): estender manual = ciclo NOVO — sem
+        // zerar franquiaUsada, uma conta que ja tinha estourado a franquia
+        // trocava 'expirado' por 'sem_saldo' (continuava travada) E o giro
+        // automatico da opcao D nunca mais dispara sozinho (cicloFim ja fica
+        // no futuro, a condicao `agora > cicloFim` do giro nunca bate ate o
+        // proximo vencimento de verdade).
+        await assinatura.ref.update({ cicloFim: Timestamp.fromDate(novaData), franquiaUsada: 0 });
         await dbAdmin.collection('logs').add({
           tipo: 'renovacao_trial', wsId: ws.id, dias, novaExpiracao: novaData.toLocaleDateString('pt-BR'),
           ts: Timestamp.now(), medicoUid: 'marina-ia',
@@ -502,8 +529,10 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const ws = wsSnap.docs.find(d => (d.data().nomeClinica || '').toLowerCase().includes(nome));
         if (!ws) return JSON.stringify({ erro: 'Workspace nao encontrado' });
 
-        const subSnap = await dbAdmin.collection('subscriptions').where('workspaceId', '==', ws.id).limit(1).get();
-        if (subSnap.empty) return JSON.stringify({ erro: 'Sem subscription' });
+        // E11 achado extra (ADR §1a): join canonico, nao a query por
+        // workspaceId (muda pra conta criada pelo cadastro novo).
+        const assinaturaEdicao = await resolverAssinatura(dbAdmin, ws.id);
+        if (!assinaturaEdicao) return JSON.stringify({ erro: 'Sem subscription' });
 
         const updates: Record<string, unknown> = {};
 
@@ -528,7 +557,7 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
           if (Object.keys(updates).length === 0) return JSON.stringify({ erro: 'Informe plano_id ou franquia_mensal' });
         }
 
-        await subSnap.docs[0].ref.update(updates);
+        await assinaturaEdicao.ref.update(updates);
         await dbAdmin.collection('logs').add({
           tipo: 'edicao_licenca', wsId: ws.id, planoId: planoId || 'manual', alteracoes: updates,
           ts: Timestamp.now(), medicoUid: 'marina-ia',
