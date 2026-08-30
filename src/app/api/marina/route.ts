@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+import { resolverAssinatura } from '@/lib/billing-admin';
 
 // ── Firebase Admin (server-side) ──
 if (!getApps().length) {
@@ -277,10 +278,10 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const ws = wsSnap.docs.find(d => (d.data().nomeClinica || '').toLowerCase().includes(nome));
         if (!ws) return JSON.stringify({ erro: 'Workspace nao encontrado' });
 
-        const subSnap = await dbAdmin.collection('subscriptions').where('workspaceId', '==', ws.id).limit(1).get();
-        if (subSnap.empty) return JSON.stringify({ workspace: ws.data().nomeClinica, erro: 'Sem subscription' });
+        const assinatura = await resolverAssinatura(dbAdmin, ws.id);
+        if (!assinatura) return JSON.stringify({ workspace: ws.data().nomeClinica, erro: 'Sem subscription' });
 
-        const sub = subSnap.docs[0].data();
+        const sub = (await assinatura.ref.get()).data()!;
         const fim = sub.cicloFim ? (sub.cicloFim as Timestamp).toDate() : null;
         return JSON.stringify({
           workspace: ws.data().nomeClinica,
@@ -354,14 +355,13 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const ws = wsSnap.docs.find(d => (d.data().nomeClinica || '').toLowerCase().includes(nome));
         if (!ws) return JSON.stringify({ erro: 'Workspace nao encontrado' });
 
-        const subSnap = await dbAdmin.collection('subscriptions').where('workspaceId', '==', ws.id).limit(1).get();
-        if (subSnap.empty) return JSON.stringify({ erro: 'Sem subscription ativa' });
+        const assinatura = await resolverAssinatura(dbAdmin, ws.id);
+        if (!assinatura) return JSON.stringify({ erro: 'Sem subscription ativa' });
 
-        const sub = subSnap.docs[0];
-        const saldoAnterior = sub.data().creditosExtras || 0;
+        const saldoAnterior = (await assinatura.ref.get()).data()?.creditosExtras || 0;
         const saldoNovo = Math.max(0, saldoAnterior + quantidade);
 
-        await sub.ref.update({ creditosExtras: saldoNovo });
+        await assinatura.ref.update({ creditosExtras: saldoNovo });
         await dbAdmin.collection('creditosLog').add({
           workspaceId: ws.id, quantidade, tipo: 'cortesia', motivo,
           saldoAnterior, saldoNovo, dadoPor: 'marina-ia',
@@ -430,11 +430,11 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const ws = wsSnap.docs.find(d => (d.data().nomeClinica || '').toLowerCase().includes(nome));
         if (!ws) return JSON.stringify({ erro: 'Workspace nao encontrado' });
 
-        const subSnap = await dbAdmin.collection('subscriptions').where('workspaceId', '==', ws.id).limit(1).get();
-        if (subSnap.empty) return JSON.stringify({ erro: 'Sem subscription' });
+        const assinatura = await resolverAssinatura(dbAdmin, ws.id);
+        if (!assinatura) return JSON.stringify({ erro: 'Sem subscription' });
 
         // Zerar franquia e creditos = bloqueio efetivo (nao consegue emitir)
-        await subSnap.docs[0].ref.update({ franquiaMensal: 0, creditosExtras: 0 });
+        await assinatura.ref.update({ franquiaMensal: 0, creditosExtras: 0 });
         await dbAdmin.collection('logs').add({
           tipo: 'bloqueio', wsId: ws.id, motivo, ts: Timestamp.now(), medicoUid: 'marina-ia',
         });
@@ -448,14 +448,14 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const ws = wsSnap.docs.find(d => (d.data().nomeClinica || '').toLowerCase().includes(nome));
         if (!ws) return JSON.stringify({ erro: 'Workspace nao encontrado' });
 
-        const subSnap = await dbAdmin.collection('subscriptions').where('workspaceId', '==', ws.id).limit(1).get();
-        if (subSnap.empty) return JSON.stringify({ erro: 'Sem subscription' });
+        const assinatura = await resolverAssinatura(dbAdmin, ws.id);
+        if (!assinatura) return JSON.stringify({ erro: 'Sem subscription' });
 
         // Restaurar franquia baseada no plano
-        const planoId = subSnap.docs[0].data().planoId || 'basic';
+        const planoId = (await assinatura.ref.get()).data()?.planoId || 'basic';
         const franquias: Record<string, number> = { trial: 600, remido: 9999, basic: 100, profissional: 350, expert: 600 };
         const franquiaRestaurada = franquias[planoId] || 100;
-        await subSnap.docs[0].ref.update({ franquiaMensal: franquiaRestaurada });
+        await assinatura.ref.update({ franquiaMensal: franquiaRestaurada });
         await dbAdmin.collection('logs').add({
           tipo: 'desbloqueio', wsId: ws.id, planoId, ts: Timestamp.now(), medicoUid: 'marina-ia',
         });
@@ -470,11 +470,11 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const ws = wsSnap.docs.find(d => (d.data().nomeClinica || '').toLowerCase().includes(nome));
         if (!ws) return JSON.stringify({ erro: 'Workspace nao encontrado' });
 
-        const subSnap = await dbAdmin.collection('subscriptions').where('workspaceId', '==', ws.id).limit(1).get();
-        if (subSnap.empty) return JSON.stringify({ erro: 'Sem subscription' });
+        const assinatura = await resolverAssinatura(dbAdmin, ws.id);
+        if (!assinatura) return JSON.stringify({ erro: 'Sem subscription' });
 
         const novaData = new Date(Date.now() + dias * 864e5);
-        await subSnap.docs[0].ref.update({ cicloFim: Timestamp.fromDate(novaData) });
+        await assinatura.ref.update({ cicloFim: Timestamp.fromDate(novaData) });
         await dbAdmin.collection('logs').add({
           tipo: 'renovacao_trial', wsId: ws.id, dias, novaExpiracao: novaData.toLocaleDateString('pt-BR'),
           ts: Timestamp.now(), medicoUid: 'marina-ia',
@@ -492,8 +492,8 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const ws = wsSnap.docs.find(d => (d.data().nomeClinica || '').toLowerCase().includes(nome));
         if (!ws) return JSON.stringify({ erro: 'Workspace nao encontrado' });
 
-        const subSnap = await dbAdmin.collection('subscriptions').where('workspaceId', '==', ws.id).limit(1).get();
-        if (subSnap.empty) return JSON.stringify({ erro: 'Sem subscription' });
+        const assinatura = await resolverAssinatura(dbAdmin, ws.id);
+        if (!assinatura) return JSON.stringify({ erro: 'Sem subscription' });
 
         const updates: Record<string, unknown> = {};
 
@@ -518,7 +518,7 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
           if (Object.keys(updates).length === 0) return JSON.stringify({ erro: 'Informe plano_id ou franquia_mensal' });
         }
 
-        await subSnap.docs[0].ref.update(updates);
+        await assinatura.ref.update(updates);
         await dbAdmin.collection('logs').add({
           tipo: 'edicao_licenca', wsId: ws.id, planoId: planoId || 'manual', alteracoes: updates,
           ts: Timestamp.now(), medicoUid: 'marina-ia',
