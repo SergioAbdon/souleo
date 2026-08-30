@@ -171,9 +171,13 @@ export async function POST(req: NextRequest) {
           // podia mesmo assim ter deixado o snapshot com o corpo CORRIGIDO
           // por cima do que uma reemissao concorrente tivesse acabado de
           // publicar. Congela `htmlCorrigido` (o corpo JA com o convenio/
-          // solicitante novos) no MESMO nome do snapshot anterior — proxima
-          // correcao parte do texto mais recente.
-          await salvarSnapshotHtml(htmlCorrigido, wsId, exameId, snapshot.nomeArq);
+          // solicitante novos) no MESMO path que `lerSnapshotHtml` leu
+          // (`snapshot.path`, round 5) — NUNCA deriva de novo pela key atual
+          // da gaveta: um exame emitido entre a onda-0 e o round 5 tem gaveta
+          // com key mas snapshot ainda no canonico (round 5 nao existia
+          // quando emitiu); rederivar pela key migraria silenciosamente pro
+          // path sufixado, divergindo do que a leitura resolveu.
+          await salvarSnapshotHtml(htmlCorrigido, wsId, exameId, snapshot.nomeArq, { path: snapshot.path });
         } else {
           // Round 3 (Codex Critical, item 2): perdeu a corrida DEPOIS da
           // cerca pre-upload — apaga o objeto que ELA MESMA acabou de

@@ -94,9 +94,11 @@ describe('path único por tentativa — sufixo de emissaoKey (rounds 3+4)', () =
     assert.match(emitirSrc, /gerarESalvarPdf\(pdfHtml, wsId, exameId, nomeArqTentativa, podePublicar\)/);
     // Round 4 (item 3): salvarSnapshotHtml saiu de dentro de gerarESalvarPdf
     // — agora são 2 chamadas explícitas na rota (sucesso + catch), as 2 com
-    // nomeArqTentativa. Ver tests/unit/pdf-snapshot-pos-publicacao.test.mjs
-    // pro wiring exato de QUANDO cada uma roda.
-    const chamadasSnapshot = emitirSrc.match(/salvarSnapshotHtml\(pdfHtml, wsId, exameId, nomeArqTentativa\)/g) || [];
+    // nomeArqTentativa. Round 5: as 2 TAMBÉM sufixam o OBJETO do snapshot
+    // pela própria key (`{ emissaoKey }`, snapshot deixou de ser canônico
+    // por exame). Ver tests/unit/pdf-snapshot-pos-publicacao.test.mjs pro
+    // wiring exato de QUANDO/COM QUE PATH cada uma roda.
+    const chamadasSnapshot = emitirSrc.match(/salvarSnapshotHtml\(pdfHtml, wsId, exameId, nomeArqTentativa, \{ emissaoKey \}\)/g) || [];
     assert.equal(chamadasSnapshot.length, 2);
   });
 

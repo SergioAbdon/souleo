@@ -8,6 +8,11 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { assinarImagensExame, assinarUrlsNoHtml } from './imagens-dicom-admin';
 import { sanitizarNomeArq, pathPdf } from './pdf-path';
 import { obterBrowser, descartarBrowser, ehErroDeConexao } from './pdf-browser';
+// Round 5 (Codex Critical): lerSnapshotHtml resolve o path certo lendo a
+// gaveta de idempotencia — mesmo dono do estado de emissao. Sem ciclo:
+// emitir-admin.ts so importa billing-admin.ts e correcao-admin.ts (nenhum
+// dos dois importa pdf-server), e ambos ja sao relativos/sem `@/`.
+import { refEmissaoPrivada } from './emitir-admin';
 
 // Teto da espera pelas fontes (S7-T0.2, achado P8). A moldura carrega IBM Plex
 // do fonts.googleapis.com em TODO render; `document.fonts.ready` espera o woff2
@@ -76,14 +81,29 @@ export async function apagarPdfObjeto(wsId: string, exameId: string, nomeArq: st
 // O HTML que virou PDF fica congelado no Storage. É ele que a correção
 // administrativa reescreve (só convênio/solicitante) — em vez de confiar num
 // HTML mandado pelo cliente, que deixava reescrever o laudo assinado inteiro.
-// Path CANÔNICO por exameId: a leitura NÃO usa o campo `pdfHtmlPath` do doc
-// como caminho (o doc é editável pelo navegador — apontaria pro snapshot de
-// outro exame); o campo fica só como marca/auditoria.
+// Path NÃO usa o campo `pdfHtmlPath` do doc pra LER (o doc é editável pelo
+// navegador — apontaria pro snapshot de outro exame); o campo fica só como
+// marca/auditoria.
 // Prefixo `laudos-html/` (fix I3): cai no DENY DEFAULT do storage.rules — o
 // laudo clínico completo não fica legível sem autenticação como fica em
 // `laudos/` (onde o PDF é público de propósito). Admin SDK bypassa a regra.
-function pathSnapshotHtml(wsId: string, exameId: string): string {
-  return `laudos-html/${wsId}/${exameId}.html`;
+//
+// Round 5 (Codex Critical): o snapshot ERA canônico por exameId — mesmo
+// salvo só DEPOIS da publicação confirmada (round 4), duas tentativas
+// (A publica, B reemite+publica+snapshota, o snapshot ATRASADO de A chega
+// DEPOIS) escreviam o MESMO objeto — A sobrescrevia o snapshot de B mesmo
+// perdendo a corrida no Firestore. Path por TENTATIVA agora (sufixo da
+// emissaoKey), igual ao PDF desde o round 3 — sem `emissaoKey`, cai no
+// canônico (exame pré-onda-0, que nunca teve key nenhuma).
+// Exportada (round 5): pura, sem I/O — testável direto sem depender do
+// Storage (não emulado nesta bateria), mesmo padrão de `pathPdf`/
+// `sanitizarNomeArq` em pdf-path.ts. A key (UUID já validado por
+// `emissaoKeyValida` no trust boundary da rota) entra CRUA no path — sem `/`
+// nem caractere especial possível num UUID, não precisa sanitizar.
+export function pathSnapshotHtml(wsId: string, exameId: string, emissaoKey?: string | null): string {
+  return emissaoKey
+    ? `laudos-html/${wsId}/${exameId}-${emissaoKey}.html`
+    : `laudos-html/${wsId}/${exameId}.html`;
 }
 
 // Nunca lança: emissão não pode falhar porque o snapshot falhou — o PDF é o
@@ -97,16 +117,32 @@ function pathSnapshotHtml(wsId: string, exameId: string): string {
 // correção administrativa deste exame (única via de recuperação sem 2a
 // franquia) morre pra sempre.
 // Round 4 (Codex Critical, item 3): chamada SÓ pela ROTA agora — nunca mais
-// de dentro de `gerarESalvarPdf`. O snapshot é canônico POR EXAME (não por
-// tentativa, ao contrário do PDF em si desde o round 3); gravá-lo de dentro
-// de `gerarESalvarPdf`, sem a transação de publicação, deixava uma tentativa
-// PERDEDORA sobrescrever o snapshot da VENCEDORA — uma correção futura
-// regeneraria o corpo clínico ANTIGO por cima do laudo assinado novo. Cada
-// caller só chama isto DEPOIS que a transação de publicação (round 2/3)
-// devolveu `true` — ver /api/emitir e /api/corrigir-laudo.
-export async function salvarSnapshotHtml(html: string, wsId: string, exameId: string, nomeArq: string): Promise<void> {
+// de dentro de `gerarESalvarPdf`. Cada caller só chama isto DEPOIS que a
+// transação de publicação (round 2/3) devolveu `true` — ver /api/emitir e
+// /api/corrigir-laudo.
+// Round 5 (item 2/4): `destino` escolhe o path — `emissaoKey` deriva o path
+// da TENTATIVA (uso normal, /api/emitir: quem está escrevendo sabe a própria
+// key, sem precisar reler nada); `path` usa um path JÁ RESOLVIDO direto (uso
+// de /api/corrigir-laudo: reescreve exatamente onde `lerSnapshotHtml` leu —
+// nunca deriva de novo, senão uma correção de exame pré-round-5, onde a
+// gaveta já tem key mas o snapshot ainda mora no canônico, "migraria" o
+// snapshot pro path sufixado sem avisar). Um objeto de opções (não um 5º
+// parâmetro solto) porque os dois usos são mutuamente exclusivos — assinatura
+// mais enxuta que dois métodos quase iguais.
+// ponytail: snapshots de tentativas PERDEDORAS (e o canônico de um exame já
+// migrado pro sufixado) ficam órfãos no bucket privado (deny-default, sem
+// link, ninguém lê de novo) — sem limpeza automática ainda. Entra junto do
+// P5 (apagar `laudos-html/` no `apagarExame`, Task 14 da onda 3); upgrade:
+// listar `laudos-html/{ws}/{exameId}*` e apagar tudo que não é o path atual
+// da gaveta quando o exame é apagado/cancelado.
+export async function salvarSnapshotHtml(
+  html: string, wsId: string, exameId: string, nomeArq: string,
+  destino?: { emissaoKey?: string | null } | { path: string },
+): Promise<void> {
   try {
-    const filePath = pathSnapshotHtml(wsId, exameId);
+    const filePath = destino && 'path' in destino
+      ? destino.path
+      : pathSnapshotHtml(wsId, exameId, destino?.emissaoKey);
     // Ruflo-5/Ponytail-11: sanitiza AQUI, ponto único — os callers (as duas
     // rotas, desde o round 4) passam o nomeArq CRU. Idempotente
     // (sanitizarNomeArq 2x não muda nada), então não há dupla-sanitização —
@@ -121,18 +157,33 @@ export async function salvarSnapshotHtml(html: string, wsId: string, exameId: st
   }
 }
 
+// Round 5 (item 3): a GAVETA é a verdade do servidor — só a emissão
+// VENCEDORA tem a key lá (publicarPdfSeAindaDono baixa `pdfPendente` mas
+// NUNCA apaga `emissaoKey`; uma reemissão sobrescreve a key com a DELA).
+// Lê a key atual e tenta o snapshot sufixado por ela primeiro; cai pro path
+// CANÔNICO em 2 casos: exame pré-onda-0 (nunca teve gaveta) e exame emitido
+// ENTRE a onda-0 e este deploy (gaveta já tem key, mas o snapshot daquela
+// emissão foi salvo antes do round 5 existir, ainda no canônico).
+// Assinatura INALTERADA (wsId, exameId) — os 2 consumidores existentes
+// (`/api/corrigir-laudo` e a sombra via `shadow/deps-admin.ts`) herdam a
+// resolução certa de graça, sem precisar saber de `emissaoKey`.
 export async function lerSnapshotHtml(
   wsId: string, exameId: string,
-): Promise<{ html: string; nomeArq: string } | null> {
-  try {
-    const file = getStorage().bucket().file(pathSnapshotHtml(wsId, exameId));
-    const [buf] = await file.download();
-    const [meta] = await file.getMetadata();
-    const nomeArq = meta.metadata?.nomeArq;
-    return { html: buf.toString('utf8'), nomeArq: typeof nomeArq === 'string' ? nomeArq : '' };
-  } catch {
-    return null;   // emitido antigo (antes de 25/08) ou PDF anexado: não tem snapshot
+): Promise<{ html: string; nomeArq: string; path: string } | null> {
+  const key = (await refEmissaoPrivada(getFirestore(), wsId, exameId).get()).data()?.emissaoKey ?? null;
+  const candidatos = key
+    ? [pathSnapshotHtml(wsId, exameId, key), pathSnapshotHtml(wsId, exameId)]
+    : [pathSnapshotHtml(wsId, exameId)];
+  for (const filePath of candidatos) {
+    try {
+      const file = getStorage().bucket().file(filePath);
+      const [buf] = await file.download();
+      const [meta] = await file.getMetadata();
+      const nomeArq = meta.metadata?.nomeArq;
+      return { html: buf.toString('utf8'), nomeArq: typeof nomeArq === 'string' ? nomeArq : '', path: filePath };
+    } catch { /* tenta o proximo candidato (fallback pro canonico) */ }
   }
+  return null;   // emitido antigo sem snapshot nenhum, ou PDF anexado: não tem snapshot
 }
 
 // ── Gerar PDF via Puppeteer + upload Storage ──

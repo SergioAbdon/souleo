@@ -248,11 +248,14 @@ export async function POST(req: NextRequest) {
           // Round 4 (Codex Critical, item 3): o snapshot SO congela DEPOIS
           // da publicacao CONFIRMADA — gravar antes (dentro de
           // gerarESalvarPdf, como era ate o round 3) deixava uma tentativa
-          // PERDEDORA sobrescrever o snapshot canonico da VENCEDORA (uma
-          // correcao futura publicaria o corpo clinico ANTIGO por cima do
-          // laudo novo). Nome JA SUFICADO (Ruflo-5 + round 3/4): a
-          // regeneracao via corrigir-laudo tem que mirar o MESMO objeto.
-          await salvarSnapshotHtml(pdfHtml, wsId, exameId, nomeArqTentativa);
+          // PERDEDORA sobrescrever o snapshot da VENCEDORA. Round 5 (Codex
+          // Critical): isso sozinho nao bastava — o snapshot era canonico
+          // POR EXAME, entao um snapshot ATRASADO de uma tentativa A (que
+          // publicou, mas demorou pra chegar aqui) ainda sobrescrevia o de
+          // uma tentativa B que reemitiu e publicou DEPOIS. `{ emissaoKey }`
+          // sufixa o path por TENTATIVA (igual ao PDF desde o round 3) — o
+          // snapshot atrasado de A vai pro objeto de A, nunca toca o de B.
+          await salvarSnapshotHtml(pdfHtml, wsId, exameId, nomeArqTentativa, { emissaoKey });
         } else {
           // Round 3 (item 2): mesma limpeza do braco de anexo. Perdedor
           // NUNCA chega perto do snapshot (round 4, item 3) — so o vencedor,
@@ -275,9 +278,10 @@ export async function POST(req: NextRequest) {
         try {
           if (await marcarPdfErroSeAindaDono(dbAdmin, { wsId, exameId, emissaoKey })) {
             // Nome CRU e JA COM O SUFIXO da tentativa: salvarSnapshotHtml
-            // sanitiza sozinha (Ruflo-5), e uma regeneracao futura via
-            // corrigir-laudo tem que mirar o MESMO path que esta tentativa usaria.
-            await salvarSnapshotHtml(pdfHtml, wsId, exameId, nomeArqTentativa);
+            // sanitiza sozinha (Ruflo-5). `{ emissaoKey }` sufixa o OBJETO do
+            // snapshot por tentativa tambem (round 5) — mesmo raciocinio do
+            // braco de sucesso acima.
+            await salvarSnapshotHtml(pdfHtml, wsId, exameId, nomeArqTentativa, { emissaoKey });
           }
         } catch (e2) {
           console.error('marcar pdfErro (nao-critico):', e2);

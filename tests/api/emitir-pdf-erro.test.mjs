@@ -67,9 +67,11 @@ describe('/api/emitir — wiring do catch de PDF (Step 2)', () => {
     // de salvarSnapshotHtml, e o nome tem que ser o MESMO que esta tentativa
     // usaria pro PDF (nomeArqTentativa) — senao uma regeneracao futura via
     // corrigir-laudo mirava o objeto errado. Round 4 (item 3): agora sao 2
-    // chamadas (sucesso confirmado + catch condicional a ainda-ser-dono) —
-    // wiring exato de QUANDO cada uma roda em tests/unit/pdf-snapshot-pos-publicacao.test.mjs.
-    const chamadasSnapshot = src.match(/salvarSnapshotHtml\(pdfHtml, wsId, exameId, nomeArqTentativa\);/g) || [];
+    // chamadas (sucesso confirmado + catch condicional a ainda-ser-dono).
+    // Round 5: cada chamada TAMBEM sufixa o OBJETO do snapshot pela propria
+    // key (`{ emissaoKey }`) — wiring exato de QUANDO/COM QUE PATH cada uma
+    // roda em tests/unit/pdf-snapshot-pos-publicacao.test.mjs.
+    const chamadasSnapshot = src.match(/salvarSnapshotHtml\(pdfHtml, wsId, exameId, nomeArqTentativa, \{ emissaoKey \}\);/g) || [];
     assert.equal(chamadasSnapshot.length, 2, 'braco de anexo nao tem HTML — so pdfHtml (sucesso + catch) chama snapshot');
     // Ponytail-3: os 2 asserts que pinavam a linha exata de import saíram —
     // quebravam so por reordenar/reformatar imports, sem checar comportamento.
