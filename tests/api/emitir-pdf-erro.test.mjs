@@ -46,8 +46,12 @@ describe('/api/emitir — wiring do catch de PDF (Step 2)', () => {
     // dentro de transacao condicional (marcarPdfErroSeAindaDono) — nao mais
     // check-then-update fora de transacao (o catch da tentativa A podia
     // carimbar pdfErro no exame que B acabou de reemitir com sucesso).
-    const chamadasMarcarErro = src.match(/marcarPdfErroSeAindaDono\(dbAdmin, \{ wsId, exameId, emissaoKey \}\)/g) || [];
-    assert.equal(chamadasMarcarErro.length, 2, 'os 2 catches tem que marcar pdfErro pelo mesmo caminho atomico');
+    // Round 6 (item 1): so o catch do braco pdfHtml declara
+    // `declaraSnapshotSufixado: true` (e o unico que tenta salvar um
+    // snapshot sufixado logo depois — o anexo nunca tem HTML pra congelar).
+    const chamadasMarcarErro = (src.match(/marcarPdfErroSeAindaDono\(dbAdmin, \{ wsId, exameId, emissaoKey \}\)/g) || [])
+      .concat(src.match(/marcarPdfErroSeAindaDono\(dbAdmin, \{ wsId, exameId, emissaoKey, declaraSnapshotSufixado: true \}\)/g) || []);
+    assert.equal(chamadasMarcarErro.length, 2, 'os 2 catches tem que marcar pdfErro pelo mesmo caminho atomico (anexo sem a flag, pdfHtml com ela)');
     assert.ok(!/\.update\(\{ pdfErro: 'erro_pdf' \}\)/.test(src),
       'a rota nao pode mais escrever pdfErro direto no doc — quem marca e marcarPdfErroSeAindaDono');
     assert.ok(!/pdfErro = e instanceof Error \? e\.message/.test(src),

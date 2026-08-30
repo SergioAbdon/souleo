@@ -276,7 +276,11 @@ export async function POST(req: NextRequest) {
         // tentativa perdedora podia sobrescrever o snapshot da vencedora do
         // MESMO jeito que o braco de sucesso (mesmo bug, caminho de erro).
         try {
-          if (await marcarPdfErroSeAindaDono(dbAdmin, { wsId, exameId, emissaoKey })) {
+          // Round 6: declaraSnapshotSufixado:true — este e o UNICO dos 3 call
+          // sites de marcarPdfErroSeAindaDono que realmente tenta salvar um
+          // snapshot sufixado logo depois (o catch do anexo nunca tem HTML; o
+          // catch de corrigir-laudo nunca regrava snapshot).
+          if (await marcarPdfErroSeAindaDono(dbAdmin, { wsId, exameId, emissaoKey, declaraSnapshotSufixado: true })) {
             // Nome CRU e JA COM O SUFIXO da tentativa: salvarSnapshotHtml
             // sanitiza sozinha (Ruflo-5). `{ emissaoKey }` sufixa o OBJETO do
             // snapshot por tentativa tambem (round 5) — mesmo raciocinio do

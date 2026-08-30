@@ -157,23 +157,43 @@ export async function salvarSnapshotHtml(
   }
 }
 
-// Round 5 (item 3): a GAVETA é a verdade do servidor — só a emissão
-// VENCEDORA tem a key lá (publicarPdfSeAindaDono baixa `pdfPendente` mas
-// NUNCA apaga `emissaoKey`; uma reemissão sobrescreve a key com a DELA).
-// Lê a key atual e tenta o snapshot sufixado por ela primeiro; cai pro path
-// CANÔNICO em 2 casos: exame pré-onda-0 (nunca teve gaveta) e exame emitido
-// ENTRE a onda-0 e este deploy (gaveta já tem key, mas o snapshot daquela
-// emissão foi salvo antes do round 5 existir, ainda no canônico).
+// Round 5 (item 3) + round 6 (Codex Critical): a GAVETA é a verdade do
+// servidor. `snapshotSufixado:true` (gravado por publicarPdfSeAindaDono/
+// marcarPdfErroSeAindaDono no MESMO commit que confirma a emissão, ANTES da
+// rota tentar o save) declara "o snapshot desta emissão, se existir, SÓ mora
+// no sufixado — não caia no canônico". Sem essa declaração, cair no
+// canônico é seguro pros 2 regimes antigos: exame pré-onda-0 (nunca teve
+// gaveta) e exame emitido ENTRE a onda-0 e o round 6 (gaveta já tem key, mas
+// nunca gravou a flag — o snapshot daquela emissão foi salvo antes da flag
+// existir, ainda no canônico). COM a flag, o canônico deixa de ser
+// candidato: pode ser o corpo clínico de uma emissão ANTERIOR (regressão
+// achada pelo Codex — `salvarSnapshotHtml` engole erro em silêncio; sem a
+// flag, uma falha nesse save fazia `lerSnapshotHtml` "recuperar" com sucesso
+// o snapshot ERRADO em vez de honestamente devolver null).
+// Extraída pura (round 6) — testável sem Storage (não emulado nesta
+// bateria): a decisão de QUAIS paths tentar, em que ordem, é o cerne do bug
+// e do fix.
+export function candidatosSnapshotHtml(
+  wsId: string, exameId: string,
+  gaveta?: { emissaoKey?: unknown; snapshotSufixado?: unknown } | null,
+): string[] {
+  const key = typeof gaveta?.emissaoKey === 'string' ? gaveta.emissaoKey : null;
+  if (gaveta?.snapshotSufixado === true) {
+    return [pathSnapshotHtml(wsId, exameId, key)];   // sem fallback — round 6
+  }
+  return key
+    ? [pathSnapshotHtml(wsId, exameId, key), pathSnapshotHtml(wsId, exameId)]
+    : [pathSnapshotHtml(wsId, exameId)];
+}
+
 // Assinatura INALTERADA (wsId, exameId) — os 2 consumidores existentes
 // (`/api/corrigir-laudo` e a sombra via `shadow/deps-admin.ts`) herdam a
-// resolução certa de graça, sem precisar saber de `emissaoKey`.
+// resolução certa de graça, sem precisar saber de `emissaoKey`/`snapshotSufixado`.
 export async function lerSnapshotHtml(
   wsId: string, exameId: string,
 ): Promise<{ html: string; nomeArq: string; path: string } | null> {
-  const key = (await refEmissaoPrivada(getFirestore(), wsId, exameId).get()).data()?.emissaoKey ?? null;
-  const candidatos = key
-    ? [pathSnapshotHtml(wsId, exameId, key), pathSnapshotHtml(wsId, exameId)]
-    : [pathSnapshotHtml(wsId, exameId)];
+  const gaveta = (await refEmissaoPrivada(getFirestore(), wsId, exameId).get()).data();
+  const candidatos = candidatosSnapshotHtml(wsId, exameId, gaveta);
   for (const filePath of candidatos) {
     try {
       const file = getStorage().bucket().file(filePath);
@@ -181,9 +201,9 @@ export async function lerSnapshotHtml(
       const [meta] = await file.getMetadata();
       const nomeArq = meta.metadata?.nomeArq;
       return { html: buf.toString('utf8'), nomeArq: typeof nomeArq === 'string' ? nomeArq : '', path: filePath };
-    } catch { /* tenta o proximo candidato (fallback pro canonico) */ }
+    } catch { /* tenta o proximo candidato (fallback pro canonico, quando existir) */ }
   }
-  return null;   // emitido antigo sem snapshot nenhum, ou PDF anexado: não tem snapshot
+  return null;   // sem snapshot (emitido antigo/PDF anexado), ou flag diz "sufixado" e ele nao existe — honesto: pdfDesatualizado, nao corpo velho
 }
 
 // ── Gerar PDF via Puppeteer + upload Storage ──

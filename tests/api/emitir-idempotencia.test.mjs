@@ -302,6 +302,10 @@ describe('publicarPdfSeAindaDono — ponteiro + bandeira atomicos (round 2)', ()
     assert.equal(ok, true);
     assert.equal((await exameDoc(id)).pdfUrl, 'https://x/novo.pdf');
     assert.equal((await privDoc(id)).pdfPendente, false);
+    // Round 6 (Codex Critical, item 1): snapshotSufixado grava no MESMO
+    // commit — declara pra lerSnapshotHtml que o snapshot desta emissao (a
+    // rota salva logo em seguida) mora SO no path sufixado, sem fallback.
+    assert.equal((await privDoc(id)).snapshotSufixado, true);
   });
 
   test('status virou cancelado entre a cerca e a transacao → false, doc intacto, pdfPendente continua true', async () => {
@@ -422,6 +426,46 @@ describe('marcarPdfErroSeAindaDono — marca condicional (round 3)', () => {
     assert.equal((await exameDoc(id)).pdfErro, undefined);
   });
 
+});
+
+// ══════════════════════════════════════════════════════════════════
+// Fix-wave round 6 (Codex Critical, item 1): `declaraSnapshotSufixado` grava
+// `snapshotSufixado:true` no MESMO commit, mas SO quando o caller vai mesmo
+// tentar salvar um snapshot sufixado logo depois — no /api/emitir isso e so
+// o braco pdfHtml (anexo nunca tem HTML; o catch de corrigir-laudo nunca
+// regrava snapshot). Sem a flag, declarar "sufixado" mentiria pra
+// lerSnapshotHtml num exame que na verdade nao ganhou snapshot novo.
+// ══════════════════════════════════════════════════════════════════
+describe('marcarPdfErroSeAindaDono — declaraSnapshotSufixado (round 6)', () => {
+  test('declaraSnapshotSufixado:true grava a flag no MESMO commit que marca pdfErro', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    const ok = await marcarPdfErroSeAindaDono(db, { wsId: WS, exameId: id, emissaoKey: KEY_A, declaraSnapshotSufixado: true });
+    assert.equal(ok, true);
+    assert.equal((await exameDoc(id)).pdfErro, 'erro_pdf');
+    assert.equal((await privDoc(id)).snapshotSufixado, true);
+  });
+
+  test('sem declaraSnapshotSufixado (omitido): pdfErro marca, mas a flag NAO e gravada', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    const ok = await marcarPdfErroSeAindaDono(db, { wsId: WS, exameId: id, emissaoKey: KEY_A });
+    assert.equal(ok, true);
+    assert.equal((await exameDoc(id)).pdfErro, 'erro_pdf');
+    assert.equal((await privDoc(id)).snapshotSufixado, undefined,
+      'anexo (sem HTML) e o catch de corrigir-laudo (nunca regrava snapshot) NAO podem declarar a flag');
+  });
+
+  test('perdeu a corrida (false): nao marca pdfErro NEM a flag, mesmo pedindo declaraSnapshotSufixado', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    await pdfSalvo(id);
+    await emitir(id, KEY_B);   // reemissao real: gaveta agora e da B
+    const ok = await marcarPdfErroSeAindaDono(db, { wsId: WS, exameId: id, emissaoKey: KEY_A, declaraSnapshotSufixado: true });
+    assert.equal(ok, false);
+    assert.equal((await privDoc(id)).snapshotSufixado, undefined, 'A perdeu — nao pode declarar nada na gaveta da B');
+    assert.equal((await privDoc(id)).emissaoKey, KEY_B, 'gaveta continua da B, intacta');
+  });
 });
 
 // ══════════════════════════════════════════════════════════════════

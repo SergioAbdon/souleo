@@ -42,6 +42,18 @@ import { emissaoMudou } from './correcao-admin';
 // `privado/{tipo}/{sub}/{id}`). `firestore.rules` ja tem
 // `match /privado/{documento=**} { allow read, write: if false }` no
 // workspace — nenhuma regra nova, nenhum cliente escreve isto.
+// Modelo do doc (round 6, comentario pedido pelo Codex — 1 linha por campo):
+//  - emissaoKey: a key da tentativa VENCEDORA atual (emitirComCobranca grava
+//    na cobranca; so muda numa reemissao de verdade — key diferente).
+//  - pdfPendente: true = o PDF assinado desta emissao ainda nao foi salvo
+//    (publicarPdfSeAindaDono baixa no mesmo commit que grava o ponteiro).
+//  - snapshotSufixado: true = o snapshot HTML desta emissao, SE existir, mora
+//    SO no path sufixado por `emissaoKey` — o canonico NAO e dela (pode ser
+//    de uma emissao ANTERIOR). Gravada por publicarPdfSeAindaDono/
+//    marcarPdfErroSeAindaDono no MESMO commit que confirma a emissao, ANTES
+//    da rota tentar salvar o snapshot (round 6 — fecha a regressao onde um
+//    save do sufixado que falhava em silencio deixava lerSnapshotHtml cair
+//    no canonico de uma emissao velha).
 export function refEmissaoPrivada(db: Firestore, wsId: string, exameId: string) {
   return db.doc(`workspaces/${wsId}/privado/emissao/exames/${exameId}`);
 }
@@ -102,7 +114,11 @@ export async function publicarPdfSeAindaDono(db: Firestore, p: {
     if (exame?.status !== 'emitido') return false;
     if (privSnap.data()?.emissaoKey !== p.emissaoKey) return false;
     t.update(exameRef, { pdfUrl: p.pdfUrl, pdfErro: FieldValue.delete() });
-    t.set(privRef, { pdfPendente: false, atualizadoEm: FieldValue.serverTimestamp() }, { merge: true });
+    // Round 6 (Codex Critical): `snapshotSufixado:true` no MESMO commit que
+    // confirma o ponteiro — declara pra lerSnapshotHtml que o snapshot desta
+    // emissao (a rota salva logo em seguida) mora SO no path sufixado, sem
+    // fallback pro canonico (que pode ser de uma emissao anterior).
+    t.set(privRef, { pdfPendente: false, snapshotSufixado: true, atualizadoEm: FieldValue.serverTimestamp() }, { merge: true });
     return true;
   });
 }
@@ -125,8 +141,21 @@ export async function publicarPdfSeAindaDono(db: Firestore, p: {
 // key) tivesse acabado de vencer. Agora null e um valor comparavel como
 // qualquer outro: gaveta ainda sem key (os dois lados null) = dono confirma;
 // gaveta que GANHOU key durante a correcao = bloqueia.
+// Round 6 (Codex Critical, item 1 — ajustado): `declaraSnapshotSufixado`
+// grava `snapshotSufixado:true` no MESMO commit, mas SO quando o CALLER vai
+// mesmo tentar salvar um snapshot sufixado logo em seguida — nao "as duas
+// chamadas de /api/emitir e corrigir-laudo" cegamente. Grep dos 3 call
+// sites hoje: (a) catch do anexo em /api/emitir NUNCA tem HTML pra
+// congelar (modalidade 'pdf' nao gera snapshot); (b) catch do pdfHtml em
+// /api/emitir SEMPRE tenta salvarSnapshotHtml logo depois — esse passa
+// `true`; (c) catch de /api/corrigir-laudo NUNCA regrava snapshot (so
+// marca o erro). Declarar a flag em (a)/(c) mentiria pra lerSnapshotHtml —
+// um exame de transicao (key na gaveta, sem a flag ainda, snapshot real no
+// canonico) que sofresse uma correcao FALHA perderia o fallback pro
+// canonico sem nunca ter ganho snapshot novo nenhum.
 export async function marcarPdfErroSeAindaDono(db: Firestore, p: {
   wsId: string; exameId: string; emissaoKey: string | null;
+  declaraSnapshotSufixado?: boolean;
 }): Promise<boolean> {
   const exameRef = db.doc(`workspaces/${p.wsId}/exames/${p.exameId}`);
   const privRef = refEmissaoPrivada(db, p.wsId, p.exameId);
@@ -136,6 +165,9 @@ export async function marcarPdfErroSeAindaDono(db: Firestore, p: {
     if (exame?.status !== 'emitido') return false;
     if ((privSnap.data()?.emissaoKey ?? null) !== (p.emissaoKey ?? null)) return false;
     t.update(exameRef, { pdfErro: 'erro_pdf' });
+    if (p.declaraSnapshotSufixado) {
+      t.set(privRef, { snapshotSufixado: true, atualizadoEm: FieldValue.serverTimestamp() }, { merge: true });
+    }
     return true;
   });
 }
