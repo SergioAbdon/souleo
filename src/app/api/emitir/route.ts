@@ -201,7 +201,13 @@ export async function POST(req: NextRequest) {
       if (await podePublicar()) {
         try {
           const url = await salvarPdfBuffer(pdfAnexadoBuf, wsId, exameId, nomeArqTentativa);
-          if (await publicarPdfSeAindaDono(dbAdmin, { wsId, exameId, pdfUrl: url, emissaoKey })) {
+          // Round 7 (Ruflo item 1): declaraSnapshotSufixado:true mesmo aqui
+          // — o anexo NUNCA tem HTML/snapshot pra congelar, mas sem a flag
+          // um leitor futuro (lerSnapshotHtml) cairia no canonico de uma
+          // emissao ANTERIOR deste mesmo exame. Declarar "sufixado, sem
+          // fallback" e o correto mesmo sem nada sufixado existir: honesto
+          // (devolve null) em vez de recuperar corpo clinico velho.
+          if (await publicarPdfSeAindaDono(dbAdmin, { wsId, exameId, pdfUrl: url, emissaoKey, declaraSnapshotSufixado: true })) {
             pdfUrl = url;
           } else {
             // Round 3 (Codex Critical, item 2): perdeu a corrida DEPOIS da
@@ -243,7 +249,7 @@ export async function POST(req: NextRequest) {
           // C1/C2: podePublicar recusou — mesmo raciocinio do braco de anexo
           // acima, nao escreve nada no doc.
           pdfErro = 'conflito_pos_emissao';
-        } else if (await publicarPdfSeAindaDono(dbAdmin, { wsId, exameId, pdfUrl: url, emissaoKey })) {
+        } else if (await publicarPdfSeAindaDono(dbAdmin, { wsId, exameId, pdfUrl: url, emissaoKey, declaraSnapshotSufixado: true })) {
           pdfUrl = url;
           // Round 4 (Codex Critical, item 3): o snapshot SO congela DEPOIS
           // da publicacao CONFIRMADA — gravar antes (dentro de

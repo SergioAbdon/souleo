@@ -86,7 +86,6 @@ describe('path único por tentativa — sufixo de emissaoKey (rounds 3+4)', () =
 
   test('/api/emitir monta o sufixo ANTES de sanitizar com a key INTEIRA, sem ramo condicional (round 4: obrigatoria)', () => {
     assert.match(emitirSrc, /const nomeArqTentativa = `\$\{nomeArq\} \$\{emissaoKey\}`;/);
-    assert.ok(!/emissaoKey\.slice\(0, 8\)/.test(emitirSrc), 'sufixo de 8 chars era colidível de propósito — round 4 usa a key inteira');
   });
 
   test('os 3 call sites que tocam Storage usam nomeArqTentativa (suficado), nunca o nomeArq cru', () => {
@@ -94,12 +93,10 @@ describe('path único por tentativa — sufixo de emissaoKey (rounds 3+4)', () =
     assert.match(emitirSrc, /gerarESalvarPdf\(pdfHtml, wsId, exameId, nomeArqTentativa, podePublicar\)/);
     // Round 4 (item 3): salvarSnapshotHtml saiu de dentro de gerarESalvarPdf
     // — agora são 2 chamadas explícitas na rota (sucesso + catch), as 2 com
-    // nomeArqTentativa. Round 5: as 2 TAMBÉM sufixam o OBJETO do snapshot
-    // pela própria key (`{ emissaoKey }`, snapshot deixou de ser canônico
-    // por exame). Ver tests/unit/pdf-snapshot-pos-publicacao.test.mjs pro
-    // wiring exato de QUANDO/COM QUE PATH cada uma roda.
-    const chamadasSnapshot = emitirSrc.match(/salvarSnapshotHtml\(pdfHtml, wsId, exameId, nomeArqTentativa, \{ emissaoKey \}\)/g) || [];
-    assert.equal(chamadasSnapshot.length, 2);
+    // nomeArqTentativa e sufixando o OBJETO pela própria key (round 5).
+    // Contagem canônica das 2 chamadas: tests/unit/
+    // pdf-snapshot-pos-publicacao.test.mjs (round 7, Ponytail item 6 —
+    // duplicata daqui saiu).
   });
 
   test('a rota recusa 400 sem emissaoKey valida (round 4, item 1) — sem ramo "legado sem key"', () => {

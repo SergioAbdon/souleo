@@ -298,7 +298,7 @@ describe('publicarPdfSeAindaDono — ponteiro + bandeira atomicos (round 2)', ()
   test('publica o pdfUrl e baixa pdfPendente no MESMO commit quando ninguem mexeu', async () => {
     const id = await seedExame();
     await emitir(id, KEY_A);   // pdfPendente:true na gaveta
-    const ok = await publicarPdfSeAindaDono(db, { wsId: WS, exameId: id, pdfUrl: 'https://x/novo.pdf', emissaoKey: KEY_A });
+    const ok = await publicarPdfSeAindaDono(db, { wsId: WS, exameId: id, pdfUrl: 'https://x/novo.pdf', emissaoKey: KEY_A, declaraSnapshotSufixado: true });
     assert.equal(ok, true);
     assert.equal((await exameDoc(id)).pdfUrl, 'https://x/novo.pdf');
     assert.equal((await privDoc(id)).pdfPendente, false);
@@ -308,11 +308,21 @@ describe('publicarPdfSeAindaDono — ponteiro + bandeira atomicos (round 2)', ()
     assert.equal((await privDoc(id)).snapshotSufixado, true);
   });
 
+  test('declaraSnapshotSufixado:false (ou omitido) nao grava a flag mesmo publicando o pdfUrl', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    const ok = await publicarPdfSeAindaDono(db, { wsId: WS, exameId: id, pdfUrl: 'https://x/anexo.pdf', emissaoKey: KEY_A, declaraSnapshotSufixado: false });
+    assert.equal(ok, true);
+    assert.equal((await exameDoc(id)).pdfUrl, 'https://x/anexo.pdf');
+    assert.equal((await privDoc(id)).snapshotSufixado, undefined,
+      'round 7 (Ruflo item 1): contrato explicito — sem a flag, nao mente pra lerSnapshotHtml');
+  });
+
   test('status virou cancelado entre a cerca e a transacao → false, doc intacto, pdfPendente continua true', async () => {
     const id = await seedExame();
     await emitir(id, KEY_A);
     await db.doc(`workspaces/${WS}/exames/${id}`).update({ status: 'cancelado' });
-    const ok = await publicarPdfSeAindaDono(db, { wsId: WS, exameId: id, pdfUrl: 'https://x/orfao.pdf', emissaoKey: KEY_A });
+    const ok = await publicarPdfSeAindaDono(db, { wsId: WS, exameId: id, pdfUrl: 'https://x/orfao.pdf', emissaoKey: KEY_A, declaraSnapshotSufixado: true });
     assert.equal(ok, false);
     assert.equal((await exameDoc(id)).pdfUrl, undefined, 'doc intacto — nao publicou por cima do cancelado');
     assert.equal((await privDoc(id)).pdfPendente, true, 'bandeira nao foi mexida por quem perdeu');
@@ -323,14 +333,14 @@ describe('publicarPdfSeAindaDono — ponteiro + bandeira atomicos (round 2)', ()
     await emitir(id, KEY_A);
     await pdfSalvo(id);              // emissao A "terminou": pdfPendente:false
     await emitir(id, KEY_B);         // reemissao nova: key muda, pdfPendente volta a true
-    const ok = await publicarPdfSeAindaDono(db, { wsId: WS, exameId: id, pdfUrl: 'https://x/velho.pdf', emissaoKey: KEY_A });
+    const ok = await publicarPdfSeAindaDono(db, { wsId: WS, exameId: id, pdfUrl: 'https://x/velho.pdf', emissaoKey: KEY_A, declaraSnapshotSufixado: true });
     assert.equal(ok, false, 'a tentativa A perdeu — a gaveta agora e da B');
     assert.equal((await privDoc(id)).emissaoKey, KEY_B);
     assert.equal((await privDoc(id)).pdfPendente, true, 'C4 fechado: bandeira da B nao foi apagada pela A perdedora');
   });
 
   test('exame nao existe → false, sem excecao', async () => {
-    const ok = await publicarPdfSeAindaDono(db, { wsId: WS, exameId: 'naoExisteE2', pdfUrl: 'https://x/x.pdf', emissaoKey: KEY_A });
+    const ok = await publicarPdfSeAindaDono(db, { wsId: WS, exameId: 'naoExisteE2', pdfUrl: 'https://x/x.pdf', emissaoKey: KEY_A, declaraSnapshotSufixado: true });
     assert.equal(ok, false);
   });
 });

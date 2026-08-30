@@ -12,7 +12,7 @@ import { obterBrowser, descartarBrowser, ehErroDeConexao } from './pdf-browser';
 // gaveta de idempotencia — mesmo dono do estado de emissao. Sem ciclo:
 // emitir-admin.ts so importa billing-admin.ts e correcao-admin.ts (nenhum
 // dos dois importa pdf-server), e ambos ja sao relativos/sem `@/`.
-import { refEmissaoPrivada } from './emitir-admin';
+import { refEmissaoPrivada, emissaoKeyValida } from './emitir-admin';
 
 // Teto da espera pelas fontes (S7-T0.2, achado P8). A moldura carrega IBM Plex
 // do fonts.googleapis.com em TODO render; `document.fonts.ready` espera o woff2
@@ -101,7 +101,10 @@ export async function apagarPdfObjeto(wsId: string, exameId: string, nomeArq: st
 // `emissaoKeyValida` no trust boundary da rota) entra CRUA no path — sem `/`
 // nem caractere especial possível num UUID, não precisa sanitizar.
 export function pathSnapshotHtml(wsId: string, exameId: string, emissaoKey?: string | null): string {
-  return emissaoKey
+  // Round 7 (Ruflo item 2): key fora do formato UUID (gaveta corrompida/
+  // adulterada) cai no canonico em vez de virar path esquisito — devolve a
+  // garantia de dono do path pro seu dono de verdade (emissaoKeyValida).
+  return emissaoKey && emissaoKeyValida(emissaoKey)
     ? `laudos-html/${wsId}/${exameId}-${emissaoKey}.html`
     : `laudos-html/${wsId}/${exameId}.html`;
 }

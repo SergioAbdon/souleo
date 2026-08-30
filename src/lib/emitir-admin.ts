@@ -1,5 +1,7 @@
 // ══════════════════════════════════════════════════════════════════
-// LEO · Emissao server-side — transacao atomica de emitir + cobrar (S7-T0.3)
+// LEO · Emissao server-side — dono do slot de emissao: cobranca + ponteiro
+// do PDF + bandeiras da gaveta (emissaoKey, pdfPendente, snapshotSufixado)
+// (S7-T0.3)
 // Extraida da /api/emitir para ganhar teste (achado E9: o caminho de
 // dinheiro era o unico sem rede de servidor). Mesmo corpo de antes, mais
 // a TRAVA ANTI-COBRANCA-DUPLA (E1).
@@ -103,8 +105,14 @@ export type ResultadoEmissao =
 
 // /api/emitir: gate por emissaoKey (a "tentativa" desta rota). Round 4:
 // emissaoKey virou obrigatoria na rota — sem ramo "legado sem key" aqui.
+// Round 7 (Ruflo, simetria de contrato): `declaraSnapshotSufixado` explicito,
+// mesmo contrato do irmao `marcarPdfErroSeAindaDono` — o caller decide, nao
+// a funcao. A rota passa `true` nos DOIS ramos (anexo e pdfHtml): mesmo o
+// anexo (que nunca tem HTML/snapshot) precisa declarar, senao lerSnapshotHtml
+// cairia no canonico de uma emissao ANTERIOR do mesmo exame.
 export async function publicarPdfSeAindaDono(db: Firestore, p: {
   wsId: string; exameId: string; pdfUrl: string; emissaoKey: string;
+  declaraSnapshotSufixado: boolean;
 }): Promise<boolean> {
   const exameRef = db.doc(`workspaces/${p.wsId}/exames/${p.exameId}`);
   const privRef = refEmissaoPrivada(db, p.wsId, p.exameId);
@@ -114,11 +122,11 @@ export async function publicarPdfSeAindaDono(db: Firestore, p: {
     if (exame?.status !== 'emitido') return false;
     if (privSnap.data()?.emissaoKey !== p.emissaoKey) return false;
     t.update(exameRef, { pdfUrl: p.pdfUrl, pdfErro: FieldValue.delete() });
-    // Round 6 (Codex Critical): `snapshotSufixado:true` no MESMO commit que
-    // confirma o ponteiro — declara pra lerSnapshotHtml que o snapshot desta
-    // emissao (a rota salva logo em seguida) mora SO no path sufixado, sem
-    // fallback pro canonico (que pode ser de uma emissao anterior).
-    t.set(privRef, { pdfPendente: false, snapshotSufixado: true, atualizadoEm: FieldValue.serverTimestamp() }, { merge: true });
+    t.set(privRef, {
+      pdfPendente: false,
+      ...(p.declaraSnapshotSufixado ? { snapshotSufixado: true } : {}),
+      atualizadoEm: FieldValue.serverTimestamp(),
+    }, { merge: true });
     return true;
   });
 }
@@ -141,18 +149,9 @@ export async function publicarPdfSeAindaDono(db: Firestore, p: {
 // key) tivesse acabado de vencer. Agora null e um valor comparavel como
 // qualquer outro: gaveta ainda sem key (os dois lados null) = dono confirma;
 // gaveta que GANHOU key durante a correcao = bloqueia.
-// Round 6 (Codex Critical, item 1 — ajustado): `declaraSnapshotSufixado`
-// grava `snapshotSufixado:true` no MESMO commit, mas SO quando o CALLER vai
-// mesmo tentar salvar um snapshot sufixado logo em seguida — nao "as duas
-// chamadas de /api/emitir e corrigir-laudo" cegamente. Grep dos 3 call
-// sites hoje: (a) catch do anexo em /api/emitir NUNCA tem HTML pra
-// congelar (modalidade 'pdf' nao gera snapshot); (b) catch do pdfHtml em
-// /api/emitir SEMPRE tenta salvarSnapshotHtml logo depois — esse passa
-// `true`; (c) catch de /api/corrigir-laudo NUNCA regrava snapshot (so
-// marca o erro). Declarar a flag em (a)/(c) mentiria pra lerSnapshotHtml —
-// um exame de transicao (key na gaveta, sem a flag ainda, snapshot real no
-// canonico) que sofresse uma correcao FALHA perderia o fallback pro
-// canonico sem nunca ter ganho snapshot novo nenhum.
+// Round 7 (Ponytail): so passe `declaraSnapshotSufixado:true` se voce VAI
+// salvar o snapshot sufixado logo em seguida — declarar sem salvar faz
+// lerSnapshotHtml devolver null.
 export async function marcarPdfErroSeAindaDono(db: Firestore, p: {
   wsId: string; exameId: string; emissaoKey: string | null;
   declaraSnapshotSufixado?: boolean;

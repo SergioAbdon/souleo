@@ -215,8 +215,9 @@ describe('/api/corrigir-laudo — modo regerar (Ruflo-4)', () => {
       'sucesso da regeracao tem que publicar pelo mesmo caminho atomico que /api/emitir (round 2)');
     assert.ok(!/\.update\(\{ pdfUrl,/.test(src),
       'a rota nao pode mais escrever pdfUrl direto no doc — quem publica e publicarCorrecaoSeAindaEmitido');
-    assert.ok(!/marcarPdfPronto/.test(src), 'marcarPdfPronto foi substituida — nao pode sobrar chamada solta');
-    assert.ok(src.includes("import { publicarCorrecaoSeAindaEmitido, marcarPdfErroSeAindaDono, refEmissaoPrivada } from '@/lib/emitir-admin';"));
+    // Round 7 (Ponytail item 4): pin de import exato e a copia duplicada do
+    // pin !/marcarPdfPronto/ saíram — a copia canonica mora em
+    // emitir-pdf-erro.test.mjs.
   });
 
   test('catch do Puppeteer marca pdfErro pela transacao condicional (round 3, item 3)', async () => {
@@ -230,8 +231,8 @@ describe('/api/corrigir-laudo — modo regerar (Ruflo-4)', () => {
     // keyNoGuard (se a gaveta mudou de key, uma emissao nova esta em curso).
     assert.match(src, /await marcarPdfErroSeAindaDono\(dbAdmin, \{ wsId, exameId, emissaoKey: keyNoGuard \}\)\s*\n\s*\.catch\(\(e2\) => console\.error\('marcar pdfErro \(nao-critico\):', e2\)\)/,
       'catch do Puppeteer tem que marcar pdfErro pela transacao condicional, nao por check-then-update solto');
-    assert.ok(!/const atual = await ref\.get\(\);\s*\n\s*if \(atual\.data\(\)\?\.status === 'emitido'\)/.test(src),
-      'o check-then-update manual (round 2) saiu — a transacao condicional cuida disso agora');
+    // Round 7 (Ponytail item 4): pin negativo do formato round-2 (check-then-
+    // update manual) saiu — arqueologia sem valor de regressao a esta altura.
   });
 
   test('perdeu a corrida no publicar: pdfErro fica reemitido_durante_correcao + orfao APAGADO (round 3, item 2)', async () => {
@@ -241,7 +242,7 @@ describe('/api/corrigir-laudo — modo regerar (Ruflo-4)', () => {
       'perda de corrida tem que ficar rastreavel pelo log');
     assert.match(src, /await apagarPdfObjeto\(wsId, exameId, snapshot\.nomeArq\);/,
       'round 3 (Codex Critical, item 2): a correcao apaga o objeto que ELA MESMA regravou ao perder a corrida');
-    assert.ok(src.includes("import { gerarESalvarPdf, lerSnapshotHtml, apagarPdfObjeto, salvarSnapshotHtml } from '@/lib/pdf-server';"));
+    // Round 7 (Ponytail item 4): pin de import exato saiu.
   });
 });
 

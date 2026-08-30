@@ -37,7 +37,10 @@ describe('/api/emitir — wiring do catch de PDF (Step 2)', () => {
     // (pdfPendente) so viram de fato dentro de publicarPdfSeAindaDono
     // (emitir-admin.ts), atomicos — a rota nao escreve mais `{ pdfUrl,
     // pdfErro: FieldValue.delete() }` direto no doc nos DOIS bracos de sucesso.
-    const chamadasPublicar = src.match(/publicarPdfSeAindaDono\(dbAdmin, \{ wsId, exameId, pdfUrl: url, emissaoKey \}\)/g) || [];
+    // Round 7 (Ruflo item 1): declaraSnapshotSufixado:true explicito nos 2
+    // bracos — mesmo o anexo (sem HTML/snapshot) declara, senao um leitor
+    // futuro cairia no canonico de uma emissao anterior.
+    const chamadasPublicar = src.match(/publicarPdfSeAindaDono\(dbAdmin, \{ wsId, exameId, pdfUrl: url, emissaoKey, declaraSnapshotSufixado: true \}\)/g) || [];
     assert.equal(chamadasPublicar.length, 2, 'os 2 bracos (anexo + puppeteer) tem que publicar pelo mesmo caminho atomico');
     assert.ok(!/\.update\(\{ pdfUrl,/.test(src),
       'a rota nao pode mais escrever pdfUrl direto no doc — quem publica e publicarPdfSeAindaDono');
@@ -75,10 +78,11 @@ describe('/api/emitir — wiring do catch de PDF (Step 2)', () => {
     // Round 5: cada chamada TAMBEM sufixa o OBJETO do snapshot pela propria
     // key (`{ emissaoKey }`) — wiring exato de QUANDO/COM QUE PATH cada uma
     // roda em tests/unit/pdf-snapshot-pos-publicacao.test.mjs.
-    const chamadasSnapshot = src.match(/salvarSnapshotHtml\(pdfHtml, wsId, exameId, nomeArqTentativa, \{ emissaoKey \}\);/g) || [];
-    assert.equal(chamadasSnapshot.length, 2, 'braco de anexo nao tem HTML — so pdfHtml (sucesso + catch) chama snapshot');
     // Ponytail-3: os 2 asserts que pinavam a linha exata de import saíram —
     // quebravam so por reordenar/reformatar imports, sem checar comportamento.
+    // Round 7 (Ponytail item 6): o pin de contagem de salvarSnapshotHtml==2
+    // ficou duplicado em 3 arquivos — a copia canonica mora so em
+    // tests/unit/pdf-snapshot-pos-publicacao.test.mjs.
   });
 
   test('perdeu a corrida no publicar (round 2/3): pdfErro=conflito_pos_emissao + orfao APAGADO (nao so logado), sem marcarPdfPronto solto', async () => {

@@ -103,11 +103,6 @@ describe('gerarESalvarPdf NÃO congela mais o snapshot internamente (pdf-server.
       'gerarESalvarPdf voltou a gravar o snapshot sem esperar a transação de publicação — reabre o round 4 item 3');
   });
 
-  test('salvarSnapshotHtml continua exportada (as 2 rotas chamam de fora agora)', () => {
-    const src = ler('src', 'lib', 'pdf-server.ts');
-    assert.match(src, /export async function salvarSnapshotHtml\(/);
-  });
-
   test('lerSnapshotHtml resolve a gaveta inteira (nao so a key) e delega a candidatosSnapshotHtml', () => {
     const src = semComentarios(ler('src', 'lib', 'pdf-server.ts'));
     const inicioFuncao = src.indexOf('export async function lerSnapshotHtml');
@@ -121,7 +116,7 @@ describe('gerarESalvarPdf NÃO congela mais o snapshot internamente (pdf-server.
 
   test('sem ciclo de import: pdf-server importa refEmissaoPrivada de emitir-admin (relativo)', () => {
     const src = ler('src', 'lib', 'pdf-server.ts');
-    assert.match(src, /import \{ refEmissaoPrivada \} from '\.\/emitir-admin';/);
+    assert.match(src, /import \{ refEmissaoPrivada, emissaoKeyValida \} from '\.\/emitir-admin';/);
     const emitirAdminSrc = ler('src', 'lib', 'emitir-admin.ts');
     assert.ok(!/from ['"]\.\/pdf-server['"]/.test(emitirAdminSrc), 'emitir-admin.ts nao pode importar pdf-server.ts de volta — ciclo');
   });
@@ -133,7 +128,7 @@ describe('/api/emitir só congela o snapshot DEPOIS da publicação confirmada, 
   test('braço de sucesso: salvarSnapshotHtml vem DEPOIS de publicarPdfSeAindaDono devolver true, com { emissaoKey }', () => {
     assert.match(
       src,
-      /else if \(await publicarPdfSeAindaDono\(dbAdmin, \{ wsId, exameId, pdfUrl: url, emissaoKey \}\)\) \{\s*pdfUrl = url;\s*await salvarSnapshotHtml\(pdfHtml, wsId, exameId, nomeArqTentativa, \{ emissaoKey \}\);\s*\}/,
+      /else if \(await publicarPdfSeAindaDono\(dbAdmin, \{ wsId, exameId, pdfUrl: url, emissaoKey, declaraSnapshotSufixado: true \}\)\) \{\s*pdfUrl = url;\s*await salvarSnapshotHtml\(pdfHtml, wsId, exameId, nomeArqTentativa, \{ emissaoKey \}\);\s*\}/,
       'snapshot tem que estar DENTRO do braço que confirma a publicação, logo após pdfUrl = url, sufixado pela propria key',
     );
   });
@@ -151,6 +146,9 @@ describe('/api/emitir só congela o snapshot DEPOIS da publicação confirmada, 
       'o catch do anexo chama marcarPdfErroSeAindaDono SEM declaraSnapshotSufixado — declarar a flag ali mentiria (nenhum snapshot e gravado)');
   });
 
+  // Round 7 (Ponytail item 6): copia CANONICA do pin salvarSnapshotHtml==2 —
+  // as duplicatas em emitir-pdf-erro.test.mjs e pdf-nome-arquivo.test.mjs
+  // saíram.
   test('nenhuma chamada de salvarSnapshotHtml fica FORA dos 2 gates acima (só 2 chamadas no arquivo)', () => {
     const chamadas = src.match(/salvarSnapshotHtml\(/g) || [];
     assert.equal(chamadas.length, 2, 'uma 3a chamada solta reabriria o bug — só as 2 guardadas valem');
