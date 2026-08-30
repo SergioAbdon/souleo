@@ -250,10 +250,38 @@ export async function emitirComCobranca(db: Firestore, p: {
     // aqui do antes (exameSnap) x depois (dadosFinais) — cliente adulterado
     // nao esconde mais uma reemissao nem uma troca de identidade do paciente.
     // Lista de campos espelha identificacaoMudou() (laudo/[id]/page.tsx).
-    const reemissao = !!exame.emitidoEm;
+    //
+    // `reemissao` tem fonte SERVER-ONLY: exame.emitidoEm sozinho nao bastava
+    // — o medico-autor pode apagar esse campo pelo SDK (firestore.rules:
+    // 204-207 nao inclui `emitidoEm` em `intacto`), entao um cliente
+    // adulterado limpava o carimbo antes de reemitir e a mentira sobrevivia.
+    // `privSnap` e a gaveta deny-by-default (so Admin SDK escreve) — se ela
+    // ja tem `emissaoKey`, este exame ja foi emitido por essa gaveta antes,
+    // mesmo que `emitidoEm` tenha sido apagado do doc.
+    // `identificacaoAlterada` continua BEST-EFFORT: o "antes" e o proprio
+    // doc do exame, editavel por design (dono/medico administram a fila
+    // pre-assinatura) — nao ha gaveta server-only equivalente pra identidade,
+    // so pra "isto ja foi emitido".
+    const reemissao = !!exame.emitidoEm || !!privSnap.data()?.emissaoKey;
+    // pacienteNome normalizado nos dois lados (trim+uppercase) — mesmo
+    // tratamento do identificacaoMudou() do cliente. feegow-admin grava sem
+    // trim; sem normalizar aqui, toda reemissao de exame importado do Feegow
+    // dava falso positivo por um espaco a mais no nome.
+    const normalizarCampo = (campo: string, v: unknown): string => {
+      const s = String(v ?? '');
+      return campo === 'pacienteNome' ? s.trim().toUpperCase() : s;
+    };
     const identificacaoAlterada = reemissao && CAMPOS_IDENTIDADE.some(
-      (c) => c in p.dadosFinais && String(p.dadosFinais[c] ?? '') !== String(exame[c] ?? ''),
+      (c) => c in p.dadosFinais && normalizarCampo(c, p.dadosFinais[c]) !== normalizarCampo(c, exame[c]),
     );
+
+    // M3 (revisao E3): reemissao/identificacaoAlterada eram lidos do corpo
+    // cru do cliente por outro codigo (ja corrigido acima) — mas se o
+    // cliente mandasse esses NOMES de campo em dadosFinais, o spread abaixo
+    // ainda gravava o carimbo AUTODECLARADO no doc do exame. Descartado
+    // ANTES do spread: o doc nunca guarda um carimbo de auditoria escrito
+    // pelo proprio auditado.
+    const { reemissao: _reemissaoDoCliente, identificacaoAlterada: _identAlteradaDoCliente, ...dadosFinaisSemCarimbo } = p.dadosFinais;
 
     // Caneta do autor (D2): laudo com autor definido so o proprio emite —
     // igual a regra publicada ("autor ou sem autor"). Sem autor pode assumir.
@@ -313,7 +341,7 @@ export async function emitirComCobranca(db: Firestore, p: {
     }
 
     transaction.update(exameRef, {
-      ...p.dadosFinais,
+      ...dadosFinaisSemCarimbo,
       ...(p.extras || {}),
       status: 'emitido',
       emitidoEm: FieldValue.serverTimestamp(),

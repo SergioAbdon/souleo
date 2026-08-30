@@ -266,6 +266,36 @@ describe('E3 — reemissao e identificacaoAlterada derivados no servidor (nao do
     assert.equal(r.reemissao, false, 'replay nao e um ato novo de emissao');
     assert.equal(r.identificacaoAlterada, false);
   });
+
+  // Revisao (achado Important): exame.emitidoEm sozinho nao e fonte segura —
+  // o medico-autor pode apagar esse campo pelo SDK (firestore.rules:204-207
+  // nao inclui emitidoEm em `intacto`). Testado direto contra o emulador,
+  // escrita fora de emitirComCobranca (simula o cliente adulterado).
+  test('emitidoEm apagado do doc (cliente adulterado) mas a gaveta privada ainda tem key — reemissao deriva true mesmo assim', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);   // 1a emissao real: privDoc ganha emissaoKey=KEY_A
+    await db.doc(`workspaces/${WS}/exames/${id}`).update({ emitidoEm: FieldValue.delete() });
+    const r = await emitir(id, KEY_B);   // key nova = reemissao deliberada, emitidoEm sumiu do doc
+    assert.equal(r.ok, true);
+    assert.equal(r.replay, false);
+    assert.equal(r.reemissao, true,
+      'privSnap.emissaoKey (server-only) ainda prova que ja foi emitido antes — apagar emitidoEm nao engana mais');
+    const consumoSnap = await db.collection('consumo').where('exameId', '==', id).get();
+    assert.equal(consumoSnap.docs.length, 2);
+    assert.ok(consumoSnap.docs.some((d) => d.data().reemissao === true), 'ledger tem que ter a reemissao true');
+  });
+
+  // Revisao (Minor): feegow-admin grava pacienteNome sem trim — sem
+  // normalizar os dois lados, toda reemissao de exame importado do Feegow
+  // dava falso positivo de troca de identidade so por um espaco a mais.
+  test('pacienteNome com espaco/caixa diferente (Feegow sem trim) x mesmo nome normalizado — identificacaoAlterada false', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A, { pacienteNome: 'PACIENTE FEEGOW ' });   // grava sem trim (como o Feegow)
+    const r = await emitir(id, KEY_B, { pacienteNome: 'Paciente Feegow' });   // mesmo nome, so trim/caixa diferentes
+    assert.equal(r.ok, true);
+    assert.equal(r.reemissao, true);
+    assert.equal(r.identificacaoAlterada, false, 'so trim/caixa diferente — nao e troca de identidade de verdade');
+  });
 });
 
 describe('E8 — laudo cancelado recusa emissao (nao revive cobrando)', () => {

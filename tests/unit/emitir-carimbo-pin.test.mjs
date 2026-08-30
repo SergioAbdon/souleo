@@ -45,3 +45,24 @@ describe('replay idempotente (S7 onda-0, C1)', () => {
       'a decisão de replay perdeu o guard do pdfPendente — C1 voltaria com a bateria verde');
   });
 });
+
+// E3 (revisão, achado Important): reemissao/identificacaoAlterada eram lidos
+// de `dadosFinais` (corpo cru do cliente) no bloco de audit log — a
+// semântica de "quem derivou o quê" ganhou bateria em
+// tests/api/emitir-idempotencia.test.mjs, mas o FIO da rota (qual variável o
+// log lê) não tem seam nenhum ali (é `emitirComCobranca` sendo testada, não
+// a rota). Pin de fonte, mesmo padrão dos pins acima.
+describe('audit log usa o carimbo DERIVADO, nao o cru do cliente (E3)', () => {
+  test('log de emissao le resultado.reemissao/resultado.identificacaoAlterada', () => {
+    assert.match(src, /reemissao:\s*resultado\.reemissao/,
+      'o log voltou a ler reemissao de dadosFinais (corpo do cliente)');
+    assert.match(src, /identificacaoAlterada:\s*resultado\.identificacaoAlterada/,
+      'o log voltou a ler identificacaoAlterada de dadosFinais (corpo do cliente)');
+  });
+  test('log de emissao NUNCA le dadosFinais.reemissao nem dadosFinais.identificacaoAlterada', () => {
+    assert.ok(!/dadosFinais\.reemissao/.test(src),
+      'dadosFinais.reemissao reapareceu na rota — cliente adulterado volta a mandar o carimbo');
+    assert.ok(!/dadosFinais\.identificacaoAlterada/.test(src),
+      'dadosFinais.identificacaoAlterada reapareceu na rota — cliente adulterado volta a mandar o carimbo');
+  });
+});
