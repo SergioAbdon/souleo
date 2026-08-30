@@ -137,7 +137,14 @@ export async function POST(req: NextRequest) {
     });
 
     if (!resultado.ok) {
-      const status: Record<string, number> = { nao_encontrado: 404, exame_de_outro_medico: 403, cancelado: 409 };
+      // E16: recusa de billing (sem_plano/sem_saldo/expirado) saia como HTTP
+      // 200 — corpo `ok:false` dizia a verdade, mas o status mentia "deu
+      // certo" pra qualquer proxy/monitoramento que olhasse so o codigo.
+      // 402 (Payment Required) e o status honesto pra recusa de cobranca.
+      const status: Record<string, number> = {
+        nao_encontrado: 404, exame_de_outro_medico: 403, cancelado: 409,
+        sem_plano: 402, sem_saldo: 402, expirado: 402,
+      };
       return NextResponse.json(resultado, { status: status[resultado.motivo] ?? 200 });
     }
 
@@ -317,8 +324,10 @@ export async function POST(req: NextRequest) {
       ...(resultado.replay ? { replay: true } : {}),
     });
   } catch (e) {
+    // E15: espelho exato de corrigir-laudo — detalhe (stack, path de bucket,
+    // mensagem crua do Firestore/Puppeteer) so no log do servidor. Antes a
+    // mensagem do erro ia inteira pro corpo da resposta (`error: msg`).
     console.error('API /emitir error:', e);
-    const msg = (e as Error).message || 'Erro interno';
-    return NextResponse.json({ ok: false, motivo: 'erro', error: msg }, { status: 500 });
+    return NextResponse.json({ ok: false, motivo: 'erro', error: 'erro_interno' }, { status: 500 });
   }
 }
