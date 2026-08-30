@@ -42,9 +42,14 @@ describe('/api/emitir — wiring do catch de PDF (Step 2)', () => {
     assert.ok(!/\.update\(\{ pdfUrl,/.test(src),
       'a rota nao pode mais escrever pdfUrl direto no doc — quem publica e publicarPdfSeAindaDono');
 
-    // Os DOIS catches marcam pdfErro no doc (mascarado — P10: nunca e.message).
-    const marcasNoDoc = src.match(/\.update\(\{ pdfErro: 'erro_pdf' \}\)/g) || [];
-    assert.equal(marcasNoDoc.length, 2, 'os 2 catches tem que gravar pdfErro no doc');
+    // Round 3 (Codex Important, item 3): os DOIS catches marcam pdfErro
+    // dentro de transacao condicional (marcarPdfErroSeAindaDono) — nao mais
+    // check-then-update fora de transacao (o catch da tentativa A podia
+    // carimbar pdfErro no exame que B acabou de reemitir com sucesso).
+    const chamadasMarcarErro = src.match(/marcarPdfErroSeAindaDono\(dbAdmin, \{ wsId, exameId, emissaoKey \}\)/g) || [];
+    assert.equal(chamadasMarcarErro.length, 2, 'os 2 catches tem que marcar pdfErro pelo mesmo caminho atomico');
+    assert.ok(!/\.update\(\{ pdfErro: 'erro_pdf' \}\)/.test(src),
+      'a rota nao pode mais escrever pdfErro direto no doc — quem marca e marcarPdfErroSeAindaDono');
     assert.ok(!/pdfErro = e instanceof Error \? e\.message/.test(src),
       'detalhe do erro nao pode vazar pra resposta/doc — so pro log');
     // Follow-up (reviewer): a falha dessa escrita nao-critica nao pode ser
@@ -54,23 +59,29 @@ describe('/api/emitir — wiring do catch de PDF (Step 2)', () => {
 
     // So o braco pdfHtml tem HTML pra congelar; o de anexo nao. Sem .catch
     // aqui: salvarSnapshotHtml nunca lanca (contrato proprio, pdf-server.ts).
-    // Nome CRU (Ruflo-5/Ponytail-11): a sanitizacao mora dentro de
-    // salvarSnapshotHtml agora, nao mais no call site.
-    assert.ok(/await salvarSnapshotHtml\(pdfHtml, wsId, exameId, nomeArq\);/.test(src),
-      'catch do braco pdfHtml tem que congelar o snapshot (unica via de recuperacao sem 2a franquia)');
+    // Nome CRU e JA SUFICADO (Ruflo-5/Ponytail-11 + round 3 item 1): a
+    // sanitizacao mora dentro de salvarSnapshotHtml, e o nome tem que ser o
+    // MESMO que esta tentativa usaria pro PDF (nomeArqTentativa) — senao uma
+    // regeneracao futura via corrigir-laudo mirava o objeto errado.
+    assert.ok(/await salvarSnapshotHtml\(pdfHtml, wsId, exameId, nomeArqTentativa\);/.test(src),
+      'catch do braco pdfHtml tem que congelar o snapshot no MESMO path da tentativa (unica via de recuperacao sem 2a franquia)');
     const chamadasSnapshot = src.match(/salvarSnapshotHtml\(/g) || [];
     assert.equal(chamadasSnapshot.length, 1, 'braco de anexo nao tem HTML — nao pode chamar snapshot');
     // Ponytail-3: os 2 asserts que pinavam a linha exata de import saíram —
     // quebravam so por reordenar/reformatar imports, sem checar comportamento.
   });
 
-  test('perdeu a corrida no publicar (round 2): pdfErro=conflito_pos_emissao + log rastreavel, sem marcarPdfPronto solto', async () => {
+  test('perdeu a corrida no publicar (round 2/3): pdfErro=conflito_pos_emissao + orfao APAGADO (nao so logado), sem marcarPdfPronto solto', async () => {
     const bruto = await readFile(new URL('../../src/app/api/emitir/route.ts', import.meta.url), 'utf8');
     const src = bruto.replace(/^\s*\/\/.*$/gm, '');
     const conflitos = src.match(/pdfErro = 'conflito_pos_emissao';/g) || [];
     assert.equal(conflitos.length, 4, 'cerca pre-upload (anexo+puppeteer) + os 2 braços apos publicarPdfSeAindaDono devolver false');
     assert.equal((src.match(/console\.warn\(`emitir: PDF/g) || []).length, 2,
-      'os 2 bracos que fazem upload tem que logar o objeto orfao quando perdem a corrida');
+      'os 2 bracos que fazem upload tem que logar quando perdem a corrida');
+    // Round 3 (Codex Critical, item 2): auto-limpeza — a tentativa perdedora
+    // apaga o objeto que ELA MESMA subiu, seguro por construcao (path unico).
+    const chamadasApagar = src.match(/await apagarPdfObjeto\(wsId, exameId, nomeArqTentativa\);/g) || [];
+    assert.equal(chamadasApagar.length, 2, 'os 2 bracos que fazem upload tem que apagar o proprio orfao ao perder a corrida');
     assert.ok(!/marcarPdfPronto/.test(src), 'marcarPdfPronto foi substituida — nao pode sobrar chamada solta');
   });
 });

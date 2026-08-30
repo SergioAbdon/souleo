@@ -52,6 +52,26 @@ export async function salvarPdfBuffer(
   return `https://storage.googleapis.com/${bucket.name}/${filePath}`;
 }
 
+// Apaga o objeto do PDF pelo MESMO trio (wsId, exameId, nomeArq) que
+// salvarPdfBuffer usa pra escrever — path unico, pdf-path.ts (round 3, Codex
+// Critical/item 2). Usada quando a tentativa perde a corrida de publicacao
+// (publicarPdfSeAindaDono/publicarCorrecaoSeAindaEmitido devolve false): a
+// tentativa apaga o objeto que ELA MESMA acabou de subir. Em /api/emitir o
+// path e exclusivo desta tentativa (sufixo de emissaoKey no nomeArq) —
+// ninguem mais escreve nele, entao o delete e seguro POR CONSTRUCAO, sem
+// precisar de precondicao de generation (round-trip extra caro que o SDK
+// exigiria pra comparar geracao do objeto). Nunca lanca: limpeza de orfao
+// nao pode derrubar a resposta da rota — pior caso, o objeto fica ate uma
+// limpeza manual.
+export async function apagarPdfObjeto(wsId: string, exameId: string, nomeArq: string): Promise<void> {
+  try {
+    const nomeArquivo = sanitizarNomeArq(nomeArq, exameId);
+    await getStorage().bucket().file(pathPdf(wsId, exameId, nomeArquivo)).delete({ ignoreNotFound: true });
+  } catch (e) {
+    console.error('apagarPdfObjeto (nao-critico):', e);
+  }
+}
+
 // ── Snapshot do HTML do laudo (S5-T5 / D4) ──
 // O HTML que virou PDF fica congelado no Storage. É ele que a correção
 // administrativa reescreve (só convênio/solicitante) — em vez de confiar num

@@ -216,25 +216,32 @@ describe('/api/corrigir-laudo — modo regerar (Ruflo-4)', () => {
     assert.ok(!/\.update\(\{ pdfUrl,/.test(src),
       'a rota nao pode mais escrever pdfUrl direto no doc — quem publica e publicarCorrecaoSeAindaEmitido');
     assert.ok(!/marcarPdfPronto/.test(src), 'marcarPdfPronto foi substituida — nao pode sobrar chamada solta');
-    assert.ok(src.includes("import { publicarCorrecaoSeAindaEmitido, refEmissaoPrivada } from '@/lib/emitir-admin';"));
+    assert.ok(src.includes("import { publicarCorrecaoSeAindaEmitido, marcarPdfErroSeAindaDono, refEmissaoPrivada } from '@/lib/emitir-admin';"));
   });
 
-  test('catch do Puppeteer so marca pdfErro se o exame AINDA esta emitido (round 2, item 3)', async () => {
+  test('catch do Puppeteer marca pdfErro pela transacao condicional (round 3, item 3)', async () => {
     const bruto = await readFile(new URL('../../src/app/api/corrigir-laudo/route.ts', import.meta.url), 'utf8');
     const src = bruto.replace(/^\s*\/\/.*$/gm, '');
-    // Antes (Ruflo-3a) marcava incondicionalmente; um cancelamento/
-    // transferencia que ganhasse a corrida ficava com pdfErro de uma
-    // correcao que nao e mais dele. Agora relê o doc e so marca com o
-    // status ainda emitido.
-    assert.match(src, /if \(atual\.data\(\)\?\.status === 'emitido'\) \{\s*await ref\.update\(\{ pdfErro: 'erro_pdf' \}\)\s*\n\s*\.catch\(\(e2\) => console\.error\('marcar pdfErro \(nao-critico\):', e2\)\)/,
-      'catch do Puppeteer tem que checar status antes de marcar pdfErro (round 2)');
+    // Round 2 (Ruflo-3a) marcava incondicionalmente; round 2-item-3 passou a
+    // reler o doc e checar status antes; round 3 (Codex Important) fechou a
+    // ultima janela: o check-then-update fora de transacao ainda deixava o
+    // catch da tentativa A carimbar pdfErro no exame que B tinha acabado de
+    // reemitir com sucesso. Agora e uma UNICA transacao condicional, com
+    // keyNoGuard (se a gaveta mudou de key, uma emissao nova esta em curso).
+    assert.match(src, /await marcarPdfErroSeAindaDono\(dbAdmin, \{ wsId, exameId, emissaoKey: keyNoGuard \}\)\s*\n\s*\.catch\(\(e2\) => console\.error\('marcar pdfErro \(nao-critico\):', e2\)\)/,
+      'catch do Puppeteer tem que marcar pdfErro pela transacao condicional, nao por check-then-update solto');
+    assert.ok(!/const atual = await ref\.get\(\);\s*\n\s*if \(atual\.data\(\)\?\.status === 'emitido'\)/.test(src),
+      'o check-then-update manual (round 2) saiu — a transacao condicional cuida disso agora');
   });
 
-  test('perdeu a corrida no publicar: pdfErro fica reemitido_durante_correcao + log rastreavel do orfao', async () => {
+  test('perdeu a corrida no publicar: pdfErro fica reemitido_durante_correcao + orfao APAGADO (round 3, item 2)', async () => {
     const bruto = await readFile(new URL('../../src/app/api/corrigir-laudo/route.ts', import.meta.url), 'utf8');
     const src = bruto.replace(/^\s*\/\/.*$/gm, '');
     assert.ok(/console\.warn\(`corrigir-laudo: PDF gerado mas perdeu a corrida/.test(src),
-      'objeto orfao no Storage tem que ficar rastreavel pelo log (item 4, round 2)');
+      'perda de corrida tem que ficar rastreavel pelo log');
+    assert.match(src, /await apagarPdfObjeto\(wsId, exameId, snapshot\.nomeArq\);/,
+      'round 3 (Codex Critical, item 2): a correcao apaga o objeto que ELA MESMA regravou ao perder a corrida');
+    assert.ok(src.includes("import { gerarESalvarPdf, lerSnapshotHtml, apagarPdfObjeto } from '@/lib/pdf-server';"));
   });
 });
 

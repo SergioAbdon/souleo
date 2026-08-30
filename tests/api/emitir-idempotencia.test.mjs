@@ -20,7 +20,7 @@ import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import {
   emitirComCobranca, emissaoKeyValida, refEmissaoPrivada,
-  publicarPdfSeAindaDono, publicarCorrecaoSeAindaEmitido,
+  publicarPdfSeAindaDono, publicarCorrecaoSeAindaEmitido, marcarPdfErroSeAindaDono,
 } from '../../src/lib/emitir-admin.ts';
 
 let db;
@@ -395,5 +395,49 @@ describe('publicarCorrecaoSeAindaEmitido — ponteiro condicional a emitidoEm, b
     assert.equal((await exameDoc(id)).pdfUrl, 'https://x/corrigido.pdf');
     assert.equal((await privDoc(id)).pdfPendente, true, 'bandeira da emissao B NAO foi apagada pela correcao');
     assert.equal((await privDoc(id)).emissaoKey, KEY_B, 'key da B intacta');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════
+// Fix-wave round 3 (Codex Important, item 3): os catches de Puppeteer/upload
+// marcavam pdfErro por check-then-update FORA de transacao — a mesma janela
+// das outras escritas desta onda: o catch da tentativa A podia carimbar
+// pdfErro no exame que a tentativa B acabou de reemitir com sucesso. Testado
+// direto contra o emulador (real, mesmo padrao das describes acima).
+// ══════════════════════════════════════════════════════════════════
+describe('marcarPdfErroSeAindaDono — marca condicional (round 3)', () => {
+  test('marca pdfErro quando ainda e dono (status emitido + key bate)', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    const ok = await marcarPdfErroSeAindaDono(db, { wsId: WS, exameId: id, emissaoKey: KEY_A });
+    assert.equal(ok, true);
+    assert.equal((await exameDoc(id)).pdfErro, 'erro_pdf');
+  });
+
+  test('key mudou (reemissao em curso) → false, nao marca o exame da emissao vencedora', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    await pdfSalvo(id);
+    await emitir(id, KEY_B);   // reemissao real: gaveta agora e da B
+    const ok = await marcarPdfErroSeAindaDono(db, { wsId: WS, exameId: id, emissaoKey: KEY_A });
+    assert.equal(ok, false, 'a tentativa A perdeu — a marca de erro nao e dela');
+    assert.equal((await exameDoc(id)).pdfErro, undefined, 'exame da emissao B nao pode herdar erro da A');
+  });
+
+  test('status cancelado → false, doc intacto', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    await db.doc(`workspaces/${WS}/exames/${id}`).update({ status: 'cancelado' });
+    const ok = await marcarPdfErroSeAindaDono(db, { wsId: WS, exameId: id, emissaoKey: KEY_A });
+    assert.equal(ok, false);
+    assert.equal((await exameDoc(id)).pdfErro, undefined);
+  });
+
+  test('sem emissaoKey (cliente legado): so a cerca de status vale', async () => {
+    const id = await seedExame();
+    await emitir(id, undefined);
+    const ok = await marcarPdfErroSeAindaDono(db, { wsId: WS, exameId: id });
+    assert.equal(ok, true);
+    assert.equal((await exameDoc(id)).pdfErro, 'erro_pdf');
   });
 });

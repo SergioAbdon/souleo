@@ -6,11 +6,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
-import { gerarESalvarPdf, salvarPdfBuffer, salvarSnapshotHtml } from '@/lib/pdf-server';
+import { gerarESalvarPdf, salvarPdfBuffer, salvarSnapshotHtml, apagarPdfObjeto } from '@/lib/pdf-server';
 import { validarPdfBase64 } from '@/lib/pdf-validacao';
 import { adminDb, requireUid } from '@/lib/auth-admin';
 import { resolverPapel } from '@/lib/exame-admin';
-import { emitirComCobranca, emissaoKeyValida, publicarPdfSeAindaDono, refEmissaoPrivada } from '@/lib/emitir-admin';
+import {
+  emitirComCobranca, emissaoKeyValida, publicarPdfSeAindaDono, marcarPdfErroSeAindaDono, refEmissaoPrivada,
+} from '@/lib/emitir-admin';
 import { prefixoArquivoPorTipo } from '@/lib/dicom-sr-mapping';
 
 // ── Config Next.js ──
@@ -75,6 +77,19 @@ export async function POST(req: NextRequest) {
     // bucket. Deriva do que o servidor acabou de gravar no exame; o path
     // ainda leva o exameId (pdf-path.ts), entao nome repetido nao colide.
     const nomeArq = `${prefixoArquivoPorTipo((dadosFinais?.tipoExame as string) || '')} ${String(dadosFinais?.pacienteNome || '').trim().toUpperCase()}`.trim();
+
+    // Round 3 (Codex Critical, item 1): PATH ÚNICO POR TENTATIVA. Sem isto,
+    // 2 uploads do MESMO paciente/tipo (retry, corrida de reemissão) escrevem
+    // o MESMO objeto no Storage — o perdedor podia sobrescrever os BYTES do
+    // vencedor, ou ressuscitar a URL já distribuída de um laudo cancelado
+    // (reemissão → cancel → upload atrasado). Sufixo curto da emissaoKey
+    // ANTES de sanitizar (sanitizarNomeArq só troca espaço por `_`,
+    // sobrevive). Cliente legado sem key: sem sufixo — janela residual
+    // continua só pra ele (mesmo comportamento de sempre). Efeito colateral
+    // cosmético aceito (Ponytail — mudar a assinatura de salvarPdfBuffer só
+    // pra manter o `contentDisposition` limpo não vale a complexidade): o
+    // nome de download que o paciente vê também carrega o sufixo.
+    const nomeArqTentativa = emissaoKey ? `${nomeArq} ${emissaoKey.slice(0, 8)}` : nomeArq;
 
     // PDF anexado (modalidade 'pdf', Task 5): valida ANTES da transacao de
     // billing abaixo — nao debita franquia de um upload invalido.
@@ -181,25 +196,28 @@ export async function POST(req: NextRequest) {
       // confere a cerca ANTES de subir o buffer.
       if (await podePublicar()) {
         try {
-          const url = await salvarPdfBuffer(pdfAnexadoBuf, wsId, exameId, nomeArq);
+          const url = await salvarPdfBuffer(pdfAnexadoBuf, wsId, exameId, nomeArqTentativa);
           if (await publicarPdfSeAindaDono(dbAdmin, { wsId, exameId, pdfUrl: url, emissaoKey })) {
             pdfUrl = url;
           } else {
-            // Round 2: a corrida virou DEPOIS da cerca pre-upload — o objeto
-            // ja subiu pro Storage mas ninguem aponta pra ele. Ceiling
-            // aceito (item 4 do round 2): o objeto fica orfao no bucket,
-            // rastreavel por este log — path versionado por emissao fecharia
-            // de vez, fora de escopo desta onda.
+            // Round 3 (Codex Critical, item 2): perdeu a corrida DEPOIS da
+            // cerca pre-upload — apaga o objeto que ELA MESMA acabou de
+            // subir. Seguro por construcao: o path e exclusivo desta
+            // tentativa (sufixo de emissaoKey), ninguem mais escreve nele.
             pdfErro = 'conflito_pos_emissao';
-            console.warn(`emitir: PDF (anexo) subiu mas perdeu a corrida — objeto orfao em ${url} (ws=${wsId} exame=${exameId})`);
+            await apagarPdfObjeto(wsId, exameId, nomeArqTentativa);
+            console.warn(`emitir: PDF (anexo) perdeu a corrida — objeto orfao apagado (ws=${wsId} exame=${exameId})`);
           }
         } catch (e) {
           pdfErro = 'erro_pdf';   // P10: detalhe (bucket/path) so no log do servidor
           console.error('PDF anexo save error:', e);
           // P4/E4: a emissao JA cobrou. Sem HTML aqui (e anexo pronto) — nao ha
           // o que congelar em snapshot, so a marca no doc pra tela deixar de
-          // mentir que o laudo emitido tem PDF.
-          await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfErro: 'erro_pdf' })
+          // mentir que o laudo emitido tem PDF. Round 3 (Codex Important,
+          // item 3): marca dentro de transacao condicional — sem isto o
+          // catch da tentativa A podia carimbar pdfErro no exame que B
+          // acabou de reemitir com sucesso enquanto A ainda falhava.
+          await marcarPdfErroSeAindaDono(dbAdmin, { wsId, exameId, emissaoKey })
             .catch((e2) => console.error('marcar pdfErro (nao-critico):', e2));
         }
       } else {
@@ -213,9 +231,10 @@ export async function POST(req: NextRequest) {
         // podeSalvar (I4, mesmo mecanismo de corrigir-laudo): checado DEPOIS
         // do page.pdf e ANTES de salvarPdfBuffer, dentro de gerarESalvarPdf —
         // ordem certa, nao reordenar. O TOCTOU residual entre o check e o
-        // save e a mesma janela ja aceita pelo fix I4/P15 (ceiling do item 4,
-        // round 2 — bytes-no-path, upgrade seria path versionado por emissao).
-        const url = await gerarESalvarPdf(pdfHtml, wsId, exameId, nomeArq, podePublicar);
+        // save e a mesma janela ja aceita pelo fix I4/P15 — fechado pro
+        // path unico (round 3, item 1): 2 tentativas nunca escrevem o MESMO
+        // objeto, entao a janela vira so higiene de orfao, nao corrupcao.
+        const url = await gerarESalvarPdf(pdfHtml, wsId, exameId, nomeArqTentativa, podePublicar);
         if (url === null) {
           // C1/C2: podePublicar recusou — mesmo raciocinio do braco de anexo
           // acima, nao escreve nada no doc.
@@ -223,8 +242,10 @@ export async function POST(req: NextRequest) {
         } else if (await publicarPdfSeAindaDono(dbAdmin, { wsId, exameId, pdfUrl: url, emissaoKey })) {
           pdfUrl = url;
         } else {
+          // Round 3 (item 2): mesma limpeza do braco de anexo.
           pdfErro = 'conflito_pos_emissao';
-          console.warn(`emitir: PDF subiu mas perdeu a corrida — objeto orfao em ${url} (ws=${wsId} exame=${exameId})`);
+          await apagarPdfObjeto(wsId, exameId, nomeArqTentativa);
+          console.warn(`emitir: PDF perdeu a corrida — objeto orfao apagado (ws=${wsId} exame=${exameId})`);
         }
       } catch (e) {
         pdfErro = 'erro_pdf';   // P10: detalhe so no log do servidor
@@ -234,9 +255,12 @@ export async function POST(req: NextRequest) {
         // a tela passa a ver o laudo emitido-sem-PDF em vez de ninguem saber.
         // Sem .catch aqui: salvarSnapshotHtml nunca lanca (proprio contrato
         // da funcao, pdf-server.ts) — o .catch(() => {}) era morto. Nome CRU
-        // (Ruflo-5): salvarSnapshotHtml sanitiza sozinha, ponto unico.
-        await salvarSnapshotHtml(pdfHtml, wsId, exameId, nomeArq);
-        await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfErro: 'erro_pdf' })
+        // e JA COM O SUFIXO da tentativa (Ruflo-5 + round 3 item 1):
+        // salvarSnapshotHtml sanitiza sozinha, e uma regeneracao futura via
+        // corrigir-laudo tem que mirar o MESMO path que esta tentativa usaria.
+        await salvarSnapshotHtml(pdfHtml, wsId, exameId, nomeArqTentativa);
+        // Round 3 (item 3): mesma transacao condicional do braco de anexo.
+        await marcarPdfErroSeAindaDono(dbAdmin, { wsId, exameId, emissaoKey })
           .catch((e2) => console.error('marcar pdfErro (nao-critico):', e2));
       }
     }

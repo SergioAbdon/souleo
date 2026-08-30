@@ -107,6 +107,29 @@ export async function publicarPdfSeAindaDono(db: Firestore, p: {
   });
 }
 
+// Round 3 (Codex Important): os catches de Puppeteer/upload marcavam pdfErro
+// com check-then-update FORA de transacao (le status, decide, escreve) — a
+// mesma janela das outras escritas desta rodada: o catch da tentativa A podia
+// carimbar pdfErro no exame que a tentativa B acabou de reemitir com sucesso
+// ENQUANTO A ainda falhava. Usada pelos catches de /api/emitir (com a
+// emissaoKey da tentativa) e pelo catch de /api/corrigir-laudo (com
+// `keyNoGuard` — se a key da gaveta mudou desde o guard, uma emissao NOVA
+// esta em curso e a marca de erro nao e nossa).
+export async function marcarPdfErroSeAindaDono(db: Firestore, p: {
+  wsId: string; exameId: string; emissaoKey?: string | null;
+}): Promise<boolean> {
+  const exameRef = db.doc(`workspaces/${p.wsId}/exames/${p.exameId}`);
+  const privRef = refEmissaoPrivada(db, p.wsId, p.exameId);
+  return db.runTransaction<boolean>(async (t) => {
+    const [exameSnap, privSnap] = await Promise.all([t.get(exameRef), t.get(privRef)]);
+    const exame = exameSnap.data();
+    if (exame?.status !== 'emitido') return false;
+    if (p.emissaoKey && privSnap.data()?.emissaoKey !== p.emissaoKey) return false;
+    t.update(exameRef, { pdfErro: 'erro_pdf' });
+    return true;
+  });
+}
+
 // /api/corrigir-laudo: correcao nao tem "tentativa" (nao emite, so regera) —
 // o gate principal e `emitidoEm` intacto (mesmo criterio da cerca pre-upload
 // I4/Codex-3). A baixa de `pdfPendente` e uma condicao SEPARADA do gate

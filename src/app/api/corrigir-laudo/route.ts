@@ -14,11 +14,11 @@
 // ══════════════════════════════════════════════════════════════════
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
-import { gerarESalvarPdf, lerSnapshotHtml } from '@/lib/pdf-server';
+import { gerarESalvarPdf, lerSnapshotHtml, apagarPdfObjeto } from '@/lib/pdf-server';
 import { requireUid, adminDb } from '@/lib/auth-admin';
 import { resolverPapel, podeCorrigir, idValido } from '@/lib/exame-admin';
 import { substituirCamposAdministrativos, emissaoMudou } from '@/lib/correcao-admin';
-import { publicarCorrecaoSeAindaEmitido, refEmissaoPrivada } from '@/lib/emitir-admin';
+import { publicarCorrecaoSeAindaEmitido, marcarPdfErroSeAindaDono, refEmissaoPrivada } from '@/lib/emitir-admin';
 
 // Trust boundary: o corpo vem do navegador. Sem isto um `convenio` que não é
 // string era GRAVADO no exame (que alimenta extrato/glosa/PDF) e só depois
@@ -165,27 +165,30 @@ export async function POST(req: NextRequest) {
           // `pdfUrl` agora — publicarCorrecaoSeAindaEmitido cuida dos dois.
           pdfUrl = pdfCandidato;
         } else {
-          // Round 2: a corrida virou DEPOIS da cerca pre-upload — o objeto
-          // ja subiu pro Storage mas ninguem aponta pra ele (ceiling aceito,
-          // item 4 — path versionado por emissao fecharia de vez).
+          // Round 3 (Codex Critical, item 2): perdeu a corrida DEPOIS da
+          // cerca pre-upload — apaga o objeto que ELA MESMA acabou de
+          // regravar. Seguro: se foi reemissao, a emissao nova tem o proprio
+          // path suficado (round 3, item 1 — so em /api/emitir) e nao mira
+          // mais este `snapshot.nomeArq`; se foi cancelamento, o objeto ja
+          // tinha sido apagado por `limparPdf` e este delete e so idempotente.
           reemitido = true;
           pdfDesatualizado = true;
-          console.warn(`corrigir-laudo: PDF gerado mas perdeu a corrida — objeto orfao em ${pdfCandidato} (ws=${wsId} exame=${exameId})`);
+          await apagarPdfObjeto(wsId, exameId, snapshot.nomeArq);
+          console.warn(`corrigir-laudo: PDF gerado mas perdeu a corrida — objeto orfao apagado (ws=${wsId} exame=${exameId})`);
         }
       } catch (e) {
         pdfErro = 'erro_pdf';   // detalhe (bucket/path) só no log do servidor
         console.error('corrigir-laudo PDF error:', e);
         // Ruflo-3a: espelha /api/emitir — sem marcar aqui, um laudo que
         // falhou a regeracao ficava com o doc dizendo "sem pdfErro" (o
-        // sucesso e quem limpa; a falha tambem precisa gravar). Round 2
-        // (item 3): so marca se o exame AINDA esta emitido — senao um
-        // cancelamento/transferencia que ganhou a corrida fica com a marca
-        // de erro de uma correcao que nao e mais dele.
-        const atual = await ref.get();
-        if (atual.data()?.status === 'emitido') {
-          await ref.update({ pdfErro: 'erro_pdf' })
-            .catch((e2) => console.error('marcar pdfErro (nao-critico):', e2));
-        }
+        // sucesso e quem limpa; a falha tambem precisa gravar). Round 3
+        // (Codex Important, item 3): marca dentro de transacao condicional
+        // com `keyNoGuard` — se a key da gaveta mudou desde o guard, uma
+        // emissao NOVA esta em curso e a marca de erro nao e nossa (era
+        // check-then-update fora de transacao antes — mesma janela das
+        // outras escritas desta onda).
+        await marcarPdfErroSeAindaDono(dbAdmin, { wsId, exameId, emissaoKey: keyNoGuard })
+          .catch((e2) => console.error('marcar pdfErro (nao-critico):', e2));
       }
     } else {
       pdfDesatualizado = true;
