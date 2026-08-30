@@ -31,6 +31,7 @@
 import type { Firestore, Timestamp } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
 import { resolverAssinatura } from './billing-admin';
+import { emissaoMudou } from './correcao-admin';
 
 // Gaveta server-only do estado de idempotencia (mesmo formato do shadow:
 // `privado/{tipo}/{sub}/{id}`). `firestore.rules` ja tem
@@ -58,13 +59,76 @@ export type ResultadoEmissao =
   | { ok: true; tipo: 'franquia' | 'creditos' | null; replay: boolean; pdfPendente: boolean; pdfUrl: string | null }
   | { ok: false; motivo: MotivoEmissao };
 
-// Baixa a bandeira de "PDF pendente" (C1) — SO chamar com um PDF salvo de
-// fato, pra bandeira baixa significar exatamente "existe PDF assinado" (a
-// rota decide quando chamar). `pdfPendente` mora so aqui: nenhum outro
-// arquivo escreve esse nome de campo (achado Ruflo I1).
-export async function marcarPdfPronto(db: Firestore, wsId: string, exameId: string): Promise<void> {
-  await refEmissaoPrivada(db, wsId, exameId)
-    .set({ pdfPendente: false, atualizadoEm: FieldValue.serverTimestamp() }, { merge: true });
+// ── Publicacao atomica do PDF (fix-wave round 2, achado Codex C4/check-then-
+// write) ──
+// A cerca PRE-upload (podePublicar/podeSalvar em route.ts) checa ANTES do
+// Puppeteer/Storage pra poupar trabalho na corrida mais comum, mas
+// check-then-write deixava uma janela de SEGUNDOS entre aquela checagem e o
+// `update({pdfUrl})` de fato — cancelamento/transferencia/reemissao ainda
+// cabiam ali. E baixar `pdfPendente` como escrita SEPARADA do update do
+// pdfUrl (o antigo `marcarPdfPronto`, chamado incondicionalmente com
+// `if (pdfUrl)`) tinha o C4: se uma reemissao nova commitasse ENQUANTO o
+// Puppeteer da tentativa perdedora ainda rodava, o `marcarPdfPronto` do
+// PERDEDOR baixava a bandeira da emissao VENCEDORA — `pdfPendente` mora no
+// EXAME, nao na tentativa, e as duas emissoes escrevem a mesma gaveta.
+// As duas funcoes abaixo decidem PONTEIRO (pdfUrl) e BANDEIRA (pdfPendente)
+// no MESMO commit — sao elas quem manda de verdade; a cerca pre-upload
+// continua existindo so pra nao pagar upload/Puppeteer a toa.
+// `pdfPendente` mora so aqui: nenhum outro arquivo escreve esse nome de
+// campo (achado Ruflo I1, mantido).
+//
+// ponytail: janela residual aceita (item 4, round 2) — bytes-no-path. Entre
+// a cerca pre-upload e a transacao abaixo, uma corrida rara ainda pode
+// deixar o OBJETO no Storage sobrescrito pelo perdedor (2 tentativas com o
+// MESMO nome de arquivo, sub-segundo entre a cerca dele e o upload). O
+// PONTEIRO (pdfUrl no doc) e a BANDEIRA nunca mentem — so o objeto orfao no
+// bucket pode, e fica rastreavel pelo `console.warn` do caller quando a
+// transacao devolve false. Upgrade: path do PDF versionado por emissaoKey
+// (pdf-path.ts) — cada tentativa nasceria no proprio objeto, sem como pisar
+// no do vencedor.
+
+// /api/emitir: gate por emissaoKey (a "tentativa" desta rota).
+export async function publicarPdfSeAindaDono(db: Firestore, p: {
+  wsId: string; exameId: string; pdfUrl: string;
+  // undefined/null = cliente legado sem key — so a cerca de status vale
+  // (mesmo criterio que a cerca pre-upload ja usava).
+  emissaoKey?: string | null;
+}): Promise<boolean> {
+  const exameRef = db.doc(`workspaces/${p.wsId}/exames/${p.exameId}`);
+  const privRef = refEmissaoPrivada(db, p.wsId, p.exameId);
+  return db.runTransaction<boolean>(async (t) => {
+    const [exameSnap, privSnap] = await Promise.all([t.get(exameRef), t.get(privRef)]);
+    const exame = exameSnap.data();
+    if (exame?.status !== 'emitido') return false;
+    if (p.emissaoKey && privSnap.data()?.emissaoKey !== p.emissaoKey) return false;
+    t.update(exameRef, { pdfUrl: p.pdfUrl, pdfErro: FieldValue.delete() });
+    t.set(privRef, { pdfPendente: false, atualizadoEm: FieldValue.serverTimestamp() }, { merge: true });
+    return true;
+  });
+}
+
+// /api/corrigir-laudo: correcao nao tem "tentativa" (nao emite, so regera) —
+// o gate principal e `emitidoEm` intacto (mesmo criterio da cerca pre-upload
+// I4/Codex-3). A baixa de `pdfPendente` e uma condicao SEPARADA do gate
+// principal: so baixa se a gaveta ainda tiver a MESMA key que tinha quando a
+// correcao comecou (`keyNoGuard`) — senao a correcao apagaria a bandeira de
+// uma emissao NOVA que comecou durante a regeracao (o C4 do lado da correcao).
+export async function publicarCorrecaoSeAindaEmitido(db: Firestore, p: {
+  wsId: string; exameId: string; pdfUrl: string;
+  emitidoEmAntes: unknown; keyNoGuard: string | null;
+}): Promise<boolean> {
+  const exameRef = db.doc(`workspaces/${p.wsId}/exames/${p.exameId}`);
+  const privRef = refEmissaoPrivada(db, p.wsId, p.exameId);
+  return db.runTransaction<boolean>(async (t) => {
+    const [exameSnap, privSnap] = await Promise.all([t.get(exameRef), t.get(privRef)]);
+    const exame = exameSnap.data();
+    if (exame?.status !== 'emitido' || emissaoMudou(p.emitidoEmAntes, exame?.emitidoEm)) return false;
+    t.update(exameRef, { pdfUrl: p.pdfUrl, pdfErro: FieldValue.delete() });
+    if ((privSnap.data()?.emissaoKey ?? null) === p.keyNoGuard) {
+      t.set(privRef, { pdfPendente: false, atualizadoEm: FieldValue.serverTimestamp() }, { merge: true });
+    }
+    return true;
+  });
 }
 
 export async function emitirComCobranca(db: Firestore, p: {

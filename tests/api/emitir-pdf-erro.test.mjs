@@ -33,10 +33,14 @@ describe('/api/emitir — wiring do catch de PDF (Step 2)', () => {
     const bruto = await readFile(new URL('../../src/app/api/emitir/route.ts', import.meta.url), 'utf8');
     const src = bruto.replace(/^\s*\/\/.*$/gm, '');   // comentarios citam os proprios trechos
 
-    // Sucesso (os DOIS bracos) limpa pdfErro — sem isto um exame que falhou
-    // uma vez e teve sucesso na correcao ficava com a marca velha pra sempre.
-    const limpasSucesso = src.match(/\{ pdfUrl, pdfErro: FieldValue\.delete\(\) \}/g) || [];
-    assert.equal(limpasSucesso.length, 2, 'os 2 bracos (anexo + puppeteer) tem que limpar pdfErro no sucesso');
+    // Round 2 (Codex, check-then-write/C4): o ponteiro (pdfUrl) e a bandeira
+    // (pdfPendente) so viram de fato dentro de publicarPdfSeAindaDono
+    // (emitir-admin.ts), atomicos — a rota nao escreve mais `{ pdfUrl,
+    // pdfErro: FieldValue.delete() }` direto no doc nos DOIS bracos de sucesso.
+    const chamadasPublicar = src.match(/publicarPdfSeAindaDono\(dbAdmin, \{ wsId, exameId, pdfUrl: url, emissaoKey \}\)/g) || [];
+    assert.equal(chamadasPublicar.length, 2, 'os 2 bracos (anexo + puppeteer) tem que publicar pelo mesmo caminho atomico');
+    assert.ok(!/\.update\(\{ pdfUrl,/.test(src),
+      'a rota nao pode mais escrever pdfUrl direto no doc — quem publica e publicarPdfSeAindaDono');
 
     // Os DOIS catches marcam pdfErro no doc (mascarado — P10: nunca e.message).
     const marcasNoDoc = src.match(/\.update\(\{ pdfErro: 'erro_pdf' \}\)/g) || [];
@@ -58,5 +62,15 @@ describe('/api/emitir — wiring do catch de PDF (Step 2)', () => {
     assert.equal(chamadasSnapshot.length, 1, 'braco de anexo nao tem HTML — nao pode chamar snapshot');
     // Ponytail-3: os 2 asserts que pinavam a linha exata de import saíram —
     // quebravam so por reordenar/reformatar imports, sem checar comportamento.
+  });
+
+  test('perdeu a corrida no publicar (round 2): pdfErro=conflito_pos_emissao + log rastreavel, sem marcarPdfPronto solto', async () => {
+    const bruto = await readFile(new URL('../../src/app/api/emitir/route.ts', import.meta.url), 'utf8');
+    const src = bruto.replace(/^\s*\/\/.*$/gm, '');
+    const conflitos = src.match(/pdfErro = 'conflito_pos_emissao';/g) || [];
+    assert.equal(conflitos.length, 4, 'cerca pre-upload (anexo+puppeteer) + os 2 braços apos publicarPdfSeAindaDono devolver false');
+    assert.equal((src.match(/console\.warn\(`emitir: PDF/g) || []).length, 2,
+      'os 2 bracos que fazem upload tem que logar o objeto orfao quando perdem a corrida');
+    assert.ok(!/marcarPdfPronto/.test(src), 'marcarPdfPronto foi substituida — nao pode sobrar chamada solta');
   });
 });

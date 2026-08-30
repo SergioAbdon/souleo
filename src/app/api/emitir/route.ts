@@ -10,7 +10,7 @@ import { gerarESalvarPdf, salvarPdfBuffer, salvarSnapshotHtml } from '@/lib/pdf-
 import { validarPdfBase64 } from '@/lib/pdf-validacao';
 import { adminDb, requireUid } from '@/lib/auth-admin';
 import { resolverPapel } from '@/lib/exame-admin';
-import { emitirComCobranca, emissaoKeyValida, marcarPdfPronto, refEmissaoPrivada } from '@/lib/emitir-admin';
+import { emitirComCobranca, emissaoKeyValida, publicarPdfSeAindaDono, refEmissaoPrivada } from '@/lib/emitir-admin';
 import { prefixoArquivoPorTipo } from '@/lib/dicom-sr-mapping';
 
 // ── Config Next.js ──
@@ -154,15 +154,19 @@ export async function POST(req: NextRequest) {
     let pdfUrl: string | null = null;
     let pdfErro: string | null = null;
 
-    // Cerca de publicacao (triade C1/C2): a transacao acima commitou ha
-    // 15-60s quando o Puppeteer termina — nesse meio tempo o exame pode ter
-    // sido CANCELADO ou TRANSFERIDO (limparPdf ja rodou; publicar agora
-    // ressuscitaria um PDF publico de laudo cancelado) ou REEMITIDO com key
-    // nova (publicar agora poria o PDF da emissao velha por cima da nova, um
-    // Puppeteer mais lento terminando depois do mais rapido). So publica se
-    // o exame ainda esta emitido E, quando ha key, se a gaveta privada ainda
-    // pertence a ESTA tentativa. Cliente legado sem key: cerca so de status
-    // (janela aceita — sem key nao ha como distinguir a tentativa da corrida).
+    // Cerca de publicacao PRE-upload (triade C1/C2): a transacao acima
+    // commitou ha 15-60s quando o Puppeteer termina — nesse meio tempo o
+    // exame pode ter sido CANCELADO ou TRANSFERIDO (limparPdf ja rodou;
+    // publicar agora ressuscitaria um PDF publico de laudo cancelado) ou
+    // REEMITIDO com key nova. So chama Puppeteer/Storage se o exame ainda
+    // esta emitido E, quando ha key, se a gaveta privada ainda pertence a
+    // ESTA tentativa — poupa trabalho na corrida mais comum. Cliente legado
+    // sem key: cerca so de status.
+    // ATENCAO (round 2, Codex): esta cerca sozinha e check-then-write — quem
+    // decide o PONTEIRO de verdade e `publicarPdfSeAindaDono` mais abaixo,
+    // atomica com a baixa da bandeira `pdfPendente` (fecha o C4: reemissao
+    // nova commitando durante o Puppeteer da tentativa perdedora nao tem
+    // mais a bandeira dela apagada pelo perdedor).
     const podePublicar = async (): Promise<boolean> => {
       const [d, g] = await Promise.all([
         dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).get(),
@@ -174,11 +178,21 @@ export async function POST(req: NextRequest) {
 
     if (pdfAnexadoBuf) {
       // Sem Puppeteer aqui — janela menor, mas o mesmo buraco (achado C1/C2):
-      // confere a cerca ANTES de publicar.
+      // confere a cerca ANTES de subir o buffer.
       if (await podePublicar()) {
         try {
-          pdfUrl = await salvarPdfBuffer(pdfAnexadoBuf, wsId, exameId, nomeArq);
-          await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfUrl, pdfErro: FieldValue.delete() });
+          const url = await salvarPdfBuffer(pdfAnexadoBuf, wsId, exameId, nomeArq);
+          if (await publicarPdfSeAindaDono(dbAdmin, { wsId, exameId, pdfUrl: url, emissaoKey })) {
+            pdfUrl = url;
+          } else {
+            // Round 2: a corrida virou DEPOIS da cerca pre-upload — o objeto
+            // ja subiu pro Storage mas ninguem aponta pra ele. Ceiling
+            // aceito (item 4 do round 2): o objeto fica orfao no bucket,
+            // rastreavel por este log — path versionado por emissao fecharia
+            // de vez, fora de escopo desta onda.
+            pdfErro = 'conflito_pos_emissao';
+            console.warn(`emitir: PDF (anexo) subiu mas perdeu a corrida — objeto orfao em ${url} (ws=${wsId} exame=${exameId})`);
+          }
         } catch (e) {
           pdfErro = 'erro_pdf';   // P10: detalhe (bucket/path) so no log do servidor
           console.error('PDF anexo save error:', e);
@@ -199,14 +213,18 @@ export async function POST(req: NextRequest) {
         // podeSalvar (I4, mesmo mecanismo de corrigir-laudo): checado DEPOIS
         // do page.pdf e ANTES de salvarPdfBuffer, dentro de gerarESalvarPdf —
         // ordem certa, nao reordenar. O TOCTOU residual entre o check e o
-        // save e a mesma janela ja aceita pelo fix I4/P15.
-        pdfUrl = await gerarESalvarPdf(pdfHtml, wsId, exameId, nomeArq, podePublicar);
-        if (pdfUrl === null) {
+        // save e a mesma janela ja aceita pelo fix I4/P15 (ceiling do item 4,
+        // round 2 — bytes-no-path, upgrade seria path versionado por emissao).
+        const url = await gerarESalvarPdf(pdfHtml, wsId, exameId, nomeArq, podePublicar);
+        if (url === null) {
           // C1/C2: podePublicar recusou — mesmo raciocinio do braco de anexo
           // acima, nao escreve nada no doc.
           pdfErro = 'conflito_pos_emissao';
+        } else if (await publicarPdfSeAindaDono(dbAdmin, { wsId, exameId, pdfUrl: url, emissaoKey })) {
+          pdfUrl = url;
         } else {
-          await dbAdmin.doc(`workspaces/${wsId}/exames/${exameId}`).update({ pdfUrl, pdfErro: FieldValue.delete() });
+          pdfErro = 'conflito_pos_emissao';
+          console.warn(`emitir: PDF subiu mas perdeu a corrida — objeto orfao em ${url} (ws=${wsId} exame=${exameId})`);
         }
       } catch (e) {
         pdfErro = 'erro_pdf';   // P10: detalhe so no log do servidor
@@ -223,15 +241,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Baixa a bandeira de "PDF pendente" (C1) — SO com um PDF salvo de fato,
-    // pra bandeira baixa significar exatamente "existe PDF assinado". Dai em
-    // diante o retry da mesma tentativa e replay puro. Se esta escrita falhar
-    // (ou o lambda morrer aqui), o pior caso e o proximo retry regerar o PDF:
-    // mesmo efeito, nunca cobranca nova.
-    if (pdfUrl) {
-      await marcarPdfPronto(dbAdmin, wsId, exameId)
-        .catch((e) => console.error('marcar PDF pronto (nao-critico):', e));
-    }
+    // A bandeira `pdfPendente` ja foi baixada ATOMICAMENTE com o pdfUrl
+    // dentro de `publicarPdfSeAindaDono` acima (round 2) — nao ha mais
+    // escrita separada aqui (era o C4: escrita separada deixava o PERDEDOR
+    // de uma corrida apagar a bandeira do VENCEDOR).
 
     return NextResponse.json({
       ok: true,

@@ -18,7 +18,10 @@ import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
-import { emitirComCobranca, emissaoKeyValida, refEmissaoPrivada } from '../../src/lib/emitir-admin.ts';
+import {
+  emitirComCobranca, emissaoKeyValida, refEmissaoPrivada,
+  publicarPdfSeAindaDono, publicarCorrecaoSeAindaEmitido,
+} from '../../src/lib/emitir-admin.ts';
 
 let db;
 const CONTA = 'contaE', WS = 'wsE';
@@ -282,5 +285,115 @@ describe('billing e autoria seguem intactos (E9: primeira rede do caminho de din
       wsId: 'wsSemPlanoE', exameId: 'e1', uid: MED, medicoUid: MED, dadosFinais: {}, emissaoKey: KEY_A,
     });
     assert.equal(r.motivo, 'sem_plano');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════
+// Fix-wave round 2 (Codex, achado C4/check-then-write): a cerca pre-upload
+// (podePublicar em route.ts) sozinha e check-then-write — entre ela e o
+// `update({pdfUrl})` cabiam segundos de cancelamento/transferencia/reemissao.
+// E baixar pdfPendente como escrita SEPARADA do pdfUrl deixava o PERDEDOR de
+// uma corrida apagar a bandeira do VENCEDOR (pdfPendente e por EXAME, nao
+// por tentativa). Testado direto contra o emulador (real, nao fake) — as
+// duas funcoes tomam `db` como as outras deste arquivo.
+// ══════════════════════════════════════════════════════════════════
+describe('publicarPdfSeAindaDono — ponteiro + bandeira atomicos (round 2)', () => {
+  test('publica o pdfUrl e baixa pdfPendente no MESMO commit quando ninguem mexeu', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);   // pdfPendente:true na gaveta
+    const ok = await publicarPdfSeAindaDono(db, { wsId: WS, exameId: id, pdfUrl: 'https://x/novo.pdf', emissaoKey: KEY_A });
+    assert.equal(ok, true);
+    assert.equal((await exameDoc(id)).pdfUrl, 'https://x/novo.pdf');
+    assert.equal((await privDoc(id)).pdfPendente, false);
+  });
+
+  test('status virou cancelado entre a cerca e a transacao → false, doc intacto, pdfPendente continua true', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    await db.doc(`workspaces/${WS}/exames/${id}`).update({ status: 'cancelado' });
+    const ok = await publicarPdfSeAindaDono(db, { wsId: WS, exameId: id, pdfUrl: 'https://x/orfao.pdf', emissaoKey: KEY_A });
+    assert.equal(ok, false);
+    assert.equal((await exameDoc(id)).pdfUrl, undefined, 'doc intacto — nao publicou por cima do cancelado');
+    assert.equal((await privDoc(id)).pdfPendente, true, 'bandeira nao foi mexida por quem perdeu');
+  });
+
+  test('key trocada (reemissao nova comecou) → false, nao apaga a bandeira da emissao vencedora', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    await pdfSalvo(id);              // emissao A "terminou": pdfPendente:false
+    await emitir(id, KEY_B);         // reemissao nova: key muda, pdfPendente volta a true
+    const ok = await publicarPdfSeAindaDono(db, { wsId: WS, exameId: id, pdfUrl: 'https://x/velho.pdf', emissaoKey: KEY_A });
+    assert.equal(ok, false, 'a tentativa A perdeu — a gaveta agora e da B');
+    assert.equal((await privDoc(id)).emissaoKey, KEY_B);
+    assert.equal((await privDoc(id)).pdfPendente, true, 'C4 fechado: bandeira da B nao foi apagada pela A perdedora');
+  });
+
+  test('sem emissaoKey (cliente legado): so a cerca de status vale', async () => {
+    const id = await seedExame();
+    await emitir(id, undefined);     // legado: nem cria gaveta (Ponytail R3)
+    const ok = await publicarPdfSeAindaDono(db, { wsId: WS, exameId: id, pdfUrl: 'https://x/legado.pdf' });
+    assert.equal(ok, true);
+    assert.equal((await exameDoc(id)).pdfUrl, 'https://x/legado.pdf');
+  });
+
+  test('exame nao existe → false, sem excecao', async () => {
+    const ok = await publicarPdfSeAindaDono(db, { wsId: WS, exameId: 'naoExisteE2', pdfUrl: 'https://x/x.pdf', emissaoKey: KEY_A });
+    assert.equal(ok, false);
+  });
+});
+
+describe('publicarCorrecaoSeAindaEmitido — ponteiro condicional a emitidoEm, bandeira condicional a key (round 2)', () => {
+  test('emitidoEm e key intactos → publica ponteiro e baixa pdfPendente', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    const antes = await exameDoc(id);
+    const ok = await publicarCorrecaoSeAindaEmitido(db, {
+      wsId: WS, exameId: id, pdfUrl: 'https://x/certo.pdf', emitidoEmAntes: antes.emitidoEm, keyNoGuard: KEY_A,
+    });
+    assert.equal(ok, true);
+    assert.equal((await exameDoc(id)).pdfUrl, 'https://x/certo.pdf');
+    assert.equal((await privDoc(id)).pdfPendente, false);
+  });
+
+  test('reemitiu durante a regeracao (emitidoEm mudou) → false, doc intacto', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    const antes = await exameDoc(id);
+    await emitir(id, KEY_B);   // reemissao real: emitidoEm muda de novo
+    const ok = await publicarCorrecaoSeAindaEmitido(db, {
+      wsId: WS, exameId: id, pdfUrl: 'https://x/velho-corrigido.pdf', emitidoEmAntes: antes.emitidoEm, keyNoGuard: KEY_A,
+    });
+    assert.equal(ok, false);
+    assert.notEqual((await exameDoc(id)).pdfUrl, 'https://x/velho-corrigido.pdf');
+  });
+
+  test('status virou cancelado durante a regeracao → false', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    const antes = await exameDoc(id);
+    await db.doc(`workspaces/${WS}/exames/${id}`).update({ status: 'cancelado' });
+    const ok = await publicarCorrecaoSeAindaEmitido(db, {
+      wsId: WS, exameId: id, pdfUrl: 'https://x/x.pdf', emitidoEmAntes: antes.emitidoEm, keyNoGuard: KEY_A,
+    });
+    assert.equal(ok, false);
+  });
+
+  test('emitidoEm intacto mas a gaveta trocou de key: publica o ponteiro mas NAO baixa pdfPendente (C4 do lado da correcao)', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    const antes = await exameDoc(id);
+    // Cenario sintetico (escrita direta, nao via emitirComCobranca): prova o
+    // CONTRATO da funcao — as 2 condicoes (ponteiro por emitidoEm, bandeira
+    // por key) sao independentes. Uma reemissao ORGANICA tambem mudaria
+    // emitidoEm (o teste acima ja cobre isso); este cobre a trava da
+    // bandeira isoladamente.
+    await refEmissaoPrivada(db, WS, id).set({ emissaoKey: KEY_B, pdfPendente: true }, { merge: true });
+    const ok = await publicarCorrecaoSeAindaEmitido(db, {
+      wsId: WS, exameId: id, pdfUrl: 'https://x/corrigido.pdf', emitidoEmAntes: antes.emitidoEm, keyNoGuard: KEY_A,
+    });
+    assert.equal(ok, true, 'emitidoEm bateu — o ponteiro publica');
+    assert.equal((await exameDoc(id)).pdfUrl, 'https://x/corrigido.pdf');
+    assert.equal((await privDoc(id)).pdfPendente, true, 'bandeira da emissao B NAO foi apagada pela correcao');
+    assert.equal((await privDoc(id)).emissaoKey, KEY_B, 'key da B intacta');
   });
 });

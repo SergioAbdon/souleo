@@ -18,7 +18,7 @@ import { gerarESalvarPdf, lerSnapshotHtml } from '@/lib/pdf-server';
 import { requireUid, adminDb } from '@/lib/auth-admin';
 import { resolverPapel, podeCorrigir, idValido } from '@/lib/exame-admin';
 import { substituirCamposAdministrativos, emissaoMudou } from '@/lib/correcao-admin';
-import { marcarPdfPronto } from '@/lib/emitir-admin';
+import { publicarCorrecaoSeAindaEmitido, refEmissaoPrivada } from '@/lib/emitir-admin';
 
 // Trust boundary: o corpo vem do navegador. Sem isto um `convenio` que não é
 // string era GRAVADO no exame (que alimenta extrato/glosa/PDF) e só depois
@@ -126,48 +126,66 @@ export async function POST(req: NextRequest) {
     const snapshot = await lerSnapshotHtml(wsId, exameId);
     const htmlCorrigido = snapshot && substituirCamposAdministrativos(snapshot.html, { convenio: convFinal, solicitante: solicFinal });
     if (htmlCorrigido && snapshot) {
+      // Round 2 (item 3): key da gaveta capturada JUNTO do guard, antes do
+      // Puppeteer rodar — so serve pra decidir se pode baixar `pdfPendente`
+      // depois (nao entra no gate principal, que segue sendo status+
+      // emitidoEm). Se uma emissao NOVA comecar durante a regeracao, a key
+      // muda e a correcao nao apaga a bandeira dela (C4 do lado da correcao).
+      const keyNoGuard = (await refEmissaoPrivada(dbAdmin, wsId, exameId).get()).data()?.emissaoKey ?? null;
       try {
         // Mesmo nome de arquivo da emissão: regrava o MESMO objeto, o link já
         // entregue ao paciente/convênio continua valendo. O alvo vem da
         // metadata do snapshot (servidor) — NUNCA de `antes.pdfUrl`, campo que
         // o médico-autor pode reescrever no doc emitido e apontar pro PDF de
         // outro paciente (fix I1).
-        pdfUrl = await gerarESalvarPdf(htmlCorrigido, wsId, exameId, snapshot.nomeArq, async () => {
-          // Fix I4: reemitiram enquanto o Puppeteer rodava? Então este PDF já
-          // nasceu velho — não publica. Espelho do guard E8 (Codex-3/Ruflo-6):
-          // cancelar/transferir PRESERVAM emitidoEm — sem o status aqui, uma
-          // correcao que corre contra um cancelamento republicava PDF de laudo
-          // cancelado (o CAS de cancelarExame apaga pdfUrl, mas nao mexe em
-          // emitidoEm, entao o selo sozinho nao via a diferenca).
+        const pdfCandidato = await gerarESalvarPdf(htmlCorrigido, wsId, exameId, snapshot.nomeArq, async () => {
+          // Fix I4 (pre-upload, poupa Puppeteer/Storage na corrida comum):
+          // checado DEPOIS do page.pdf e ANTES de salvarPdfBuffer, dentro de
+          // gerarESalvarPdf. Espelho do guard E8 (Codex-3/Ruflo-6): cancelar/
+          // transferir PRESERVAM emitidoEm — sem o status aqui, uma correcao
+          // que corre contra um cancelamento republicava PDF de laudo
+          // cancelado. Quem decide o PONTEIRO de verdade e
+          // publicarCorrecaoSeAindaEmitido logo abaixo (round 2, Codex) —
+          // esta cerca sozinha e check-then-write.
           const atual = await ref.get();
           const atualData = atual.data();
           return atualData?.status === 'emitido' && !emissaoMudou(antes.emitidoEm, atualData?.emitidoEm);
         });
-        if (pdfUrl === null) {
+        if (pdfCandidato === null) {
           reemitido = true;
           pdfDesatualizado = true;
-        } else {
+        } else if (await publicarCorrecaoSeAindaEmitido(dbAdmin, {
+          wsId, exameId, pdfUrl: pdfCandidato, emitidoEmAntes: antes.emitidoEm, keyNoGuard,
+        })) {
           // Follow-up Task 6 (P4/E4): um exame recuperado por aqui (regerado
           // depois de uma falha de PDF no /api/emitir) nao pode ficar com a
           // marca `pdfErro` velha pra sempre — a tela voltaria a mostrar
-          // "Regerar PDF" num laudo que ja tem PDF de novo.
-          await ref.update({ pdfUrl, pdfErro: FieldValue.delete() });
-          // Codex-4: baixa a MESMA bandeira que /api/emitir baixa (I1) — sem
-          // isto a gaveta privada continuava com `pdfPendente:true` e um
-          // replay da emissaoKey original (retry tardio do cliente) aceitava
-          // de novo o pdfHtml velho da requisicao original e regravava por
-          // cima do PDF que acabou de ser recuperado aqui.
-          await marcarPdfPronto(dbAdmin, wsId, exameId)
-            .catch((e) => console.error('marcar PDF pronto (nao-critico):', e));
+          // "Regerar PDF" num laudo que ja tem PDF de novo. `pdfErro:delete`
+          // e a baixa de `pdfPendente` (Codex-4) saem no MESMO commit de
+          // `pdfUrl` agora — publicarCorrecaoSeAindaEmitido cuida dos dois.
+          pdfUrl = pdfCandidato;
+        } else {
+          // Round 2: a corrida virou DEPOIS da cerca pre-upload — o objeto
+          // ja subiu pro Storage mas ninguem aponta pra ele (ceiling aceito,
+          // item 4 — path versionado por emissao fecharia de vez).
+          reemitido = true;
+          pdfDesatualizado = true;
+          console.warn(`corrigir-laudo: PDF gerado mas perdeu a corrida — objeto orfao em ${pdfCandidato} (ws=${wsId} exame=${exameId})`);
         }
       } catch (e) {
         pdfErro = 'erro_pdf';   // detalhe (bucket/path) só no log do servidor
         console.error('corrigir-laudo PDF error:', e);
         // Ruflo-3a: espelha /api/emitir — sem marcar aqui, um laudo que
         // falhou a regeracao ficava com o doc dizendo "sem pdfErro" (o
-        // sucesso e quem limpa; a falha tambem precisa gravar).
-        await ref.update({ pdfErro: 'erro_pdf' })
-          .catch((e2) => console.error('marcar pdfErro (nao-critico):', e2));
+        // sucesso e quem limpa; a falha tambem precisa gravar). Round 2
+        // (item 3): so marca se o exame AINDA esta emitido — senao um
+        // cancelamento/transferencia que ganhou a corrida fica com a marca
+        // de erro de uma correcao que nao e mais dele.
+        const atual = await ref.get();
+        if (atual.data()?.status === 'emitido') {
+          await ref.update({ pdfErro: 'erro_pdf' })
+            .catch((e2) => console.error('marcar pdfErro (nao-critico):', e2));
+        }
       }
     } else {
       pdfDesatualizado = true;

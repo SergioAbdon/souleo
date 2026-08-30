@@ -202,14 +202,39 @@ describe('/api/corrigir-laudo — modo regerar (Ruflo-4)', () => {
       'cancelar/transferir preservam emitidoEm — sem o status a correcao republica PDF de laudo cancelado');
   });
 
-  test('sucesso baixa pdfPendente (marcarPdfPronto) e falha marca pdfErro no doc', async () => {
+  test('sucesso publica pelo caminho atomico (round 2) e baixa pdfPendente so se a key nao mudou', async () => {
     const bruto = await readFile(new URL('../../src/app/api/corrigir-laudo/route.ts', import.meta.url), 'utf8');
     const src = bruto.replace(/^\s*\/\/.*$/gm, '');
-    assert.match(src, /await marcarPdfPronto\(dbAdmin, wsId, exameId\)/,
-      'sucesso da regeracao tem que baixar a mesma bandeira que /api/emitir baixa (Codex-4)');
-    assert.match(src, /await ref\.update\(\{ pdfErro: 'erro_pdf' \}\)\s*\n\s*\.catch\(\(e2\) => console\.error\('marcar pdfErro \(nao-critico\):', e2\)\)/,
-      'catch do Puppeteer tem que marcar pdfErro no doc (Ruflo-3a, espelha /api/emitir)');
-    assert.ok(src.includes("import { marcarPdfPronto } from '@/lib/emitir-admin';"));
+    // Round 2 (Codex, check-then-write/C4): a rota nao escreve mais
+    // `{ pdfUrl, pdfErro: delete }` direto no doc — quem publica e
+    // publicarCorrecaoSeAindaEmitido (emitir-admin.ts), atomica com a baixa
+    // condicional de pdfPendente (so se a gaveta nao mudou de key desde o guard).
+    assert.match(src, /const keyNoGuard = \(await refEmissaoPrivada\(dbAdmin, wsId, exameId\)\.get\(\)\)\.data\(\)\?\.emissaoKey \?\? null;/,
+      'key da gaveta capturada JUNTO do guard, antes do Puppeteer rodar');
+    assert.match(src, /await publicarCorrecaoSeAindaEmitido\(dbAdmin, \{\s*wsId, exameId, pdfUrl: pdfCandidato, emitidoEmAntes: antes\.emitidoEm, keyNoGuard,\s*\}\)/,
+      'sucesso da regeracao tem que publicar pelo mesmo caminho atomico que /api/emitir (round 2)');
+    assert.ok(!/\.update\(\{ pdfUrl,/.test(src),
+      'a rota nao pode mais escrever pdfUrl direto no doc — quem publica e publicarCorrecaoSeAindaEmitido');
+    assert.ok(!/marcarPdfPronto/.test(src), 'marcarPdfPronto foi substituida — nao pode sobrar chamada solta');
+    assert.ok(src.includes("import { publicarCorrecaoSeAindaEmitido, refEmissaoPrivada } from '@/lib/emitir-admin';"));
+  });
+
+  test('catch do Puppeteer so marca pdfErro se o exame AINDA esta emitido (round 2, item 3)', async () => {
+    const bruto = await readFile(new URL('../../src/app/api/corrigir-laudo/route.ts', import.meta.url), 'utf8');
+    const src = bruto.replace(/^\s*\/\/.*$/gm, '');
+    // Antes (Ruflo-3a) marcava incondicionalmente; um cancelamento/
+    // transferencia que ganhasse a corrida ficava com pdfErro de uma
+    // correcao que nao e mais dele. Agora relê o doc e so marca com o
+    // status ainda emitido.
+    assert.match(src, /if \(atual\.data\(\)\?\.status === 'emitido'\) \{\s*await ref\.update\(\{ pdfErro: 'erro_pdf' \}\)\s*\n\s*\.catch\(\(e2\) => console\.error\('marcar pdfErro \(nao-critico\):', e2\)\)/,
+      'catch do Puppeteer tem que checar status antes de marcar pdfErro (round 2)');
+  });
+
+  test('perdeu a corrida no publicar: pdfErro fica reemitido_durante_correcao + log rastreavel do orfao', async () => {
+    const bruto = await readFile(new URL('../../src/app/api/corrigir-laudo/route.ts', import.meta.url), 'utf8');
+    const src = bruto.replace(/^\s*\/\/.*$/gm, '');
+    assert.ok(/console\.warn\(`corrigir-laudo: PDF gerado mas perdeu a corrida/.test(src),
+      'objeto orfao no Storage tem que ficar rastreavel pelo log (item 4, round 2)');
   });
 });
 
