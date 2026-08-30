@@ -25,3 +25,4 @@ Ordem cronológica. Ler o(s) recente(s) antes de mexer na área relacionada.
 | 2026-08-28 | [Senna93 Fase 4: sombra persistida](2026-08-28-senna93-fase4-sombra.md) código PRONTO, aguardando OK do Sergio p/ merge+deploy | Senna93 / motor / shadow |
 | 2026-08-29 | [Diastologia conforme ASE/EACVI 2016](2026-08-29-diastologia-ase2016.md) — regra permanente "os resultados seguem os guidelines" | Senna90 / motor / diastologia |
 | 2026-08-29 | [Seção 7 onda 0: velocidade + dinheiro](2026-08-29-secao7-onda0-velocidade.md) merge `f3025d2` + fixes da tríade — gru1, Chromium reutilizado, trava anti-cobrança-dupla (C1/I1) | PDF/Puppeteer / billing / emitir |
+| 2026-08-30 | [Seção 7 onda 1: bugs com dente](2026-08-30-secao7-onda1-bugs-com-dente.md) ✅ merge `18ae790` — corte X1, corSegura, allowlist Chrome, CAS cancelar×emitir, Regerar sem 2ª franquia, publicação transacional do PDF, ⚠️ emissaoKey OBRIGATÓRIA | Emissão / PDF / billing / exportação |
