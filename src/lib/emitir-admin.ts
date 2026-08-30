@@ -39,6 +39,7 @@ import type { Firestore } from 'firebase-admin/firestore';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { resolverAssinatura } from './billing-admin';
 import { emissaoMudou } from './correcao-admin';
+import { podeGirar, proximoCicloFim } from './ciclo';
 
 // Gaveta server-only do estado de idempotencia (mesmo formato do shadow:
 // `privado/{tipo}/{sub}/{id}`). `firestore.rules` ja tem
@@ -250,6 +251,7 @@ export async function emitirComCobranca(db: Firestore, p: {
   medicoUid: string;
   dadosFinais: Record<string, unknown>;
   // Campos derivados no servidor que entram na MESMA escrita (carimbo do motor).
+  // server-derived only — NAO passa pela whitelist CAMPOS_DADOS_FINAIS (hoje so carimboMotor).
   extras?: Record<string, unknown>;
   // Round 4: obrigatoria — a rota so chama isto depois de `emissaoKeyValida`
   // recusar 400 sem ela (o formato ja foi validado no trust boundary; aqui
@@ -340,7 +342,7 @@ export async function emitirComCobranca(db: Firestore, p: {
     // identificacaoAlterada (M3) — qualquer chave fora de CAMPOS_DADOS_FINAIS
     // e descartada, entao os dois carimbos de auditoria (e pdfUrl, status,
     // emitidoEm, acc, cpf, medicoUid...) somem daqui junto, de graca.
-    const dadosFinaisSemCarimbo = Object.fromEntries(
+    const dadosFinaisPermitidos = Object.fromEntries(
       Object.entries(p.dadosFinais).filter(([k]) => CAMPOS_DADOS_FINAIS.has(k)),
     );
 
@@ -396,26 +398,14 @@ export async function emitirComCobranca(db: Firestore, p: {
     // MESMA transacao que ja cobra: sem cron, sem escritor novo de
     // `subscriptions/{id}` (o 4o escritor do ADR vira "o proprio
     // emitirComCobranca", nao uma rota nova).
-    // So gira quando as 3 condicoes batem:
-    //  - ciclo vencido (`agora > cicloFim`)
-    //  - conta NAO suspensa: nao existe campo `status` na assinatura (ADR
-    //    §1b) — o unico interruptor que existe hoje e o efeito colateral que
-    //    `marina/route.ts` (bloquear_workspace) ja usa pra bloquear:
-    //    `franquiaMensal: 0`. `franquiaMensal > 0` e o marcador de "ativa".
-    //  - NAO e trial (`sub.tipo !== 'trial'`) — ADR §3 "Contas em trial":
-    //    girar trial sem filtro vira trial ETERNO (pior resultado possivel).
-    //    Trial mantem os 30 dias fixos; o Direx converte na mao.
-    // Gap de N ciclos ausentes (conta parada 3 meses e so DEPOIS alguem
-    // emite): rola em passos de 30d a partir do cicloFim ANTIGO (nao de
-    // "agora" — mesma razao do cron da opcao A: as datas nao escorregam) ATE
-    // ficar no futuro — um `+30d` unico nao bastaria pra um gap multiplo.
+    // Predicado (`podeGirar`) e loop (`proximoCicloFim`) moraram em texto
+    // duplicado aqui e em billing.ts ate a triade 2b — agora sao a MESMA
+    // funcao pura (ciclo.ts), so pode haver 1 definicao de "elegivel pra
+    // girar". Motivo das 3 condicoes e do loop +30d: comentario em ciclo.ts.
     const cicloFimAnterior = cicloFim;
     let girou = false;
-    if (cicloFim && agora > cicloFim && franquiaMensal > 0 && sub.tipo !== 'trial') {
-      let novoFimMs = cicloFim.getTime();
-      const TRINTA_DIAS_MS = 30 * 864e5;
-      do { novoFimMs += TRINTA_DIAS_MS; } while (novoFimMs <= agora.getTime());
-      cicloFim = new Date(novoFimMs);
+    if (podeGirar({ cicloFim, franquiaMensal, tipo: sub.tipo as string }, agora)) {
+      cicloFim = new Date(proximoCicloFim(cicloFimAnterior!.getTime(), agora.getTime()));
       franquiaUsada = 0; // reinicia ANTES do +1 desta emissao, abaixo
       girou = true;
     }
@@ -432,7 +422,7 @@ export async function emitirComCobranca(db: Firestore, p: {
     }
 
     transaction.update(exameRef, {
-      ...dadosFinaisSemCarimbo,
+      ...dadosFinaisPermitidos,
       ...(p.extras || {}),
       status: 'emitido',
       emitidoEm: FieldValue.serverTimestamp(),
@@ -442,7 +432,7 @@ export async function emitirComCobranca(db: Firestore, p: {
 
     // ROUND 2 (Codex Important 2): a identidade ASSINADA desta emissao —
     // vira o "antes" a prova de SDK que a PROXIMA reemissao compara (acima).
-    // Valores FINAIS (dadosFinaisSemCarimbo, com fallback pro doc quando o
+    // Valores FINAIS (dadosFinaisPermitidos, com fallback pro doc quando o
     // campo nao veio nesta requisicao — mesmo raciocinio do resto da funcao:
     // o que nao mudou continua valendo o que ja estava no exame). Mesma
     // normalizacao da comparacao (pacienteNome trim+upper; os outros 3 crus
@@ -450,7 +440,7 @@ export async function emitirComCobranca(db: Firestore, p: {
     // Privacidade: sem PII nova — o ledger `consumo` ja guarda `pacienteNome`
     // (achado X23) e a gaveta e deny-all pra todo cliente.
     const identidadeAssinada = Object.fromEntries(
-      CAMPOS_IDENTIDADE.map((c) => [c, normalizarCampo(c, c in dadosFinaisSemCarimbo ? dadosFinaisSemCarimbo[c] : exame[c])]),
+      CAMPOS_IDENTIDADE.map((c) => [c, normalizarCampo(c, c in dadosFinaisPermitidos ? dadosFinaisPermitidos[c] : exame[c])]),
     ) as Record<(typeof CAMPOS_IDENTIDADE)[number], string>;
 
     // Estado de idempotencia na MESMA transacao do debito: cobrou => a key

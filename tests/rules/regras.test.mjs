@@ -76,7 +76,7 @@ before(async () => {
     });
     // Status legado (Worklist.tsx:715-734, casos EDWALDO/CARMEN): a origem tem
     // que ficar aberta, senao "▶ Continuar" -> salvarLaudo('andamento') quebra
-    // pra exame real em producao (E10/E22 DRAFT §3).
+    // pra exame real em producao (docs/decisoes/2026-08-30-secao7-regra-status.md §3).
     await setDoc(doc(db, `workspaces/${LOCAL_A1}/exames`, 'exImagensRecebidas'), {
       pacienteNome: 'Legado Imagens', status: 'imagens-recebidas', medicoUid: DR_A,
     });
@@ -367,6 +367,23 @@ describe('7.1 sincronia com a regra publicada (achados da auditoria)', () => {
     await assertFails(setDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/exames`, 'exMedico'), {
       pacienteNome: 'Emitido', status: 'emitido', medicoUid: DR_A2,
     }));
+  });
+
+  // Triade 2b (Codex Important): o create ainda deixava plantar emitidoEm/
+  // pdfUrl com status 'aguardando' — mesmo carimbo de graca do E10, so pela
+  // porta do create em vez do update. pdfUrl plantado pode ate apontar pro
+  // laudo de OUTRO exame.
+  test('ninguem cria exame com emitidoEm plantado, mesmo com status aguardando', async () => {
+    await assertFails(setDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exEmitidoEmPlantado'),
+      payloadCadastroExame({ id: 'exEmitidoEmPlantado', emitidoEm: new Date() })));
+  });
+  test('ninguem cria exame com pdfUrl plantado, mesmo com status aguardando', async () => {
+    await assertFails(setDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exPdfUrlPlantado'),
+      payloadCadastroExame({ id: 'exPdfUrlPlantado', pdfUrl: 'https://forjado.example/laudo.pdf' })));
+  });
+  test('create legitimo (payload real do cadastro, sem os campos plantados) continua passando', async () => {
+    await assertSucceeds(setDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exCadastroOk'),
+      payloadCadastroExame({ id: 'exCadastroOk' })));
   });
 
   test('autor NAO transfere o laudo trocando medicoUid na edicao', async () => {

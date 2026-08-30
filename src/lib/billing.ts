@@ -9,6 +9,7 @@ import {
   collection, doc, getDoc, setDoc, getDocs, updateDoc, addDoc,
   query, where, limit, serverTimestamp, Timestamp
 } from 'firebase/firestore';
+import { podeGirar } from './ciclo';
 
 // ══ TIPOS ════════════════════════════════════════════════════════
 
@@ -94,6 +95,19 @@ export async function saveConfigPlanos(config: ConfigPlanos, adminUid: string) {
 export async function getPlanoById(planoId: string): Promise<PlanoConfig | null> {
   const config = await getConfigPlanos();
   return config.planos.find(p => p.id === planoId) || null;
+}
+
+// Ruflo-2 (S7-triade-2b): join CANONICO workspace -> subscription. Os
+// paineis batch do Direx (buscam TODAS as subs de uma vez, sem get() por
+// contaId) faziam so `sub.workspaceId === ws.id` — o fallback LEGADO —
+// e ficavam mudos pra conta do cadastro novo (subscriptions/{contaId}, sem
+// `workspaceId`, mesmo motivo do resolverAssinatura server-side). Mesma
+// ordem de fallback (contaId primeiro, workspaceId depois): zero mudanca
+// pra conta legada.
+export function acharSub<T extends { id: string; workspaceId?: string }>(
+  ws: { id: string; contaId?: string }, subs: T[]
+): T | undefined {
+  return (ws.contaId && subs.find(s => s.id === ws.contaId)) || subs.find(s => s.workspaceId === ws.id);
 }
 
 // ══ SUBSCRIPTION ════════════════════════════════════════════════
@@ -189,10 +203,10 @@ export async function checkEmissao(wsId: string): Promise<CheckResult> {
     // nada). Sem espelhar a MESMA regra, o pre-voo dizia 'expirado' no dia
     // 31 e o medico nem abria o editor pra chegar na rota que de fato gira
     // (e a modalidade 'pdf', que pula o pre-voo, renovava sozinha enquanto
-    // ECOTT/motor ficava travado na tela). Predicado tem que bater com o de
-    // emitir-admin.ts — pin cross-file em
-    // tests/unit/giro-ciclo-predicado-pin.test.mjs.
-    if (agora > cicloFim && franquiaMensal > 0 && sub.tipo !== 'trial') {
+    // ECOTT/motor ficava travado na tela). `podeGirar` (ciclo.ts) e a MESMA
+    // funcao que emitir-admin.ts usa pra girar de verdade — antes disto era
+    // o mesmo predicado escrito 2x em texto (pin cross-file, aposentado).
+    if (podeGirar({ cicloFim, franquiaMensal, tipo: sub.tipo as string }, agora)) {
       return { pode: true, tipo: 'franquia', sub };
     }
 

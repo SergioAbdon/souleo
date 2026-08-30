@@ -14,6 +14,12 @@ import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 // pra `where('workspaceId','==',wsId)` legado) ja usada por emitir-admin.ts —
 // mesma funcao aqui, nao uma segunda implementacao do mesmo join.
 import { resolverAssinatura } from '@/lib/billing-admin';
+// vigente() (ciclo.ts, S7-triade-2b): PURO, zero SDK — seguro pra importar
+// aqui. `acharSub` (billing.ts) NAO entra: puxaria o SDK client (firebase/
+// auth, firebase/storage) pra dentro de uma rota server, primeira vez no
+// repo — os handlers batch abaixo mantem o join canonico inline (mesmo
+// padrao que buscar_clientes ja usava).
+import { vigente } from '@/lib/ciclo';
 
 // ── Firebase Admin (server-side) ──
 if (!getApps().length) {
@@ -29,6 +35,21 @@ const dbAdmin = getFirestore();
 
 // ── Anthropic Client ──
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// Tabela de planos (Ponytail-P1, S7-triade-2b): escopo do MODULO — antes
+// vivia inline dentro de 'editar_licenca' e 'desbloquear_workspace' tinha
+// uma 3a copia so com franquiaMensal (sem os PJ, entao desbloquear uma
+// clinica PJ Pro devolvia 100 de Basic). 1 fonte so agora.
+const planosMap: Record<string, Record<string, unknown>> = {
+  trial: { planoId: 'trial', tipo: 'trial', tipoPlano: 'PF', franquiaMensal: 600, excedente: 0, maxLocais: 5, localAdicional: 0, extratosFranquia: -1, extratoValor: 0, maxUsuarios: 1, usuarioAdicional: 0 },
+  remido: { planoId: 'remido', tipo: 'paid', tipoPlano: 'PF', franquiaMensal: 9999, excedente: 0, maxLocais: 99, localAdicional: 0, extratosFranquia: -1, extratoValor: 0, maxUsuarios: 99, usuarioAdicional: 0 },
+  basic: { planoId: 'basic', tipo: 'paid', tipoPlano: 'PF', franquiaMensal: 100, excedente: 1.50, maxLocais: 1, localAdicional: 50, extratosFranquia: 2, extratoValor: 10, maxUsuarios: 1, usuarioAdicional: 0 },
+  profissional: { planoId: 'profissional', tipo: 'paid', tipoPlano: 'PF', franquiaMensal: 350, excedente: 0.75, maxLocais: 3, localAdicional: 25, extratosFranquia: 10, extratoValor: 5, maxUsuarios: 1, usuarioAdicional: 0 },
+  expert: { planoId: 'expert', tipo: 'paid', tipoPlano: 'PF', franquiaMensal: 600, excedente: 0.50, maxLocais: 5, localAdicional: 10, extratosFranquia: -1, extratoValor: 0, maxUsuarios: 1, usuarioAdicional: 0 },
+  pj_starter: { planoId: 'pj_starter', tipo: 'paid', tipoPlano: 'PJ', franquiaMensal: 300, excedente: 1.50, maxLocais: -1, localAdicional: 0, extratosFranquia: -1, extratoValor: 0, maxUsuarios: 3, usuarioAdicional: 66.99 },
+  pj_pro: { planoId: 'pj_pro', tipo: 'paid', tipoPlano: 'PJ', franquiaMensal: 720, excedente: 0.75, maxLocais: -1, localAdicional: 0, extratosFranquia: -1, extratoValor: 0, maxUsuarios: 6, usuarioAdicional: 50 },
+  pj_enterprise: { planoId: 'pj_enterprise', tipo: 'paid', tipoPlano: 'PJ', franquiaMensal: 1500, excedente: 0.50, maxLocais: -1, localAdicional: 0, extratosFranquia: -1, extratoValor: 0, maxUsuarios: 9, usuarioAdicional: 10 },
+};
 
 // ── System Prompt ──
 const SYSTEM_PROMPT = `Voce e a Marina, assistente administrativa do LEO — Sistema de Laudos Medicos de Ecocardiografia.
@@ -238,7 +259,6 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
 
         const subs = subSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         const profs = profSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        const agora = Date.now();
 
         const rows = wsSnap.docs.map(d => {
           const ws = { id: d.id, ...d.data() } as Record<string, unknown>;
@@ -250,7 +270,9 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
             || subs.find((s: Record<string, unknown>) => s.workspaceId === ws.id)) as Record<string, unknown> | undefined;
           const owner = profs.find((p: Record<string, unknown>) => p.uid === ws.ownerUid || p.id === ws.ownerUid) as Record<string, unknown> | undefined;
           const fim = sub?.cicloFim ? (sub.cicloFim as Timestamp).toDate() : null;
-          const ativo = fim && agora <= fim.getTime();
+          // vigente() (ciclo.ts): vencida nao e mais sinonimo de inativa —
+          // conta paga gira sozinha no proximo emitir (E11 opcao D).
+          const ativo = !!sub && vigente(sub as { cicloFim?: Timestamp; franquiaMensal?: number; tipo?: string }, new Date());
           return {
             workspace: ws.nomeClinica || ws.id,
             tipo: ws.tipo || '?',
@@ -289,13 +311,10 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const ws = wsSnap.docs.find(d => (d.data().nomeClinica || '').toLowerCase().includes(nome));
         if (!ws) return JSON.stringify({ erro: 'Workspace nao encontrado' });
 
-        // E11 achado extra (ADR §1a): join canonico — achado numa varredura
-        // do arquivo, mesma classe de bug dos outros handlers acima/abaixo.
         const assinaturaVer = await resolverAssinatura(dbAdmin, ws.id);
         if (!assinaturaVer) return JSON.stringify({ workspace: ws.data().nomeClinica, erro: 'Sem subscription' });
 
-        const subVerSnap = await assinaturaVer.ref.get();
-        const sub = subVerSnap.data()!;
+        const sub = assinaturaVer.snap.data()!;
         const fim = sub.cicloFim ? (sub.cicloFim as Timestamp).toDate() : null;
         return JSON.stringify({
           workspace: ws.data().nomeClinica,
@@ -312,7 +331,8 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
           maxUsuarios: sub.maxUsuarios || 1,
           usuarioAdicional: sub.usuarioAdicional || 0,
           expira: fim?.toLocaleDateString('pt-BR'),
-          status: fim && Date.now() <= fim.getTime() ? 'Ativo' : 'Expirado',
+          // vigente() (ciclo.ts): vencida nao e mais sinonimo de inativa.
+          status: vigente(sub as { cicloFim?: Timestamp; franquiaMensal?: number; tipo?: string }, new Date()) ? 'Ativo' : 'Expirado',
         });
       }
 
@@ -369,13 +389,10 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const ws = wsSnap.docs.find(d => (d.data().nomeClinica || '').toLowerCase().includes(nome));
         if (!ws) return JSON.stringify({ erro: 'Workspace nao encontrado' });
 
-        // E11 achado extra (ADR §1a): join canonico (resolverAssinatura),
-        // nao a query por workspaceId que fica muda pra conta nova.
         const assinaturaCreditos = await resolverAssinatura(dbAdmin, ws.id);
         if (!assinaturaCreditos) return JSON.stringify({ erro: 'Sem subscription ativa' });
 
-        const subCreditosSnap = await assinaturaCreditos.ref.get();
-        const saldoAnterior = subCreditosSnap.data()?.creditosExtras || 0;
+        const saldoAnterior = assinaturaCreditos.snap.data()?.creditosExtras || 0;
         const saldoNovo = Math.max(0, saldoAnterior + quantidade);
 
         await assinaturaCreditos.ref.update({ creditosExtras: saldoNovo });
@@ -397,22 +414,29 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const pagSnap = await dbAdmin.collection('pagamentos').get();
         const profSnap = await dbAdmin.collection('profissionais').get();
 
-        const agora = Date.now();
+        const agoraDate = new Date();
         const inicioMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-        const subs = subSnap.docs.map(d => d.data());
+        // `id` (== contaId no modelo novo) precisa vir junto — sem ele o join
+        // canonico abaixo (ativasPF/ativasPJ) nao tem como casar workspace
+        // com subscription de conta do cadastro novo (achado desta triade).
+        const subs: Record<string, unknown>[] = subSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         const wsDocs = wsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         const wsPF = wsDocs.filter((w: Record<string, unknown>) => w.tipo === 'PF');
         const wsPJ = wsDocs.filter((w: Record<string, unknown>) => w.tipo === 'PJ');
 
-        const ativas = subs.filter(s => { const f = s.cicloFim ? (s.cicloFim as Timestamp).toDate() : null; return f && agora <= f.getTime(); });
+        // vigente() (ciclo.ts): vencida nao e mais sinonimo de inativa — conta
+        // paga gira sozinha no proximo emitir (E11 opcao D).
+        const ativas = subs.filter(s => vigente(s as { cicloFim?: Timestamp; franquiaMensal?: number; tipo?: string }, agoraDate));
         const pagas = ativas.filter(s => s.tipo === 'paid');
         const trials = ativas.filter(s => s.tipo === 'trial');
         const expiradas = subs.length - ativas.length;
-        const cancelamentos = subs.filter(s => s.tipo === 'paid' && s.cicloFim && agora > (s.cicloFim as Timestamp).toDate().getTime()).length;
+        const cancelamentos = subs.filter(s => s.tipo === 'paid'
+          && !vigente(s as { cicloFim?: Timestamp; franquiaMensal?: number; tipo?: string }, agoraDate)).length;
 
-        // Separar PF/PJ
-        const ativasPF = pagas.filter(s => wsPF.some((w: Record<string, unknown>) => w.id === s.workspaceId));
-        const ativasPJ = pagas.filter(s => wsPJ.some((w: Record<string, unknown>) => w.id === s.workspaceId));
+        // Separar PF/PJ — join canonico (contaId primeiro, workspaceId legado
+        // depois), mesmo padrao de buscar_clientes acima.
+        const ativasPF = pagas.filter(s => wsPF.some((w: Record<string, unknown>) => (w.contaId && w.contaId === s.id) || w.id === s.workspaceId));
+        const ativasPJ = pagas.filter(s => wsPJ.some((w: Record<string, unknown>) => (w.contaId && w.contaId === s.id) || w.id === s.workspaceId));
 
         const pagsMes = pagSnap.docs.filter(d => {
           const ts = d.data().criadoEm ? (d.data().criadoEm as Timestamp).toDate() : null;
@@ -422,8 +446,8 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const receitaPF = pagsMes.filter(d => wsPF.some((w: Record<string, unknown>) => w.id === d.data().workspaceId)).reduce((a, d) => a + (d.data().valor || 0), 0);
         const receitaPJ = pagsMes.filter(d => wsPJ.some((w: Record<string, unknown>) => w.id === d.data().workspaceId)).reduce((a, d) => a + (d.data().valor || 0), 0);
 
-        const totalFranquia = subs.reduce((a, s) => a + (s.franquiaMensal || 0), 0);
-        const totalUsada = subs.reduce((a, s) => a + (s.franquiaUsada || 0), 0);
+        const totalFranquia = subs.reduce((a, s) => a + ((s.franquiaMensal as number) || 0), 0);
+        const totalUsada = subs.reduce((a, s) => a + ((s.franquiaUsada as number) || 0), 0);
 
         return JSON.stringify({
           totalWorkspaces: wsSnap.size, totalWorkspacesPF: wsPF.length, totalWorkspacesPJ: wsPJ.length,
@@ -447,8 +471,6 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const ws = wsSnap.docs.find(d => (d.data().nomeClinica || '').toLowerCase().includes(nome));
         if (!ws) return JSON.stringify({ erro: 'Workspace nao encontrado' });
 
-        // E11 achado extra (ADR §1a): join canonico, nao a query por
-        // workspaceId (muda pra conta criada pelo cadastro novo).
         const assinaturaBloqueio = await resolverAssinatura(dbAdmin, ws.id);
         if (!assinaturaBloqueio) return JSON.stringify({ erro: 'Sem subscription' });
 
@@ -467,22 +489,15 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const ws = wsSnap.docs.find(d => (d.data().nomeClinica || '').toLowerCase().includes(nome));
         if (!ws) return JSON.stringify({ erro: 'Workspace nao encontrado' });
 
-        // E11 achado extra (ADR §1a): join canonico, nao a query por
-        // workspaceId (muda pra conta criada pelo cadastro novo).
         const assinaturaDesbloqueio = await resolverAssinatura(dbAdmin, ws.id);
         if (!assinaturaDesbloqueio) return JSON.stringify({ erro: 'Sem subscription' });
 
-        // Restaurar franquia baseada no plano — mapa espelha planosMap de
-        // 'editar_licenca' abaixo (PF + PJ). Faltavam os PJ: sem eles,
-        // desbloquear uma clinica PJ Pro (720) devolvia 100 (fallback de
-        // Basic), sacaneando a conta com 1/7 da franquia contratada.
-        const subDesbloqueioSnap = await assinaturaDesbloqueio.ref.get();
-        const planoId = subDesbloqueioSnap.data()?.planoId || 'basic';
-        const franquias: Record<string, number> = {
-          trial: 600, remido: 9999, basic: 100, profissional: 350, expert: 600,
-          pj_starter: 300, pj_pro: 720, pj_enterprise: 1500,
-        };
-        const franquiaRestaurada = franquias[planoId] || 100;
+        // Restaurar franquia baseada no plano — planosMap (escopo do modulo,
+        // Ponytail-P1) e a MESMA tabela de 'editar_licenca' abaixo, agora com
+        // 1 fonte so (antes: 3a copia so com franquiaMensal, faltavam os PJ —
+        // desbloquear uma clinica PJ Pro (720) devolvia 100 de Basic).
+        const planoId = assinaturaDesbloqueio.snap.data()?.planoId || 'basic';
+        const franquiaRestaurada = planosMap[planoId]?.franquiaMensal as number ?? 100;
         await assinaturaDesbloqueio.ref.update({ franquiaMensal: franquiaRestaurada });
         await dbAdmin.collection('logs').add({
           tipo: 'desbloqueio', wsId: ws.id, planoId, ts: Timestamp.now(), medicoUid: 'marina-ia',
@@ -529,8 +544,6 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const ws = wsSnap.docs.find(d => (d.data().nomeClinica || '').toLowerCase().includes(nome));
         if (!ws) return JSON.stringify({ erro: 'Workspace nao encontrado' });
 
-        // E11 achado extra (ADR §1a): join canonico, nao a query por
-        // workspaceId (muda pra conta criada pelo cadastro novo).
         const assinaturaEdicao = await resolverAssinatura(dbAdmin, ws.id);
         if (!assinaturaEdicao) return JSON.stringify({ erro: 'Sem subscription' });
 
@@ -539,16 +552,6 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         // Se plano_id informado, auto-preenche todos os campos do plano
         const planoId = input.plano_id as string;
         if (planoId) {
-          const planosMap: Record<string, Record<string, unknown>> = {
-            trial: { planoId: 'trial', tipo: 'trial', tipoPlano: 'PF', franquiaMensal: 600, excedente: 0, maxLocais: 5, localAdicional: 0, extratosFranquia: -1, extratoValor: 0, maxUsuarios: 1, usuarioAdicional: 0 },
-            remido: { planoId: 'remido', tipo: 'paid', tipoPlano: 'PF', franquiaMensal: 9999, excedente: 0, maxLocais: 99, localAdicional: 0, extratosFranquia: -1, extratoValor: 0, maxUsuarios: 99, usuarioAdicional: 0 },
-            basic: { planoId: 'basic', tipo: 'paid', tipoPlano: 'PF', franquiaMensal: 100, excedente: 1.50, maxLocais: 1, localAdicional: 50, extratosFranquia: 2, extratoValor: 10, maxUsuarios: 1, usuarioAdicional: 0 },
-            profissional: { planoId: 'profissional', tipo: 'paid', tipoPlano: 'PF', franquiaMensal: 350, excedente: 0.75, maxLocais: 3, localAdicional: 25, extratosFranquia: 10, extratoValor: 5, maxUsuarios: 1, usuarioAdicional: 0 },
-            expert: { planoId: 'expert', tipo: 'paid', tipoPlano: 'PF', franquiaMensal: 600, excedente: 0.50, maxLocais: 5, localAdicional: 10, extratosFranquia: -1, extratoValor: 0, maxUsuarios: 1, usuarioAdicional: 0 },
-            pj_starter: { planoId: 'pj_starter', tipo: 'paid', tipoPlano: 'PJ', franquiaMensal: 300, excedente: 1.50, maxLocais: -1, localAdicional: 0, extratosFranquia: -1, extratoValor: 0, maxUsuarios: 3, usuarioAdicional: 66.99 },
-            pj_pro: { planoId: 'pj_pro', tipo: 'paid', tipoPlano: 'PJ', franquiaMensal: 720, excedente: 0.75, maxLocais: -1, localAdicional: 0, extratosFranquia: -1, extratoValor: 0, maxUsuarios: 6, usuarioAdicional: 50 },
-            pj_enterprise: { planoId: 'pj_enterprise', tipo: 'paid', tipoPlano: 'PJ', franquiaMensal: 1500, excedente: 0.50, maxLocais: -1, localAdicional: 0, extratosFranquia: -1, extratoValor: 0, maxUsuarios: 9, usuarioAdicional: 10 },
-          };
           const planoConfig = planosMap[planoId];
           if (!planoConfig) return JSON.stringify({ erro: `Plano ${planoId} nao encontrado. Opcoes: ${Object.keys(planosMap).join(', ')}` });
           Object.assign(updates, planoConfig);

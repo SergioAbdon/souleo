@@ -484,7 +484,7 @@ describe('billing e autoria seguem intactos (E9: primeira rede do caminho de din
 
 // ══════════════════════════════════════════════════════════════════
 // E11 — renovacao do ciclo de franquia, OPCAO D (docs/decisoes/
-// 2026-08-30-secao7-renovacao-ciclo-DRAFT.md, decisao do Sergio 30/08).
+// 2026-08-30-secao7-renovacao-ciclo.md, decisao do Sergio 30/08).
 // Sem cron: o proprio emitirComCobranca gira o ciclo DENTRO da transacao de
 // emissao quando acha a assinatura vencida e elegivel (paid, franquiaMensal
 // > 0 — o marcador de "nao suspensa" que existe hoje, ver ADR §1b). Testes

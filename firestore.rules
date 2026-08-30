@@ -89,6 +89,7 @@ service cloud.firestore {
     // NAO esta aqui: por ser whitelist, qualquer campo clinico OU desconhecido
     // tocado por nao-medico e negado (fail-closed). Decisao Dr. Sergio (ADR 8.4):
     // editar/liberar conteudo de laudo, ate em rascunho, e ATO MEDICO.
+    // `status` estar nesta lista NAO reabre a transicao livre: statusSoDoServidor() (match /exames/) governa por cima, esta whitelist so limita QUAIS campos.
     function camposAdministrativos() {
       return ['id', 'acc', 'pacienteId', 'pacienteNome', 'pacienteDtnasc',
         'cpf', 'feegowPacienteId', 'tipoExame', 'dataExame', 'horarioChegada',
@@ -168,7 +169,7 @@ service cloud.firestore {
         // `status` e DONO UNICO do servidor (fecha E10/E22) — motivo,
         // levantamento tela por tela e a lista de status legados que
         // obrigam a origem aberta: docs/decisoes/2026-08-30-secao7-regra-
-        // status-DRAFT.md §2-3. Unica transicao legitima do navegador:
+        // status.md §2-3. Unica transicao legitima do navegador:
         // abrir/salvar o laudo (`status:'andamento'`).
         function statusSoDoServidor() {
           return resource.data.get('status', '') != 'cancelado'
@@ -183,9 +184,14 @@ service cloud.firestore {
         // de assinado sem PDF, sem log e sem franquia). Quem nasce emitido e
         // sempre o Admin SDK (/api/emitir), que ignora regras. Grep 30/08:
         // o unico create do cliente e o cadastro da fila (Worklist.tsx:302),
-        // sempre 'aguardando'.
+        // sempre 'aguardando'. `emitidoEm`/`pdfUrl` tambem NAO podem nascer
+        // plantados (triade 2b, Codex Important) — senao um create 'aguardando'
+        // com os dois campos ja preenchidos e o mesmo E10 disfarcado, e um
+        // `pdfUrl` plantado no nascimento pode apontar pro laudo de OUTRO exame.
         allow create: if alcancaLocal(wsId)
                       && request.resource.data.get('status', '') != 'emitido'
+                      && !('emitidoEm' in request.resource.data)
+                      && !('pdfUrl' in request.resource.data)
                       && (!('medicoUid' in request.resource.data)
                           || request.resource.data.medicoUid == uid()
                           || ehDonoDoLocal(wsId))
