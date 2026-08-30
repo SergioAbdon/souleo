@@ -221,6 +221,53 @@ describe('E2 — reemissao deliberada continua cobrando', () => {
 // emitir-pdf-erro.test.mjs); emitirComCobranca confia no tipo (`emissaoKey:
 // string`, sem revalidar) — o trust boundary e so a rota.
 
+// ══════════════════════════════════════════════════════════════════
+// Task 7 (E3): reemissao e identificacaoAlterada eram COPIADOS do navegador
+// (dadosFinais.reemissao / dadosFinais.identificacaoAlterada) pro ledger de
+// consumo e pro log — cliente adulterado reemitia trocando nome/CPF e
+// logando identificacaoAlterada:false. O servidor tem antes (exameSnap) x
+// depois (dadosFinais) na MESMA transacao: derivado aqui, o cliente nao
+// controla mais o carimbo.
+// ══════════════════════════════════════════════════════════════════
+describe('E3 — reemissao e identificacaoAlterada derivados no servidor (nao do cliente)', () => {
+  test('reemissao deriva de emitidoEm do exame — cliente nao manda o flag e mesmo assim vem true', async () => {
+    const id = await seedExameEmitidoSemGaveta();   // ja emitido (legado, sem gaveta)
+    const r = await emitir(id, KEY_A);               // helper NAO manda dadosFinais.reemissao
+    assert.equal(r.ok, true);
+    assert.equal(r.reemissao, true, 'exame ja tinha emitidoEm — e reemissao de verdade');
+    const consumoSnap = await db.collection('consumo').where('exameId', '==', id).get();
+    assert.equal(consumoSnap.docs.length, 1);
+    assert.equal(consumoSnap.docs[0].data().reemissao, true, 'ledger precisa refletir o servidor, nao o cliente');
+  });
+
+  test('identificacaoAlterada deriva comparando antes (exame) x depois (dadosFinais) — cliente mentindo false e ignorado', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);   // 1a emissao: pacienteNome 'Paciente E'
+    const r = await emitir(id, KEY_B, { pacienteNome: 'Paciente Trocado', identificacaoAlterada: false });
+    assert.equal(r.ok, true);
+    assert.equal(r.replay, false);
+    assert.equal(r.reemissao, true);
+    assert.equal(r.identificacaoAlterada, true, 'cliente mandou false, mas o nome mudou de verdade — servidor nao confia');
+  });
+
+  test('primeira emissao (sem emitidoEm antes): reemissao e identificacaoAlterada vem false', async () => {
+    const id = await seedExame();
+    const r = await emitir(id, KEY_A);
+    assert.equal(r.ok, true);
+    assert.equal(r.reemissao, false);
+    assert.equal(r.identificacaoAlterada, false);
+  });
+
+  test('replay (mesma key) devolve false nos dois carimbos — replay nao e um ato novo de emissao', async () => {
+    const id = await seedExameEmitidoSemGaveta();
+    await emitir(id, KEY_A);   // vira reemissao real, pdfPendente:true
+    const r = await emitir(id, KEY_A);   // replay da mesma tentativa
+    assert.equal(r.replay, true);
+    assert.equal(r.reemissao, false, 'replay nao e um ato novo de emissao');
+    assert.equal(r.identificacaoAlterada, false);
+  });
+});
+
 describe('E8 — laudo cancelado recusa emissao (nao revive cobrando)', () => {
   test('status cancelado: recusa sem cobrar, sem tocar consumo/gaveta privada', async () => {
     const id = await seedExame();

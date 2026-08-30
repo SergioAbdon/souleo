@@ -154,14 +154,19 @@ export async function POST(req: NextRequest) {
 
     // ══ 2. AUDIT LOG (nao critico) ══
     // So na emissao NOVA: o replay nao e um ato novo de emissao.
+    // E3: os carimbos vem de `resultado` (derivados no servidor dentro da
+    // transacao, exameSnap x dadosFinais) — nao mais de `dadosFinais`, que e
+    // o corpo cru que o cliente mandou e podia mentir (reemitir trocando
+    // nome/CPF e logar identificacaoAlterada:false). Os clientes podem
+    // continuar mandando os flags; o servidor simplesmente ignora.
     if (!resultado.replay) {
       try {
         await dbAdmin.collection('logs').add({
           tipo: 'emissao',
           exameId,
           wsId,
-          reemissao: !!(dadosFinais.reemissao),
-          identificacaoAlterada: !!(dadosFinais.identificacaoAlterada),
+          reemissao: resultado.reemissao,
+          identificacaoAlterada: resultado.identificacaoAlterada,
           ts: FieldValue.serverTimestamp(),
           medicoUid,
         });

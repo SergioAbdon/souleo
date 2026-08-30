@@ -75,8 +75,22 @@ export type ResultadoEmissao =
   // `pdfPendente`: o PDF assinado desta emissao ainda NAO esta salvo. Numa
   // emissao nova e sempre true (a rota vai gerar agora); num replay diz se a
   // rota deve REGERAR (C1) ou so devolver o pdfUrl que existe.
-  | { ok: true; tipo: 'franquia' | 'creditos' | null; replay: boolean; pdfPendente: boolean; pdfUrl: string | null }
+  // `reemissao`/`identificacaoAlterada` (E3): carimbos de auditoria DERIVADOS
+  // no servidor (nao mais copiados do cliente) — replay devolve false nos
+  // dois, replay nao e um ato novo de emissao.
+  | {
+      ok: true; tipo: 'franquia' | 'creditos' | null; replay: boolean; pdfPendente: boolean; pdfUrl: string | null;
+      reemissao: boolean; identificacaoAlterada: boolean;
+    }
   | { ok: false; motivo: MotivoEmissao };
+
+// E3: os dois carimbos anti-fraude eram copiados do navegador
+// (dadosFinais.reemissao / dadosFinais.identificacaoAlterada) — cliente
+// adulterado reemitia trocando nome/CPF do paciente e logando
+// identificacaoAlterada:false. Lista de campos ESPELHA identificacaoMudou()
+// em src/app/laudo/[id]/page.tsx (~linha 1192) — a funcao do cliente e a
+// FONTE, isto aqui e copia; se ela ganhar um campo novo, atualizar aqui tambem.
+const CAMPOS_IDENTIDADE = ['pacienteNome', 'pacienteDtnasc', 'dataExame', 'convenio'] as const;
 
 // ── Publicacao atomica do PDF (fix-wave round 2, achado Codex C4/check-then-
 // write) ──
@@ -231,6 +245,16 @@ export async function emitirComCobranca(db: Firestore, p: {
     if (!subSnap.exists) return { ok: false, motivo: 'sem_plano' };
     if (!exameSnap.exists) return { ok: false, motivo: 'nao_encontrado' };
     const exame = exameSnap.data()!;
+
+    // E3: os dois carimbos anti-fraude eram copiados do navegador. Derivados
+    // aqui do antes (exameSnap) x depois (dadosFinais) — cliente adulterado
+    // nao esconde mais uma reemissao nem uma troca de identidade do paciente.
+    // Lista de campos espelha identificacaoMudou() (laudo/[id]/page.tsx).
+    const reemissao = !!exame.emitidoEm;
+    const identificacaoAlterada = reemissao && CAMPOS_IDENTIDADE.some(
+      (c) => c in p.dadosFinais && String(p.dadosFinais[c] ?? '') !== String(exame[c] ?? ''),
+    );
+
     // Caneta do autor (D2): laudo com autor definido so o proprio emite —
     // igual a regra publicada ("autor ou sem autor"). Sem autor pode assumir.
     const autor = exame.medicoUid as string | undefined;
@@ -264,6 +288,9 @@ export async function emitirComCobranca(db: Firestore, p: {
         // novo aqui, e o direito de regerar morre no primeiro PDF salvo.
         pdfPendente: privSnap.data()?.pdfPendente === true,
         pdfUrl: (exame.pdfUrl as string) || null,
+        // Replay nao e um ato novo de emissao — os carimbos da tentativa
+        // VENCEDORA ja foram gravados no consumo/log dela, nao aqui de novo.
+        reemissao: false, identificacaoAlterada: false,
       };
     }
 
@@ -318,10 +345,13 @@ export async function emitirComCobranca(db: Firestore, p: {
       tipoExame: (p.dadosFinais.tipoExame as string) || '',
       convenio: (p.dadosFinais.convenio as string) || '',
       tipo: tipo === 'franquia' ? 'franquia' : 'credito',
-      reemissao: !!(p.dadosFinais.reemissao),
+      reemissao,
       emitidoEm: FieldValue.serverTimestamp(),
     });
 
-    return { ok: true, tipo, replay: false, pdfPendente: true, pdfUrl: (exame.pdfUrl as string) || null };
+    return {
+      ok: true, tipo, replay: false, pdfPendente: true, pdfUrl: (exame.pdfUrl as string) || null,
+      reemissao, identificacaoAlterada,
+    };
   });
 }
