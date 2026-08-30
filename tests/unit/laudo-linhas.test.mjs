@@ -6,7 +6,7 @@
 // fix nada disso era lido (o walker só via <p>/<li> de primeiro nível).
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { linhasAchados, linhasConclusoes } from '../../src/lib/laudo-linhas.ts';
+import { linhasAchados, linhasConclusoes, cortarAchadosConclusoes } from '../../src/lib/laudo-linhas.ts';
 
 const H3 = '<h3>CONCLUSÃO</h3>';
 
@@ -70,5 +70,22 @@ describe('linhasConclusoes', () => {
 
   test('o próprio título CONCLUSÃO não vira linha', () => {
     assert.deepEqual(linhasConclusoes(`${H3}<ol><li>Uma.</li></ol>`), ['Uma.']);
+  });
+});
+
+describe('cortarAchadosConclusoes', () => {
+  test('h3 digitado no meio dos achados NAO corta', () => {
+    const html = '<p>a</p><h3>Titulo do medico</h3><p>b</p><h3>CONCLUSÃO</h3><ol><li>c</li></ol>';
+    const { achadosHtml, conclusoesHtml } = cortarAchadosConclusoes(html);
+    assert.ok(achadosHtml.includes('Titulo do medico'));
+    assert.ok(achadosHtml.includes('<p>b</p>'));
+    assert.ok(!achadosHtml.includes('CONCLUS'));
+    assert.ok(conclusoesHtml.includes('<li>c</li>'));
+  });
+
+  test('sem titulo CONCLUS devolve tudo como achados', () => {
+    const r = cortarAchadosConclusoes('<p>a</p><h3>IMPRESSAO</h3><p>b</p>');
+    assert.ok(r.achadosHtml.includes('IMPRESSAO'));
+    assert.equal(r.conclusoesHtml, '');
   });
 });

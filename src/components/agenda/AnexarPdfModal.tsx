@@ -23,9 +23,13 @@ const MENSAGENS_ERRO: Record<string, string> = {
   sem_plano: 'Nenhum plano ativo encontrado.',
   exame_de_outro_medico: 'Este exame já tem outro médico como autor.',
   sem_permissao: 'Sem permissão para emitir neste local.',
+  cancelado: 'Este exame foi cancelado. Anexar de novo exige recriar o exame.',
 };
 
-type ExameRef = { id: string; pacienteNome?: string; tipoExame?: string; convenio?: string };
+// X21: `tipoExame` aqui é o ID do catálogo (vai em `dadosFinais` pro
+// /api/emitir tal como está — nunca o nome de exibição, que corrompia o
+// campo no doc). `tipoNome` é só pra exibição na UI deste modal.
+type ExameRef = { id: string; pacienteNome?: string; tipoExame?: string; tipoNome?: string; convenio?: string };
 
 type Props = {
   open: boolean;
@@ -45,6 +49,11 @@ export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid }
   const emissaoKeyRef = useRef<{ id: string; key: string } | null>(null);
 
   if (!open || !exame) return null;
+
+  // Ponytail-12: `||` em vez do par `??` repetido no JSX — tipoNome/tipoExame
+  // sao string opcional, entao string vazia cai no mesmo default de "sem
+  // tipo" que null/undefined.
+  const rotulo = exame.tipoNome || exame.tipoExame;
 
   function onSelecionar(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0] || null;
@@ -119,7 +128,7 @@ export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid }
         <div className="p-5 space-y-3">
           <p className="text-sm text-gray-600">
             {exame.pacienteNome || 'Paciente'}
-            {exame.tipoExame ? ` · ${exame.tipoExame}` : ''}
+            {rotulo ? ` · ${rotulo}` : ''}
           </p>
 
           {erro && <div className="bg-red-50 text-red-700 text-sm p-2 rounded">{erro}</div>}

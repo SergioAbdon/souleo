@@ -24,8 +24,14 @@ describe('carimbo de proveniência do motor (F3, achado do teste ao vivo)', () =
     assert.match(lib, /\.\.\.\(p\.extras \|\| \{\}\),\s*\n\s*status: 'emitido'/,
       'o carimbo saiu da transação — voltaria a morrer com o PDF');
   });
-  test('o update pós-PDF grava SÓ a URL', () => {
-    assert.match(src, /update\(\{ pdfUrl \}\)/, 'o update pós-PDF deixou de ser só { pdfUrl }');
+  test('carimbo nunca reaparece no update pos-PDF — a marca so mora na transacao', () => {
+    // Ponytail-4: o assert antigo contava `update({ pdfUrl, pdfErro: ... })`
+    // == 2 — literal DUPLICADO do mesmo pin em emitir-pdf-erro.test.mjs
+    // (tests/api). O que ESTE arquivo existe pra travar e outra coisa:
+    // motorNumeros/carimboMotor nao pode ter vazado pro update pos-PDF —
+    // devolveria ao caminho que morre com o Puppeteer (o achado original).
+    assert.ok(!/update\(\{[^}]*carimbo/i.test(src),
+      'carimboMotor/motorNumeros vazou pro update pos-PDF');
   });
 });
 

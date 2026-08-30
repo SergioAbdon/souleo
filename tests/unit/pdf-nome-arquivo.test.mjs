@@ -12,6 +12,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { sanitizarNomeArq, pathPdf } from '../../src/lib/pdf-path.ts';
 
 const root = path.resolve(import.meta.dirname, '..', '..');
 const ler = (...p) => fs.readFileSync(path.join(root, ...p), 'utf8');
@@ -50,5 +51,57 @@ describe('nome do PDF é do SERVIDOR (I3 / ARQ-I2)', () => {
     // E o pdf-server não monta path por conta própria (uma fonte só).
     const serverSrc = semComentarios(ler('src', 'lib', 'pdf-server.ts'));
     assert.ok(!/`laudos\//.test(serverSrc), 'pdf-server voltou a montar o path do PDF na mão');
+  });
+});
+
+// Round 3 (Codex Critical, item 1) + round 4 (item 2): PATH ÚNICO POR
+// TENTATIVA. Sem isto, 2 uploads do MESMO paciente/tipo (retry, corrida de
+// reemissão) escreviam o MESMO objeto — o perdedor podia sobrescrever os
+// BYTES do vencedor, ou ressuscitar a URL já distribuída de um laudo
+// cancelado (cenário reemissão → cancel → upload atrasado). Round 4: o
+// sufixo virou a emissaoKey INTEIRA (8 chars era colidível de propósito — a
+// key vem do cliente) e emissaoKey virou obrigatória (sem ramo "legado sem
+// sufixo" pra reabrir a janela).
+describe('path único por tentativa — sufixo de emissaoKey (rounds 3+4)', () => {
+  test('a key INTEIRA (com hifens) sobrevive à sanitização e fica idempotente', () => {
+    const key = 'a1b2c3d4-e5f6-47a8-9b0c-d1e2f3a4b5c6';
+    const base = 'ECOTT JOAO SILVA';
+    const comSufixo = `${base} ${key}`;
+    const sanitizado = sanitizarNomeArq(comSufixo, 'ex1');
+    assert.equal(sanitizado, `ECOTT_JOAO_SILVA_${key}`, 'hifens sobrevivem — sanitizarNomeArq so filtra fora de [A-Za-z0-9À-ÿ _-]');
+    // Idempotente: uma correção que releia esse nome da metadata do snapshot
+    // e sanitize de novo tem que mirar o MESMO objeto.
+    assert.equal(sanitizarNomeArq(sanitizado, 'ex1'), sanitizado, 'idempotente — regeração futura acerta o MESMO objeto');
+  });
+
+  test('2 tentativas do MESMO paciente/tipo com keys diferentes nascem em objetos DIFERENTES', () => {
+    const base = 'ECOTT JOAO SILVA';
+    const keyA = 'aaaaaaaa-1111-4222-8333-444444444444';
+    const keyB = 'bbbbbbbb-1111-4222-8333-444444444444';
+    const nomeA = sanitizarNomeArq(`${base} ${keyA}`, 'ex1');
+    const nomeB = sanitizarNomeArq(`${base} ${keyB}`, 'ex1');
+    assert.notEqual(pathPdf('ws1', 'ex1', nomeA), pathPdf('ws1', 'ex1', nomeB),
+      'C1/C2/C3/C4-bytes: o perdedor nunca escreve por cima do objeto do vencedor');
+  });
+
+  test('/api/emitir monta o sufixo ANTES de sanitizar com a key INTEIRA, sem ramo condicional (round 4: obrigatoria)', () => {
+    assert.match(emitirSrc, /const nomeArqTentativa = `\$\{nomeArq\} \$\{emissaoKey\}`;/);
+  });
+
+  test('os 3 call sites que tocam Storage usam nomeArqTentativa (suficado), nunca o nomeArq cru', () => {
+    assert.match(emitirSrc, /salvarPdfBuffer\(pdfAnexadoBuf, wsId, exameId, nomeArqTentativa\)/);
+    assert.match(emitirSrc, /gerarESalvarPdf\(pdfHtml, wsId, exameId, nomeArqTentativa, podePublicar\)/);
+    // Round 4 (item 3): salvarSnapshotHtml saiu de dentro de gerarESalvarPdf
+    // — agora são 2 chamadas explícitas na rota (sucesso + catch), as 2 com
+    // nomeArqTentativa e sufixando o OBJETO pela própria key (round 5).
+    // Contagem canônica das 2 chamadas: tests/unit/
+    // pdf-snapshot-pos-publicacao.test.mjs (round 7, Ponytail item 6 —
+    // duplicata daqui saiu).
+  });
+
+  test('a rota recusa 400 sem emissaoKey valida (round 4, item 1) — sem ramo "legado sem key"', () => {
+    assert.match(emitirSrc, /if \(!emissaoKeyValida\(emissaoKey\)\) \{/);
+    assert.ok(emitirSrc.includes("error: 'emissaoKey obrigatoria — recarregue a pagina'"));
+    assert.ok(!/emissaoKey !== undefined/.test(emitirSrc), 'ramo "opcional" (undefined passa) nao pode voltar');
   });
 });

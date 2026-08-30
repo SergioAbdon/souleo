@@ -57,17 +57,31 @@ function corteConclusao(html: string): number {
   return (html || '').search(/<h3[^>]*>\s*CONCLUS/i);
 }
 
+/**
+ * X1: corte ÚNICO de achados×conclusões — mesmo critério do merge por linha.
+ * O EditorLaudo cortava no primeiro <h3> QUALQUER: um "### " digitado nos
+ * comentários jogava o resto do laudo na caixa CONCLUSÃO do PDF assinado,
+ * enquanto Word/texto (que já usavam corteConclusao) saíam certos.
+ */
+export function cortarAchadosConclusoes(html: string): { achadosHtml: string; conclusoesHtml: string } {
+  const i = corteConclusao(html);
+  if (i < 0) return { achadosHtml: html || '', conclusoesHtml: '' };
+  const resto = (html || '').slice(i);
+  const fim = /<\/h3\s*>/i.exec(resto);
+  return {
+    achadosHtml: (html || '').slice(0, i),
+    conclusoesHtml: fim ? resto.slice(fim.index + fim[0].length) : '',
+  };
+}
+
 /** Linhas de ACHADOS = tudo antes do `<h3>CONCLUSÃO</h3>`. */
 export function linhasAchados(html: string): string[] {
-  const i = corteConclusao(html);
-  return linhas(i < 0 ? html : (html || '').slice(0, i));
+  const { achadosHtml } = cortarAchadosConclusoes(html);
+  return linhas(achadosHtml);
 }
 
 /** Linhas de CONCLUSÕES = tudo depois do `</h3>` (o `<ol>` e o que vier). */
 export function linhasConclusoes(html: string): string[] {
-  const i = corteConclusao(html);
-  if (i < 0) return [];
-  const resto = (html || '').slice(i);
-  const fim = /<\/h3\s*>/i.exec(resto);
-  return fim ? linhas(resto.slice(fim.index + fim[0].length)) : [];
+  const { conclusoesHtml } = cortarAchadosConclusoes(html);
+  return linhas(conclusoesHtml);
 }

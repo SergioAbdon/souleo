@@ -11,7 +11,7 @@
 // ══════════════════════════════════════════════════════════════════
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { montarPdfMoldura } from '../../src/lib/pdf-moldura.ts';
+import { montarPdfMoldura, corSegura } from '../../src/lib/pdf-moldura.ts';
 import { substituirCamposAdministrativos } from '../../src/lib/correcao-admin.ts';
 import { gerarPdfHtmlTexto } from '../../src/lib/pdf-texto.ts';
 import fs from 'node:fs';
@@ -453,5 +453,75 @@ describe('montarPdfMoldura — campos e âncoras', () => {
     const corrigido = substituirCamposAdministrativos(html, { convenio: 'C & D', solicitante: 'Dr. X' });
     assert.notEqual(corrigido, null, 'valor escapado tem que continuar casando com a âncora');
     assert.ok(corrigido.includes('>C &amp; D</span>'));
+  });
+});
+
+// ── X10 + P17 (tríade onda-0): cor do workspace e logo/assinatura ──
+// `corPrimaria` é gravada pelo dono via navegador (regra do Firestore não
+// valida formato) e entra em atributo `style` sem escape em TODAS as
+// saídas — inclusive o HTML renderizado pelo Chrome do servidor, congelado
+// no snapshot. `logoB64`/`sigB64` viravam `<img src>` aceitando qualquer
+// string: uma URL `https://` é um beacon de rede a cada emissão.
+describe('corSegura — vocabulário fechado (hex ou fallback), X10', () => {
+  test('aceita hex, rejeita payload', () => {
+    assert.equal(corSegura('#8B1A1A'), '#8B1A1A');
+    assert.equal(corSegura('#abc'), '#abc');
+    assert.equal(corSegura('#fff"><img src=x onerror=alert(1)>'), '#8B1A1A');
+    assert.equal(corSegura('red'), '#8B1A1A'); // vocabulário fechado: só hex
+    assert.equal(corSegura(undefined), '#8B1A1A');
+  });
+});
+
+describe('montarPdfMoldura — cor e imagens travadas na entrada (X10 + P17)', () => {
+  const cfgBase = { p1: '#0B5FA5', clinicaNome: 'X', sigTexto: '' };
+
+  test('cor fora do vocabulário hex cai no fallback (não entra crua no style)', () => {
+    const payload = '#fff"><img src=x onerror=alert(1)>';
+    const html = montarPdfMoldura({
+      titulo: 'T', identificacao: [], corpoHtml: '', cfg: { ...cfgBase, p1: payload },
+    });
+    assert.ok(!html.includes(payload), 'payload da cor chegou cru no style');
+    assert.ok(html.includes('#8B1A1A'), 'fallback do laudo não foi usado');
+  });
+
+  test('logoB64 https vira vazio (P17)', () => {
+    const html = montarPdfMoldura({
+      titulo: 'T', identificacao: [], corpoHtml: '', cfg: { ...cfgBase, logoB64: 'https://evil.tld/a.png' },
+    });
+    assert.ok(!html.includes('evil.tld'));
+    assert.ok(!html.includes('<img'), 'sem data: o <img> nem deveria existir');
+  });
+
+  test('sigB64 https vira vazio (P17)', () => {
+    const html = montarPdfMoldura({
+      titulo: 'T', identificacao: [], corpoHtml: '', cfg: { ...cfgBase, sigB64: 'https://evil.tld/b.png' },
+    });
+    assert.ok(!html.includes('evil.tld'));
+  });
+
+  test('logoB64/sigB64 com data: continua passando (caso real)', () => {
+    const html = montarPdfMoldura({
+      titulo: 'T', identificacao: [], corpoHtml: '',
+      cfg: { ...cfgBase, logoB64: 'data:image/png;base64,AAA', sigB64: 'data:image/png;base64,BBB' },
+    });
+    assert.ok(html.includes('<img src="data:image/png;base64,AAA"'));
+    assert.ok(html.includes('<img src="data:image/png;base64,BBB"'));
+  });
+
+  // X10 follow-up (reviewer): pdf-texto.ts destructurava p1 cru e o
+  // interpolava em cssExtra (.corpo h2/h3) — que montarPdfMoldura injeta
+  // SEM escape dentro de <style> (é CSS, não texto). Seguro hoje só porque
+  // o único chamador (laudo-texto/page.tsx) valida antes de chamar — mesma
+  // brecha que pdf-params.ts já fechava: função exportada não pode confiar
+  // no chamador.
+  test('gerarPdfHtmlTexto: p1 fora do vocabulário hex não vaza pro <style> (X10 follow-up)', () => {
+    const payload = 'red}</style><img src=x onerror=alert(1)><style>';
+    const html = gerarPdfHtmlTexto({
+      p1: payload, clinicaNome: 'X', tituloExame: 'T',
+      identificacao: { nome: 'A' }, htmlCorpo: '<p>x</p>', assinatura: { nome: 'Dr. Y' },
+    });
+    assert.ok(!html.includes(payload), 'payload de p1 vazou cru pro CSS/HTML');
+    assert.ok(!html.includes('<img src=x onerror'), 'payload escapou do <style> e virou markup');
+    assert.ok(html.includes('#8B1A1A'), 'fallback do laudo não foi usado');
   });
 });

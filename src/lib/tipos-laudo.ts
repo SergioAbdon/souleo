@@ -30,6 +30,25 @@ export function modalidadeDe(
   return tipoId === 'doppler_carotidas' ? 'texto' : 'motor';
 }
 
+// X20: 3 telas (Worklist, Histórico, ficha do paciente) decidiam a rota do
+// laudo por conta própria e 2 delas caíam sempre no motor de eco pra
+// qualquer modalidade (a ficha do paciente já fazia certo — esta função é
+// aquela lógica, promovida a dono único).
+// Ruflo-1 (fix-wave triade pre-merge): modalidade 'pdf' devolve `null` — NÃO
+// tem editor próprio (é anexo puro), e mandar pra /laudo-texto abria o
+// TipTap com um corpo vazio que ninguém preenche. `null` = "sem tela pra
+// abrir"; cada chamador decide o que fazer (mostrar o pdfUrl que já existe,
+// ou avisar que é preciso anexar pela Worklist).
+export function rotaDoLaudo(
+  exameId: string,
+  tipoExame: string | undefined,
+  tiposMap: Record<string, TipoLaudo>,
+): string | null {
+  const m = modalidadeDe(tiposMap[tipoExame ?? ''], tipoExame ?? '');
+  if (m === 'pdf') return null;
+  return m === 'texto' ? `/laudo-texto/${exameId}` : `/laudo/${exameId}`;
+}
+
 export const MODELO_CAROTIDAS = [
   '<h2>DOPPLER DE CARÓTIDAS E VERTEBRAIS</h2>',
   '<p><strong>Técnica:</strong> exame realizado com transdutor linear, em repouso, com análise bidimensional, Doppler colorido e espectral.</p>',

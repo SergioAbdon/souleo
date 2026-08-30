@@ -80,7 +80,7 @@ describe('ehErroDeConexao — só browser morto autoriza o retry', () => {
     test(`retry em: ${msg}`, () => assert.equal(ehErroDeConexao(new Error(msg)), true));
   }
   for (const msg of [
-    'imagem não assinada — emissão abortada',
+    'imagem não assinada — PDF abortado',
     'Navigation timeout of 30000 ms exceeded',
     'Chrome nao encontrado',
     // M5: erro do DOM do laudo, não do browser. Com `protocol error`/`detached`

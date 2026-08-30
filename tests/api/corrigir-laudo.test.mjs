@@ -179,6 +179,73 @@ describe('emissaoMudou (CAS de reemissao durante a correcao — I4)', () => {
   });
 });
 
+// Ruflo-4 (fix-wave triade pre-merge): `acao:'regerar'` reusa a rota do
+// "Regerar PDF" (Worklist) mas NAO e correcao administrativa — sem
+// dependencia de injecao (a rota nao e importavel fim-a-fim, mesma limitacao
+// documentada acima em "alvo do PDF corrigido nao vem do doc do exame"),
+// trava o CONTRATO por leitura de fonte.
+describe('/api/corrigir-laudo — modo regerar (Ruflo-4)', () => {
+  test('regerando usa antes.convenio/antes.solicitante, nunca o corpo, e pula o update dos 2 campos', async () => {
+    const bruto = await readFile(new URL('../../src/app/api/corrigir-laudo/route.ts', import.meta.url), 'utf8');
+    const src = bruto.replace(/^\s*\/\/.*$/gm, '');
+    assert.match(src, /const regerando = acao === 'regerar';/);
+    assert.match(src, /const convFinal = regerando \? String\(antes\.convenio \?\? ''\) : conv;/);
+    assert.match(src, /const solicFinal = regerando \? String\(antes\.solicitante \?\? ''\) : solic;/);
+    assert.match(src, /if \(!regerando\) \{\s*await ref\.update\(\{\s*convenio: convFinal,\s*solicitante: solicFinal,/);
+    assert.match(src, /tipo: regerando \? 'regeracao_pdf' : 'correcao_admin',/);
+  });
+
+  test('podeSalvar do Puppeteer exige status emitido (espelho do guard E8) — nao so o selo de emissao', async () => {
+    const bruto = await readFile(new URL('../../src/app/api/corrigir-laudo/route.ts', import.meta.url), 'utf8');
+    const src = bruto.replace(/^\s*\/\/.*$/gm, '');
+    assert.match(src, /atualData\?\.status === 'emitido' && !emissaoMudou\(antes\.emitidoEm, atualData\?\.emitidoEm\)/,
+      'cancelar/transferir preservam emitidoEm — sem o status a correcao republica PDF de laudo cancelado');
+  });
+
+  test('sucesso publica pelo caminho atomico (round 2) e baixa pdfPendente so se a key nao mudou', async () => {
+    const bruto = await readFile(new URL('../../src/app/api/corrigir-laudo/route.ts', import.meta.url), 'utf8');
+    const src = bruto.replace(/^\s*\/\/.*$/gm, '');
+    // Round 2 (Codex, check-then-write/C4): a rota nao escreve mais
+    // `{ pdfUrl, pdfErro: delete }` direto no doc — quem publica e
+    // publicarCorrecaoSeAindaEmitido (emitir-admin.ts), atomica com a baixa
+    // condicional de pdfPendente (so se a gaveta nao mudou de key desde o guard).
+    assert.match(src, /const keyNoGuard = \(await refEmissaoPrivada\(dbAdmin, wsId, exameId\)\.get\(\)\)\.data\(\)\?\.emissaoKey \?\? null;/,
+      'key da gaveta capturada JUNTO do guard, antes do Puppeteer rodar');
+    assert.match(src, /await publicarCorrecaoSeAindaEmitido\(dbAdmin, \{\s*wsId, exameId, pdfUrl: pdfCandidato, emitidoEmAntes: antes\.emitidoEm, keyNoGuard,\s*\}\)/,
+      'sucesso da regeracao tem que publicar pelo mesmo caminho atomico que /api/emitir (round 2)');
+    assert.ok(!/\.update\(\{ pdfUrl,/.test(src),
+      'a rota nao pode mais escrever pdfUrl direto no doc — quem publica e publicarCorrecaoSeAindaEmitido');
+    // Round 7 (Ponytail item 4): pin de import exato e a copia duplicada do
+    // pin !/marcarPdfPronto/ saíram — a copia canonica mora em
+    // emitir-pdf-erro.test.mjs.
+  });
+
+  test('catch do Puppeteer marca pdfErro pela transacao condicional (round 3, item 3)', async () => {
+    const bruto = await readFile(new URL('../../src/app/api/corrigir-laudo/route.ts', import.meta.url), 'utf8');
+    const src = bruto.replace(/^\s*\/\/.*$/gm, '');
+    // Round 2 (Ruflo-3a) marcava incondicionalmente; round 2-item-3 passou a
+    // reler o doc e checar status antes; round 3 (Codex Important) fechou a
+    // ultima janela: o check-then-update fora de transacao ainda deixava o
+    // catch da tentativa A carimbar pdfErro no exame que B tinha acabado de
+    // reemitir com sucesso. Agora e uma UNICA transacao condicional, com
+    // keyNoGuard (se a gaveta mudou de key, uma emissao nova esta em curso).
+    assert.match(src, /await marcarPdfErroSeAindaDono\(dbAdmin, \{ wsId, exameId, emissaoKey: keyNoGuard \}\)\s*\n\s*\.catch\(\(e2\) => console\.error\('marcar pdfErro \(nao-critico\):', e2\)\)/,
+      'catch do Puppeteer tem que marcar pdfErro pela transacao condicional, nao por check-then-update solto');
+    // Round 7 (Ponytail item 4): pin negativo do formato round-2 (check-then-
+    // update manual) saiu — arqueologia sem valor de regressao a esta altura.
+  });
+
+  test('perdeu a corrida no publicar: pdfErro fica reemitido_durante_correcao + orfao APAGADO (round 3, item 2)', async () => {
+    const bruto = await readFile(new URL('../../src/app/api/corrigir-laudo/route.ts', import.meta.url), 'utf8');
+    const src = bruto.replace(/^\s*\/\/.*$/gm, '');
+    assert.ok(/console\.warn\(`corrigir-laudo: PDF gerado mas perdeu a corrida/.test(src),
+      'perda de corrida tem que ficar rastreavel pelo log');
+    assert.match(src, /await apagarPdfObjeto\(wsId, exameId, snapshot\.nomeArq\);/,
+      'round 3 (Codex Critical, item 2): a correcao apaga o objeto que ELA MESMA regravou ao perder a corrida');
+    // Round 7 (Ponytail item 4): pin de import exato saiu.
+  });
+});
+
 // S5-T14 (I3/ARQ-I3): o formato do path mora em `pdf-path.ts` — a correcao
 // nao faz mais parse de URL pra redescobrir o alvo (o nome vai na metadata do
 // snapshot, gravado pelo servidor na emissao com esta mesma funcao).

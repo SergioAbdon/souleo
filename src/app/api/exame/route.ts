@@ -33,6 +33,7 @@ function apagadorDePdf(wsId: string) {
 const ACOES = { apagar: apagarExame, cancelar: cancelarExame, transferir: transferirExame } as const;
 const STATUS: Record<string, number> = {
   sem_permissao: 403, nao_encontrado: 404, nao_emitido: 409, alvo_invalido: 400,
+  conflito_emissao: 409,  // E6: CAS perdeu — uma emissao commitou no meio
 };
 
 export async function POST(req: NextRequest) {

@@ -43,7 +43,7 @@ import { montarLaudoHtml } from '@/lib/senna90-render';
 import { mesclarLinhas } from '@/lib/laudo-merge';
 import { checkboxParaMedida, medidaParaChecked } from '@/lib/checkbox-codec';
 import { TIPOS_LAUDO_PADRAO, modalidadeDe, type TipoLaudo } from '@/lib/tipos-laudo';
-import { montarPdfMoldura } from '@/lib/pdf-moldura';
+import { montarPdfMoldura, corSegura } from '@/lib/pdf-moldura';
 import { montarParamsHtml, paramsParaTexto, paramsParaDocx } from '@/lib/pdf-params';
 // F3-T5 (a virada do cabo): com `senna93Params()` ON, quem pinta #out-*,
 // #calc-* e #params-tbody é o Senna93 — os MESMOS nós, o mesmo formato de
@@ -230,7 +230,7 @@ function LaudoPageInner() {
   const [tipo, setTipo] = useState<TipoLaudo | null>(null);
 
   const exameId = params.id as string;
-  const p1 = (workspace?.corPrimaria as string) || '#8B1A1A';
+  const p1 = corSegura((workspace?.corPrimaria as string) || '#8B1A1A');
   const clinicaNome = (workspace?.nomeClinica as string) || 'Consultório';
   const clinicaSlogan = (workspace?.slogan as string) || '';
   const clinicaEndRaw = (workspace?.endereco as string) || '';
@@ -284,8 +284,17 @@ function LaudoPageInner() {
   // ia parar no motor de eco — tabela de medidas e conclusões que não são
   // desse exame. Só redireciona se AINDA NÃO foi emitido: carótidas já
   // assinadas pelo motor continuam abrindo/reimprimindo onde nasceram.
+  //
+  // X20: `jaEmitidoDoc` era `!!emitidoEm` — campo que `transferirExame`
+  // MANTÉM de propósito mesmo devolvendo o exame pro rascunho (status volta
+  // a 'andamento', ver `docFechado` abaixo). Um exame de texto transferido
+  // chegava aqui com `emitidoEm` ainda setado → guarda achava "já assinado,
+  // fica onde está" e NÃO redirecionava pro editor certo. Por `status`, o
+  // transferido (andamento) e o de texto genuinamente emitido passam a ser
+  // julgados pelo estado ATUAL do doc, não por um campo que sobrevive à
+  // transferência.
   const tipoId = (exame?.tipoExame as string) || '';
-  const jaEmitidoDoc = !!exame?.emitidoEm;
+  const jaEmitidoDoc = (exame?.status as string) === 'emitido';
   // Documento FECHADO pro rascunho (gate de `salvarLaudo`, fix2/n1). Não é
   // `emitidoEm`: `transferirExame` devolve o consumo, apaga o `pdfUrl` e põe
   // `status:'andamento'`, mas MANTÉM o `emitidoEm` — o médico que recebeu o
@@ -1511,6 +1520,7 @@ function LaudoPageInner() {
         nao_medico: 'Somente perfil medico assina laudo.',
         exame_de_outro_medico: 'Este laudo e de outro medico. Peca a transferencia ao responsavel.',
         nao_encontrado: 'Exame nao encontrado. Recarregue a lista.',
+        cancelado: 'Este laudo foi cancelado. Emitir de novo exige recriar o exame.',
         erro: 'Erro ao emitir. Tente novamente.',
       };
       toast(msgs[resultado.motivo || 'erro'] || 'Erro ao emitir.');

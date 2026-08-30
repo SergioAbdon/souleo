@@ -19,6 +19,7 @@ import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
 import MolduraA4 from '@/components/laudo/MolduraA4';
 import { gerarPdfHtmlTexto } from '@/lib/pdf-texto';
+import { corSegura } from '@/lib/pdf-moldura';
 import { idadeLabel, fmtData, fmtCep, fmtTel } from '@/lib/paciente-fmt';
 
 export default function LaudoTextoPage() {
@@ -41,7 +42,7 @@ export default function LaudoTextoPage() {
 
   const exameId = params.id as string;
   // Cabeçalho/rodapé da folha — mesmos dados que vão pro PDF (moldura única).
-  const p1 = (workspace?.corPrimaria as string) || '#8B1A1A';
+  const p1 = corSegura((workspace?.corPrimaria as string) || '#8B1A1A');
   const clinicaNome = (workspace?.nomeClinica as string) || 'Consultório';
   const tituloExame = ((tipo?.nome as string) || (exame?.tipoExame as string) || 'LAUDO').toUpperCase();
   const especialidade = ((profile?.especialidade as string) || '').replace(/\\/g, ' e ').replace(/\//g, ' e ');
@@ -220,6 +221,7 @@ export default function LaudoTextoPage() {
         nao_medico: 'Somente perfil médico assina laudo.',
         exame_de_outro_medico: 'Este laudo é de outro médico. Peça a transferência ao responsável.',
         nao_encontrado: 'Exame não encontrado. Recarregue a lista.',
+        cancelado: 'Este laudo foi cancelado. Emitir de novo exige recriar o exame.',
       };
       alert(msgs[resultado.motivo || ''] || 'Erro ao emitir. Tente novamente.');
       return;

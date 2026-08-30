@@ -11,7 +11,7 @@ import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import Placeholder from '@tiptap/extension-placeholder';
 import { useImperativeHandle, forwardRef, useRef, useState, useEffect } from 'react';
-import { linhasAchados, linhasConclusoes } from '@/lib/laudo-linhas';
+import { linhasAchados, linhasConclusoes, cortarAchadosConclusoes } from '@/lib/laudo-linhas';
 
 // ── Toolbar ──
 function Toolbar({ editor, onAddFrase, editable }: { editor: Editor | null; onAddFrase?: () => void; editable: boolean }) {
@@ -131,39 +131,12 @@ const EditorLaudo = forwardRef<EditorLaudoRef, Props>(({ placeholder, onAddFrase
   useImperativeHandle(ref, () => ({
     getHTML: () => editor?.getHTML() || '',
 
-    // Separar achados e conclusões do HTML unificado
-    getAchadosHTML: () => {
-      if (!editor) return '';
-      const div = document.createElement('div');
-      div.innerHTML = editor.getHTML();
-      // Tudo antes do <h3> de conclusão
-      const h3 = div.querySelector('h3');
-      if (!h3) return div.innerHTML;
-      let html = '';
-      let node = div.firstChild;
-      while (node && node !== h3) {
-        if (node instanceof HTMLElement) html += node.outerHTML;
-        else if (node.textContent?.trim()) html += node.textContent;
-        node = node.nextSibling;
-      }
-      return html;
-    },
-
-    getConclusoesHTML: () => {
-      if (!editor) return '';
-      const div = document.createElement('div');
-      div.innerHTML = editor.getHTML();
-      const h3 = div.querySelector('h3');
-      if (!h3) return '';
-      let html = '';
-      let node = h3.nextSibling;
-      while (node) {
-        if (node instanceof HTMLElement) html += node.outerHTML;
-        else if (node.textContent?.trim()) html += node.textContent;
-        node = node.nextSibling;
-      }
-      return html;
-    },
+    // X1: corte ÚNICO com laudo-linhas.ts (mesmo critério do merge por linha
+    // e do Word/texto) — o walker de DOM que havia aqui cortava no primeiro
+    // <h3> QUALQUER, então um "### " digitado nos comentários jogava o resto
+    // do laudo na caixa CONCLUSÃO do PDF assinado.
+    getAchadosHTML: () => editor ? cortarAchadosConclusoes(editor.getHTML()).achadosHtml : '',
+    getConclusoesHTML: () => editor ? cortarAchadosConclusoes(editor.getHTML()).conclusoesHtml : '',
 
     // Extração PURA (laudo-linhas.ts, testada em tests/unit): o walker de
     // primeiro nível que havia aqui não enxergava lista com marcadores /

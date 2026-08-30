@@ -17,8 +17,11 @@
 import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeApp, getApps } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
-import { emitirComCobranca, emissaoKeyValida, refEmissaoPrivada } from '../../src/lib/emitir-admin.ts';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import {
+  emitirComCobranca, emissaoKeyValida, refEmissaoPrivada,
+  publicarPdfSeAindaDono, publicarCorrecaoSeAindaEmitido, marcarPdfErroSeAindaDono,
+} from '../../src/lib/emitir-admin.ts';
 
 let db;
 const CONTA = 'contaE', WS = 'wsE';
@@ -47,6 +50,19 @@ async function seedExame() {
     pacienteNome: 'Paciente E', tipoExame: 'ECOTT', status: 'andamento', medicoUid: MED,
   });
   // Limpa ledger anterior deste exame (id e unico, mas o filtro e por exameId).
+  return id;
+}
+
+// Round 4 (item 4): exame EMITIDO antes da onda-0 nunca teve gaveta privada
+// (o mecanismo nasceu depois) — direto no doc, sem passar por emitir(), pra
+// nao criar a gaveta junto. keyNoGuard capturado contra um exame desses e
+// null (gaveta ausente), nao string vazia nem undefined por acidente.
+async function seedExameEmitidoSemGaveta() {
+  const id = `exELegado${++n}_${Date.now()}`;
+  await db.doc(`workspaces/${WS}/exames/${id}`).set({
+    pacienteNome: 'Paciente Legado', tipoExame: 'ECOTT', status: 'emitido', medicoUid: MED,
+    emitidoEm: FieldValue.serverTimestamp(),
+  });
   return id;
 }
 
@@ -199,25 +215,32 @@ describe('E2 — reemissao deliberada continua cobrando', () => {
   });
 });
 
-describe('cliente antigo / key invalida — comportamento legado (aditivo)', () => {
-  test('(e) sem key: 2 POSTs cobram 2x (como hoje), nada e gravado no exame', async () => {
+// Round 4 (Codex): emissaoKey virou OBRIGATORIA na rota — o ramo "cliente
+// legado sem key" que morava aqui (2 testes) foi removido junto com o codigo
+// que testava. A rota agora recusa 400 sem key (pin de fonte em
+// emitir-pdf-erro.test.mjs); emitirComCobranca confia no tipo (`emissaoKey:
+// string`, sem revalidar) — o trust boundary e so a rota.
+
+describe('E8 — laudo cancelado recusa emissao (nao revive cobrando)', () => {
+  test('status cancelado: recusa sem cobrar, sem tocar consumo/gaveta privada', async () => {
     const id = await seedExame();
-    await emitir(id, undefined);
-    await emitir(id, undefined);
-    assert.equal(await usada(), 2);
-    assert.equal(await consumos(id), 2);
-    assert.equal((await exameDoc(id)).emissaoKeyAtual, undefined);
-    // Ponytail R3: sem key nao ha o que travar — a gaveta privada nem chega
-    // a ser criada (doc morto seria pior que "sem trava").
-    assert.equal(await privDoc(id), undefined, 'sem key nao cria doc na gaveta privada');
+    await db.doc(`workspaces/${WS}/exames/${id}`).update({ status: 'cancelado' });
+    const r = await emitir(id, KEY_A);
+    assert.deepEqual(r, { ok: false, motivo: 'cancelado' });
+    assert.equal(await usada(), 0);
+    assert.equal(await consumos(id), 0);
+    assert.equal(await privDoc(id), undefined, 'nada gravado na gaveta privada');
   });
 
-  test('(d) key malformada nao vira trava (a rota ja devolveu 400; a lib ignora)', async () => {
+  test('guard vem ANTES do replay: key de uma emissao cancelada depois nao vira "sucesso"', async () => {
     const id = await seedExame();
-    await emitir(id, 'nao-e-uuid');
-    assert.equal(await privDoc(id), undefined);
-    await emitir(id, 'nao-e-uuid');
-    assert.equal(await usada(), 2);
+    await emitir(id, KEY_A);                     // emite e cobra 1
+    assert.equal(await usada(), 1);
+    await db.doc(`workspaces/${WS}/exames/${id}`).update({ status: 'cancelado' });
+    const r = await emitir(id, KEY_A);            // mesma key, exame agora cancelado
+    assert.deepEqual(r, { ok: false, motivo: 'cancelado' },
+      'replay nao pode devolver sucesso pra um exame que foi cancelado depois');
+    assert.equal(await usada(), 1, 'nao cobrou de novo');
   });
 });
 
@@ -259,5 +282,258 @@ describe('billing e autoria seguem intactos (E9: primeira rede do caminho de din
       wsId: 'wsSemPlanoE', exameId: 'e1', uid: MED, medicoUid: MED, dadosFinais: {}, emissaoKey: KEY_A,
     });
     assert.equal(r.motivo, 'sem_plano');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════
+// Fix-wave round 2 (Codex, achado C4/check-then-write): a cerca pre-upload
+// (podePublicar em route.ts) sozinha e check-then-write — entre ela e o
+// `update({pdfUrl})` cabiam segundos de cancelamento/transferencia/reemissao.
+// E baixar pdfPendente como escrita SEPARADA do pdfUrl deixava o PERDEDOR de
+// uma corrida apagar a bandeira do VENCEDOR (pdfPendente e por EXAME, nao
+// por tentativa). Testado direto contra o emulador (real, nao fake) — as
+// duas funcoes tomam `db` como as outras deste arquivo.
+// ══════════════════════════════════════════════════════════════════
+describe('publicarPdfSeAindaDono — ponteiro + bandeira atomicos (round 2)', () => {
+  test('publica o pdfUrl e baixa pdfPendente no MESMO commit quando ninguem mexeu', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);   // pdfPendente:true na gaveta
+    const ok = await publicarPdfSeAindaDono(db, { wsId: WS, exameId: id, pdfUrl: 'https://x/novo.pdf', emissaoKey: KEY_A, declaraSnapshotSufixado: true });
+    assert.equal(ok, true);
+    assert.equal((await exameDoc(id)).pdfUrl, 'https://x/novo.pdf');
+    assert.equal((await privDoc(id)).pdfPendente, false);
+    // Round 6 (Codex Critical, item 1): snapshotSufixado grava no MESMO
+    // commit — declara pra lerSnapshotHtml que o snapshot desta emissao (a
+    // rota salva logo em seguida) mora SO no path sufixado, sem fallback.
+    assert.equal((await privDoc(id)).snapshotSufixado, true);
+  });
+
+  test('declaraSnapshotSufixado:false (ou omitido) nao grava a flag mesmo publicando o pdfUrl', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    const ok = await publicarPdfSeAindaDono(db, { wsId: WS, exameId: id, pdfUrl: 'https://x/anexo.pdf', emissaoKey: KEY_A, declaraSnapshotSufixado: false });
+    assert.equal(ok, true);
+    assert.equal((await exameDoc(id)).pdfUrl, 'https://x/anexo.pdf');
+    assert.equal((await privDoc(id)).snapshotSufixado, undefined,
+      'round 7 (Ruflo item 1): contrato explicito — sem a flag, nao mente pra lerSnapshotHtml');
+  });
+
+  test('status virou cancelado entre a cerca e a transacao → false, doc intacto, pdfPendente continua true', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    await db.doc(`workspaces/${WS}/exames/${id}`).update({ status: 'cancelado' });
+    const ok = await publicarPdfSeAindaDono(db, { wsId: WS, exameId: id, pdfUrl: 'https://x/orfao.pdf', emissaoKey: KEY_A, declaraSnapshotSufixado: true });
+    assert.equal(ok, false);
+    assert.equal((await exameDoc(id)).pdfUrl, undefined, 'doc intacto — nao publicou por cima do cancelado');
+    assert.equal((await privDoc(id)).pdfPendente, true, 'bandeira nao foi mexida por quem perdeu');
+  });
+
+  test('key trocada (reemissao nova comecou) → false, nao apaga a bandeira da emissao vencedora', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    await pdfSalvo(id);              // emissao A "terminou": pdfPendente:false
+    await emitir(id, KEY_B);         // reemissao nova: key muda, pdfPendente volta a true
+    const ok = await publicarPdfSeAindaDono(db, { wsId: WS, exameId: id, pdfUrl: 'https://x/velho.pdf', emissaoKey: KEY_A, declaraSnapshotSufixado: true });
+    assert.equal(ok, false, 'a tentativa A perdeu — a gaveta agora e da B');
+    assert.equal((await privDoc(id)).emissaoKey, KEY_B);
+    assert.equal((await privDoc(id)).pdfPendente, true, 'C4 fechado: bandeira da B nao foi apagada pela A perdedora');
+  });
+
+  test('exame nao existe → false, sem excecao', async () => {
+    const ok = await publicarPdfSeAindaDono(db, { wsId: WS, exameId: 'naoExisteE2', pdfUrl: 'https://x/x.pdf', emissaoKey: KEY_A, declaraSnapshotSufixado: true });
+    assert.equal(ok, false);
+  });
+});
+
+describe('publicarCorrecaoSeAindaEmitido — ponteiro condicional a emitidoEm, bandeira condicional a key (round 2)', () => {
+  test('emitidoEm e key intactos → publica ponteiro e baixa pdfPendente', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    const antes = await exameDoc(id);
+    const ok = await publicarCorrecaoSeAindaEmitido(db, {
+      wsId: WS, exameId: id, pdfUrl: 'https://x/certo.pdf', emitidoEmAntes: antes.emitidoEm, keyNoGuard: KEY_A,
+    });
+    assert.equal(ok, true);
+    assert.equal((await exameDoc(id)).pdfUrl, 'https://x/certo.pdf');
+    assert.equal((await privDoc(id)).pdfPendente, false);
+  });
+
+  test('reemitiu durante a regeracao (emitidoEm mudou) → false, doc intacto', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    const antes = await exameDoc(id);
+    await emitir(id, KEY_B);   // reemissao real: emitidoEm muda de novo
+    const ok = await publicarCorrecaoSeAindaEmitido(db, {
+      wsId: WS, exameId: id, pdfUrl: 'https://x/velho-corrigido.pdf', emitidoEmAntes: antes.emitidoEm, keyNoGuard: KEY_A,
+    });
+    assert.equal(ok, false);
+    assert.notEqual((await exameDoc(id)).pdfUrl, 'https://x/velho-corrigido.pdf');
+  });
+
+  test('status virou cancelado durante a regeracao → false', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    const antes = await exameDoc(id);
+    await db.doc(`workspaces/${WS}/exames/${id}`).update({ status: 'cancelado' });
+    const ok = await publicarCorrecaoSeAindaEmitido(db, {
+      wsId: WS, exameId: id, pdfUrl: 'https://x/x.pdf', emitidoEmAntes: antes.emitidoEm, keyNoGuard: KEY_A,
+    });
+    assert.equal(ok, false);
+  });
+
+  test('emitidoEm intacto mas a gaveta trocou de key: publica o ponteiro mas NAO baixa pdfPendente (C4 do lado da correcao)', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    const antes = await exameDoc(id);
+    // Cenario sintetico (escrita direta, nao via emitirComCobranca): prova o
+    // CONTRATO da funcao — as 2 condicoes (ponteiro por emitidoEm, bandeira
+    // por key) sao independentes. Uma reemissao ORGANICA tambem mudaria
+    // emitidoEm (o teste acima ja cobre isso); este cobre a trava da
+    // bandeira isoladamente.
+    await refEmissaoPrivada(db, WS, id).set({ emissaoKey: KEY_B, pdfPendente: true }, { merge: true });
+    const ok = await publicarCorrecaoSeAindaEmitido(db, {
+      wsId: WS, exameId: id, pdfUrl: 'https://x/corrigido.pdf', emitidoEmAntes: antes.emitidoEm, keyNoGuard: KEY_A,
+    });
+    assert.equal(ok, true, 'emitidoEm bateu — o ponteiro publica');
+    assert.equal((await exameDoc(id)).pdfUrl, 'https://x/corrigido.pdf');
+    assert.equal((await privDoc(id)).pdfPendente, true, 'bandeira da emissao B NAO foi apagada pela correcao');
+    assert.equal((await privDoc(id)).emissaoKey, KEY_B, 'key da B intacta');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════
+// Fix-wave round 3 (Codex Important, item 3): os catches de Puppeteer/upload
+// marcavam pdfErro por check-then-update FORA de transacao — a mesma janela
+// das outras escritas desta onda: o catch da tentativa A podia carimbar
+// pdfErro no exame que a tentativa B acabou de reemitir com sucesso. Testado
+// direto contra o emulador (real, mesmo padrao das describes acima).
+// ══════════════════════════════════════════════════════════════════
+describe('marcarPdfErroSeAindaDono — marca condicional (round 3)', () => {
+  test('marca pdfErro quando ainda e dono (status emitido + key bate)', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    const ok = await marcarPdfErroSeAindaDono(db, { wsId: WS, exameId: id, emissaoKey: KEY_A });
+    assert.equal(ok, true);
+    assert.equal((await exameDoc(id)).pdfErro, 'erro_pdf');
+  });
+
+  test('key mudou (reemissao em curso) → false, nao marca o exame da emissao vencedora', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    await pdfSalvo(id);
+    await emitir(id, KEY_B);   // reemissao real: gaveta agora e da B
+    const ok = await marcarPdfErroSeAindaDono(db, { wsId: WS, exameId: id, emissaoKey: KEY_A });
+    assert.equal(ok, false, 'a tentativa A perdeu — a marca de erro nao e dela');
+    assert.equal((await exameDoc(id)).pdfErro, undefined, 'exame da emissao B nao pode herdar erro da A');
+  });
+
+  test('status cancelado → false, doc intacto', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    await db.doc(`workspaces/${WS}/exames/${id}`).update({ status: 'cancelado' });
+    const ok = await marcarPdfErroSeAindaDono(db, { wsId: WS, exameId: id, emissaoKey: KEY_A });
+    assert.equal(ok, false);
+    assert.equal((await exameDoc(id)).pdfErro, undefined);
+  });
+
+});
+
+// ══════════════════════════════════════════════════════════════════
+// Fix-wave round 6 (Codex Critical, item 1): `declaraSnapshotSufixado` grava
+// `snapshotSufixado:true` no MESMO commit, mas SO quando o caller vai mesmo
+// tentar salvar um snapshot sufixado logo depois — no /api/emitir isso e so
+// o braco pdfHtml (anexo nunca tem HTML; o catch de corrigir-laudo nunca
+// regrava snapshot). Sem a flag, declarar "sufixado" mentiria pra
+// lerSnapshotHtml num exame que na verdade nao ganhou snapshot novo.
+// ══════════════════════════════════════════════════════════════════
+describe('marcarPdfErroSeAindaDono — declaraSnapshotSufixado (round 6)', () => {
+  test('declaraSnapshotSufixado:true grava a flag no MESMO commit que marca pdfErro', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    const ok = await marcarPdfErroSeAindaDono(db, { wsId: WS, exameId: id, emissaoKey: KEY_A, declaraSnapshotSufixado: true });
+    assert.equal(ok, true);
+    assert.equal((await exameDoc(id)).pdfErro, 'erro_pdf');
+    assert.equal((await privDoc(id)).snapshotSufixado, true);
+  });
+
+  test('sem declaraSnapshotSufixado (omitido): pdfErro marca, mas a flag NAO e gravada', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    const ok = await marcarPdfErroSeAindaDono(db, { wsId: WS, exameId: id, emissaoKey: KEY_A });
+    assert.equal(ok, true);
+    assert.equal((await exameDoc(id)).pdfErro, 'erro_pdf');
+    assert.equal((await privDoc(id)).snapshotSufixado, undefined,
+      'anexo (sem HTML) e o catch de corrigir-laudo (nunca regrava snapshot) NAO podem declarar a flag');
+  });
+
+  test('perdeu a corrida (false): nao marca pdfErro NEM a flag, mesmo pedindo declaraSnapshotSufixado', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A);
+    await pdfSalvo(id);
+    await emitir(id, KEY_B);   // reemissao real: gaveta agora e da B
+    const ok = await marcarPdfErroSeAindaDono(db, { wsId: WS, exameId: id, emissaoKey: KEY_A, declaraSnapshotSufixado: true });
+    assert.equal(ok, false);
+    assert.equal((await privDoc(id)).snapshotSufixado, undefined, 'A perdeu — nao pode declarar nada na gaveta da B');
+    assert.equal((await privDoc(id)).emissaoKey, KEY_B, 'gaveta continua da B, intacta');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════
+// Fix-wave round 4 (Codex Important, item 4): a comparacao antiga de
+// marcarPdfErroSeAindaDono (`if (p.emissaoKey && ...)`) PULAVA a checagem
+// inteira quando p.emissaoKey era null/undefined — uma correcao iniciada com
+// keyNoGuard null (gaveta ainda ausente, exame emitido ANTES da onda-0)
+// carimbava pdfErro no exame mesmo que uma emissao NOVA (com key) tivesse
+// vencido a corrida no meio do caminho. Agora null e comparado como
+// qualquer outro valor (`?? null` dos 2 lados). publicarCorrecaoSeAindaEmitido
+// ja fazia a comparacao certa (verificado abaixo, sem mudanca de codigo la).
+// ══════════════════════════════════════════════════════════════════
+describe('marcarPdfErroSeAindaDono — round 4: null e um valor comparavel (keyNoGuard)', () => {
+  test('exame pre-onda-0 (gaveta nunca existiu): keyNoGuard null e gaveta ainda ausente → dono confirma, marca', async () => {
+    const id = await seedExameEmitidoSemGaveta();
+    assert.equal(await privDoc(id), undefined, 'sanity: sem gaveta mesmo');
+    const ok = await marcarPdfErroSeAindaDono(db, { wsId: WS, exameId: id, emissaoKey: null });
+    assert.equal(ok, true);
+    assert.equal((await exameDoc(id)).pdfErro, 'erro_pdf');
+  });
+
+  test('gaveta GANHOU key depois do guard (null → key nova): bloqueia, nao marca no exame da emissao vencedora', async () => {
+    const id = await seedExameEmitidoSemGaveta();
+    // Simula: a correcao capturou keyNoGuard=null (gaveta ainda nao existia
+    // quando ela comecou); ENQUANTO isso uma emissao nova comecou e criou a
+    // gaveta com key.
+    await refEmissaoPrivada(db, WS, id).set({ emissaoKey: KEY_A, pdfPendente: true });
+    const ok = await marcarPdfErroSeAindaDono(db, { wsId: WS, exameId: id, emissaoKey: null });
+    assert.equal(ok, false,
+      'antes (`if (p.emissaoKey && ...)`) isto pulava a checagem e marcava mesmo assim — achado Codex Important round 4');
+    assert.equal((await exameDoc(id)).pdfErro, undefined, 'exame da emissao vencedora nao pode herdar erro de uma correcao velha');
+  });
+});
+
+describe('publicarCorrecaoSeAindaEmitido — round 4: ja era null-safe, confirma os mesmos 2 casos', () => {
+  test('exame pre-onda-0 (gaveta nunca existiu): keyNoGuard null e gaveta ainda ausente → publica ponteiro E baixa a bandeira (cria a gaveta)', async () => {
+    const id = await seedExameEmitidoSemGaveta();
+    const antes = await exameDoc(id);
+    const ok = await publicarCorrecaoSeAindaEmitido(db, {
+      wsId: WS, exameId: id, pdfUrl: 'https://x/legado-corrigido.pdf', emitidoEmAntes: antes.emitidoEm, keyNoGuard: null,
+    });
+    assert.equal(ok, true);
+    assert.equal((await exameDoc(id)).pdfUrl, 'https://x/legado-corrigido.pdf');
+    assert.equal((await privDoc(id)).pdfPendente, false);
+  });
+
+  test('gaveta GANHOU key durante a correcao (null → key nova, emitidoEm intacto): publica o ponteiro mas NAO baixa a bandeira da emissao nova', async () => {
+    const id = await seedExameEmitidoSemGaveta();
+    const antes = await exameDoc(id);
+    // Escrita direta (nao via emitirComCobranca) pra isolar a trava da
+    // bandeira sem tambem mexer em emitidoEm — uma reemissao ORGANICA real
+    // ja e coberta pelo teste equivalente do round 2/3 acima.
+    await refEmissaoPrivada(db, WS, id).set({ emissaoKey: KEY_A, pdfPendente: true });
+    const ok = await publicarCorrecaoSeAindaEmitido(db, {
+      wsId: WS, exameId: id, pdfUrl: 'https://x/corrigido.pdf', emitidoEmAntes: antes.emitidoEm, keyNoGuard: null,
+    });
+    assert.equal(ok, true, 'emitidoEm nao mudou — o ponteiro publica');
+    assert.equal((await privDoc(id)).pdfPendente, true, 'bandeira da emissao nova (key A) NAO foi apagada');
+    assert.equal((await privDoc(id)).emissaoKey, KEY_A, 'key da emissao nova intacta');
   });
 });

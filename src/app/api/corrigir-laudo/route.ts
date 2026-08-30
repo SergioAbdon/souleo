@@ -14,10 +14,11 @@
 // ══════════════════════════════════════════════════════════════════
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
-import { gerarESalvarPdf, lerSnapshotHtml } from '@/lib/pdf-server';
+import { gerarESalvarPdf, lerSnapshotHtml, apagarPdfObjeto, salvarSnapshotHtml } from '@/lib/pdf-server';
 import { requireUid, adminDb } from '@/lib/auth-admin';
 import { resolverPapel, podeCorrigir, idValido } from '@/lib/exame-admin';
 import { substituirCamposAdministrativos, emissaoMudou } from '@/lib/correcao-admin';
+import { publicarCorrecaoSeAindaEmitido, marcarPdfErroSeAindaDono, refEmissaoPrivada } from '@/lib/emitir-admin';
 
 // Trust boundary: o corpo vem do navegador. Sem isto um `convenio` que não é
 // string era GRAVADO no exame (que alimenta extrato/glosa/PDF) e só depois
@@ -40,12 +41,18 @@ export async function POST(req: NextRequest) {
   }
   try {
     const body = await req.json();
-    const { wsId, exameId, convenio, solicitante } = body as {
+    const { wsId, exameId, convenio, solicitante, acao } = body as {
       wsId: unknown;
       exameId: unknown;
       convenio?: unknown;
       solicitante?: unknown;
+      // Ruflo-4: 'regerar' e o botao "Regerar PDF" (Worklist/Historico) —
+      // mesma rota, mas NAO e correcao: nao ha dado novo de convenio/
+      // solicitante, so PDF que faltou. Ausente = comportamento antigo
+      // (correcao de verdade).
+      acao?: unknown;
     };
+    const regerando = acao === 'regerar';
 
     // Ids entram em path do Firestore e do Storage (`workspaces/${wsId}/...`):
     // um id com '/' remonta o path. Mesma guarda do resto do servidor.
@@ -88,13 +95,24 @@ export async function POST(req: NextRequest) {
     // convênio errado sem chamar o médico. Por isso nada aqui toca no
     // conteúdo clínico — o HTML vem do snapshot, não do navegador.
 
+    // Ruflo-4: em modo `regerar` o convenio/solicitante do CORPO nao vale
+    // nada — o pedido e "regenere o PDF", nao "troque estes campos". Usa o
+    // que ja esta gravado no exame (fonte de verdade), nunca o que o cliente
+    // mandou; auditoria honesta (log 'regeracao_pdf') e ZERO escrita nova
+    // desses 2 campos, pra nao dar a impressao de correcao administrativa.
+    const convFinal = regerando ? String(antes.convenio ?? '') : conv;
+    const solicFinal = regerando ? String(antes.solicitante ?? '') : solic;
+
     // Atualiza SÓ os 2 campos administrativos no TOPO (fonte única — Phase B).
-    // NÃO toca emitidoEm/status/medidas/billing. Sem crédito.
-    await ref.update({
-      convenio: conv,
-      solicitante: solic,
-      atualizadoEm: FieldValue.serverTimestamp(),
-    });
+    // NÃO toca emitidoEm/status/medidas/billing. Sem crédito. Pulado em modo
+    // `regerar` — os campos nao mudam por definicao (achado acima).
+    if (!regerando) {
+      await ref.update({
+        convenio: convFinal,
+        solicitante: solicFinal,
+        atualizadoEm: FieldValue.serverTimestamp(),
+      });
+    }
 
     // Regera o PDF a partir do SNAPSHOT congelado na emissão (decisão Dr.
     // Sérgio: o PDF tem que sair corrigido também, não só o banco). Não-crítico
@@ -106,29 +124,85 @@ export async function POST(req: NextRequest) {
     let pdfDesatualizado = false;
     let reemitido = false;
     const snapshot = await lerSnapshotHtml(wsId, exameId);
-    const htmlCorrigido = snapshot && substituirCamposAdministrativos(snapshot.html, { convenio: conv, solicitante: solic });
+    const htmlCorrigido = snapshot && substituirCamposAdministrativos(snapshot.html, { convenio: convFinal, solicitante: solicFinal });
     if (htmlCorrigido && snapshot) {
+      // Round 2 (item 3): key da gaveta capturada JUNTO do guard, antes do
+      // Puppeteer rodar — so serve pra decidir se pode baixar `pdfPendente`
+      // depois (nao entra no gate principal, que segue sendo status+
+      // emitidoEm). Se uma emissao NOVA comecar durante a regeracao, a key
+      // muda e a correcao nao apaga a bandeira dela (C4 do lado da correcao).
+      const keyNoGuard = (await refEmissaoPrivada(dbAdmin, wsId, exameId).get()).data()?.emissaoKey ?? null;
       try {
         // Mesmo nome de arquivo da emissão: regrava o MESMO objeto, o link já
         // entregue ao paciente/convênio continua valendo. O alvo vem da
         // metadata do snapshot (servidor) — NUNCA de `antes.pdfUrl`, campo que
         // o médico-autor pode reescrever no doc emitido e apontar pro PDF de
         // outro paciente (fix I1).
-        pdfUrl = await gerarESalvarPdf(htmlCorrigido, wsId, exameId, snapshot.nomeArq, async () => {
-          // Fix I4: reemitiram enquanto o Puppeteer rodava? Então este PDF já
-          // nasceu velho — não publica.
+        const pdfCandidato = await gerarESalvarPdf(htmlCorrigido, wsId, exameId, snapshot.nomeArq, async () => {
+          // Fix I4 (pre-upload, poupa Puppeteer/Storage na corrida comum):
+          // checado DEPOIS do page.pdf e ANTES de salvarPdfBuffer, dentro de
+          // gerarESalvarPdf. Espelho do guard E8 (Codex-3/Ruflo-6): cancelar/
+          // transferir PRESERVAM emitidoEm — sem o status aqui, uma correcao
+          // que corre contra um cancelamento republicava PDF de laudo
+          // cancelado. Quem decide o PONTEIRO de verdade e
+          // publicarCorrecaoSeAindaEmitido logo abaixo (round 2, Codex) —
+          // esta cerca sozinha e check-then-write.
           const atual = await ref.get();
-          return !emissaoMudou(antes.emitidoEm, atual.data()?.emitidoEm);
+          const atualData = atual.data();
+          return atualData?.status === 'emitido' && !emissaoMudou(antes.emitidoEm, atualData?.emitidoEm);
         });
-        if (pdfUrl === null) {
+        if (pdfCandidato === null) {
           reemitido = true;
           pdfDesatualizado = true;
+        } else if (await publicarCorrecaoSeAindaEmitido(dbAdmin, {
+          wsId, exameId, pdfUrl: pdfCandidato, emitidoEmAntes: antes.emitidoEm, keyNoGuard,
+        })) {
+          // Follow-up Task 6 (P4/E4): um exame recuperado por aqui (regerado
+          // depois de uma falha de PDF no /api/emitir) nao pode ficar com a
+          // marca `pdfErro` velha pra sempre — a tela voltaria a mostrar
+          // "Regerar PDF" num laudo que ja tem PDF de novo. `pdfErro:delete`
+          // e a baixa de `pdfPendente` (Codex-4) saem no MESMO commit de
+          // `pdfUrl` agora — publicarCorrecaoSeAindaEmitido cuida dos dois.
+          pdfUrl = pdfCandidato;
+          // Round 4 (Codex Critical, item 3): o snapshot SO congela DEPOIS
+          // da publicacao CONFIRMADA — antes gerarESalvarPdf gravava o
+          // snapshot incondicionalmente, e uma correcao que perdesse a
+          // corrida (objeto ja apagado por apagarPdfObjeto no braco `else`)
+          // podia mesmo assim ter deixado o snapshot com o corpo CORRIGIDO
+          // por cima do que uma reemissao concorrente tivesse acabado de
+          // publicar. Congela `htmlCorrigido` (o corpo JA com o convenio/
+          // solicitante novos) no MESMO path que `lerSnapshotHtml` leu
+          // (`snapshot.path`, round 5) — NUNCA deriva de novo pela key atual
+          // da gaveta: um exame emitido entre a onda-0 e o round 5 tem gaveta
+          // com key mas snapshot ainda no canonico (round 5 nao existia
+          // quando emitiu); rederivar pela key migraria silenciosamente pro
+          // path sufixado, divergindo do que a leitura resolveu.
+          await salvarSnapshotHtml(htmlCorrigido, wsId, exameId, snapshot.nomeArq, { path: snapshot.path });
         } else {
-          await ref.update({ pdfUrl });
+          // Round 3 (Codex Critical, item 2): perdeu a corrida DEPOIS da
+          // cerca pre-upload — apaga o objeto que ELA MESMA acabou de
+          // regravar. Seguro: se foi reemissao, a emissao nova tem o proprio
+          // path suficado (round 3, item 1 — so em /api/emitir) e nao mira
+          // mais este `snapshot.nomeArq`; se foi cancelamento, o objeto ja
+          // tinha sido apagado por `limparPdf` e este delete e so idempotente.
+          reemitido = true;
+          pdfDesatualizado = true;
+          await apagarPdfObjeto(wsId, exameId, snapshot.nomeArq);
+          console.warn(`corrigir-laudo: PDF gerado mas perdeu a corrida — objeto orfao apagado (ws=${wsId} exame=${exameId})`);
         }
       } catch (e) {
         pdfErro = 'erro_pdf';   // detalhe (bucket/path) só no log do servidor
         console.error('corrigir-laudo PDF error:', e);
+        // Ruflo-3a: espelha /api/emitir — sem marcar aqui, um laudo que
+        // falhou a regeracao ficava com o doc dizendo "sem pdfErro" (o
+        // sucesso e quem limpa; a falha tambem precisa gravar). Round 3
+        // (Codex Important, item 3): marca dentro de transacao condicional
+        // com `keyNoGuard` — se a key da gaveta mudou desde o guard, uma
+        // emissao NOVA esta em curso e a marca de erro nao e nossa (era
+        // check-then-update fora de transacao antes — mesma janela das
+        // outras escritas desta onda).
+        await marcarPdfErroSeAindaDono(dbAdmin, { wsId, exameId, emissaoKey: keyNoGuard })
+          .catch((e2) => console.error('marcar pdfErro (nao-critico):', e2));
       }
     } else {
       pdfDesatualizado = true;
@@ -137,13 +211,16 @@ export async function POST(req: NextRequest) {
     // Auditoria (não-crítico) — mantém glosa/extrato confiáveis (de→para).
     try {
       await dbAdmin.collection('logs').add({
-        tipo: 'correcao_admin',
+        // Ruflo-4: 'regeracao_pdf' nao e uma correcao (nada mudou de
+        // convenio/solicitante) — tipo proprio pra nao poluir o log de
+        // auditoria de correcao administrativa com regeracoes puras.
+        tipo: regerando ? 'regeracao_pdf' : 'correcao_admin',
         wsId,
         exameId,
         medicoUid: uid,
         papel,
         de: { convenio: antes.convenio ?? '', solicitante: antes.solicitante ?? '' },
-        para: { convenio: conv, solicitante: solic },
+        para: { convenio: convFinal, solicitante: solicFinal },
         arquivoPdf: snapshot?.nomeArq ?? '',
         pdfDesatualizado,
         reemitidoDurante: reemitido,

@@ -13,14 +13,16 @@ import AnexarPdfModal from '@/components/agenda/AnexarPdfModal';
 import { dataLocalHoje } from '@/lib/utils';
 import { gerarAccessionNumber } from '@/lib/gerarAccessionNumber';
 import { db, auth } from '@/lib/firebase';
-import { doc, writeBatch, serverTimestamp, getDocs, collection, query, orderBy } from 'firebase/firestore';
+import { doc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { soAdministrativos } from '@/lib/campos-exame';
 import { useRouter } from 'next/navigation';
 import { checkEmissao } from '@/lib/billing';
 import DicomGallery from '@/components/laudo/DicomGallery';
 import { podeEditarLaudo, podeRemoverDaFila, podeCorrigirAdministrativo, ehMedico } from '@/lib/permissoes';
 import StatusPill from '@/components/shell/StatusPill';
-import { TIPOS_LAUDO_PADRAO, modalidadeDe, type TipoLaudo } from '@/lib/tipos-laudo';
+import { modalidadeDe, rotaDoLaudo } from '@/lib/tipos-laudo';
+import { postCorrigirLaudo, msgErroCorrecao } from '@/lib/corrigir-laudo-client';
+import { useTiposLaudo } from '@/hooks/useTiposLaudo';
 import type { AcaoFeegow } from '@/lib/feegow-admin';
 
 // v3: helper pra enviar token Firebase nas chamadas Feegow
@@ -38,19 +40,23 @@ type ExameItem = Record<string, unknown> & {
   convenio?: string; solicitante?: string; sexo?: string; origem?: string;
   feegowAppointId?: string | number; medicoUid?: string;
   acc?: string; cpf?: string; imagensDicom?: string[]; mwlStatus?: string;
+  pdfUrl?: string; pdfErro?: string;
 };
 
 export default function Worklist() {
   const { workspace, profile, papel, user } = useAuth();
   const router = useRouter();
+  const wsId = workspace?.id;
 
   // Quem pode nascer como AUTOR de exame: perfil medico E papel dono/medico
   // no local (MEDREC — medico de perfil com papel recepcao — nao assina aqui).
   const assinaComoAutor = ehMedico(profile) && (papel === 'dono' || papel === 'medico');
 
-  // Catálogo de tipos de laudo (Sub-plano 3): coleção vazia ou erro de leitura
-  // cai no default embutido — nunca fica sem opção no select nem sem rótulo.
-  const [tipos, setTipos] = useState<TipoLaudo[]>(TIPOS_LAUDO_PADRAO);
+  // Catálogo de tipos de laudo (Sub-plano 3, Ponytail-7): coleção vazia ou
+  // erro de leitura cai no default embutido — nunca fica sem opção no select
+  // nem sem rótulo. Hook compartilhado com Histórico e a ficha do paciente.
+  const { tipos, tiposMap } = useTiposLaudo(wsId);
+  const tiposAtivos = tipos.filter(t => t.ativo !== false).sort((a, b) => a.ordem - b.ordem);
 
   const [worklist, setWorklist] = useState<ExameItem[]>([]);
   const [naoRealizados, setNaoRealizados] = useState<ExameItem[]>([]);
@@ -66,6 +72,7 @@ export default function Worklist() {
   const [admConvenio, setAdmConvenio] = useState('');
   const [admSolicitante, setAdmSolicitante] = useState('');
   const [admSalvando, setAdmSalvando] = useState(false);
+  const [regerandoPdf, setRegerandoPdf] = useState<string | null>(null);   // exameId em voo
   const [editPacId, setEditPacId] = useState<string | null>(null);
   const [editExameId, setEditExameId] = useState<string | null>(null);
 
@@ -124,27 +131,6 @@ export default function Worklist() {
   }, [pacCpf]);
 
   // Listener worklist (reage à data selecionada e ao workspace)
-  const wsId = workspace?.id;
-
-  // Catálogo de tipos de laudo — lido uma vez no mount (não precisa de
-  // onSnapshot aqui; a página de edição em Clínica é quem observa live).
-  useEffect(() => {
-    if (!wsId) return;
-    (async () => {
-      try {
-        const snap = await getDocs(query(collection(db, 'workspaces', wsId, 'tiposLaudo'), orderBy('ordem', 'asc')));
-        const lista = snap.docs.map(d => d.data() as TipoLaudo);
-        setTipos(lista.length > 0 ? lista : TIPOS_LAUDO_PADRAO);
-      } catch (e) {
-        console.error('carregar tiposLaudo:', e);
-        setTipos(TIPOS_LAUDO_PADRAO);
-      }
-    })();
-  }, [wsId]);
-
-  const tiposAtivos = tipos.filter(t => t.ativo !== false).sort((a, b) => a.ordem - b.ordem);
-  const tiposMap: Record<string, TipoLaudo> = {};
-  for (const t of tipos) tiposMap[t.id] = t;
 
   useEffect(() => {
     if (!wsId) return;
@@ -422,12 +408,19 @@ export default function Worklist() {
       const dados = ex as Record<string, unknown>;
       if (dados?.pdfUrl) {
         abrirPdfUrl(dados.pdfUrl as string);
-      } else {
-        // Fallback: abrir o laudo em modo leitura (PDF ainda não foi gerado)
-        router.push('/laudo/' + exameId);
+        return;
       }
+      // Fallback: abrir o laudo em modo leitura (PDF ainda não foi gerado)
+      // — despacha pela modalidade real do tipo (X20), não sempre pro motor.
+      const rota = rotaDoLaudo(exameId, dados?.tipoExame as string | undefined, tiposMap);
+      if (rota) { router.push(rota); return; }
+      // Ruflo-1: modalidade 'pdf' nao tem editor proprio — nao ha o que
+      // abrir; os botoes "✏️ Editar"/"🔁 Regerar PDF" da mesma linha anexam.
+      alert('Este exame é de anexo (PDF do aparelho) — use "✏️ Editar" ou "🔁 Regerar PDF" para anexar.');
     } catch (e) {
       console.error('Erro ao abrir PDF:', e);
+      // Sem `dados` (a leitura falhou) não há tipo pra despachar — mesmo
+      // fallback de sempre, equivalente ao default de rotaDoLaudo p/ tipo ausente.
       router.push('/laudo/' + exameId);
     }
   }
@@ -442,11 +435,8 @@ export default function Worklist() {
       setAnexarPdf(item);
       return;
     }
-    if (modalidade === 'texto') {
-      router.push('/laudo-texto/' + item.id);
-    } else {
-      router.push('/laudo/' + item.id);
-    }
+    const rota = rotaDoLaudo(item.id, tipoId, tiposMap);
+    if (rota) router.push(rota);
   }
 
   // ── Correção administrativa (S5-T5/D4) ──
@@ -462,19 +452,11 @@ export default function Worklist() {
     if (!corrigirAdm || !workspace?.id || admSalvando) return;
     setAdmSalvando(true);
     try {
-      const token = await auth.currentUser?.getIdToken();
-      const res = await fetch('/api/corrigir-laudo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
-        body: JSON.stringify({ wsId: workspace.id, exameId: corrigirAdm.id, convenio: admConvenio, solicitante: admSolicitante }),
+      const r = await postCorrigirLaudo({
+        wsId: workspace.id, exameId: corrigirAdm.id, convenio: admConvenio, solicitante: admSolicitante,
       });
-      const r = await res.json();
       if (!r.ok) {
-        alert(r.error === 'nao_emitido' ? 'Este laudo não está emitido.'
-          : r.error === 'sem_permissao' ? 'Você não tem permissão para corrigir aqui.'
-          : r.error === 'reemitido_durante_correcao'
-            ? 'O médico reemitiu o laudo neste instante — a reemissão usa os dados da tela dele e pode ter desfeito esta correção. Confira o laudo novo e refaça se preciso.'
-          : 'Não foi possível salvar a correção. Tente de novo.');
+        alert(msgErroCorrecao(r.error, 'correcao'));
         if (r.error === 'reemitido_durante_correcao') setCorrigirAdm(null);
         return;
       }
@@ -487,6 +469,34 @@ export default function Worklist() {
       alert('Erro de conexão ao salvar a correção.');
     } finally {
       setAdmSalvando(false);
+    }
+  }
+
+  // ── Regerar PDF (Task 6, P4/E4): a emissao falhou DEPOIS de cobrar a
+  // franquia (laudo `emitido` sem `pdfUrl`, marcado com `pdfErro`). Reusa a
+  // MESMA rota da correcao administrativa, com o convenio/solicitante ATUAIS
+  // do exame (sem mudar nada) — regera o PDF a partir do snapshot congelado
+  // na emissao, sem transacao de billing e sem 2a franquia.
+  async function regerarPdf(item: ExameItem) {
+    if (!workspace?.id || regerandoPdf) return;
+    setRegerandoPdf(item.id);
+    try {
+      const r = await postCorrigirLaudo({ wsId: workspace.id, exameId: item.id, acao: 'regerar' });
+      if (!r.ok) {
+        alert(msgErroCorrecao(r.error, 'regerar'));
+        return;
+      }
+      // Snapshot ausente (emitido antigo) ou falha nova do Puppeteer: honesto
+      // — nao ha o que recuperar aqui, so reemitir de novo (2a franquia).
+      if (r.pdfDesatualizado || r.pdfErro) {
+        alert('Snapshot indisponível — reemita o laudo.');
+        return;
+      }
+      alert('PDF regerado com sucesso.');
+    } catch {
+      alert('Erro de conexão ao regerar o PDF.');
+    } finally {
+      setRegerandoPdf(null);
     }
   }
 
@@ -518,7 +528,8 @@ export default function Worklist() {
       return;
     }
     if (!(await checarBillingOuAvisar())) return;
-    router.push(modalidade === 'texto' ? '/laudo-texto/' + item.id : '/laudo/' + item.id);
+    const rota = rotaDoLaudo(item.id, tipoId, tiposMap);
+    if (rota) router.push(rota);
   }
 
   // Filtrar por status + busca texto
@@ -753,6 +764,18 @@ export default function Worklist() {
                             {podeCorrigirAdministrativo(papel) && (
                               <Btn cor="gray" onClick={() => abrirCorrecaoAdm(item)}>✏️ convênio/solicitante</Btn>
                             )}
+                            {/* P4/E4 (Task 6): laudo emitido (franquia ja cobrada) sem
+                                PDF — a rota marcou pdfErro no catch. Regenera do
+                                snapshot pela mesma rota da correcao, sem 2a franquia.
+                                Gate: dono/recepcao (podeCorrigirAdministrativo) OU o
+                                medico-autor — mesma dupla que a rota /api/corrigir-laudo
+                                autoriza no servidor (podeCorrigir); sem o 2o braco o
+                                medico que pagou a franquia nao via o proprio botao. */}
+                            {(podeCorrigirAdministrativo(papel) || item.medicoUid === user?.uid) && item.pdfErro && !item.pdfUrl && (
+                              <Btn cor="red" onClick={() => regerarPdf(item)}>
+                                {regerandoPdf === item.id ? 'Regerando...' : '🔁 Regerar PDF'}
+                              </Btn>
+                            )}
                             <Btn cor="gray" onClick={() => imprimirPdf(item.id)}>🖨️ Imprimir</Btn>
                           </>
                         );
@@ -928,7 +951,13 @@ export default function Worklist() {
         exame={anexarPdf ? {
           id: anexarPdf.id,
           pacienteNome: anexarPdf.pacienteNome as string,
-          tipoExame: tiposMap[(anexarPdf.tipoExame as string) || '']?.nome || (anexarPdf.tipoExame as string),
+          // X21: `tipoExame` tem que continuar sendo o ID do catálogo — vai
+          // em `dadosFinais` pro /api/emitir, que grava por cima do campo no
+          // doc. Mandar o NOME (nome de exibição) corrompia o dado: a
+          // próxima leitura de `modalidadeDe` não reconhecia o id e caía no
+          // default 'motor'. Nome de exibição vai à parte, em `tipoNome`.
+          tipoExame: anexarPdf.tipoExame as string,
+          tipoNome: tiposMap[(anexarPdf.tipoExame as string) || '']?.nome,
           convenio: anexarPdf.convenio as string,
         } : null}
         wsId={workspace?.id || ''}
