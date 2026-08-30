@@ -179,6 +179,40 @@ describe('emissaoMudou (CAS de reemissao durante a correcao — I4)', () => {
   });
 });
 
+// Ruflo-4 (fix-wave triade pre-merge): `acao:'regerar'` reusa a rota do
+// "Regerar PDF" (Worklist) mas NAO e correcao administrativa — sem
+// dependencia de injecao (a rota nao e importavel fim-a-fim, mesma limitacao
+// documentada acima em "alvo do PDF corrigido nao vem do doc do exame"),
+// trava o CONTRATO por leitura de fonte.
+describe('/api/corrigir-laudo — modo regerar (Ruflo-4)', () => {
+  test('regerando usa antes.convenio/antes.solicitante, nunca o corpo, e pula o update dos 2 campos', async () => {
+    const bruto = await readFile(new URL('../../src/app/api/corrigir-laudo/route.ts', import.meta.url), 'utf8');
+    const src = bruto.replace(/^\s*\/\/.*$/gm, '');
+    assert.match(src, /const regerando = acao === 'regerar';/);
+    assert.match(src, /const convFinal = regerando \? String\(antes\.convenio \?\? ''\) : conv;/);
+    assert.match(src, /const solicFinal = regerando \? String\(antes\.solicitante \?\? ''\) : solic;/);
+    assert.match(src, /if \(!regerando\) \{\s*await ref\.update\(\{\s*convenio: convFinal,\s*solicitante: solicFinal,/);
+    assert.match(src, /tipo: regerando \? 'regeracao_pdf' : 'correcao_admin',/);
+  });
+
+  test('podeSalvar do Puppeteer exige status emitido (espelho do guard E8) — nao so o selo de emissao', async () => {
+    const bruto = await readFile(new URL('../../src/app/api/corrigir-laudo/route.ts', import.meta.url), 'utf8');
+    const src = bruto.replace(/^\s*\/\/.*$/gm, '');
+    assert.match(src, /atualData\?\.status === 'emitido' && !emissaoMudou\(antes\.emitidoEm, atualData\?\.emitidoEm\)/,
+      'cancelar/transferir preservam emitidoEm — sem o status a correcao republica PDF de laudo cancelado');
+  });
+
+  test('sucesso baixa pdfPendente (marcarPdfPronto) e falha marca pdfErro no doc', async () => {
+    const bruto = await readFile(new URL('../../src/app/api/corrigir-laudo/route.ts', import.meta.url), 'utf8');
+    const src = bruto.replace(/^\s*\/\/.*$/gm, '');
+    assert.match(src, /await marcarPdfPronto\(dbAdmin, wsId, exameId\)/,
+      'sucesso da regeracao tem que baixar a mesma bandeira que /api/emitir baixa (Codex-4)');
+    assert.match(src, /await ref\.update\(\{ pdfErro: 'erro_pdf' \}\)\s*\n\s*\.catch\(\(e2\) => console\.error\('marcar pdfErro \(nao-critico\):', e2\)\)/,
+      'catch do Puppeteer tem que marcar pdfErro no doc (Ruflo-3a, espelha /api/emitir)');
+    assert.ok(src.includes("import { marcarPdfPronto } from '@/lib/emitir-admin';"));
+  });
+});
+
 // S5-T14 (I3/ARQ-I3): o formato do path mora em `pdf-path.ts` — a correcao
 // nao faz mais parse de URL pra redescobrir o alvo (o nome vai na metadata do
 // snapshot, gravado pelo servidor na emissao com esta mesma funcao).

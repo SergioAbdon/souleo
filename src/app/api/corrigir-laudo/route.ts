@@ -18,6 +18,7 @@ import { gerarESalvarPdf, lerSnapshotHtml } from '@/lib/pdf-server';
 import { requireUid, adminDb } from '@/lib/auth-admin';
 import { resolverPapel, podeCorrigir, idValido } from '@/lib/exame-admin';
 import { substituirCamposAdministrativos, emissaoMudou } from '@/lib/correcao-admin';
+import { marcarPdfPronto } from '@/lib/emitir-admin';
 
 // Trust boundary: o corpo vem do navegador. Sem isto um `convenio` que não é
 // string era GRAVADO no exame (que alimenta extrato/glosa/PDF) e só depois
@@ -40,12 +41,18 @@ export async function POST(req: NextRequest) {
   }
   try {
     const body = await req.json();
-    const { wsId, exameId, convenio, solicitante } = body as {
+    const { wsId, exameId, convenio, solicitante, acao } = body as {
       wsId: unknown;
       exameId: unknown;
       convenio?: unknown;
       solicitante?: unknown;
+      // Ruflo-4: 'regerar' e o botao "Regerar PDF" (Worklist/Historico) —
+      // mesma rota, mas NAO e correcao: nao ha dado novo de convenio/
+      // solicitante, so PDF que faltou. Ausente = comportamento antigo
+      // (correcao de verdade).
+      acao?: unknown;
     };
+    const regerando = acao === 'regerar';
 
     // Ids entram em path do Firestore e do Storage (`workspaces/${wsId}/...`):
     // um id com '/' remonta o path. Mesma guarda do resto do servidor.
@@ -88,13 +95,24 @@ export async function POST(req: NextRequest) {
     // convênio errado sem chamar o médico. Por isso nada aqui toca no
     // conteúdo clínico — o HTML vem do snapshot, não do navegador.
 
+    // Ruflo-4: em modo `regerar` o convenio/solicitante do CORPO nao vale
+    // nada — o pedido e "regenere o PDF", nao "troque estes campos". Usa o
+    // que ja esta gravado no exame (fonte de verdade), nunca o que o cliente
+    // mandou; auditoria honesta (log 'regeracao_pdf') e ZERO escrita nova
+    // desses 2 campos, pra nao dar a impressao de correcao administrativa.
+    const convFinal = regerando ? String(antes.convenio ?? '') : conv;
+    const solicFinal = regerando ? String(antes.solicitante ?? '') : solic;
+
     // Atualiza SÓ os 2 campos administrativos no TOPO (fonte única — Phase B).
-    // NÃO toca emitidoEm/status/medidas/billing. Sem crédito.
-    await ref.update({
-      convenio: conv,
-      solicitante: solic,
-      atualizadoEm: FieldValue.serverTimestamp(),
-    });
+    // NÃO toca emitidoEm/status/medidas/billing. Sem crédito. Pulado em modo
+    // `regerar` — os campos nao mudam por definicao (achado acima).
+    if (!regerando) {
+      await ref.update({
+        convenio: convFinal,
+        solicitante: solicFinal,
+        atualizadoEm: FieldValue.serverTimestamp(),
+      });
+    }
 
     // Regera o PDF a partir do SNAPSHOT congelado na emissão (decisão Dr.
     // Sérgio: o PDF tem que sair corrigido também, não só o banco). Não-crítico
@@ -106,7 +124,7 @@ export async function POST(req: NextRequest) {
     let pdfDesatualizado = false;
     let reemitido = false;
     const snapshot = await lerSnapshotHtml(wsId, exameId);
-    const htmlCorrigido = snapshot && substituirCamposAdministrativos(snapshot.html, { convenio: conv, solicitante: solic });
+    const htmlCorrigido = snapshot && substituirCamposAdministrativos(snapshot.html, { convenio: convFinal, solicitante: solicFinal });
     if (htmlCorrigido && snapshot) {
       try {
         // Mesmo nome de arquivo da emissão: regrava o MESMO objeto, o link já
@@ -116,9 +134,14 @@ export async function POST(req: NextRequest) {
         // outro paciente (fix I1).
         pdfUrl = await gerarESalvarPdf(htmlCorrigido, wsId, exameId, snapshot.nomeArq, async () => {
           // Fix I4: reemitiram enquanto o Puppeteer rodava? Então este PDF já
-          // nasceu velho — não publica.
+          // nasceu velho — não publica. Espelho do guard E8 (Codex-3/Ruflo-6):
+          // cancelar/transferir PRESERVAM emitidoEm — sem o status aqui, uma
+          // correcao que corre contra um cancelamento republicava PDF de laudo
+          // cancelado (o CAS de cancelarExame apaga pdfUrl, mas nao mexe em
+          // emitidoEm, entao o selo sozinho nao via a diferenca).
           const atual = await ref.get();
-          return !emissaoMudou(antes.emitidoEm, atual.data()?.emitidoEm);
+          const atualData = atual.data();
+          return atualData?.status === 'emitido' && !emissaoMudou(antes.emitidoEm, atualData?.emitidoEm);
         });
         if (pdfUrl === null) {
           reemitido = true;
@@ -129,10 +152,22 @@ export async function POST(req: NextRequest) {
           // marca `pdfErro` velha pra sempre — a tela voltaria a mostrar
           // "Regerar PDF" num laudo que ja tem PDF de novo.
           await ref.update({ pdfUrl, pdfErro: FieldValue.delete() });
+          // Codex-4: baixa a MESMA bandeira que /api/emitir baixa (I1) — sem
+          // isto a gaveta privada continuava com `pdfPendente:true` e um
+          // replay da emissaoKey original (retry tardio do cliente) aceitava
+          // de novo o pdfHtml velho da requisicao original e regravava por
+          // cima do PDF que acabou de ser recuperado aqui.
+          await marcarPdfPronto(dbAdmin, wsId, exameId)
+            .catch((e) => console.error('marcar PDF pronto (nao-critico):', e));
         }
       } catch (e) {
         pdfErro = 'erro_pdf';   // detalhe (bucket/path) só no log do servidor
         console.error('corrigir-laudo PDF error:', e);
+        // Ruflo-3a: espelha /api/emitir — sem marcar aqui, um laudo que
+        // falhou a regeracao ficava com o doc dizendo "sem pdfErro" (o
+        // sucesso e quem limpa; a falha tambem precisa gravar).
+        await ref.update({ pdfErro: 'erro_pdf' })
+          .catch((e2) => console.error('marcar pdfErro (nao-critico):', e2));
       }
     } else {
       pdfDesatualizado = true;
@@ -141,13 +176,16 @@ export async function POST(req: NextRequest) {
     // Auditoria (não-crítico) — mantém glosa/extrato confiáveis (de→para).
     try {
       await dbAdmin.collection('logs').add({
-        tipo: 'correcao_admin',
+        // Ruflo-4: 'regeracao_pdf' nao e uma correcao (nada mudou de
+        // convenio/solicitante) — tipo proprio pra nao poluir o log de
+        // auditoria de correcao administrativa com regeracoes puras.
+        tipo: regerando ? 'regeracao_pdf' : 'correcao_admin',
         wsId,
         exameId,
         medicoUid: uid,
         papel,
         de: { convenio: antes.convenio ?? '', solicitante: antes.solicitante ?? '' },
-        para: { convenio: conv, solicitante: solic },
+        para: { convenio: convFinal, solicitante: solicFinal },
         arquivoPdf: snapshot?.nomeArq ?? '',
         pdfDesatualizado,
         reemitidoDurante: reemitido,

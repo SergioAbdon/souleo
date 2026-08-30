@@ -504,10 +504,10 @@ export default function Worklist() {
       const res = await fetch('/api/corrigir-laudo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
-        body: JSON.stringify({
-          wsId: workspace.id, exameId: item.id,
-          convenio: item.convenio || '', solicitante: item.solicitante || '',
-        }),
+        // Ruflo-4: `acao:'regerar'` avisa o servidor que isto NAO e correcao —
+        // convenio/solicitante nem precisam ir no corpo, o servidor usa o que
+        // ja esta gravado no exame (fonte de verdade).
+        body: JSON.stringify({ wsId: workspace.id, exameId: item.id, acao: 'regerar' }),
       });
       const r = await res.json();
       if (!r.ok) {
