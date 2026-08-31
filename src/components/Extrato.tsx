@@ -12,6 +12,9 @@ import { getHistorico, getHonorarios, saveHonorarios, getExtratoContador, increm
 import { checkExtratoLimit } from '@/lib/billing';
 import type { HonorariosConfig } from '@/lib/firestore';
 import { podeVerFinanceiro } from '@/lib/permissoes';
+// Mesmo escape same-origin do X11/X12 — este HTML vira document.write (about:blank
+// herda a origem do app) e paciente/convênio/local são graváveis pela recepção.
+import { escaparHtml } from '@/lib/pdf-moldura';
 
 type ExameItem = Record<string, unknown> & {
   id: string; pacienteNome?: string; tipoExame?: string;
@@ -168,14 +171,15 @@ export default function Extrato() {
   }
 
   function gerarHtmlExtrato(): string {
+    const wsNomeEsc = escaparHtml(wsNome);
     const linhas = exames.map(ex => {
       const conv = (ex.convenio as string) || 'SEM CONVÊNIO';
       return `<tr>
         <td>${fmtDate(ex.dataExame)}</td>
         <td>${fmtEmitido(ex)}</td>
-        <td>${ex.pacienteNome || '—'}</td>
-        <td>${TIPOS_EXAME[ex.tipoExame as string] || ex.tipoExame || '—'}</td>
-        <td>${conv}</td>
+        <td>${escaparHtml(ex.pacienteNome || '—')}</td>
+        <td>${escaparHtml(TIPOS_EXAME[ex.tipoExame as string] || ex.tipoExame || '—')}</td>
+        <td>${escaparHtml(conv)}</td>
       </tr>`;
     }).join('');
 
@@ -183,14 +187,14 @@ export default function Extrato() {
       const val = getValor(conv);
       return `<tr>
         <td>${qtd}</td>
-        <td>${conv}</td>
+        <td>${escaparHtml(conv)}</td>
         <td>R$ ${val.toFixed(2)}</td>
         <td><strong>R$ ${(qtd * val).toFixed(2)}</strong></td>
       </tr>`;
     }).join('');
 
     return `<!DOCTYPE html><html><head><meta charset="utf-8">
-    <title>Extrato - ${wsNome}</title>
+    <title>Extrato - ${wsNomeEsc}</title>
     <style>
       body { font-family: 'IBM Plex Sans', Arial, sans-serif; padding: 30px; color: #1E3A5F; }
       h1 { font-size: 18px; margin-bottom: 5px; }
@@ -202,7 +206,7 @@ export default function Extrato() {
       .total { font-size: 16px; font-weight: bold; text-align: right; margin-top: 10px; }
       @media print { body { padding: 10px; } }
     </style></head><body>
-    <h1>Extrato de Honorários — ${wsNome}</h1>
+    <h1>Extrato de Honorários — ${wsNomeEsc}</h1>
     <h2>Período: ${fmtDate(dateFrom)} a ${fmtDate(dateTo)}</h2>
     <table><thead><tr><th>Data Exame</th><th>Emitido em</th><th>Paciente</th><th>Tipo</th><th>Convênio</th></tr></thead>
     <tbody>${linhas}</tbody></table>

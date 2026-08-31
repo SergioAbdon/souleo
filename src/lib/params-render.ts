@@ -28,7 +28,9 @@
 import type { ResultadoLaudo, MedidasEcoTT } from '@/senna90/types';
 import { montarRowsTabela } from '../senna90/classificacoes/tabela';
 import { valorTabela } from '../senna90/classificacoes/formatar';
-import { escHtml } from './pdf-params';
+// X13: escHtml própria de pdf-params.ts morreu; UMA função de escape só,
+// importada direto de pdf-moldura (sem ciclo — pdf-moldura.ts não importa nada).
+import { escaparHtml } from './pdf-moldura';
 import { lerMedidasDoDOM } from './motor-ts-adapter';
 
 /**
@@ -128,10 +130,10 @@ function medidasDaTabela(m: MedidasEcoTT) {
 function linhasHtml(rows: string[][], oor: boolean[][]): string {
   return rows.map((r, i) => {
     const val = (j: number) => `val${oor[i]?.[j] ? ' alert' : ''}`;
-    return `<tr><td>${escHtml(r[0])}</td><td class="${val(1)}">${escHtml(r[1])}</td>`
-      + `<td class="ref">${escHtml(r[2])}</td><td class="ref">${escHtml(r[3])}</td>`
-      + `<td class="params-divider">${escHtml(r[4])}</td><td class="${val(5)}">${escHtml(r[5])}</td>`
-      + `<td class="ref">${escHtml(r[6])}</td><td class="ref">${escHtml(r[7])}</td></tr>`;
+    return `<tr><td>${escaparHtml(r[0])}</td><td class="${val(1)}">${escaparHtml(r[1])}</td>`
+      + `<td class="ref">${escaparHtml(r[2])}</td><td class="ref">${escaparHtml(r[3])}</td>`
+      + `<td class="params-divider">${escaparHtml(r[4])}</td><td class="${val(5)}">${escaparHtml(r[5])}</td>`
+      + `<td class="ref">${escaparHtml(r[6])}</td><td class="ref">${escaparHtml(r[7])}</td></tr>`;
   }).join('');
 }
 

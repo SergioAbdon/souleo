@@ -25,9 +25,11 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { rodapeFontes } from '../senna90/classificacoes/fontes';
-// X10: mesma validação da moldura — sem ciclo (pdf-moldura.ts não importa
-// nada, ver cabeçalho do arquivo), então UMA definição só, importada aqui.
-import { corSegura } from './pdf-moldura';
+// X10/X13: mesma validação e mesmo escape da moldura — sem ciclo (pdf-moldura.ts
+// não importa nada, ver cabeçalho do arquivo), então UMA definição só, importada
+// aqui. X13 matou a `escHtml` própria (3 entidades) que vivia ao lado — divergia
+// da `escaparHtml` da moldura (4 entidades, inclui `"`) sem motivo.
+import { corSegura, escaparHtml } from './pdf-moldura';
 
 export type ParamsHtmlOpts = {
   /** true = tabela do PDF (impressão): !important + print-color-adjust
@@ -43,11 +45,6 @@ export type ParamsHtmlOpts = {
   oor?: boolean[][];
 };
 
-/** Exportado pra `params-render.ts` (a pintura da TELA escapa igual). */
-export function escHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
 export function montarParamsHtml(rows: string[][], p1raw: string, opts: ParamsHtmlOpts): string {
   // X10: cor entra aqui vinda da page (já validada lá) — revalida de novo
   // porque esta função também é chamável direto (é exportada e testada
@@ -59,7 +56,7 @@ export function montarParamsHtml(rows: string[][], p1raw: string, opts: ParamsHt
       cells.forEach((cell, idx) => {
         const divider = idx === 4 ? `border-left:2px solid ${p1};` : '';
         const alerta = opts.oor?.[i]?.[idx] === true;
-        rowHTML += `<td${alerta ? ' class="alert"' : ''} style="border:0.5px solid #ccc;padding:2px 5px;${divider}${alerta ? 'color:#B91C1C;font-weight:600;' : ''}">${escHtml(cell)}</td>`;
+        rowHTML += `<td${alerta ? ' class="alert"' : ''} style="border:0.5px solid #ccc;padding:2px 5px;${divider}${alerta ? 'color:#B91C1C;font-weight:600;' : ''}">${escaparHtml(cell)}</td>`;
       });
       rowHTML += '</tr>';
       return rowHTML;

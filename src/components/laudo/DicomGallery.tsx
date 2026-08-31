@@ -248,7 +248,7 @@ export default function DicomGallery({
     // sozinha, sem a sessão do médico — na URL canônica privada voltaria 403
     // e sairia página em branco.
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/>
-<title>${titulo}</title>
+<title>${escaparHtml(titulo)}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0;}
   @page{size:A4 portrait;margin:8mm;}
