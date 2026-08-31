@@ -29,8 +29,9 @@ import type { ResultadoLaudo, MedidasEcoTT } from '@/senna90/types';
 import { montarRowsTabela } from '../senna90/classificacoes/tabela';
 import { valorTabela } from '../senna90/classificacoes/formatar';
 // X13: escHtml própria de pdf-params.ts morreu; UMA função de escape só,
-// importada direto de pdf-moldura (sem ciclo — pdf-moldura.ts não importa nada).
-import { escaparHtml } from './pdf-moldura';
+// importada direto de html-escape.ts (sem ciclo — puro, zero imports).
+// Tríade onda-3 (Ruflo-A5): escaparHtml saiu de pdf-moldura.ts pra cá.
+import { escaparHtml } from './html-escape';
 import { lerMedidasDoDOM } from './motor-ts-adapter';
 
 /**

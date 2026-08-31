@@ -25,11 +25,13 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { rodapeFontes } from '../senna90/classificacoes/fontes';
-// X10/X13: mesma validação e mesmo escape da moldura — sem ciclo (pdf-moldura.ts
-// não importa nada, ver cabeçalho do arquivo), então UMA definição só, importada
-// aqui. X13 matou a `escHtml` própria (3 entidades) que vivia ao lado — divergia
-// da `escaparHtml` da moldura (4 entidades, inclui `"`) sem motivo.
-import { corSegura, escaparHtml } from './pdf-moldura';
+// X10/X13: mesma validação e mesmo escape que a moldura usa — sem ciclo
+// (html-escape.ts é puro, zero imports, ver cabeçalho do arquivo), então UMA
+// definição só, importada aqui. X13 matou a `escHtml` própria (3 entidades)
+// que vivia ao lado — divergia da `escaparHtml` da moldura (4 entidades,
+// inclui `"`) sem motivo. Tríade onda-3 (Ruflo-A5): escaparHtml/corSegura
+// saíram de pdf-moldura.ts pra html-escape.ts — mesma função, novo endereço.
+import { corSegura, escaparHtml } from './html-escape';
 
 export type ParamsHtmlOpts = {
   /** true = tabela do PDF (impressão): !important + print-color-adjust

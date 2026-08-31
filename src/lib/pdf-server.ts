@@ -12,23 +12,45 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { assinarImagensExame, assinarUrlsNoHtml } from './imagens-dicom-admin';
 import { obterBrowser, descartarBrowser, ehErroDeConexao } from './pdf-browser';
 import { salvarPdfBuffer } from './pdf-storage';
+import { CSS_FONTES } from './pdf-fontes';
 
-// Teto da espera pelas fontes (S7-T0.2, achado P8). P8 follow-up: a moldura
-// embute IBM Plex em base64 (pdf-fontes.ts) — zero rede — então
-// `document.fonts.ready` resolve local e rápido. O teto fica de qualquer
-// jeito: cinto barato contra um Chromium lento a decodificar o woff2.
+// Teto da espera pelas fontes (S7-T0.2, achado P8). Tríade onda-3 (Ruflo-A1):
+// as fontes são injetadas AQUI, no servidor (`injetarFontes` abaixo) — zero
+// rede — então `document.fonts.ready` resolve local e rápido. O teto fica de
+// qualquer jeito: cinto barato contra um Chromium lento a decodificar o woff2.
 const TETO_FONTES_MS = 8000;
 
 // P1: o pdfHtml vem do cliente — o Chrome do servidor não pode ser o proxy
-// dele. Só o que o laudo legitimamente usa: data: (logo/assinatura, e agora
-// as fontes da moldura também — embutidas, P8 follow-up) e o próprio bucket
-// (signed URLs das imagens DICOM). fonts.googleapis.com/fonts.gstatic.com
-// SAÍRAM da allowlist: a moldura não faz mais essa requisição, e mantê-los
-// aqui era superfície de SSRF sem uso legítimo nenhum.
+// dele. Só o que o laudo legitimamente usa: data: (logo/assinatura, e as
+// fontes injetadas aqui — ver injetarFontes) e o próprio bucket (signed URLs
+// das imagens DICOM). fonts.googleapis.com/fonts.gstatic.com SAÍRAM da
+// allowlist: nada no pipeline faz mais essa requisição (nem a moldura, nem a
+// injeção), e mantê-los aqui era superfície de SSRF sem uso legítimo nenhum
+// — inclusive contra um snapshot ANTIGO que ainda carregue o <link> do
+// Google Fonts (ver injetarFontes).
 // Prefixo com barra no bucket: "meu-bucketX" não passa.
 export function urlPermitidaNoRender(url: string, bucketName: string): boolean {
   return url.startsWith('data:')
     || url.startsWith(`https://storage.googleapis.com/${bucketName}/`);
+}
+
+// Tríade onda-3 (Ruflo-A1 Critical): injeta o <style> das fontes embutidas
+// (CSS_FONTES, pdf-fontes.ts) no HTML ANTES do Puppeteer processar — mesmo
+// padrão de `assinarUrlsNoHtml` (string transform pura, sem parser DOM).
+// Precisa entrar AQUI (servidor), não em pdf-moldura.ts: um snapshot
+// CONGELADO de uma emissão ANTIGA (laudos-html/, gravado antes desta
+// mudança) ainda tem o `<link>` do Google Fonts no HTML — e a allowlist nova
+// (urlPermitidaNoRender, acima) BLOQUEIA essa requisição. Se só a moldura
+// injetasse a fonte, REGENERAR um PDF antigo (correção administrativa relê o
+// snapshot congelado, não gera moldura nova) sairia silenciosamente em fonte
+// serif de fallback. Injetando aqui — no pipeline que processa QUALQUER
+// htmlAssinado, novo ou congelado —, toda regeneração ganha a fonte local.
+// `<head>` sempre existe (é o `<!DOCTYPE html><html ...><head>` da própria
+// moldura, novo ou legado); se um pdfHtml malformado não tiver `</head>`, o
+// replace vira no-op e o PDF sai em fallback — mesmo comportamento seguro de
+// antes (CDN fora do ar), nunca uma falha dura.
+export function injetarFontes(html: string): string {
+  return html.includes('</head>') ? html.replace('</head>', `<style>${CSS_FONTES}</style></head>`) : html;
 }
 
 // ── Gerar PDF via Puppeteer + upload Storage ──
@@ -64,6 +86,9 @@ export async function gerarESalvarPdf(
   if (htmlAssinado.includes(`https://storage.googleapis.com/${bucket.name}/dicom`)) {
     throw new Error('imagem não assinada — PDF abortado');
   }
+  // Fontes embutidas (ver injetarFontes acima) — depois da assinatura de
+  // imagens, antes do Puppeteer processar.
+  const htmlComFontes = injetarFontes(htmlAssinado);
   // S7-T0.2: uma página por emissão, num browser que sobrevive à invocação.
   // Política de retry: UMA repetição, e só se o erro for de conexão — o
   // browser reusado pode ter morrido entre invocações (instância congelada,
@@ -86,7 +111,7 @@ export async function gerarESalvarPdf(
       // que é o que o PDF precisa —, sem os 500ms de silêncio de rede nem
       // ficar refém de uma conexão pendurada. As fontes (embutidas, sem rede)
       // continuam esperadas explicitamente logo abaixo.
-      await page.setContent(htmlAssinado, { waitUntil: 'load', timeout: 30000 });
+      await page.setContent(htmlComFontes, { waitUntil: 'load', timeout: 30000 });
       let teto: NodeJS.Timeout | undefined;
       await Promise.race([
         page.evaluateHandle('document.fonts.ready'),

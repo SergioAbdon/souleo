@@ -48,9 +48,12 @@ describe('nome do PDF é do SERVIDOR (I3 / ARQ-I2)', () => {
 
   test('o path do PDF carrega o exameId (dois exames do mesmo paciente não colidem)', () => {
     assert.match(ler('src', 'lib', 'pdf-path.ts'), /laudos\/\$\{wsId\}\/\$\{exameId\}\/\$\{nomeArquivo\}\.pdf/);
-    // E o pdf-server não monta path por conta própria (uma fonte só).
-    const serverSrc = semComentarios(ler('src', 'lib', 'pdf-server.ts'));
-    assert.ok(!/`laudos\//.test(serverSrc), 'pdf-server voltou a montar o path do PDF na mão');
+    // Onda-3 P9 moveu quem TOCA Storage (salvarPdfBuffer/pathPdf) de
+    // pdf-server.ts pra pdf-storage.ts — o pin repontou pro arquivo certo
+    // (tríade onda-3, Ruflo-A4): checar pdf-server.ts aqui checava um
+    // arquivo que já não monta path nenhum há duas ondas.
+    const storageSrc = semComentarios(ler('src', 'lib', 'pdf-storage.ts'));
+    assert.ok(!/`laudos\//.test(storageSrc), 'pdf-storage voltou a montar o path do PDF na mão — uma fonte só, pathPdf() em pdf-path.ts');
   });
 });
 

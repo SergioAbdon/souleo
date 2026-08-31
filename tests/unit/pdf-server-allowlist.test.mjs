@@ -1,10 +1,12 @@
 // P1: o pdfHtml que vira PDF vem do CLIENTE — o Chrome do servidor não pode
 // ser o proxy dele. `urlPermitidaNoRender` é o filtro que a interceptação de
-// rede em `renderizar` usa: só data: (logo/assinatura/fontes, embutidas, P8
-// follow-up) e o próprio bucket (signed URLs das imagens DICOM) passam.
-// Qualquer outro host — SSRF, beacon, metadata endpoint de cloud, file://,
-// e agora fonts.googleapis.com/fonts.gstatic.com (a moldura não busca mais
-// fonte por rede) — é abortado.
+// rede em `renderizar` usa: só data: (logo/assinatura/fontes, embutidas via
+// `injetarFontes`, P8 follow-up + tríade onda-3) e o próprio bucket (signed
+// URLs das imagens DICOM) passam. Qualquer outro host — SSRF, beacon,
+// metadata endpoint de cloud, file://, e agora fonts.googleapis.com/
+// fonts.gstatic.com (nada no pipeline busca mais fonte por rede, nem um
+// snapshot congelado com o <link> antigo — a allowlist bloqueia e a injeção
+// no servidor cobre) — é abortado.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

@@ -40,6 +40,13 @@ import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { resolverAssinatura } from './billing-admin';
 import { emissaoMudou } from './correcao-admin';
 import { podeGirar, proximoCicloFim } from './ciclo';
+// Tríade onda-3 (Ruflo-A2): emissaoKeyValida morava aqui — moveu pra
+// pdf-path.ts (dono declarado do FORMATO de chave/path, puro, zero
+// imports). Re-exportada abaixo: /api/emitir/route.ts e
+// tests/api/emitir-idempotencia.test.mjs continuam importando daqui, sem
+// mudar chamador nenhum.
+import { emissaoKeyValida } from './pdf-path';
+export { emissaoKeyValida };
 
 // Gaveta server-only do estado de idempotencia (mesmo formato do shadow:
 // `privado/{tipo}/{sub}/{id}`). `firestore.rules` ja tem
@@ -57,16 +64,35 @@ import { podeGirar, proximoCicloFim } from './ciclo';
 //    da rota tentar salvar o snapshot (round 6 — fecha a regressao onde um
 //    save do sufixado que falhava em silencio deixava lerSnapshotHtml cair
 //    no canonico de uma emissao velha).
+//  - identidade: a identidade ASSINADA da emissao vencedora atual
+//    (pacienteNome/pacienteDtnasc/dataExame/convenio — ver CAMPOS_IDENTIDADE
+//    abaixo), gravada por emitirComCobranca na MESMA transacao que cobra. E
+//    o "antes" a prova de SDK que a PROXIMA reemissao compara pra derivar
+//    `identificacaoAlterada` (round 2, Codex Important 2).
 export function refEmissaoPrivada(db: Firestore, wsId: string, exameId: string) {
   return db.doc(`workspaces/${wsId}/privado/emissao/exames/${exameId}`);
 }
 
-// Formato do `crypto.randomUUID()` do navegador. Vem do cliente e vira
-// chave de idempotencia: qualquer outra coisa e recusada (a rota devolve
-// 400) e ignorada aqui — garantia para todo chamador, nao so a rota.
-export function emissaoKeyValida(k: unknown): k is string {
-  return typeof k === 'string'
-    && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(k);
+// Tríade onda-3 (Ruflo-A3): shape tipado da gaveta — antes cada leitor
+// (pdf-storage.ts, pdf-server.ts/routes) lia `.data()` cru e recastava campo
+// a campo, sem nada garantindo que o shape batia com o que emitirComCobranca
+// de fato grava (documentado 4 linhas acima). `pdfPendente` e as demais
+// bandeiras booleanas ficam `unknown`-safe por natureza do Firestore — o
+// tipo é a EXPECTATIVA de leitura, não uma validação em runtime (mesmo
+// contrato informal que o resto do arquivo já tinha).
+export type GavetaEmissao = {
+  emissaoKey?: string;
+  pdfPendente?: boolean;
+  snapshotSufixado?: boolean;
+  identidade?: Record<string, string>;
+};
+
+/** Lê a gaveta privada de idempotência inteira (ou `undefined` se o exame
+ *  nunca emitiu — pré-onda-0). Ponto único de leitura: pdf-storage.ts
+ *  (`lerSnapshotHtml`) e qualquer chamador futuro usam ESTE shape, não o
+ *  doc cru. */
+export async function lerGavetaEmissao(db: Firestore, wsId: string, exameId: string): Promise<GavetaEmissao | undefined> {
+  return (await refEmissaoPrivada(db, wsId, exameId).get()).data() as GavetaEmissao | undefined;
 }
 
 export type MotivoEmissao =
@@ -150,7 +176,7 @@ const normalizarCampo = (campo: string, v: unknown): string => {
 // INTEIRA (route.ts) — nenhuma outra tentativa escreve no mesmo objeto, e
 // emissaoKey virou obrigatoria (round 4), entao nao ha mais ramo "legado
 // sem key" pra reabrir a janela. Perder a corrida so deixa um objeto orfao
-// (apagado por `apagarPdfObjeto`, pdf-server.ts) — nunca corrupcao.
+// (apagado por `apagarPdfObjeto`, pdf-storage.ts) — nunca corrupcao.
 
 // /api/emitir: gate por emissaoKey (a "tentativa" desta rota). Round 4:
 // emissaoKey virou obrigatoria na rota — sem ramo "legado sem key" aqui.

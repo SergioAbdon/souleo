@@ -13,7 +13,7 @@ import { apagarSnapshotsExame } from '@/lib/pdf-storage';
 
 export const runtime = 'nodejs';
 
-// pdfUrl publico → caminho no bucket → delete. Formato de pdf-server.ts:85.
+// pdfUrl publico → caminho no bucket → delete. Formato de pdf-path.ts (pathPdf).
 // Confinado ao local da acao: o pdfUrl vem do doc do exame, e um doc adulterado
 // (o autor edita o proprio exame pela regra) apontaria para o laudo de outra
 // clinica. Fora de `laudos/{wsId}/` nao apaga nada.

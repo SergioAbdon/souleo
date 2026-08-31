@@ -11,10 +11,10 @@
 // ══════════════════════════════════════════════════════════════════
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { montarPdfMoldura, corSegura } from '../../src/lib/pdf-moldura.ts';
+import { montarPdfMoldura } from '../../src/lib/pdf-moldura.ts';
+import { corSegura } from '../../src/lib/html-escape.ts';
 import { substituirCamposAdministrativos } from '../../src/lib/correcao-admin.ts';
 import { gerarPdfHtmlTexto } from '../../src/lib/pdf-texto.ts';
-import { CSS_FONTES } from '../../src/lib/pdf-fontes.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -26,7 +26,7 @@ function legadoMotor(v) {
     paramsHTML, achadosHTML, concHTML, imagensPdfHtml,
   } = v;
   return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>${nomeArq}</title>
-<style>${CSS_FONTES}
+<style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:"IBM Plex Sans",sans-serif;font-size:8.5pt;color:#1a1a1a;}
 @page{size:A4;margin:0;}
@@ -187,7 +187,7 @@ describe('montarPdfMoldura — igualdade byte-a-byte com o template legado', () 
 function legadoTexto(v) {
   const { p1, clinicaNome, clinicaSlogan, clinicaEnd, telCompleto, logoB64, sigB64, sigTexto, tituloExame, id, htmlCorpo } = v;
   return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>${tituloExame}</title>
-<style>${CSS_FONTES}
+<style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:"IBM Plex Sans",sans-serif;font-size:8.5pt;color:#1a1a1a;}
 @page{size:A4;margin:0;}

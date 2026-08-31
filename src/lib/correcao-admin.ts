@@ -13,7 +13,7 @@
 // Fonte única do escape com a EMISSÃO (S5-T14, fix I4): a moldura escapa os
 // mesmos valores ao montar o HTML assinado. Se os dois divergissem, corrigir
 // o convênio reescreveria o campo num formato diferente do resto do PDF.
-import { escaparHtml } from './pdf-moldura';
+import { escaparHtml } from './html-escape';
 
 // Bloco dos dois templates de emissão (gerarPdfHtml no /laudo/[id] e
 // gerarPdfHtmlTexto em pdf-texto.ts — idênticos):

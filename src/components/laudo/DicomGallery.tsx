@@ -23,7 +23,7 @@
 import { useEffect, useState } from 'react';
 import { auth } from '@/lib/firebase';
 // Mesmo escape da moldura do PDF — estas páginas viram HTML do laudo assinado.
-import { escaparHtml } from '@/lib/pdf-moldura';
+import { escaparHtml } from '@/lib/html-escape';
 
 // Cache do mapa {url canônica → url assinada} por exame. As assinadas valem
 // 1h (imagens-dicom-admin.ts); expiramos com folga em 45min pra galeria

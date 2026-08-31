@@ -5,15 +5,28 @@
 // pdf-server.ts arrastava puppeteer-core + @sparticuz/chromium pro bundle do
 // cron — que nunca renderiza PDF nenhum. Aqui só fica o que fala com o
 // Storage/Firestore; pdf-server.ts fica só com o pipeline do Puppeteer.
+//
+// `getStorage()` SEM app explícito (tríade onda-3, Ruflo-A4) — não
+// `adminStorage()` de auth-admin.ts: este arquivo é importado tanto pelas
+// ROTAS (que inicializam o app default via auth-admin.ts, com
+// storageBucket configurado) quanto pela SOMBRA/scripts (shadow/deps-
+// admin.ts e scripts/shadow/retroativo.mjs, cada um com o próprio
+// `initializeApp()`, bucket incluso). Por qualquer um dos dois caminhos, o
+// app default já está inicializado COM bucket antes de qualquer função
+// daqui rodar — `getStorage()` sem argumento pega esse mesmo app default.
+// Importar `adminStorage()` (que vive atrás do alias `@/`) forçaria este
+// arquivo puro-relativo a depender de auth-admin.ts só pra reobter o MESMO
+// app que `getStorage()` já acha sozinho, e quebraria o import direto do
+// script (que nunca passa por auth-admin.ts).
 // ══════════════════════════════════════════════════════════════════
 import { getStorage } from 'firebase-admin/storage';
 import { getFirestore } from 'firebase-admin/firestore';
-import { sanitizarNomeArq, pathPdf } from './pdf-path';
-// lerSnapshotHtml resolve o path certo lendo a gaveta de idempotencia —
-// mesmo dono do estado de emissao. Sem ciclo: emitir-admin.ts so importa
-// billing-admin.ts e correcao-admin.ts (nenhum dos dois importa
-// pdf-storage), e ambos ja sao relativos/sem `@/`.
-import { refEmissaoPrivada, emissaoKeyValida } from './emitir-admin';
+import { sanitizarNomeArq, pathPdf, pathSnapshotHtml, candidatosSnapshotHtml, ehSnapshotDoExame } from './pdf-path';
+// lerGavetaEmissao resolve o doc inteiro da gaveta de idempotência — mesmo
+// dono do estado de emissão. Sem ciclo: emitir-admin.ts só importa
+// billing-admin.ts, correcao-admin.ts e pdf-path.ts (puro, zero imports —
+// nenhum dos três importa pdf-storage), e todos são relativos/sem `@/`.
+import { lerGavetaEmissao } from './emitir-admin';
 
 // ── Salvar buffer de PDF pronto no Storage (Task 5: reusado pelo caminho
 // Puppeteer em pdf-server.ts E pelo caminho de anexo direto em /api/emitir) ──
@@ -61,7 +74,7 @@ export async function apagarPdfObjeto(wsId: string, exameId: string, nomeArq: st
     const nomeArquivo = sanitizarNomeArq(nomeArq, exameId);
     await getStorage().bucket().file(pathPdf(wsId, exameId, nomeArquivo)).delete({ ignoreNotFound: true });
   } catch (e) {
-    console.error('apagarPdfObjeto (nao-critico):', e);
+    console.error(`apagarPdfObjeto (nao-critico, ws=${wsId} exame=${exameId}):`, e);
   }
 }
 
@@ -78,26 +91,9 @@ export async function apagarPdfObjeto(wsId: string, exameId: string, nomeArq: st
 // laudo clínico completo não fica legível sem autenticação como fica em
 // `laudos/` (onde o PDF é público de propósito). Admin SDK bypassa a regra.
 //
-// Round 5 (Codex Critical): o snapshot ERA canônico por exameId — mesmo
-// salvo só DEPOIS da publicação confirmada (round 4), duas tentativas
-// (A publica, B reemite+publica+snapshota, o snapshot ATRASADO de A chega
-// DEPOIS) escreviam o MESMO objeto — A sobrescrevia o snapshot de B mesmo
-// perdendo a corrida no Firestore. Path por TENTATIVA agora (sufixo da
-// emissaoKey), igual ao PDF desde o round 3 — sem `emissaoKey`, cai no
-// canônico (exame pré-onda-0, que nunca teve key nenhuma).
-// Exportada (round 5): pura, sem I/O — testável direto sem depender do
-// Storage (não emulado nesta bateria), mesmo padrão de `pathPdf`/
-// `sanitizarNomeArq` em pdf-path.ts. A key (UUID já validado por
-// `emissaoKeyValida` no trust boundary da rota) entra CRUA no path — sem `/`
-// nem caractere especial possível num UUID, não precisa sanitizar.
-export function pathSnapshotHtml(wsId: string, exameId: string, emissaoKey?: string | null): string {
-  // Round 7 (Ruflo item 2): key fora do formato UUID (gaveta corrompida/
-  // adulterada) cai no canonico em vez de virar path esquisito — devolve a
-  // garantia de dono do path pro seu dono de verdade (emissaoKeyValida).
-  return emissaoKey && emissaoKeyValida(emissaoKey)
-    ? `laudos-html/${wsId}/${exameId}-${emissaoKey}.html`
-    : `laudos-html/${wsId}/${exameId}.html`;
-}
+// Tríade onda-3 (Ruflo-A2): `pathSnapshotHtml`/`candidatosSnapshotHtml`
+// moraram aqui até esta onda — moveram pra pdf-path.ts (dono declarado do
+// formato de path, puro, sem import nenhum). Este arquivo importa de lá.
 
 // Nunca lança: emissão não pode falhar porque o snapshot falhou — o PDF é o
 // produto. Sem snapshot, a correção só grava os campos e avisa o médico.
@@ -144,37 +140,8 @@ export async function salvarSnapshotHtml(
       metadata: { contentType: 'text/html; charset=utf-8', metadata: { nomeArq: nomeSanitizado } },
     });   // sem makePublic(): só o Admin SDK lê
   } catch (e) {
-    console.error('snapshot HTML (nao-critico):', e);
+    console.error(`snapshot HTML (nao-critico, ws=${wsId} exame=${exameId}):`, e);
   }
-}
-
-// Round 5 (item 3) + round 6 (Codex Critical): a GAVETA é a verdade do
-// servidor. `snapshotSufixado:true` (gravado por publicarPdfSeAindaDono/
-// marcarPdfErroSeAindaDono no MESMO commit que confirma a emissão, ANTES da
-// rota tentar o save) declara "o snapshot desta emissão, se existir, SÓ mora
-// no sufixado — não caia no canônico". Sem essa declaração, cair no
-// canônico é seguro pros 2 regimes antigos: exame pré-onda-0 (nunca teve
-// gaveta) e exame emitido ENTRE a onda-0 e o round 6 (gaveta já tem key, mas
-// nunca gravou a flag — o snapshot daquela emissão foi salvo antes da flag
-// existir, ainda no canônico). COM a flag, o canônico deixa de ser
-// candidato: pode ser o corpo clínico de uma emissão ANTERIOR (regressão
-// achada pelo Codex — `salvarSnapshotHtml` engole erro em silêncio; sem a
-// flag, uma falha nesse save fazia `lerSnapshotHtml` "recuperar" com sucesso
-// o snapshot ERRADO em vez de honestamente devolver null).
-// Extraída pura (round 6) — testável sem Storage (não emulado nesta
-// bateria): a decisão de QUAIS paths tentar, em que ordem, é o cerne do bug
-// e do fix.
-export function candidatosSnapshotHtml(
-  wsId: string, exameId: string,
-  gaveta?: { emissaoKey?: unknown; snapshotSufixado?: unknown } | null,
-): string[] {
-  const key = typeof gaveta?.emissaoKey === 'string' ? gaveta.emissaoKey : null;
-  if (gaveta?.snapshotSufixado === true) {
-    return [pathSnapshotHtml(wsId, exameId, key)];   // sem fallback — round 6
-  }
-  return key
-    ? [pathSnapshotHtml(wsId, exameId, key), pathSnapshotHtml(wsId, exameId)]
-    : [pathSnapshotHtml(wsId, exameId)];
 }
 
 // Assinatura INALTERADA (wsId, exameId) — os 2 consumidores existentes
@@ -183,7 +150,7 @@ export function candidatosSnapshotHtml(
 export async function lerSnapshotHtml(
   wsId: string, exameId: string,
 ): Promise<{ html: string; nomeArq: string; path: string } | null> {
-  const gaveta = (await refEmissaoPrivada(getFirestore(), wsId, exameId).get()).data();
+  const gaveta = await lerGavetaEmissao(getFirestore(), wsId, exameId);
   const candidatos = candidatosSnapshotHtml(wsId, exameId, gaveta);
   for (const filePath of candidatos) {
     try {
@@ -199,20 +166,32 @@ export async function lerSnapshotHtml(
 
 // P5/Task 14 (LGPD): "apagar o exame" tem que levar o snapshot clínico
 // junto — senão o laudo completo sobrevive órfão em laudos-html/. Path por
-// TENTATIVA desde o round 5 (ver pathSnapshotHtml acima): apagar só o
+// TENTATIVA desde o round 5 (ver pathSnapshotHtml, pdf-path.ts): apagar só o
 // canônico deixa pra trás os sufixados de emissaoKey (inclusive de
-// tentativas perdedoras, que nem a gaveta aponta mais). Apaga os dois: o
-// canônico (exato, exame legado pré-onda-0) e tudo sob o prefixo
-// `{exameId}-` (o `-` no prefixo é o que impede exameId 'abc' apagar
-// também os objetos de 'abc2' — deleteFiles com prefix é um match de
-// string crua). Nunca lança: mesmo padrão dos vizinhos (apagarPdfObjeto),
-// limpeza de órfão não pode derrubar a exclusão do exame.
+// tentativas perdedoras, que nem a gaveta aponta mais).
+//
+// Tríade onda-3 (Codex-1 Important — colisão de prefixo): a versão antiga
+// apagava por `deleteFiles({ prefix: 'laudos-html/{ws}/{exameId}-' })` — mas
+// `exameId` pode ter hífen (idValido, exame-admin.ts, permite), e prefixo é
+// match de STRING CRUA: exameId 'abc' gera o prefixo 'abc-', que TAMBÉM bate
+// em 'abc-2.html' (o canônico de um exame TOTALMENTE DIFERENTE, id 'abc-2')
+// e nos sufixados dele. Apagar o exame 'abc' apagava o snapshot clínico do
+// exame 'abc-2' junto — silencioso, sem erro nenhum.
+// Fix: LISTA os objetos sob um prefixo mais largo (sem o hífen final, que só
+// serve pra reduzir a lista candidata) e só apaga os que o matcher EXATO
+// (`ehSnapshotDoExame`, pdf-path.ts — as 2 formas reais que
+// `pathSnapshotHtml` produz) confirma como DESTE exame. Nota de escopo: só
+// alcança `laudos-html/{wsId}/**` — o PDF público em `laudos/` sai por
+// `apagarPdfObjeto` (chamado à parte, mesmo trio wsId/exameId/nomeArq).
+// Nunca lança: mesmo padrão dos vizinhos (apagarPdfObjeto), limpeza de órfão
+// não pode derrubar a exclusão do exame.
 export async function apagarSnapshotsExame(wsId: string, exameId: string): Promise<void> {
   try {
     const bucket = getStorage().bucket();
-    await bucket.file(pathSnapshotHtml(wsId, exameId)).delete({ ignoreNotFound: true });
-    await bucket.deleteFiles({ prefix: `laudos-html/${wsId}/${exameId}-` });
+    const [files] = await bucket.getFiles({ prefix: `laudos-html/${wsId}/${exameId}` });
+    const doExame = files.filter((f) => ehSnapshotDoExame(f.name, exameId));
+    await Promise.all(doExame.map((f) => f.delete({ ignoreNotFound: true })));
   } catch (e) {
-    console.error('apagarSnapshotsExame (nao-critico):', e);
+    console.error(`apagarSnapshotsExame (nao-critico, ws=${wsId} exame=${exameId}):`, e);
   }
 }
