@@ -141,6 +141,10 @@ const CAMPOS_DADOS_FINAIS = new Set([
   'medidas', 'achados', 'conclusoes', 'laudoHtml', 'laudoTextoHtml', 'cfgSnapshot',
   'tipoExame', 'pacienteNome', 'pacienteDtnasc', 'dataExame', 'convenio',
   'solicitante', 'sexo',
+  // X2 (Task 17): escolha "incluir imagens DICOM no PDF" — persistida junto
+  // com a emissao pra sobreviver a reabertura do laudo (antes so vivia em
+  // memoria, resetava pro default a cada F5/reload).
+  'incluirImagensNoPdf',
 ]);
 
 // pacienteNome normalizado (trim+uppercase) — mesmo tratamento do

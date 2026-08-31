@@ -189,10 +189,6 @@ export default function LaudoTextoPage() {
             pacienteNome: (exame.pacienteNome as string) || '',
             tipoExame: (exame.tipoExame as string) || '',
             convenio: (exame.convenio as string) || '',
-            cfgSnapshot: {
-              clinica: clinicaNome,
-              medNome: profile?.nome, medCrm: profile?.crm, medUf: profile?.ufCrm, p1,
-            },
             // `reemissao` não vai mais no corpo — o servidor deriva sozinho
             // (exameSnap × dadosFinais na transação); mandar o flag daqui só
             // reabriria o canal que o achado E3 fechou do lado do cliente.

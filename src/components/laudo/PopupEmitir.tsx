@@ -4,6 +4,7 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { useState } from 'react';
+import { abrirPdfUrl } from '@/lib/pdfUtils';
 
 type Props = {
   open: boolean;
@@ -93,10 +94,19 @@ type ModoEmitidoProps = {
   onCopiarFormatado: () => void;
   onCopiarTexto: () => void;
   onBaixarWord?: () => void;
+  /**
+   * URL do PDF ASSINADO (Storage) desta emissão. Quando presente, o botão
+   * primário "🖨️ PDF" abre ELE (mesmo documento que o paciente recebeu) em
+   * vez de gerar um PDF novo com a config/imagens atuais do local — Task 17
+   * (X4). Sem `pdfUrl` (falha de geração ou laudo legado), o primário cai
+   * de volta pro `onImprimir` de sempre.
+   */
+  pdfUrl?: string;
 };
 
-export function ModoEmitido({ onFinalizar, onEditar, onImprimir, onCopiarFormatado, onCopiarTexto, onBaixarWord }: ModoEmitidoProps) {
+export function ModoEmitido({ onFinalizar, onEditar, onImprimir, onCopiarFormatado, onCopiarTexto, onBaixarWord, pdfUrl }: ModoEmitidoProps) {
   const [prontuarioOpen, setProntuarioOpen] = useState(false);
+  const abrirAssinado = pdfUrl ? () => abrirPdfUrl(pdfUrl) : onImprimir;
 
   return (
     <div className="px-4 py-2">
@@ -107,10 +117,22 @@ export function ModoEmitido({ onFinalizar, onEditar, onImprimir, onCopiarFormata
 
       {/* Botões em grid compacto */}
       <div className="grid grid-cols-3 gap-1.5 mb-2">
-        <BtnMini onClick={onImprimir}>🖨️ PDF</BtnMini>
+        <BtnMini onClick={abrirAssinado}>🖨️ PDF</BtnMini>
         <BtnMini onClick={() => setProntuarioOpen(!prontuarioOpen)}>📋 Copiar</BtnMini>
         <BtnMini onClick={onEditar} cor="amber">✏️ Editar</BtnMini>
       </div>
+
+      {/* Ação secundária: regerar com dados/config ATUAIS do local (pode
+          divergir do assinado se a clínica mudou config, ou o médico
+          reeditou as imagens selecionadas depois de emitir). Só aparece
+          quando há um assinado pra distinguir do primário — sem `pdfUrl` o
+          primário já É esta mesma ação. */}
+      {pdfUrl && (
+        <button onClick={onImprimir}
+          className="block w-full mb-2 py-1 bg-transparent border-none text-[9.5px] text-[#9CA3AF] hover:text-[#6B7280] cursor-pointer underline decoration-dotted underline-offset-2">
+          Gerar novamente (dados atuais do local)
+        </button>
+      )}
 
       {/* Submenu copiar */}
       {prontuarioOpen && (

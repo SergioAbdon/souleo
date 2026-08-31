@@ -138,18 +138,6 @@ export interface MedidasSegmentar {
   demaisParedes: CodigoDemaisParedes;// b62
 }
 
-/** Configuração da clínica/médico (para PDF) */
-export interface CfgSnapshot {
-  clinica: string;
-  slogan: string;
-  localEnd: string;
-  localTel: string;
-  medNome: string;
-  medCrm: string;
-  medUf: string;
-  p1: string;                       // cor primária
-}
-
 /** Pacote completo de inputs */
 export interface MedidasEcoTT {
   identificacao: Identificacao;
@@ -161,7 +149,9 @@ export interface MedidasEcoTT {
   estenoses: MedidasEstenoses;
   wilkins: MedidasWilkins;
   segmentar: MedidasSegmentar;
-  cfgSnapshot?: CfgSnapshot;
+  // `cfgSnapshot` removido (Task 17, X3): nunca foi lido — o documento
+  // ASSINADO é o `pdfUrl` (Storage), não um snapshot de config recriado do
+  // zero. Reversível em 1 commit se preferir honrar a config da época.
 }
 
 // ── DERIVADOS / CALCULADOS ──────────────────────────────────────

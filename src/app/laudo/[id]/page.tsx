@@ -374,6 +374,12 @@ function LaudoPageInner() {
         const dados = { id: snap.id, ...snap.data() } as Record<string, unknown>;
         setExame(dados);
 
+        // X2 (Task 17): recarrega a escolha "incluir imagens DICOM no PDF"
+        // que foi persistida na emissao — sem isso, reabrir um laudo emitido
+        // sempre mostrava o default (true), mesmo que o medico tivesse
+        // desmarcado o toggle na hora de emitir.
+        setImagensIncluidasNoPdf((dados.incluirImagensNoPdf as boolean | undefined) ?? true);
+
         // `emitido` SÓ na primeira snapshot (guard de ref): depois disso o
         // state é do médico — reinicializar a cada gravação do Wader
         // retrancaria o laudo que ele acabou de desbloquear.
@@ -1447,7 +1453,9 @@ function LaudoPageInner() {
       // o paciente tem na mão. Mesma fonte que o PDF usa (o editor agora).
       laudoHtml: editorRef.current?.getHTML() ?? '',
       ...identificacao,
-      cfgSnapshot: { clinica: clinicaNome, slogan: clinicaSlogan, localEnd: clinicaEnd, localTel: clinicaTel, medNome: profile?.nome, medCrm: profile?.crm, medUf: profile?.ufCrm, p1 },
+      // X2 (Task 17): persiste a escolha do toggle "incluir imagens" — sem
+      // isso o state resetava pro default (true) a cada reload/reabertura.
+      incluirImagensNoPdf: incluirImagens,
       // nº5: pacienteNome NÃO reentra aqui — `...identificacao` (acima) já
       // traz o nome atual do DOM. A linha antiga sobrescrevia com
       // `exame.pacienteNome` (valor STALE do servidor) sempre que existia,
@@ -2029,6 +2037,7 @@ function LaudoPageInner() {
             onCopiarFormatado={handleCopiarFormatado}
             onCopiarTexto={handleCopiarTexto}
             onBaixarWord={handleBaixarWord}
+            pdfUrl={exame?.pdfUrl as string | undefined}
           />
         }
       />
