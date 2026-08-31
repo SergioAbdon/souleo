@@ -14,7 +14,8 @@
 // ══════════════════════════════════════════════════════════════════
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
-import { gerarESalvarPdf, lerSnapshotHtml, apagarPdfObjeto, salvarSnapshotHtml } from '@/lib/pdf-server';
+import { gerarESalvarPdf } from '@/lib/pdf-server';
+import { lerSnapshotHtml, apagarPdfObjeto, salvarSnapshotHtml } from '@/lib/pdf-storage';
 import { requireUid, adminDb } from '@/lib/auth-admin';
 import { resolverPapel, podeCorrigir, idValido } from '@/lib/exame-admin';
 import { substituirCamposAdministrativos, emissaoMudou } from '@/lib/correcao-admin';

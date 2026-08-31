@@ -19,7 +19,7 @@ import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
 import MolduraA4 from '@/components/laudo/MolduraA4';
 import { gerarPdfHtmlTexto } from '@/lib/pdf-texto';
-import { corSegura } from '@/lib/pdf-moldura';
+import { corSegura } from '@/lib/html-escape';
 import { idadeLabel, fmtData, fmtCep, fmtTel } from '@/lib/paciente-fmt';
 
 export default function LaudoTextoPage() {

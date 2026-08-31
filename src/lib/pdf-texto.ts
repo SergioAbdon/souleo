@@ -5,7 +5,8 @@
 // este arquivo só formata os dados e entrega o corpo à moldura única
 // (`montarPdfMoldura`). O shell duplicado morreu aqui.
 // ══════════════════════════════════════════════════════════════════
-import { montarPdfMoldura, corSegura } from './pdf-moldura';
+import { montarPdfMoldura } from './pdf-moldura';
+import { corSegura } from './html-escape';
 import { idadeLabel, fmtData, fmtTel, fmtCep } from './paciente-fmt';
 
 export type ArgsPdfTexto = {

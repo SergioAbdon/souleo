@@ -43,7 +43,8 @@ import { montarLaudoHtml } from '@/lib/senna90-render';
 import { mesclarLinhas } from '@/lib/laudo-merge';
 import { checkboxParaMedida, medidaParaChecked } from '@/lib/checkbox-codec';
 import { TIPOS_LAUDO_PADRAO, modalidadeDe, type TipoLaudo } from '@/lib/tipos-laudo';
-import { montarPdfMoldura, corSegura } from '@/lib/pdf-moldura';
+import { montarPdfMoldura } from '@/lib/pdf-moldura';
+import { corSegura } from '@/lib/html-escape';
 import { montarParamsHtml, paramsParaTexto, paramsParaDocx } from '@/lib/pdf-params';
 // F3-T5 (a virada do cabo): com `senna93Params()` ON, quem pinta #out-*,
 // #calc-* e #params-tbody é o Senna93 — os MESMOS nós, o mesmo formato de

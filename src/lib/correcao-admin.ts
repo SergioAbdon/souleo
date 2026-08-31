@@ -13,7 +13,7 @@
 // Fonte única do escape com a EMISSÃO (S5-T14, fix I4): a moldura escapa os
 // mesmos valores ao montar o HTML assinado. Se os dois divergissem, corrigir
 // o convênio reescreveria o campo num formato diferente do resto do PDF.
-import { escaparHtml } from './pdf-moldura';
+import { escaparHtml } from './html-escape';
 
 // Bloco dos dois templates de emissão (gerarPdfHtml no /laudo/[id] e
 // gerarPdfHtmlTexto em pdf-texto.ts — idênticos):
@@ -57,7 +57,7 @@ export function emissaoMudou(antes: unknown, agora: unknown): boolean {
 
 // O PDF corrigido REGRAVA o mesmo objeto do Storage — o link já foi para o
 // paciente/convênio. O nome do arquivo vem da metadata do snapshot, gravada
-// pelo próprio servidor na emissão (ver `salvarSnapshotHtml`, pdf-server.ts);
+// pelo próprio servidor na emissão (ver `salvarSnapshotHtml`, pdf-storage.ts);
 // nunca do doc do exame (editável pelo médico-autor) nem do cliente. Até a
 // tríade final da S5 este arquivo fazia o parse da URL do PDF pra redescobrir
 // esse nome — conhecimento do formato do path, que agora mora inteiro em

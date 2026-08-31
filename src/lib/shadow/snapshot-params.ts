@@ -1,7 +1,7 @@
 // ══════════════════════════════════════════════════════════════════
 // LEO Senna93 F4-T4 · Parser da tabela pintada no snapshot HTML
 // ══════════════════════════════════════════════════════════════════
-// `lerSnapshotHtml` (pdf-server.ts) devolve o HTML gravado em laudos-html/
+// `lerSnapshotHtml` (pdf-storage.ts) devolve o HTML gravado em laudos-html/
 // no momento da emissão — o que o legado REALMENTE pintou. Esta função acha
 // e extrai a tabela de parâmetros produzida por `montarParamsHtml`
 // (pdf-params.ts:48-87): única `<table>` com `table-layout:fixed` e um

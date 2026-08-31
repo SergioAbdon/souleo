@@ -14,8 +14,26 @@
 // ⚠️ A caixa de identificação é ÂNCORA da correção administrativa
 // (`substituirCamposAdministrativos`, correcao-admin.ts): a forma
 // `>RÓTULO</span><span ...>VALOR</span>` não pode mudar sem mudar lá.
+//
+// Tríade onda-3 (Ruflo-A1): a moldura NÃO injeta mais as fontes (CSS_FONTES,
+// pdf-fontes.ts) — quem injeta é `gerarESalvarPdf` (pdf-server.ts), ANTES do
+// Puppeteer processar. Motivo: um snapshot HTML ANTIGO (congelado em
+// laudos-html/ antes desta mudança) ainda carrega o `<link>` do Google
+// Fonts — se a moldura fosse a única fonte da verdade, REGENERAR esse
+// snapshot antigo (correção administrativa) sairia em fonte serif de
+// fallback, silenciosamente, porque a allowlist nova bloqueia
+// fonts.googleapis.com. Injetando no servidor, TODA regeneração — HTML novo
+// desta moldura OU snapshot congelado antigo — ganha a fonte local.
+//
+// Escape/validação de texto (escaparHtml/corSegura) moraram aqui até a
+// tríade onda-3 (Ruflo-A5): 6+ arquivos sem nada a ver com a MOLDURA
+// importavam este módulo só pra pegar a função de escape. Agora moram em
+// `html-escape.ts` (puro, zero imports) — esta moldura importa de lá, igual
+// a todo mundo.
 // Puro, sem import @/ — testado direto por node --test.
 // ══════════════════════════════════════════════════════════════════
+
+import { escaparHtml, corSegura } from './html-escape';
 
 export type CampoId = { label: string; valor: string; flex?: number };
 
@@ -39,30 +57,6 @@ export type ArgsMoldura = {
   htmlPosTabela?: string;      // páginas soltas depois da folha (imagens DICOM)
   cfg: CfgMoldura;
 };
-
-// Escape dos valores de TEXTO interpolados (S5-T14, fix I4). Antes eles
-// entravam crus "por paridade byte-a-byte com o legado", e este HTML é
-// renderizado pelo CHROME DO SERVIDOR (`page.setContent`, pdf-server.ts) —
-// numa página que carrega as signed URLs das imagens DICOM do paciente. A
-// recepção grava `pacienteNome` pelo caminho administrativo (whitelist,
-// exame não-emitido): um `<img src=x onerror=…>` ali virava execução de
-// script no renderizador da emissão, congelada no snapshot e re-executada a
-// cada correção. É a MESMA função que a correção administrativa aplica
-// (`correcao-admin.ts` importa daqui) — os dois caminhos produzem byte a
-// byte o mesmo valor, então a âncora `>RÓTULO</span><span …>VALOR</span>`
-// continua casando depois de corrigir. Valores limpos (o caso real) saem
-// idênticos ao legado — `tests/unit/pdf-moldura.test.mjs` continua exigindo
-// igualdade exata com o template antigo.
-export function escaparHtml(v: string): string {
-  return v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-// X10: a cor vem do doc do workspace (o dono escreve pelo navegador e a regra
-// não valida formato) e entra em atributo style sem escape. Cor é vocabulário
-// fechado: valida em vez de escapar. Fallback = o default das telas do laudo.
-export function corSegura(cor: unknown, fallback = '#8B1A1A'): string {
-  return typeof cor === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(cor) ? cor : fallback;
-}
 
 // P17: logo/assinatura vêm do upload do dono do workspace e viram `<img
 // src=…>` renderizado pelo Chrome do servidor a cada emissão/correção. Uma
@@ -117,7 +111,6 @@ ${linha.map((c) => '      ' + campo(c, p1)).join('\n')}
   const tituloDocEsc = escaparHtml(a.tituloDoc ?? a.titulo);
 
   return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>${tituloDocEsc}</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:"IBM Plex Sans",sans-serif;font-size:8.5pt;color:#1a1a1a;}

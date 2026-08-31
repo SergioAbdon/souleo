@@ -43,6 +43,11 @@ const apagarPdf = async (url) => { pdfsApagados.push(url); };
 let imagensApagadas;
 const apagarImagens = async (wsId, exameId) => { imagensApagadas.push({ wsId, exameId }); };
 
+// Spy do apagador de snapshot (P5/Task 14, LGPD): registra wsId/exameId, nao toca Storage.
+let snapshotsApagados;
+const apagarSnapshot = async (wsId, exameId) => { snapshotsApagados.push({ wsId, exameId }); };
+const apagarSnapshotFalha = async () => { throw new Error('storage fora do ar'); };
+
 before(async () => {
   if (!getApps().length) initializeApp({ projectId: 'leo-testes' });
   db = getFirestore();
@@ -59,6 +64,7 @@ before(async () => {
 beforeEach(async () => {
   pdfsApagados = [];
   imagensApagadas = [];
+  snapshotsApagados = [];
   await db.doc(`subscriptions/${CONTA}`).set({ contaId: CONTA, franquiaMensal: 600, franquiaUsada: 10, creditosExtras: 3 });
 });
 
@@ -153,6 +159,23 @@ describe('apagar', () => {
     const r = await apagarExame(db, { wsId: WS, exameId: 'filaImg', uid: MED, subRef: subRef(), apagarPdf, apagarImagens });
     assert.equal(r.ok, true);
     assert.deepEqual(imagensApagadas, [{ wsId: WS, exameId: 'filaImg' }]);
+  });
+  // P5/Task 14 (LGPD): exclusao de exame passa a apagar o snapshot clinico
+  // (laudos-html/) tambem. apagarSnapshot e opcional, mesmo padrao de
+  // apagarImagens acima.
+  test('apagar chama apagarSnapshot(wsId, exameId) quando injetado (P5)', async () => {
+    await db.doc(`workspaces/${WS}/exames/filaSnap`).set({ pacienteNome: 'F', medicoUid: MED, status: 'aguardando' });
+    const r = await apagarExame(db, { wsId: WS, exameId: 'filaSnap', uid: MED, subRef: subRef(), apagarPdf, apagarSnapshot });
+    assert.equal(r.ok, true);
+    assert.deepEqual(snapshotsApagados, [{ wsId: WS, exameId: 'filaSnap' }]);
+  });
+  test('falha do apagarSnapshot nao bloqueia a exclusao (mesmo padrao do apagarImagens)', async () => {
+    await db.doc(`workspaces/${WS}/exames/filaSnapFalha`).set({ pacienteNome: 'F', medicoUid: MED, status: 'aguardando' });
+    const r = await apagarExame(db, {
+      wsId: WS, exameId: 'filaSnapFalha', uid: MED, subRef: subRef(), apagarPdf, apagarSnapshot: apagarSnapshotFalha,
+    });
+    assert.equal(r.ok, true);
+    assert.equal((await db.doc(`workspaces/${WS}/exames/filaSnapFalha`).get()).exists, false);
   });
 });
 

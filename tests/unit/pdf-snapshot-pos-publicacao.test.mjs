@@ -39,7 +39,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathSnapshotHtml, candidatosSnapshotHtml } from '../../src/lib/pdf-server.ts';
+import { pathSnapshotHtml, candidatosSnapshotHtml, ehSnapshotDoExame } from '../../src/lib/pdf-path.ts';
 
 const raiz = path.resolve(import.meta.dirname, '..', '..');
 const ler = (...p) => fs.readFileSync(path.join(raiz, ...p), 'utf8');
@@ -93,6 +93,42 @@ describe('candidatosSnapshotHtml — flag declara dono, sem fallback cego (round
   });
 });
 
+// Tríade onda-3 (Codex-1 Important): apagarSnapshotsExame (pdf-storage.ts)
+// lista por PREFIXO largo e usa este matcher pra decidir objeto a objeto —
+// o bug que ele fecha era apagar por prefixo cru ('exameId-'), que bate
+// tanto no canônico quanto nos sufixados de um exame DIFERENTE cujo id
+// começa com o mesmo texto + hífen (exameId 'abc' apagaria 'abc-2.html').
+describe('ehSnapshotDoExame — matcher exato (fecha a colisão de prefixo do Codex-1)', () => {
+  const UUID = 'a1b2c3d4-e5f6-47a8-9b0c-d1e2f3a4b5c6';
+
+  test('casa o canônico do próprio exame', () => {
+    assert.ok(ehSnapshotDoExame('laudos-html/ws1/abc.html', 'abc'));
+    assert.ok(ehSnapshotDoExame('abc.html', 'abc'), 'funciona mesmo sem prefixo de pasta (basename cru)');
+  });
+
+  test('casa o sufixado-UUID do próprio exame', () => {
+    assert.ok(ehSnapshotDoExame(`laudos-html/ws1/abc-${UUID}.html`, 'abc'));
+  });
+
+  test('NAO casa objetos de um exame DIFERENTE cujo id começa com o mesmo texto (o bug do Codex-1)', () => {
+    assert.ok(!ehSnapshotDoExame('laudos-html/ws1/abc-2.html', 'abc'),
+      "exameId 'abc' apagando o canonico do exame 'abc-2' — a colisao de prefixo original");
+    assert.ok(!ehSnapshotDoExame(`laudos-html/ws1/abc-2-${UUID}.html`, 'abc'),
+      "exameId 'abc' apagando um sufixado do exame 'abc-2'");
+  });
+
+  test('NAO casa prefixo parcial nem sufixo solto (so as 2 formas exatas)', () => {
+    assert.ok(!ehSnapshotDoExame('laudos-html/ws1/abcdef.html', 'abc'));
+    assert.ok(!ehSnapshotDoExame('laudos-html/ws1/xabc.html', 'abc'));
+    assert.ok(!ehSnapshotDoExame(`laudos-html/ws1/abc-${UUID.slice(0, 20)}.html`, 'abc'), 'UUID truncado nao e UUID');
+  });
+
+  test('exameId com caractere de regex nao escapa o matcher pra outro exame', () => {
+    assert.ok(ehSnapshotDoExame('laudos-html/ws1/a.c.html', 'a.c'), 'o "." do proprio id casa literal');
+    assert.ok(!ehSnapshotDoExame('laudos-html/ws1/aXc.html', 'a.c'), 'sem escape, "." viraria wildcard e casaria "aXc"');
+  });
+});
+
 describe('gerarESalvarPdf NÃO congela mais o snapshot internamente (pdf-server.ts)', () => {
   test('o corpo de gerarESalvarPdf não chama salvarSnapshotHtml', () => {
     const src = semComentarios(ler('src', 'lib', 'pdf-server.ts'));
@@ -104,21 +140,34 @@ describe('gerarESalvarPdf NÃO congela mais o snapshot internamente (pdf-server.
   });
 
   test('lerSnapshotHtml resolve a gaveta inteira (nao so a key) e delega a candidatosSnapshotHtml', () => {
-    const src = semComentarios(ler('src', 'lib', 'pdf-server.ts'));
+    const src = semComentarios(ler('src', 'lib', 'pdf-storage.ts'));
     const inicioFuncao = src.indexOf('export async function lerSnapshotHtml');
-    assert.ok(inicioFuncao >= 0, 'lerSnapshotHtml sumiu de pdf-server.ts');
-    const corpo = src.slice(inicioFuncao, src.indexOf('export async function gerarESalvarPdf'));
-    assert.match(corpo, /const gaveta = \(await refEmissaoPrivada\(getFirestore\(\), wsId, exameId\)\.get\(\)\)\.data\(\);/,
-      'a gaveta e a verdade do servidor (round 6: precisa do doc inteiro, nao so a key, pra ler snapshotSufixado)');
+    assert.ok(inicioFuncao >= 0, 'lerSnapshotHtml sumiu de pdf-storage.ts (onda-3: saiu de pdf-server.ts, sem Puppeteer)');
+    const corpo = src.slice(inicioFuncao);
+    assert.match(corpo, /const gaveta = await lerGavetaEmissao\(getFirestore\(\), wsId, exameId\);/,
+      'a gaveta e a verdade do servidor (round 6: precisa do doc inteiro, nao so a key, pra ler snapshotSufixado — tríade onda-3: via lerGavetaEmissao tipada, nao mais .data() cru)');
     assert.match(corpo, /const candidatos = candidatosSnapshotHtml\(wsId, exameId, gaveta\);/,
       'a decisao de candidatos tem que vir da funcao pura (testavel), nao reimplementada aqui');
   });
 
-  test('sem ciclo de import: pdf-server importa refEmissaoPrivada de emitir-admin (relativo)', () => {
-    const src = ler('src', 'lib', 'pdf-server.ts');
-    assert.match(src, /import \{ refEmissaoPrivada, emissaoKeyValida \} from '\.\/emitir-admin';/);
+  // Tríade onda-3 (Ruflo-A2): pathSnapshotHtml/candidatosSnapshotHtml
+  // moveram de pdf-storage.ts pra pdf-path.ts (dono declarado do formato de
+  // path, puro, ZERO imports — nem `@/`, nem relativo). pdf-storage.ts
+  // importa `lerGavetaEmissao` de emitir-admin.ts (não mais
+  // `refEmissaoPrivada`/`emissaoKeyValida` crus) — o risco de ciclo continua
+  // o mesmo de antes: emitir-admin.ts não pode importar de volta.
+  test('pdf-path.ts nao importa nada (nem @/, nem relativo) — dono puro do formato', () => {
+    const src = ler('src', 'lib', 'pdf-path.ts');
+    assert.ok(!/^import /m.test(src), 'pdf-path.ts ganhou um import — deixou de ser puro, o script retroativo.mjs para de conseguir importar direto');
+  });
+
+  test('sem ciclo de import: pdf-storage importa lerGavetaEmissao de emitir-admin (relativo)', () => {
+    const src = ler('src', 'lib', 'pdf-storage.ts');
+    assert.match(src, /import \{ lerGavetaEmissao \} from '\.\/emitir-admin';/);
+    assert.match(src, /from '\.\/pdf-path';/, 'pathSnapshotHtml/candidatosSnapshotHtml/ehSnapshotDoExame vem de pdf-path.ts');
     const emitirAdminSrc = ler('src', 'lib', 'emitir-admin.ts');
-    assert.ok(!/from ['"]\.\/pdf-server['"]/.test(emitirAdminSrc), 'emitir-admin.ts nao pode importar pdf-server.ts de volta — ciclo');
+    assert.ok(!/from ['"]\.\/pdf-storage['"]/.test(emitirAdminSrc), 'emitir-admin.ts nao pode importar pdf-storage.ts de volta — ciclo');
+    assert.ok(!/from ['"]\.\/pdf-server['"]/.test(emitirAdminSrc), 'emitir-admin.ts nao pode importar pdf-server.ts de volta — ciclo (herdado)');
   });
 });
 

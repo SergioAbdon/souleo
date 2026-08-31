@@ -30,6 +30,14 @@ import { getDb, getCredential, COMMIT, modo } from '../secao1/lib-admin.mjs';
 import { rodarShadow, exameTemDivergencia } from '../../src/lib/shadow/rodar.ts';
 import { normalizar } from '../../src/lib/shadow/comparar.ts';
 import { idValido } from '../../src/lib/exame-admin.ts';
+// Tríade onda-3 (Ruflo-A2): candidatosSnapshotHtml é pura e ZERO imports
+// (pdf-path.ts) — dá pra importar o .ts direto no .mjs, mesmo padrão do
+// resto dos imports acima. emitir-admin.ts (dono de refEmissaoPrivada/
+// lerGavetaEmissao) NÃO dá pra importar aqui: arrasta billing-admin.ts/
+// correcao-admin.ts/ciclo.ts, que não têm a mesma garantia de zero-`@/` que
+// a cadeia da sombra tem — por isso o path da gaveta é reescrito 1 linha
+// abaixo (lerSnapshot), com comentário apontando o dono real do formato.
+import { candidatosSnapshotHtml } from '../../src/lib/pdf-path.ts';
 
 // Os 3 workspaces da fase (spec F4 T5/T6) — sem --ws roda nos 3.
 const WORKSPACES_PADRAO = [
@@ -96,16 +104,29 @@ async function listarExames(wsId, from, to) {
   return snap.docs.map((d) => ({ id: d.id, dados: d.data() }));
 }
 
-// `laudos-html/{ws}/{exameId}.html` — mesmo path de pdf-server.ts:78
-// (pathSnapshotHtml), reescrito aqui porque a função não é exportada.
+// Tríade onda-3 (Ruflo-A2, achado): esta função só tentava o path CANÔNICO
+// (`laudos-html/{ws}/{exameId}.html`) — igual a pdf-storage.ts ANTES do
+// round 5 (ver pdf-path.ts). Exame emitido depois do round 5 (path por
+// TENTATIVA, sufixado por emissaoKey) tinha snapshot no path sufixado; este
+// script caía no `catch` (arquivo canônico não existe) e devolvia `null` —
+// silenciosamente pulava a conferência de snapshot pra exames recentes.
+// Fix: resolve como `lerSnapshotHtml` (pdf-storage.ts) — lê a gaveta (path
+// do doc é o mesmo que `refEmissaoPrivada`, emitir-admin.ts, monta: não dá
+// pra importar essa função aqui sem arrastar billing-admin/correcao-admin/
+// ciclo, ver comentário no import acima) e delega a ORDEM de candidatos pra
+// `candidatosSnapshotHtml`, a MESMA função pura que pdf-storage.ts usa — sem
+// reimplementar a lógica de gaveta→sufixado→canônico na mão.
 async function lerSnapshot(wsId, exameId) {
-  try {
-    const file = getStorage().bucket().file(`laudos-html/${wsId}/${exameId}.html`);
-    const [buf] = await file.download();
-    return buf.toString('utf8');
-  } catch {
-    return null; // emitido antigo (pré-25/08) ou PDF anexado: sem snapshot
+  const gavetaSnap = await db.doc(`workspaces/${wsId}/privado/emissao/exames/${exameId}`).get();
+  const candidatos = candidatosSnapshotHtml(wsId, exameId, gavetaSnap.data());
+  for (const filePath of candidatos) {
+    try {
+      const file = getStorage().bucket().file(filePath);
+      const [buf] = await file.download();
+      return buf.toString('utf8');
+    } catch { /* tenta o proximo candidato */ }
   }
+  return null; // emitido antigo (pré-25/08) ou PDF anexado: sem snapshot
 }
 
 // Mesmo doc shape de src/lib/shadow/deps-admin.ts:24-51 (persistirExecucao)

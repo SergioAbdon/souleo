@@ -6,7 +6,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
-import { gerarESalvarPdf, salvarPdfBuffer, salvarSnapshotHtml, apagarPdfObjeto } from '@/lib/pdf-server';
+import { gerarESalvarPdf } from '@/lib/pdf-server';
+import { salvarPdfBuffer, salvarSnapshotHtml, apagarPdfObjeto } from '@/lib/pdf-storage';
 import { validarPdfBase64 } from '@/lib/pdf-validacao';
 import { adminDb, requireUid } from '@/lib/auth-admin';
 import { resolverPapel } from '@/lib/exame-admin';
@@ -19,8 +20,9 @@ import { prefixoArquivoPorTipo } from '@/lib/dicom-sr-mapping';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-// PDF server-side extraído p/ src/lib/pdf-server.ts
-// (reuso entre /api/emitir e /api/corrigir-laudo — 1 pipeline só)
+// PDF server-side extraído p/ src/lib/pdf-server.ts (Puppeteer) e
+// src/lib/pdf-storage.ts (Storage puro) — reuso entre /api/emitir e
+// /api/corrigir-laudo, 1 pipeline só.
 
 // ── POST Handler ──
 export async function POST(req: NextRequest) {

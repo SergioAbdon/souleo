@@ -23,7 +23,7 @@
 import { useEffect, useState } from 'react';
 import { auth } from '@/lib/firebase';
 // Mesmo escape da moldura do PDF — estas páginas viram HTML do laudo assinado.
-import { escaparHtml } from '@/lib/pdf-moldura';
+import { escaparHtml } from '@/lib/html-escape';
 
 // Cache do mapa {url canônica → url assinada} por exame. As assinadas valem
 // 1h (imagens-dicom-admin.ts); expiramos com folga em 45min pra galeria
@@ -248,7 +248,7 @@ export default function DicomGallery({
     // sozinha, sem a sessão do médico — na URL canônica privada voltaria 403
     // e sairia página em branco.
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/>
-<title>${titulo}</title>
+<title>${escaparHtml(titulo)}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0;}
   @page{size:A4 portrait;margin:8mm;}

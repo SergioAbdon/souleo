@@ -28,6 +28,9 @@ type Params = {
   // (e as imagens). Opcional pra nao quebrar chamador/teste que ainda nao
   // injeta (skip silencioso, igual limparPdf faz com pdfUrl ausente).
   apagarImagens?: (wsId: string, exameId: string) => Promise<void>;
+  // P5/Task 14 (LGPD): mesmo padrao opcional/opt-in do apagarImagens acima —
+  // so apagarExame chama.
+  apagarSnapshot?: (wsId: string, exameId: string) => Promise<void>;
   motivo?: string; novoMedicoUid?: string;
 };
 
@@ -233,6 +236,13 @@ export async function apagarExame(db: Firestore, p: Params): Promise<Resultado> 
   if (p.apagarImagens) {
     try { await p.apagarImagens(p.wsId, p.exameId); }
     catch (e) { console.error('apagarImagens:', e); }
+  }
+  // P5: o snapshot em laudos-html/ carrega o laudo clínico completo com
+  // identificação — "apagar o exame" (LGPD) tem que levar ele junto, senão o
+  // conteúdo sobrevive órfão no bucket. Nunca bloqueia a exclusão.
+  if (p.apagarSnapshot) {
+    try { await p.apagarSnapshot(p.wsId, p.exameId); }
+    catch (e) { console.error('apagarSnapshot:', e); }
   }
   // Achado 8: a reserva de ACC (accIndex/{acc}) nasce junto com o exame
   // (gravarImportacao) — some junto tambem, senao fica orfa (ninguem mais
