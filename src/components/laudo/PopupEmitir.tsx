@@ -3,7 +3,7 @@
 // SOULEO · Popup Salvar/Emitir + Modo Emitido + Exportações
 // ══════════════════════════════════════════════════════════════════
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
 
 type Props = {
@@ -33,10 +33,18 @@ type Props = {
 
 export function PopupSalvarEmitir({ open, onClose, onRascunho, onEmitir, totalImagensSelecionadas = 0, incluirImagensInicial }: Props) {
   // Toggle do checkbox — marcado por default quando há imagens; lembra a
-  // última escolha do médico (o componente desmonta com `open=false` —
-  // `if (!open) return null` abaixo — então este `useState` reinicializa a
-  // cada abertura).
+  // última escolha do médico. `useState(incluirImagensInicial)` só lê a prop
+  // na 1ª montagem — o componente NÃO desmonta com `open=false` (o pai
+  // renderiza `<PopupSalvarEmitir open={...}/>` sempre; `if (!open) return
+  // null` abaixo só pula o JSX, a mesma instância/state continua viva).
+  // Achado Codex (fix pós-tríade onda-4): sem re-sincronizar, o checkbox
+  // ficava no valor da 1ª abertura mesmo depois do onSnapshot trazer a
+  // escolha persistida, ou o médico navegar pra outro exame na mesma
+  // instância da página.
   const [incluirImagens, setIncluirImagens] = useState(incluirImagensInicial ?? true);
+  useEffect(() => {
+    if (open) setIncluirImagens(incluirImagensInicial ?? true);
+  }, [open, incluirImagensInicial]);
   // S5-T12: valor derivado (sem setState-no-render) — sem imagens pra
   // selecionar, o efetivo é sempre false, mesmo que `incluirImagens` (o
   // toggle memorizado) ainda esteja true de uma sessão anterior.
