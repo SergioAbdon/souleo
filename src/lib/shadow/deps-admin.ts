@@ -11,7 +11,7 @@ import { Timestamp, FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/auth-admin';
 import { exameTemDivergencia } from './rodar';
 import type { ExecucaoShadow, ShadowDeps } from './rodar';
-import { lerSnapshotHtml } from '@/lib/pdf-server';
+import { lerSnapshotHtml } from '@/lib/pdf-storage';
 
 const CHUNK = 400; // limite Firestore = 500 ops/batch
 

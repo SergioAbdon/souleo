@@ -39,7 +39,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathSnapshotHtml, candidatosSnapshotHtml } from '../../src/lib/pdf-server.ts';
+import { pathSnapshotHtml, candidatosSnapshotHtml } from '../../src/lib/pdf-storage.ts';
 
 const raiz = path.resolve(import.meta.dirname, '..', '..');
 const ler = (...p) => fs.readFileSync(path.join(raiz, ...p), 'utf8');
@@ -104,21 +104,27 @@ describe('gerarESalvarPdf NÃO congela mais o snapshot internamente (pdf-server.
   });
 
   test('lerSnapshotHtml resolve a gaveta inteira (nao so a key) e delega a candidatosSnapshotHtml', () => {
-    const src = semComentarios(ler('src', 'lib', 'pdf-server.ts'));
+    const src = semComentarios(ler('src', 'lib', 'pdf-storage.ts'));
     const inicioFuncao = src.indexOf('export async function lerSnapshotHtml');
-    assert.ok(inicioFuncao >= 0, 'lerSnapshotHtml sumiu de pdf-server.ts');
-    const corpo = src.slice(inicioFuncao, src.indexOf('export async function gerarESalvarPdf'));
+    assert.ok(inicioFuncao >= 0, 'lerSnapshotHtml sumiu de pdf-storage.ts (onda-3: saiu de pdf-server.ts, sem Puppeteer)');
+    const corpo = src.slice(inicioFuncao);
     assert.match(corpo, /const gaveta = \(await refEmissaoPrivada\(getFirestore\(\), wsId, exameId\)\.get\(\)\)\.data\(\);/,
       'a gaveta e a verdade do servidor (round 6: precisa do doc inteiro, nao so a key, pra ler snapshotSufixado)');
     assert.match(corpo, /const candidatos = candidatosSnapshotHtml\(wsId, exameId, gaveta\);/,
       'a decisao de candidatos tem que vir da funcao pura (testavel), nao reimplementada aqui');
   });
 
-  test('sem ciclo de import: pdf-server importa refEmissaoPrivada de emitir-admin (relativo)', () => {
-    const src = ler('src', 'lib', 'pdf-server.ts');
+  // Onda-3 (P9): lerSnapshotHtml/pathSnapshotHtml moveram pra pdf-storage.ts
+  // (sem Puppeteer) — a sombra (shadow/deps-admin.ts) le de la e para de
+  // arrastar puppeteer-core/@sparticuz/chromium. pdf-storage.ts importa
+  // refEmissaoPrivada de emitir-admin.ts; o risco de ciclo agora e o mesmo
+  // de antes, so que no arquivo novo.
+  test('sem ciclo de import: pdf-storage importa refEmissaoPrivada de emitir-admin (relativo)', () => {
+    const src = ler('src', 'lib', 'pdf-storage.ts');
     assert.match(src, /import \{ refEmissaoPrivada, emissaoKeyValida \} from '\.\/emitir-admin';/);
     const emitirAdminSrc = ler('src', 'lib', 'emitir-admin.ts');
-    assert.ok(!/from ['"]\.\/pdf-server['"]/.test(emitirAdminSrc), 'emitir-admin.ts nao pode importar pdf-server.ts de volta — ciclo');
+    assert.ok(!/from ['"]\.\/pdf-storage['"]/.test(emitirAdminSrc), 'emitir-admin.ts nao pode importar pdf-storage.ts de volta — ciclo');
+    assert.ok(!/from ['"]\.\/pdf-server['"]/.test(emitirAdminSrc), 'emitir-admin.ts nao pode importar pdf-server.ts de volta — ciclo (herdado)');
   });
 });
 

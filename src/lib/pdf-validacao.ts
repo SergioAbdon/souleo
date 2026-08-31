@@ -7,14 +7,18 @@
 // `node --test` sem puxar puppeteer junto.
 // ══════════════════════════════════════════════════════════════════
 
-const LIMITE_BYTES = 10 * 1024 * 1024; // 10MB
+// P18 (onda-3): a faixa 3-4,5MB morria no 413 opaco da Vercel antes de
+// chegar aqui — o limite de verdade já era bem menor que os 10MB
+// anunciados. 3MB é o que o modal do cliente já avisa; o servidor agora
+// concorda com o que promete.
+const LIMITE_BYTES = 3 * 1024 * 1024; // 3MB
 
 export type ValidacaoPdf =
   | { ok: true; buf: Buffer }
   | { ok: false; motivo: 'pdf_grande'; status: 413 }
   | { ok: false; motivo: 'nao_e_pdf'; status: 400 };
 
-/** Decodifica base64 e valida tamanho (<=10MB) + magic bytes (%PDF-). */
+/** Decodifica base64 e valida tamanho (<=3MB) + magic bytes (%PDF-). */
 export function validarPdfBase64(pdfBase64: string): ValidacaoPdf {
   const buf = Buffer.from(pdfBase64, 'base64');
   if (buf.length > LIMITE_BYTES) {

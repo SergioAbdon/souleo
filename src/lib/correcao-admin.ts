@@ -57,7 +57,7 @@ export function emissaoMudou(antes: unknown, agora: unknown): boolean {
 
 // O PDF corrigido REGRAVA o mesmo objeto do Storage — o link já foi para o
 // paciente/convênio. O nome do arquivo vem da metadata do snapshot, gravada
-// pelo próprio servidor na emissão (ver `salvarSnapshotHtml`, pdf-server.ts);
+// pelo próprio servidor na emissão (ver `salvarSnapshotHtml`, pdf-storage.ts);
 // nunca do doc do exame (editável pelo médico-autor) nem do cliente. Até a
 // tríade final da S5 este arquivo fazia o parse da URL do PDF pra redescobrir
 // esse nome — conhecimento do formato do path, que agora mora inteiro em

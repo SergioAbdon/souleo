@@ -96,7 +96,7 @@ async function listarExames(wsId, from, to) {
   return snap.docs.map((d) => ({ id: d.id, dados: d.data() }));
 }
 
-// `laudos-html/{ws}/{exameId}.html` — mesmo path de pdf-server.ts:78
+// `laudos-html/{ws}/{exameId}.html` — mesmo path de pdf-storage.ts
 // (pathSnapshotHtml), reescrito aqui porque a função não é exportada.
 async function lerSnapshot(wsId, exameId) {
   try {
