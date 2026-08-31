@@ -10,6 +10,7 @@ import {
 } from 'docx';
 import { saveAs } from 'file-saver';
 import { rodapeFontes } from '../senna90/classificacoes/fontes';
+import { sanitizarNomeArq } from './pdf-path';
 
 type ParamRow = { cells: string[] };
 
@@ -56,7 +57,7 @@ function criarCelula(texto: string, opts?: { bold?: boolean; header?: boolean; b
   });
 }
 
-export async function gerarDocx(data: LaudoData) {
+export async function gerarDocx(data: LaudoData, prefixoArq: string) {
   const cor = hexToRgb(data.p1);
 
   // Larguras das 8 colunas em DXA (total = 9360 para A4 com margens de 1")
@@ -200,6 +201,9 @@ export async function gerarDocx(data: LaudoData) {
   });
 
   const buffer = await Packer.toBlob(doc);
-  const nomeArq = `ECOTT_${data.pacienteNome.replace(/\s+/g, '_')}.docx`;
+  // X24: prefixo vem do chamador (mesmo prefixoArquivoPorTipo(tipoExame) do
+  // PDF) — Doppler baixado em Word deixa de sair como "ECOTT_...". Nome
+  // sanitizado pelo mesmo dono único do PDF (pdf-path.ts).
+  const nomeArq = `${sanitizarNomeArq(`${prefixoArq}_${data.pacienteNome}`, 'laudo')}.docx`;
   saveAs(buffer, nomeArq);
 }

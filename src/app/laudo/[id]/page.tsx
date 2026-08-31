@@ -502,7 +502,7 @@ function LaudoPageInner() {
   useEffect(() => {
     const interval = setInterval(async () => {
       if (emitido || docFechado || !dirtyRef.current || emitindoRef.current) return;
-      const ok = await salvarLaudo('andamento', { laudoHtml: editorRef.current?.getHTML() ?? '' });
+      const ok = await salvarLaudo({ laudoHtml: editorRef.current?.getHTML() ?? '' });
       if (ok) dirtyRef.current = false;
     }, 60_000);
     return () => clearInterval(interval);
@@ -1213,7 +1213,7 @@ function LaudoPageInner() {
   }
 
   /** Save centralizado — medidas + identificação sempre juntos */
-  async function salvarLaudo(status: 'rascunho' | 'andamento', extras?: Record<string, unknown>) {
+  async function salvarLaudo(extras?: Record<string, unknown>) {
     if (!workspace?.id || !exameId || !user?.uid) return false;
     // Laudo ASSINADO não volta pra rascunho por save (tríade final, I1). Os
     // dois chamadores (autosave de 60s e "Salvar rascunho") gravam
@@ -1230,7 +1230,7 @@ function LaudoPageInner() {
     // medicoUid no save: assume o exame orfao (cadastrado pela recepcao) no
     // primeiro salvamento. Se ja e o autor, reenvia o mesmo valor (intacto
     // permite); se o autor e OUTRO medico, a regra nega — como deve.
-    const dados = { id: exameId, medidas: coletarMedidas(), ...coletarIdentificacao(), status, medicoUid: user.uid, ...extras };
+    const dados = { id: exameId, medidas: coletarMedidas(), ...coletarIdentificacao(), status: 'andamento', medicoUid: user.uid, ...extras };
     return await saveExame(workspace.id, dados, user.uid);
   }
 
@@ -1385,7 +1385,7 @@ function LaudoPageInner() {
   // código morto). Plano B local continua como rede de segurança offline.
   async function handleRascunho() {
     setPopupOpen(false);
-    const okServer = await salvarLaudo('andamento', { laudoHtml: editorRef.current?.getHTML() ?? '' });
+    const okServer = await salvarLaudo({ laudoHtml: editorRef.current?.getHTML() ?? '' });
     try {
       localStorage.setItem(`rascunho_${exameId}`, JSON.stringify({
         medidas: coletarMedidas(), laudoHtml: editorRef.current?.getHTML() ?? '', timestamp: Date.now(),
@@ -1857,10 +1857,10 @@ function LaudoPageInner() {
     const sel = window.getSelection();
     sel?.removeAllRanges();
     sel?.addRange(range);
-    document.execCommand('copy');
+    const copiou = document.execCommand('copy');
     sel?.removeAllRanges();
     temp.remove();
-    toast('Copiado — cole com Ctrl+V no Word, Tasy ou MV');
+    toast(copiou ? 'Copiado — cole com Ctrl+V no Word, Tasy ou MV' : 'Falha ao copiar — selecione e copie manualmente');
   }
 
   function handleCopiarTexto() {
@@ -1882,9 +1882,9 @@ function LaudoPageInner() {
       ta.value = texto;
       document.body.appendChild(ta);
       ta.select();
-      document.execCommand('copy');
+      const copiou = document.execCommand('copy');
       ta.remove();
-      toast('Copiado texto simples');
+      toast(copiou ? 'Copiado texto simples' : 'Falha ao copiar — selecione e copie manualmente');
     });
   }
 
@@ -1912,7 +1912,7 @@ function LaudoPageInner() {
       params,
       achados: coletarAchados(),
       conclusoes: coletarConclusoes(),
-    });
+    }, prefixoArquivoPorTipo(exame?.tipoExame as string | undefined));
 
     toast('Word (.docx) baixado!');
   }
