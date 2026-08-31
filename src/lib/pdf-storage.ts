@@ -30,12 +30,17 @@ export async function salvarPdfBuffer(
   const file = bucket.file(filePath);
 
   await file.save(buf, {
+    resumable: false,               // P19: buffer pequeno, um request só
+    predefinedAcl: 'publicRead',    // P19: mata o segundo round-trip do makePublic
     metadata: {
       contentType: 'application/pdf',
       contentDisposition: `inline; filename="${nomeArquivo}.pdf"`,
+      // P3: a correção administrativa regrava o MESMO objeto público — com o
+      // default do GCS (max-age=3600) o link já entregue servia o PDF ERRADO
+      // por até 1h depois da correção, sem sinal nenhum.
+      cacheControl: 'no-cache',
     },
   });
-  await file.makePublic();
 
   return `https://storage.googleapis.com/${bucket.name}/${filePath}`;
 }
