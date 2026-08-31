@@ -17,6 +17,8 @@
 // Puro, sem import @/ — testado direto por node --test.
 // ══════════════════════════════════════════════════════════════════
 
+import { CSS_FONTES } from './pdf-fontes';
+
 export type CampoId = { label: string; valor: string; flex?: number };
 
 export type CfgMoldura = {
@@ -117,8 +119,7 @@ ${linha.map((c) => '      ' + campo(c, p1)).join('\n')}
   const tituloDocEsc = escaparHtml(a.tituloDoc ?? a.titulo);
 
   return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>${tituloDocEsc}</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<style>
+<style>${CSS_FONTES}
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:"IBM Plex Sans",sans-serif;font-size:8.5pt;color:#1a1a1a;}
 @page{size:A4;margin:0;}

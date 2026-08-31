@@ -13,22 +13,22 @@ import { assinarImagensExame, assinarUrlsNoHtml } from './imagens-dicom-admin';
 import { obterBrowser, descartarBrowser, ehErroDeConexao } from './pdf-browser';
 import { salvarPdfBuffer } from './pdf-storage';
 
-// Teto da espera pelas fontes (S7-T0.2, achado P8). A moldura carrega IBM Plex
-// do fonts.googleapis.com em TODO render; `document.fonts.ready` espera o woff2
-// chegar. Com CDN fora do ar isso não pode segurar a emissão: estourado o teto,
-// o PDF sai na fonte de fallback — exatamente o que já acontecia hoje, só que
-// depois de 30s do `networkidle0` (e, pelo P4, com a franquia já cobrada).
+// Teto da espera pelas fontes (S7-T0.2, achado P8). P8 follow-up: a moldura
+// embute IBM Plex em base64 (pdf-fontes.ts) — zero rede — então
+// `document.fonts.ready` resolve local e rápido. O teto fica de qualquer
+// jeito: cinto barato contra um Chromium lento a decodificar o woff2.
 const TETO_FONTES_MS = 8000;
 
 // P1: o pdfHtml vem do cliente — o Chrome do servidor não pode ser o proxy
-// dele. Só o que o laudo legitimamente usa: data: (logo/assinatura), o
-// próprio bucket (signed URLs das imagens DICOM) e as fontes da moldura.
+// dele. Só o que o laudo legitimamente usa: data: (logo/assinatura, e agora
+// as fontes da moldura também — embutidas, P8 follow-up) e o próprio bucket
+// (signed URLs das imagens DICOM). fonts.googleapis.com/fonts.gstatic.com
+// SAÍRAM da allowlist: a moldura não faz mais essa requisição, e mantê-los
+// aqui era superfície de SSRF sem uso legítimo nenhum.
 // Prefixo com barra no bucket: "meu-bucketX" não passa.
 export function urlPermitidaNoRender(url: string, bucketName: string): boolean {
   return url.startsWith('data:')
-    || url.startsWith(`https://storage.googleapis.com/${bucketName}/`)
-    || url.startsWith('https://fonts.googleapis.com/')
-    || url.startsWith('https://fonts.gstatic.com/');
+    || url.startsWith(`https://storage.googleapis.com/${bucketName}/`);
 }
 
 // ── Gerar PDF via Puppeteer + upload Storage ──
@@ -82,10 +82,10 @@ export async function gerarESalvarPdf(
         if (urlPermitidaNoRender(r.url(), bucket.name)) void r.continue();
         else { console.warn(`render: url bloqueada ${r.url().slice(0, 120)} (ws=${wsId} exame=${exameId})`); void r.abort(); }
       });
-      // `load` (não `networkidle0`): o evento já espera o CSS do <link> das
-      // fontes e as imagens do laudo — que é o que o PDF precisa —, sem os
-      // 500ms de silêncio de rede nem ficar refém de uma conexão pendurada.
-      // As fontes em si continuam esperadas explicitamente logo abaixo.
+      // `load` (não `networkidle0`): o evento já espera as imagens do laudo —
+      // que é o que o PDF precisa —, sem os 500ms de silêncio de rede nem
+      // ficar refém de uma conexão pendurada. As fontes (embutidas, sem rede)
+      // continuam esperadas explicitamente logo abaixo.
       await page.setContent(htmlAssinado, { waitUntil: 'load', timeout: 30000 });
       let teto: NodeJS.Timeout | undefined;
       await Promise.race([
