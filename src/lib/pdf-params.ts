@@ -54,6 +54,14 @@ export function montarParamsHtml(rows: string[][], p1raw: string, opts: ParamsHt
   const p1 = corSegura(p1raw);
   const paramsRows = rows
     .map((cells, i) => {
+      // X7 (simplificado onda-4/Ponytail): mesmo filtro de paramsParaTexto/
+      // paramsParaDocx (linha ~104/117) — row incompleta do motor sairia
+      // desalinhada/com colunas faltando; sem isso ela vazava só no HTML
+      // (PDF/copiar-formatado), divergindo das outras 2 saídas. `''` some no
+      // `.join('')` de baixo — um passo só, `i` original nunca muda (não há
+      // filter antes do map), então opts.oor (indexado por posição em
+      // `rows`) não corre risco de desalinhar.
+      if (cells.length < 8) return '';
       let rowHTML = '<tr>';
       cells.forEach((cell, idx) => {
         const divider = idx === 4 ? `border-left:2px solid ${p1};` : '';

@@ -39,6 +39,10 @@ export default function LaudoTextoPage() {
   // /laudo-texto/A para /laudo-texto/B reusa a instância do componente (mesmo
   // segmento de rota), e o ref sobreviveria — a chave de A viraria trava no B.
   const emissaoKeyRef = useRef<{ id: string; key: string } | null>(null);
+  // X18: dirty flag do editor (mesmo padrão do motor) — setada pelo onDirty
+  // do EditorLaudo, zerada em salvamento/emissão COM sucesso. Lida só pelo
+  // beforeunload abaixo (não há autosave aqui).
+  const dirtyRef = useRef(false);
 
   const exameId = params.id as string;
   // Cabeçalho/rodapé da folha — mesmos dados que vão pro PDF (moldura única).
@@ -51,8 +55,19 @@ export default function LaudoTextoPage() {
     : '';
   // Idade NA DATA DO EXAME (paridade com o motor) — ver paciente-fmt.
   const idade = idadeLabel(exame?.pacienteDtnasc as string | undefined, exame?.dataExame as string | undefined);
-  // Laudo já assinado (doc, não estado de tela): trava o "Salvar rascunho".
-  const emitidoDoc = (exame?.status as string) === 'emitido' || !!exame?.emitidoEm;
+  // Documento FECHADO pro rascunho (trava o "Salvar rascunho").
+  //
+  // X17: por `status`, não por `emitidoEm` — mesmo critério e razão do
+  // `docFechado` do motor (laudo/[id]/page.tsx). `transferirExame` devolve o
+  // consumo, apaga o `pdfUrl` e põe `status:'andamento'`, mas MANTÉM o
+  // `emitidoEm` — o médico que recebeu o laudo justamente pra refazê-lo
+  // ficaria sem "Salvar rascunho" com `|| !!emitidoEm`.
+  // Tríade onda-4 (Ponytail item 8): renomeado `emitidoDoc`→`docFechado` e
+  // critério ganhou `cancelado` — paridade REAL com o motor, que já travava
+  // os dois status (a regra do Firestore recusa gravar em cima de cancelado
+  // de qualquer jeito; sem isso aqui o médico só descobria pelo erro cru do
+  // servidor em vez de uma mensagem honesta na hora do clique).
+  const docFechado = ['emitido', 'cancelado'].includes((exame?.status as string) || '');
   const clinicaEnd = fmtCep((workspace?.endereco as string) || '');
   // 2º telefone do local entrava no rodapé do motor e sumia no laudo-texto —
   // uma folha só, mesmo rodapé (S5-T10).
@@ -71,6 +86,12 @@ export default function LaudoTextoPage() {
   // Carregar exame + tipo do catálogo (rascunho salvo > modelo do tipo > vazio).
   useEffect(() => {
     if (!workspace?.id || !exameId) return;
+    // Tríade onda-4 (Codex item 3): zera NA TROCA de exame — mesmo escopo do
+    // reset do `emissaoKeyRef` (mais abaixo, comparado por `.id === exameId`
+    // no uso). Sem isso, SPA A→B (sem desmontar a página) herdava a dirty-
+    // flag do exame A: `handleSalvarRascunho`/beforeunload liam "sujo" pro
+    // exame B mesmo sem edição nenhuma nele ainda.
+    dirtyRef.current = false;
     (async () => {
       const ex = await getExame(workspace.id, exameId) as Record<string, unknown> | null;
       setExame(ex);
@@ -109,6 +130,21 @@ export default function LaudoTextoPage() {
     return () => clearInterval(iv);
   }, []);
 
+  // X18 (beforeunload): portado do motor (laudo/[id]/page.tsx) — avisa se há
+  // mudança não salva e o laudo não está emitido. Emitido é documento
+  // fechado (reemitir é ato explícito, não fechar a aba); não há o que
+  // perder ao sair.
+  useEffect(() => {
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      if (dirtyRef.current && !docFechado) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [docFechado]);
+
   function toast(msg: string) {
     const el = document.createElement('div');
     el.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:99999;background:#1E293B;color:#fff;padding:10px 20px;border-radius:9px;font-size:13px;font-weight:600;font-family:IBM Plex Sans,sans-serif;box-shadow:0 4px 20px rgba(0,0,0,.3);';
@@ -126,7 +162,14 @@ export default function LaudoTextoPage() {
     // aqui é REEMITIR (botão ao lado, consome 1 franquia) — por isso o editor
     // continua editável, só o "Salvar rascunho" some. Guard além do
     // `disabled` do botão: estado pode chegar depois do render.
-    if (emitidoDoc) { toast('Laudo já emitido — use "Reemitir" para alterar'); return; }
+    if (docFechado) {
+      // Mensagem honesta por status: cancelado nunca teve "Reemitir" (a
+      // regra do Firestore recusa gravar em cima dele de qualquer jeito).
+      toast((exame?.status as string) === 'cancelado'
+        ? 'Laudo cancelado — não é possível salvar rascunho'
+        : 'Laudo já emitido — use "Reemitir" para alterar');
+      return;
+    }
     setSalvando(true);
     const ok = await saveExame(workspace.id, {
       id: exameId,
@@ -135,6 +178,7 @@ export default function LaudoTextoPage() {
       medicoUid: user.uid,
     }, user.uid);
     setSalvando(false);
+    if (ok) dirtyRef.current = false;
     toast(ok ? 'Rascunho salvo' : 'Erro ao salvar rascunho');
   }
 
@@ -189,10 +233,6 @@ export default function LaudoTextoPage() {
             pacienteNome: (exame.pacienteNome as string) || '',
             tipoExame: (exame.tipoExame as string) || '',
             convenio: (exame.convenio as string) || '',
-            cfgSnapshot: {
-              clinica: clinicaNome,
-              medNome: profile?.nome, medCrm: profile?.crm, medUf: profile?.ufCrm, p1,
-            },
             // `reemissao` não vai mais no corpo — o servidor deriva sozinho
             // (exameSnap × dadosFinais na transação); mandar o flag daqui só
             // reabriria o canal que o achado E3 fechou do lado do cliente.
@@ -230,6 +270,7 @@ export default function LaudoTextoPage() {
     }
 
     emissaoKeyRef.current = null;   // S7-T0.3: próxima emissão é intenção nova (cobra)
+    dirtyRef.current = false;       // X18: emitido com sucesso — nada mais a perder
     alert('Laudo emitido com sucesso!' + (resultado.pdfErro ? '\n(Aviso: o PDF falhou ao gerar — reemita ou contate o suporte.)' : ''));
     router.replace('/agenda');
   }
@@ -251,8 +292,8 @@ export default function LaudoTextoPage() {
             {exame?.acc ? ` · ACC ${exame.acc as string}` : ''}
           </div>
         </div>
-        <button onClick={handleSalvarRascunho} disabled={salvando || emitindo || emitidoDoc}
-          title={emitidoDoc ? 'Laudo emitido — para alterar, use "Reemitir"' : undefined}
+        <button onClick={handleSalvarRascunho} disabled={salvando || emitindo || docFechado}
+          title={docFechado ? 'Laudo emitido — para alterar, use "Reemitir"' : undefined}
           className="shrink-0 px-3 py-1.5 rounded-lg border border-borda bg-card text-ink text-xs font-semibold hover:bg-surface disabled:opacity-50 cursor-pointer">
           {salvando ? 'Salvando…' : 'Salvar rascunho'}
         </button>
@@ -288,7 +329,8 @@ export default function LaudoTextoPage() {
             ],
           ]}
         >
-          <EditorLaudo ref={editorRef} placeholder="Digite o laudo…" />
+          <EditorLaudo ref={editorRef} placeholder="Digite o laudo…"
+            onDirty={() => { dirtyRef.current = true; }} />
         </MolduraA4>
       </div>
     </div>

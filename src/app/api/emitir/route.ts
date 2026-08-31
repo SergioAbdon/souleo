@@ -15,6 +15,7 @@ import {
   emitirComCobranca, emissaoKeyValida, publicarPdfSeAindaDono, marcarPdfErroSeAindaDono, refEmissaoPrivada,
 } from '@/lib/emitir-admin';
 import { prefixoArquivoPorTipo } from '@/lib/dicom-sr-mapping';
+import { nomeArquivoLaudo } from '@/lib/pdf-path';
 
 // ── Config Next.js ──
 export const runtime = 'nodejs';
@@ -82,7 +83,7 @@ export async function POST(req: NextRequest) {
     // proprio alvo desde a T5) tinha modelo de confianca oposto no mesmo
     // bucket. Deriva do que o servidor acabou de gravar no exame; o path
     // ainda leva o exameId (pdf-path.ts), entao nome repetido nao colide.
-    const nomeArq = `${prefixoArquivoPorTipo((dadosFinais?.tipoExame as string) || '')} ${String(dadosFinais?.pacienteNome || '').trim().toUpperCase()}`.trim();
+    const nomeArq = nomeArquivoLaudo(prefixoArquivoPorTipo((dadosFinais?.tipoExame as string) || ''), String(dadosFinais?.pacienteNome || ''));
 
     // Round 3 (Codex Critical, item 1) + round 4 (item 2): PATH ÚNICO POR
     // TENTATIVA. Sem isto, 2 uploads do MESMO paciente/tipo (retry, corrida

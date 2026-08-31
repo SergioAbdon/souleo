@@ -391,11 +391,11 @@ describe('E14 — whitelist de dadosFinais (campos forjados nao chegam ao doc)',
     assert.notEqual(doc.emitidoEm.toMillis(), new Date('2020-01-01').getTime());
   });
 
-  test('os 13 campos legitimos continuam chegando ao doc (payload real dos 3 clientes)', async () => {
+  test('os campos legitimos continuam chegando ao doc (payload real dos 3 clientes)', async () => {
     const id = await seedExame();
     const r = await emitir(id, KEY_A, {
       medidas: { ddve: 50 }, achados: 'achado x', conclusoes: 'conclusao x',
-      laudoHtml: '<p>a</p>', laudoTextoHtml: '<p>b</p>', cfgSnapshot: { clinica: 'X' },
+      laudoHtml: '<p>a</p>', laudoTextoHtml: '<p>b</p>', incluirImagensNoPdf: false,
       pacienteDtnasc: '1980-01-02', dataExame: '2026-08-30', solicitante: 'DR FULANO', sexo: 'F',
     });
     assert.equal(r.ok, true);
@@ -405,7 +405,7 @@ describe('E14 — whitelist de dadosFinais (campos forjados nao chegam ao doc)',
     assert.equal(doc.conclusoes, 'conclusao x');
     assert.equal(doc.laudoHtml, '<p>a</p>');
     assert.equal(doc.laudoTextoHtml, '<p>b</p>');
-    assert.deepEqual(doc.cfgSnapshot, { clinica: 'X' });
+    assert.equal(doc.incluirImagensNoPdf, false);
     assert.equal(doc.pacienteDtnasc, '1980-01-02');
     assert.equal(doc.dataExame, '2026-08-30');
     assert.equal(doc.solicitante, 'DR FULANO');

@@ -128,8 +128,11 @@ describe('trava única do emitido — CSS e disabled-setter concordam', () => {
     const textoSrc = fs.readFileSync(
       path.join(root, 'src', 'app', 'laudo-texto', '[id]', 'page.tsx'), 'utf8',
     );
-    assert.match(textoSrc, /disabled=\{salvando \|\| emitindo \|\| emitidoDoc\}/);
-    assert.match(textoSrc, /if \(emitidoDoc\) \{ toast\(/,
+    assert.match(textoSrc, /disabled=\{salvando \|\| emitindo \|\| docFechado\}/);
+    assert.match(textoSrc, /if \(docFechado\) \{/,
       'guard no handler além do disabled — o exame chega depois do primeiro render');
+    // Tríade onda-4 (Ponytail item 8): paridade real com o motor — cancelado
+    // também trava (mesmo critério de `docFechado` em laudo/[id]/page.tsx).
+    assert.match(textoSrc, /const docFechado = \['emitido', 'cancelado'\]\.includes/);
   });
 });

@@ -327,7 +327,7 @@ describe('Contrato de SAÍDA (ADR item 4) — os #out-* dos DOIS motores chegam 
       'o `if (paramsOn)` que instala o wrapper precisa do `else` que restaura o `calc()` cru do `__calcOrig`');
   });
 
-  test('(5.7) emissão com a flag ON exige tabela pintada E FRESCA (revisão I2 + F3-T6)', () => {
+  test('(5.7) emissão com a flag ON exige tabela pintada E FRESCA (revisão I2 + F3-T6 + X5/Task18)', () => {
     // Com ON a tabela É a ponte: se ela falhou, `#params-tbody` está vazio e
     // `gerarPdfHtml` raspa nada — sairia um laudo ASSINADO sem a tabela de
     // medidas. O guard tem que estar ANTES do `gerarPdfHtml` do handleEmitir.
@@ -337,10 +337,44 @@ describe('Contrato de SAÍDA (ADR item 4) — os #out-* dos DOIS motores chegam 
     // falhou continua no DOM com os números VELHOS e passava pelo guard —
     // laudo assinado com medidas de antes da última edição. `tabelaFrescaRef`
     // é a segunda metade da pergunta: "a última rodada deu certo?".
+    //
+    // X5 (Task 18): a condição saiu de dentro de `handleEmitir` pra
+    // `tabelaProntaOuAvisa()` — reusada pelos 4 handlers de saída (Imprimir/
+    // Copiar/Word). Recalibrado na tríade onda-4 (Ponytail): tbody vazio
+    // bloqueia sempre; tbody cheio mas desatualizado só bloqueia quando
+    // `exige` é true (emissão) — pin afrouxado (sem `: boolean`/âncora de
+    // newline) pra não quebrar a cada reformatação inofensiva.
+    assert.match(pageSrc, /function tabelaProntaOuAvisa\(acao: string, exige/,
+      '`tabelaProntaOuAvisa` precisa receber a ação (pro toast) e `exige` (bloqueia ou só avisa)');
+    assert.match(pageSrc, /document\.querySelectorAll\('#params-tbody tr'\)\.length === 0\) \{/,
+      'tbody vazio precisa ter um bloco próprio — bloqueia sempre, nas 5 chamadoras');
+    assert.match(pageSrc, /if \(!tabelaFrescaRef\.current\) \{\s*if \(exige\) \{/,
+      'tabela desatualizada só bloqueia quando `exige` — senão vira aviso-e-prossegue');
     const emitir = pageSrc.split('async function handleEmitir(')[1]?.split('const pdfHtml = gerarPdfHtml(')[0] || '';
     assert.ok(emitir, 'não achei o trecho de handleEmitir até o gerarPdfHtml');
-    assert.match(emitir, /senna93Params\(\)\s*\n?\s*&& \(document\.querySelectorAll\('#params-tbody tr'\)\.length === 0 \|\| !tabelaFrescaRef\.current\)/,
-      'handleEmitir precisa abortar (antes de montar o pdfHtml) quando a flag está ON e a tabela não carregou OU não está fresca');
+    assert.match(emitir, /if \(!tabelaProntaOuAvisa\('emitir', true\)\) return;/,
+      'handleEmitir precisa abortar (antes de montar o pdfHtml) via tabelaProntaOuAvisa(\'emitir\', true) — exige tabela FRESCA, não só presente');
+  });
+
+  test('(5.7b) as 4 saídas que raspam a tela (Imprimir/Copiar/Word) usam o mesmo guard, sem exigir frescor (X5/Task18 + onda-4)', () => {
+    // PDF/prontuário/Word não podem sair com "MEDIDAS E PARÂMETROS" vazio e
+    // cara de completo — mesmo guard do handleEmitir, uma função só. `exige:
+    // false`: tabela vazia ainda bloqueia (não há o que raspar), mas
+    // desatualizada agora é só aviso — um laudo JÁ EMITIDO reaberto tem
+    // `tabelaFrescaRef` sempre falso (a rodada não pinta de novo) e travar
+    // essas 4 saídas ali tiraria Copiar/Word do caso mais comum de reabrir.
+    const acoes = {
+      'async function handleImprimir()': 'imprimir',
+      'function handleCopiarFormatado()': 'copiar',
+      'function handleCopiarTexto()': 'copiar',
+      'async function handleBaixarWord()': 'baixar o Word',
+    };
+    for (const [fn, acao] of Object.entries(acoes)) {
+      const corpo = pageSrc.split(fn)[1]?.slice(0, 400) || '';
+      const re = new RegExp(`if \\(!tabelaProntaOuAvisa\\('${acao.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}', false\\)\\) return;`);
+      assert.match(corpo, re,
+        `${fn} precisa chamar tabelaProntaOuAvisa('${acao}', false) antes de raspar #params-tbody`);
+    }
   });
 
   test('(5.9) o frescor da tabela é marcado em TODOS os pontos (F3-T6)', () => {

@@ -12,7 +12,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { sanitizarNomeArq, pathPdf } from '../../src/lib/pdf-path.ts';
+import { sanitizarNomeArq, pathPdf, nomeArquivoLaudo } from '../../src/lib/pdf-path.ts';
 
 const root = path.resolve(import.meta.dirname, '..', '..');
 const ler = (...p) => fs.readFileSync(path.join(root, ...p), 'utf8');
@@ -54,6 +54,37 @@ describe('nome do PDF é do SERVIDOR (I3 / ARQ-I2)', () => {
     // arquivo que já não monta path nenhum há duas ondas.
     const storageSrc = semComentarios(ler('src', 'lib', 'pdf-storage.ts'));
     assert.ok(!/`laudos\//.test(storageSrc), 'pdf-storage voltou a montar o path do PDF na mão — uma fonte só, pathPdf() em pdf-path.ts');
+  });
+});
+
+// Tríade onda-4 (Ruflo item 5): PREFIXO + NOME era composto às cegas em 3
+// lugares (route.ts acima, gerarPdfHtml em laudo/[id]/page.tsx, exportDocx.ts)
+// — mesma fórmula, 3 cópias que podiam divergir. `nomeArquivoLaudo` (pdf-
+// path.ts) é o dono único agora; o PREFIXO entra já resolvido (pdf-path.ts
+// continua zero-import de propósito, ver cabeçalho do arquivo — não importa
+// dicom-sr-mapping.ts, mesmo esse sendo puro, pra não abrir uma exceção na
+// regra "zero import" por conveniência).
+describe('nomeArquivoLaudo — dono único da composição prefixo+nome (Ruflo item 5)', () => {
+  test('mesma fórmula do servidor: prefixo + espaço + nome.trim().toUpperCase(), trim() no final', () => {
+    assert.equal(nomeArquivoLaudo('ECOTT', '  joão silva  '), 'ECOTT JOÃO SILVA');
+    assert.equal(nomeArquivoLaudo('', 'joão'), 'JOÃO'); // trim() final come o espaço do prefixo vazio
+  });
+
+  test('os 3 call sites usam nomeArquivoLaudo(), não reimplementam a composição', () => {
+    assert.match(emitirSrc, /nomeArquivoLaudo\(/, '/api/emitir precisa compor via nomeArquivoLaudo');
+    assert.match(clientes['laudo (motor)'], /nomeArquivoLaudo\(/, 'gerarPdfHtml (laudo/[id]) precisa compor via nomeArquivoLaudo');
+    assert.match(ler('src', 'lib', 'exportDocx.ts'), /nomeArquivoLaudo\(/, 'exportDocx precisa compor via nomeArquivoLaudo');
+  });
+
+  test('exportDocx passa o exameId REAL pro sanitizarNomeArq, não um literal', () => {
+    const docxSrc = semComentarios(ler('src', 'lib', 'exportDocx.ts'));
+    assert.match(docxSrc, /sanitizarNomeArq\(nomeArquivoLaudo\([^)]*\), exameId\)/,
+      'sanitizarNomeArq precisa receber a variável exameId (fallback honesto se o nome vier vazio), não uma string fixa');
+  });
+
+  test('pdf-path.ts continua zero-import (contrato do cabeçalho do arquivo)', () => {
+    const src = ler('src', 'lib', 'pdf-path.ts');
+    assert.ok(!/^import /m.test(src), 'pdf-path.ts ganhou um import — quebra a testabilidade direta/scripts .mjs fora do Next (ver cabeçalho)');
   });
 });
 

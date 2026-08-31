@@ -4,8 +4,9 @@ rules_version = '2';
 // SOULEO · Firebase Storage Rules
 // ════════════════════════════════════════════════════════════════════
 // Arquitetura:
-// - Uploads: SEMPRE pelo servidor (firebase-admin via /api/upload-pdf)
-//   → Admin SDK bypassa estas regras
+// - Uploads: SEMPRE pelo servidor (firebase-admin via /api/emitir e
+//   /api/corrigir-laudo — a rota legada /api/upload-pdf morreu, ver
+//   pdfUtils.ts) → Admin SDK bypassa estas regras
 // - Leituras: PDFs sao publicos (URLs storage.googleapis.com)
 // - Browser NUNCA escreve direto
 // ════════════════════════════════════════════════════════════════════

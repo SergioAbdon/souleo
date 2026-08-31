@@ -138,18 +138,6 @@ export interface MedidasSegmentar {
   demaisParedes: CodigoDemaisParedes;// b62
 }
 
-/** Configuração da clínica/médico (para PDF) */
-export interface CfgSnapshot {
-  clinica: string;
-  slogan: string;
-  localEnd: string;
-  localTel: string;
-  medNome: string;
-  medCrm: string;
-  medUf: string;
-  p1: string;                       // cor primária
-}
-
 /** Pacote completo de inputs */
 export interface MedidasEcoTT {
   identificacao: Identificacao;
@@ -161,7 +149,6 @@ export interface MedidasEcoTT {
   estenoses: MedidasEstenoses;
   wilkins: MedidasWilkins;
   segmentar: MedidasSegmentar;
-  cfgSnapshot?: CfgSnapshot;
 }
 
 // ── DERIVADOS / CALCULADOS ──────────────────────────────────────
