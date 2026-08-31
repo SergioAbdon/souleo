@@ -1402,6 +1402,24 @@ function LaudoPageInner() {
         : 'Rascunho salvo só neste navegador (sem conexão)');
   }
 
+  // Guarda de tabela vazia/velha (X5, Task 18): extraída do guard que já
+  // vivia dentro de `handleEmitir` (F3-T5/F3-T6, comentário original mais
+  // abaixo) pros 4 handlers que RASPAM A TELA (`gerarPdfHtml`/
+  // `lerParamsDoDOM`) ganharem a mesma barreira — sem isso "Imprimir",
+  // "Copiar Formatado", "Copiar Texto" e "Baixar Word" saíam com
+  // "MEDIDAS E PARÂMETROS" vazio e cara de completo. NÃO se aplica ao botão
+  // primário do `ModoEmitido` quando há `pdfUrl` (Task 17/X4) — aquele abre
+  // o PDF assinado do Storage direto (`abrirPdfUrl`, em PopupEmitir.tsx),
+  // sem passar por `handleImprimir`/DOM nenhum.
+  function tabelaProntaOuAvisa(): boolean {
+    if (senna93Params()
+      && (document.querySelectorAll('#params-tbody tr').length === 0 || !tabelaFrescaRef.current)) {
+      toast('Tabela de medidas não carregou — não é possível emitir');
+      return false;
+    }
+    return true;
+  }
+
   async function handleEmitir(incluirImagens: boolean = true) {
     if (!workspace?.id || !exameId || !user?.uid) return;
     // nº11 (S5-T7): duplo-clique/duplo-submit — o guard de baixo (linha ~955)
@@ -1484,11 +1502,9 @@ function LaudoPageInner() {
     // cheio pode ser a tabela da rodada ANTERIOR, já invalidada por uma rodada
     // que falhou (o médico mexeu numa medida e a ponte caiu) — assinar aquilo é
     // carimbar números velhos como novos. `tabelaFrescaRef` mede o frescor.
-    if (senna93Params()
-      && (document.querySelectorAll('#params-tbody tr').length === 0 || !tabelaFrescaRef.current)) {
-      toast('Tabela de medidas não carregou — não é possível emitir');
-      return;
-    }
+    // Guard extraído pra `tabelaProntaOuAvisa()` (X5, Task 18) — os 4
+    // handlers de saída (Imprimir/Copiar/Word) usam a mesma função.
+    if (!tabelaProntaOuAvisa()) return;
 
     // v3.1: gerar pdfHtml ANTES de emitir, mandar junto na requisicao
     // Servidor faz emissao + PDF tudo numa chamada (sem race condition).
@@ -1781,6 +1797,11 @@ function LaudoPageInner() {
   // A janela abre ANTES do await: depois dele o clique já não conta como
   // gesto do usuário e o navegador bloqueia o popup em rota lenta.
   async function handleImprimir() {
+    // X5 (Task 18): esta função só roda no caminho que RASPA A TELA de novo
+    // (primário sem `pdfUrl`, ou "Gerar novamente" com `pdfUrl` — ver
+    // ModoEmitido em PopupEmitir.tsx). O botão que abre o PDF assinado usa
+    // `abrirPdfUrl` direto e nunca chama `handleImprimir`.
+    if (!tabelaProntaOuAvisa()) return;
     const win = window.open('', '_blank', 'width=900,height=700');
     if (!win) return;
     let html = gerarPdfHtml();
@@ -1805,6 +1826,8 @@ function LaudoPageInner() {
 
   // ── Copiar para Prontuário ──
   function handleCopiarFormatado() {
+    // X5 (Task 18): raspa `#params-tbody` — mesmo guard do `handleEmitir`.
+    if (!tabelaProntaOuAvisa()) return;
     // Mesma raspagem/montagem do PDF — só o opts.pdf muda (S5-T13).
     const paramsHTML = montarParamsHtml(lerParamsDoDOM(), p1, { pdf: false });
 
@@ -1841,6 +1864,8 @@ function LaudoPageInner() {
   }
 
   function handleCopiarTexto() {
+    // X5 (Task 18): raspa `#params-tbody` — mesmo guard do `handleEmitir`.
+    if (!tabelaProntaOuAvisa()) return;
     const achados = coletarAchados().join('\n');
     const conclusoes = coletarConclusoes().map((t, i) => `${i + 1}. ${t}`).join('\n');
 
@@ -1864,6 +1889,8 @@ function LaudoPageInner() {
   }
 
   async function handleBaixarWord() {
+    // X5 (Task 18): raspa `#params-tbody` — mesmo guard do `handleEmitir`.
+    if (!tabelaProntaOuAvisa()) return;
     // F3-T3: filtro/forma vêm de pdf-params.ts.
     const params = paramsParaDocx(lerParamsDoDOM());
 

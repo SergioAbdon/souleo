@@ -327,7 +327,7 @@ describe('Contrato de SAÍDA (ADR item 4) — os #out-* dos DOIS motores chegam 
       'o `if (paramsOn)` que instala o wrapper precisa do `else` que restaura o `calc()` cru do `__calcOrig`');
   });
 
-  test('(5.7) emissão com a flag ON exige tabela pintada E FRESCA (revisão I2 + F3-T6)', () => {
+  test('(5.7) emissão com a flag ON exige tabela pintada E FRESCA (revisão I2 + F3-T6 + X5/Task18)', () => {
     // Com ON a tabela É a ponte: se ela falhou, `#params-tbody` está vazio e
     // `gerarPdfHtml` raspa nada — sairia um laudo ASSINADO sem a tabela de
     // medidas. O guard tem que estar ANTES do `gerarPdfHtml` do handleEmitir.
@@ -337,10 +337,27 @@ describe('Contrato de SAÍDA (ADR item 4) — os #out-* dos DOIS motores chegam 
     // falhou continua no DOM com os números VELHOS e passava pelo guard —
     // laudo assinado com medidas de antes da última edição. `tabelaFrescaRef`
     // é a segunda metade da pergunta: "a última rodada deu certo?".
+    //
+    // X5 (Task 18): a condição saiu de dentro de `handleEmitir` pra
+    // `tabelaProntaOuAvisa()` — reusada pelos 4 handlers de saída (Imprimir/
+    // Copiar/Word). Checa a condição na função extraída E que handleEmitir
+    // chama a função ANTES de montar o pdfHtml.
+    assert.match(pageSrc, /function tabelaProntaOuAvisa\(\): boolean \{\s*\n\s*if \(senna93Params\(\)\s*\n?\s*&& \(document\.querySelectorAll\('#params-tbody tr'\)\.length === 0 \|\| !tabelaFrescaRef\.current\)\) \{/,
+      '`tabelaProntaOuAvisa` precisa abortar (return false) quando a flag está ON e a tabela não carregou OU não está fresca');
     const emitir = pageSrc.split('async function handleEmitir(')[1]?.split('const pdfHtml = gerarPdfHtml(')[0] || '';
     assert.ok(emitir, 'não achei o trecho de handleEmitir até o gerarPdfHtml');
-    assert.match(emitir, /senna93Params\(\)\s*\n?\s*&& \(document\.querySelectorAll\('#params-tbody tr'\)\.length === 0 \|\| !tabelaFrescaRef\.current\)/,
-      'handleEmitir precisa abortar (antes de montar o pdfHtml) quando a flag está ON e a tabela não carregou OU não está fresca');
+    assert.match(emitir, /if \(!tabelaProntaOuAvisa\(\)\) return;/,
+      'handleEmitir precisa abortar (antes de montar o pdfHtml) via `tabelaProntaOuAvisa()`');
+  });
+
+  test('(5.7b) as 4 saídas que raspam a tela (Imprimir/Copiar/Word) usam o mesmo guard (X5/Task18)', () => {
+    // PDF/prontuário/Word não podem sair com "MEDIDAS E PARÂMETROS" vazio e
+    // cara de completo — mesmo guard do handleEmitir, uma função só.
+    for (const fn of ['async function handleImprimir()', 'function handleCopiarFormatado()', 'function handleCopiarTexto()', 'async function handleBaixarWord()']) {
+      const corpo = pageSrc.split(fn)[1]?.slice(0, 400) || '';
+      assert.match(corpo, /if \(!tabelaProntaOuAvisa\(\)\) return;/,
+        `${fn} precisa chamar tabelaProntaOuAvisa() antes de raspar #params-tbody`);
+    }
   });
 
   test('(5.9) o frescor da tabela é marcado em TODOS os pontos (F3-T6)', () => {
