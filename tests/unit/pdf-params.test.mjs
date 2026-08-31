@@ -199,6 +199,20 @@ describe('montarParamsHtml — flags OOR opcionais (F3-T5)', () => {
   });
 });
 
+describe('montarParamsHtml — linha incompleta some das 4 saídas (X7)', () => {
+  test('linha com cells.length < 8 NÃO aparece no HTML (mesmo filtro de paramsParaTexto/paramsParaDocx)', () => {
+    const mistas = [
+      ['Sexo', 'M', '', '', 'Índice de Massa Corporal', '24.1', 'kg/m²', '<25'],
+      ['curta', '1'],
+    ];
+    for (const pdf of [true, false]) {
+      const html = montarParamsHtml(mistas, P1, { pdf });
+      assert.ok(!html.includes('>curta<'), 'linha incompleta vazou pro HTML');
+      assert.equal((html.match(/<tr>/g) || []).length, 2); // 1 linha de dado + <tr> do <thead>
+    }
+  });
+});
+
 describe('montarParamsHtml — quinta coluna (idx 4) leva o divisor', () => {
   test('divider aparece só na quinta célula de cada linha', () => {
     const html = montarParamsHtml(ROWS, P1, { pdf: false });
