@@ -22,11 +22,21 @@ type Props = {
    * esconde o checkbox (não há o que incluir).
    */
   totalImagensSelecionadas?: number;
+  /**
+   * Tríade onda-4 (Ruflo item 6): última escolha do médico pro toggle
+   * "incluir imagens" (`imagensIncluidasNoPdf` na página, persistida em
+   * X2/Task 17). Sem isso o popup nascia com o checkbox sempre marcado, TODA
+   * vez que reabria — mesmo com o médico tendo desmarcado antes.
+   */
+  incluirImagensInicial?: boolean;
 };
 
-export function PopupSalvarEmitir({ open, onClose, onRascunho, onEmitir, totalImagensSelecionadas = 0 }: Props) {
-  // Toggle do checkbox — marcado por default quando há imagens
-  const [incluirImagens, setIncluirImagens] = useState(true);
+export function PopupSalvarEmitir({ open, onClose, onRascunho, onEmitir, totalImagensSelecionadas = 0, incluirImagensInicial }: Props) {
+  // Toggle do checkbox — marcado por default quando há imagens; lembra a
+  // última escolha do médico (o componente desmonta com `open=false` —
+  // `if (!open) return null` abaixo — então este `useState` reinicializa a
+  // cada abertura).
+  const [incluirImagens, setIncluirImagens] = useState(incluirImagensInicial ?? true);
   // S5-T12: valor derivado (sem setState-no-render) — sem imagens pra
   // selecionar, o efetivo é sempre false, mesmo que `incluirImagens` (o
   // toggle memorizado) ainda esteja true de uma sessão anterior.

@@ -53,15 +53,15 @@ export function montarParamsHtml(rows: string[][], p1raw: string, opts: ParamsHt
   // isolada); não dá pra confiar que todo chamador passou pela page.
   const p1 = corSegura(p1raw);
   const paramsRows = rows
-    .map((cells, i) => ({ cells, i }))
-    // X7: mesmo filtro de paramsParaTexto/paramsParaDocx (linha ~104/117) —
-    // row incompleta do motor sairia desalinhada/com colunas faltando; sem
-    // isso ela vazava só no HTML (PDF/copiar-formatado), divergindo das
-    // outras 2 saídas. Uma linha só é válida nas 4 saídas ou em nenhuma.
-    // `i` original preservado (não o índice pós-filtro) — opts.oor é indexado
-    // pela posição em `rows`, não pela posição na lista já filtrada.
-    .filter(({ cells }) => cells.length >= 8)
-    .map(({ cells, i }) => {
+    .map((cells, i) => {
+      // X7 (simplificado onda-4/Ponytail): mesmo filtro de paramsParaTexto/
+      // paramsParaDocx (linha ~104/117) — row incompleta do motor sairia
+      // desalinhada/com colunas faltando; sem isso ela vazava só no HTML
+      // (PDF/copiar-formatado), divergindo das outras 2 saídas. `''` some no
+      // `.join('')` de baixo — um passo só, `i` original nunca muda (não há
+      // filter antes do map), então opts.oor (indexado por posição em
+      // `rows`) não corre risco de desalinhar.
+      if (cells.length < 8) return '';
       let rowHTML = '<tr>';
       cells.forEach((cell, idx) => {
         const divider = idx === 4 ? `border-left:2px solid ${p1};` : '';

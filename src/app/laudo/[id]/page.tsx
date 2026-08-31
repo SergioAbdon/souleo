@@ -27,6 +27,8 @@ import BancoFrases from '@/components/laudo/BancoFrases';
 import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
 import { gerarDocx } from '@/lib/exportDocx';
+import { abrirPdfUrl } from '@/lib/pdfUtils';
+import { nomeArquivoLaudo } from '@/lib/pdf-path';
 import { PopupSalvarEmitir, ModoEmitido } from '@/components/laudo/PopupEmitir';
 // Shadow Mode (Fase 5): roda Senna90 server-side em paralelo invisível
 import { executarEReportar, shadowModeAtivo } from '@/lib/shadow-runner';
@@ -1411,11 +1413,29 @@ function LaudoPageInner() {
   // primário do `ModoEmitido` quando há `pdfUrl` (Task 17/X4) — aquele abre
   // o PDF assinado do Storage direto (`abrirPdfUrl`, em PopupEmitir.tsx),
   // sem passar por `handleImprimir`/DOM nenhum.
-  function tabelaProntaOuAvisa(): boolean {
-    if (senna93Params()
-      && (document.querySelectorAll('#params-tbody tr').length === 0 || !tabelaFrescaRef.current)) {
-      toast('Tabela de medidas não carregou — não é possível emitir');
+  //
+  // Recalibrado na tríade onda-4 (Ponytail, decisão do controller): as duas
+  // metades da pergunta original ("tem tabela?" + "está fresca?") não pesam
+  // igual pras 5 chamadoras. tbody VAZIO é sempre fatal — não há o que
+  // assinar/imprimir/copiar, bloqueia nas 5 (as 4 saídas + emissão).
+  // `tabelaFrescaRef` falso com tbody CHEIO só é fatal pra EMISSÃO (`exige`
+  // true): assinar números de uma rodada invalidada pesa igual a assinar
+  // sem tabela nenhuma. Nas 4 saídas (`exige` false) virou aviso-e-prossegue
+  // — um laudo JÁ EMITIDO reaberto teria `tabelaFrescaRef` sempre falso (a
+  // pintura da rodada não roda de novo nele) e bloquear ali tiraria
+  // Copiar/Word justamente do caso mais comum de reabertura.
+  function tabelaProntaOuAvisa(acao: string, exige: boolean): boolean {
+    if (!senna93Params()) return true;
+    if (document.querySelectorAll('#params-tbody tr').length === 0) {
+      toast(`Tabela de medidas não carregou — não é possível ${acao}`);
       return false;
+    }
+    if (!tabelaFrescaRef.current) {
+      if (exige) {
+        toast(`Tabela de medidas não carregou — não é possível ${acao}`);
+        return false;
+      }
+      toast('Tabela pode estar desatualizada — confira antes de usar');
     }
     return true;
   }
@@ -1504,7 +1524,9 @@ function LaudoPageInner() {
     // carimbar números velhos como novos. `tabelaFrescaRef` mede o frescor.
     // Guard extraído pra `tabelaProntaOuAvisa()` (X5, Task 18) — os 4
     // handlers de saída (Imprimir/Copiar/Word) usam a mesma função.
-    if (!tabelaProntaOuAvisa()) return;
+    // `exige:true` (onda-4): emissão é a única que BLOQUEIA em tabela
+    // desatualizada, não só vazia — ver comentário na definição.
+    if (!tabelaProntaOuAvisa('emitir', true)) return;
 
     // v3.1: gerar pdfHtml ANTES de emitir, mandar junto na requisicao
     // Servidor faz emissao + PDF tudo numa chamada (sem race condition).
@@ -1581,8 +1603,16 @@ function LaudoPageInner() {
 
     // Abrir o PDF gerado (se ja foi salvo no Storage)
     if (resultado.pdfUrl) {
+      // Tríade onda-4 (Codex item 1): `exame` (state local) só troca quando
+      // o `onSnapshot` reflete a escrita — janela em que o primário do
+      // `ModoEmitido` (lê `exame?.pdfUrl`) abriria o ASSINADO ANTERIOR.
+      // Atualiza aqui, na hora, sem esperar o snapshot.
+      const pdfUrlNovo = resultado.pdfUrl;
+      setExame(prev => prev ? { ...prev, pdfUrl: pdfUrlNovo } : prev);
       toast('Laudo emitido — PDF pronto');
-      window.open(resultado.pdfUrl, '_blank');
+      // Ruflo item 4: dono único de `window.open` de PDF assinado é
+      // `abrirPdfUrl` (pdfUtils.ts) — mesmo 'noopener,noreferrer' pra todos.
+      abrirPdfUrl(pdfUrlNovo);
     } else if (resultado.pdfErro) {
       toast('Laudo emitido. PDF falhou — tente "Imprimir" depois.');
       console.warn('PDF gen error:', resultado.pdfErro);
@@ -1638,8 +1668,13 @@ function LaudoPageInner() {
         return;
       }
       if (r.pdfUrl) {
+        // Mesmo fix do handleEmitir acima (Codex item 1): pdfUrl novo no
+        // state local ANTES do onSnapshot, senão o primário do ModoEmitido
+        // abriria o assinado da versão anterior à correção.
+        const pdfUrlNovo = r.pdfUrl as string;
+        setExame(prev => prev ? { ...prev, pdfUrl: pdfUrlNovo } : prev);
         toast('Correção salva — PDF atualizado');
-        window.open(r.pdfUrl, '_blank');
+        abrirPdfUrl(pdfUrlNovo);
       } else if (r.pdfDesatualizado) {
         toast('Correção salva. Laudo antigo: o PDF continua com o dado velho — reemita para atualizá-lo.');
       } else {
@@ -1696,7 +1731,7 @@ function LaudoPageInner() {
     const incluirImagens = incluirImagensParam !== undefined ? incluirImagensParam : imagensIncluidasNoPdf;
     const nome = (document.getElementById('nome') as HTMLInputElement)?.value || 'PACIENTE';
     // Nome do arquivo dinâmico por tipoExame
-    const nomeArq = prefixoArquivoPorTipo(exame?.tipoExame as string | undefined) + ' ' + nome.trim().toUpperCase();
+    const nomeArq = nomeArquivoLaudo(prefixoArquivoPorTipo(exame?.tipoExame as string | undefined), nome);
 
     // Tabela de parâmetros — raspagem e montagem de HTML compartilhadas
     // com handleCopiarFormatado() (S5-T13): mesmas rows, cabeçalho/rodapé
@@ -1801,7 +1836,7 @@ function LaudoPageInner() {
     // (primário sem `pdfUrl`, ou "Gerar novamente" com `pdfUrl` — ver
     // ModoEmitido em PopupEmitir.tsx). O botão que abre o PDF assinado usa
     // `abrirPdfUrl` direto e nunca chama `handleImprimir`.
-    if (!tabelaProntaOuAvisa()) return;
+    if (!tabelaProntaOuAvisa('imprimir', false)) return;
     const win = window.open('', '_blank', 'width=900,height=700');
     if (!win) return;
     let html = gerarPdfHtml();
@@ -1826,8 +1861,7 @@ function LaudoPageInner() {
 
   // ── Copiar para Prontuário ──
   function handleCopiarFormatado() {
-    // X5 (Task 18): raspa `#params-tbody` — mesmo guard do `handleEmitir`.
-    if (!tabelaProntaOuAvisa()) return;
+    if (!tabelaProntaOuAvisa('copiar', false)) return;
     // Mesma raspagem/montagem do PDF — só o opts.pdf muda (S5-T13).
     const paramsHTML = montarParamsHtml(lerParamsDoDOM(), p1, { pdf: false });
 
@@ -1864,8 +1898,7 @@ function LaudoPageInner() {
   }
 
   function handleCopiarTexto() {
-    // X5 (Task 18): raspa `#params-tbody` — mesmo guard do `handleEmitir`.
-    if (!tabelaProntaOuAvisa()) return;
+    if (!tabelaProntaOuAvisa('copiar', false)) return;
     const achados = coletarAchados().join('\n');
     const conclusoes = coletarConclusoes().map((t, i) => `${i + 1}. ${t}`).join('\n');
 
@@ -1889,8 +1922,7 @@ function LaudoPageInner() {
   }
 
   async function handleBaixarWord() {
-    // X5 (Task 18): raspa `#params-tbody` — mesmo guard do `handleEmitir`.
-    if (!tabelaProntaOuAvisa()) return;
+    if (!tabelaProntaOuAvisa('baixar o Word', false)) return;
     // F3-T3: filtro/forma vêm de pdf-params.ts.
     const params = paramsParaDocx(lerParamsDoDOM());
 
@@ -1909,10 +1941,13 @@ function LaudoPageInner() {
       dataExame: outDtex,
       convenio: outConv,
       p1,
+      // Codex item 2: título do tipo (catálogo) — sem isso o cabeçalho do
+      // .docx saía sempre "ECOCARDIOGRAMA TRANSTORÁCICO".
+      tituloExame,
       params,
       achados: coletarAchados(),
       conclusoes: coletarConclusoes(),
-    }, prefixoArquivoPorTipo(exame?.tipoExame as string | undefined));
+    }, prefixoArquivoPorTipo(exame?.tipoExame as string | undefined), exameId);
 
     toast('Word (.docx) baixado!');
   }
@@ -2116,6 +2151,7 @@ function LaudoPageInner() {
         onRascunho={handleRascunho}
         onEmitir={handleEmitir}
         totalImagensSelecionadas={imagensSelecionadasPdf.length}
+        incluirImagensInicial={imagensIncluidasNoPdf}
       />
       {/* Modal de Import SR — validação 1-a-1 das medidas do Vivid antes
           de jogar no motor (decisão 15/05/2026). Aberto pelo botão

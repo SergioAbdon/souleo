@@ -10,7 +10,7 @@ import {
 } from 'docx';
 import { saveAs } from 'file-saver';
 import { rodapeFontes } from '../senna90/classificacoes/fontes';
-import { sanitizarNomeArq } from './pdf-path';
+import { sanitizarNomeArq, nomeArquivoLaudo } from './pdf-path';
 
 type ParamRow = { cells: string[] };
 
@@ -22,6 +22,11 @@ type LaudoData = {
   dataExame: string;
   convenio: string;
   p1: string;        // cor primária hex
+  // Tríade onda-4 (Codex item 2): título do TIPO de exame (catálogo) — sem
+  // isso o cabeçalho do .docx saía sempre "ECOCARDIOGRAMA TRANSTORÁCICO",
+  // Doppler/TE/stress incluso. A página já resolve isso em `tituloExame`
+  // (com o mesmo fallback abaixo) — passa direto.
+  tituloExame?: string;
   params: ParamRow[];
   achados: string[];
   conclusoes: string[];
@@ -57,7 +62,7 @@ function criarCelula(texto: string, opts?: { bold?: boolean; header?: boolean; b
   });
 }
 
-export async function gerarDocx(data: LaudoData, prefixoArq: string) {
+export async function gerarDocx(data: LaudoData, prefixoArq: string, exameId: string) {
   const cor = hexToRgb(data.p1);
 
   // Larguras das 8 colunas em DXA (total = 9360 para A4 com margens de 1")
@@ -117,7 +122,7 @@ export async function gerarDocx(data: LaudoData, prefixoArq: string) {
             spacing: { after: 100 },
             children: [
               new TextRun({ text: data.clinicaNome, bold: true, font: 'Arial', size: 22, color: cor }),
-              new TextRun({ text: '  —  ECOCARDIOGRAMA TRANSTORÁCICO', font: 'Arial', size: 18, color: cor }),
+              new TextRun({ text: `  —  ${data.tituloExame || 'ECOCARDIOGRAMA TRANSTORÁCICO'}`, font: 'Arial', size: 18, color: cor }),
             ],
           }),
 
@@ -202,8 +207,11 @@ export async function gerarDocx(data: LaudoData, prefixoArq: string) {
 
   const buffer = await Packer.toBlob(doc);
   // X24: prefixo vem do chamador (mesmo prefixoArquivoPorTipo(tipoExame) do
-  // PDF) — Doppler baixado em Word deixa de sair como "ECOTT_...". Nome
-  // sanitizado pelo mesmo dono único do PDF (pdf-path.ts).
-  const nomeArq = `${sanitizarNomeArq(`${prefixoArq}_${data.pacienteNome}`, 'laudo')}.docx`;
+  // PDF). Tríade onda-4 (Ruflo item 5): composição prefixo+nome agora é
+  // `nomeArquivoLaudo`, o mesmo dono único que api/emitir/route.ts e
+  // gerarPdfHtml (page.tsx) usam — Doppler baixado em Word deixa de sair
+  // como "ECOTT_...". `exameId` REAL (não mais o literal 'laudo') no
+  // fallback de `sanitizarNomeArq`, mesmo padrão de pdf-storage.ts.
+  const nomeArq = `${sanitizarNomeArq(nomeArquivoLaudo(prefixoArq, data.pacienteNome), exameId)}.docx`;
   saveAs(buffer, nomeArq);
 }

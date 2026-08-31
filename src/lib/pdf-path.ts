@@ -36,6 +36,19 @@ export function sanitizarNomeArq(nomeArq: string, exameId: string): string {
     .replace(/\s+/g, '_');
 }
 
+// Tríade onda-4 (Ruflo item 5): PREFIXO + NOME DO PACIENTE era composto às
+// cegas em 3 lugares (api/emitir/route.ts, gerarPdfHtml em laudo/[id]/
+// page.tsx, exportDocx.ts) — mesma fórmula, 3 cópias que podiam divergir. O
+// prefixo entra JÁ RESOLVIDO (`prefixoArquivoPorTipo`, dicom-sr-mapping.ts)
+// em vez deste arquivo importar aquele helper: pdf-path.ts é zero-import de
+// propósito (cabeçalho acima) — testável direto por `node --test` e por
+// scripts .mjs fora do Next sem arrastar nada. Semântica do SERVIDOR
+// (api/emitir/route.ts, fonte de verdade do nome real do objeto): prefixo +
+// espaço + nome trim+upper, tudo trim() no final.
+export function nomeArquivoLaudo(prefixo: string, pacienteNome: string): string {
+  return `${prefixo} ${pacienteNome.trim().toUpperCase()}`.trim();
+}
+
 /** Caminho do objeto no bucket. `nomeArquivo` JÁ sanitizado. */
 export function pathPdf(wsId: string, exameId: string, nomeArquivo: string): string {
   return `laudos/${wsId}/${exameId}/${nomeArquivo}.pdf`;

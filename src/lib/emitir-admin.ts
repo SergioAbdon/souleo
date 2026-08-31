@@ -133,18 +133,24 @@ const CAMPOS_IDENTIDADE = ['pacienteNome', 'pacienteDtnasc', 'dataExame', 'conve
 
 // E14: dadosFinais e corpo CRU do cliente e entrava inteiro no update que
 // assina o laudo. Whitelist nascida do grep dos 3 clientes (ADR 2026-08-30
-// §5) — so estes 13 campos saem de fato de laudo/[id], laudo-texto/[id] e
+// §5) — so estes campos saem de fato de laudo/[id], laudo-texto/[id] e
 // AnexarPdfModal. reemissao/identificacaoAlterada ficam de fora de proposito
 // (M3): sao carimbos de auditoria derivados no servidor, o auditado nao os
-// escreve.
+// escreve. Contagem de proposito FORA do comentario — ja driftou 1x (Task 17
+// acrescentou incluirImagensNoPdf sem atualizar o numero aqui); o pin
+// (dados-finais-whitelist-pin.test.mjs) e quem garante os 3 clientes batendo
+// com o Set, nao uma conta escrita a mao.
 const CAMPOS_DADOS_FINAIS = new Set([
-  'medidas', 'achados', 'conclusoes', 'laudoHtml', 'laudoTextoHtml', 'cfgSnapshot',
+  'medidas', 'achados', 'conclusoes', 'laudoHtml', 'laudoTextoHtml',
   'tipoExame', 'pacienteNome', 'pacienteDtnasc', 'dataExame', 'convenio',
   'solicitante', 'sexo',
   // X2 (Task 17): escolha "incluir imagens DICOM no PDF" — persistida junto
   // com a emissao pra sobreviver a reabertura do laudo (antes so vivia em
   // memoria, resetava pro default a cada F5/reload).
   'incluirImagensNoPdf',
+  // `cfgSnapshot` SAIU (tríade onda-4, Ponytail item 7): nunca foi lido nem
+  // mandado por nenhum dos 3 clientes (Task 17/X3 já tinha matado o campo em
+  // types.ts) — a whitelist ainda aceitava um campo morto.
 ]);
 
 // pacienteNome normalizado (trim+uppercase) — mesmo tratamento do

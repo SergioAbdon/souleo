@@ -149,9 +149,6 @@ export interface MedidasEcoTT {
   estenoses: MedidasEstenoses;
   wilkins: MedidasWilkins;
   segmentar: MedidasSegmentar;
-  // `cfgSnapshot` removido (Task 17, X3): nunca foi lido — o documento
-  // ASSINADO é o `pdfUrl` (Storage), não um snapshot de config recriado do
-  // zero. Reversível em 1 commit se preferir honrar a config da época.
 }
 
 // ── DERIVADOS / CALCULADOS ──────────────────────────────────────

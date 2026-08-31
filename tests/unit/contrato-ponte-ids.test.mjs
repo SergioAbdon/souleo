@@ -340,23 +340,40 @@ describe('Contrato de SAÍDA (ADR item 4) — os #out-* dos DOIS motores chegam 
     //
     // X5 (Task 18): a condição saiu de dentro de `handleEmitir` pra
     // `tabelaProntaOuAvisa()` — reusada pelos 4 handlers de saída (Imprimir/
-    // Copiar/Word). Checa a condição na função extraída E que handleEmitir
-    // chama a função ANTES de montar o pdfHtml.
-    assert.match(pageSrc, /function tabelaProntaOuAvisa\(\): boolean \{\s*\n\s*if \(senna93Params\(\)\s*\n?\s*&& \(document\.querySelectorAll\('#params-tbody tr'\)\.length === 0 \|\| !tabelaFrescaRef\.current\)\) \{/,
-      '`tabelaProntaOuAvisa` precisa abortar (return false) quando a flag está ON e a tabela não carregou OU não está fresca');
+    // Copiar/Word). Recalibrado na tríade onda-4 (Ponytail): tbody vazio
+    // bloqueia sempre; tbody cheio mas desatualizado só bloqueia quando
+    // `exige` é true (emissão) — pin afrouxado (sem `: boolean`/âncora de
+    // newline) pra não quebrar a cada reformatação inofensiva.
+    assert.match(pageSrc, /function tabelaProntaOuAvisa\(acao: string, exige/,
+      '`tabelaProntaOuAvisa` precisa receber a ação (pro toast) e `exige` (bloqueia ou só avisa)');
+    assert.match(pageSrc, /document\.querySelectorAll\('#params-tbody tr'\)\.length === 0\) \{/,
+      'tbody vazio precisa ter um bloco próprio — bloqueia sempre, nas 5 chamadoras');
+    assert.match(pageSrc, /if \(!tabelaFrescaRef\.current\) \{\s*if \(exige\) \{/,
+      'tabela desatualizada só bloqueia quando `exige` — senão vira aviso-e-prossegue');
     const emitir = pageSrc.split('async function handleEmitir(')[1]?.split('const pdfHtml = gerarPdfHtml(')[0] || '';
     assert.ok(emitir, 'não achei o trecho de handleEmitir até o gerarPdfHtml');
-    assert.match(emitir, /if \(!tabelaProntaOuAvisa\(\)\) return;/,
-      'handleEmitir precisa abortar (antes de montar o pdfHtml) via `tabelaProntaOuAvisa()`');
+    assert.match(emitir, /if \(!tabelaProntaOuAvisa\('emitir', true\)\) return;/,
+      'handleEmitir precisa abortar (antes de montar o pdfHtml) via tabelaProntaOuAvisa(\'emitir\', true) — exige tabela FRESCA, não só presente');
   });
 
-  test('(5.7b) as 4 saídas que raspam a tela (Imprimir/Copiar/Word) usam o mesmo guard (X5/Task18)', () => {
+  test('(5.7b) as 4 saídas que raspam a tela (Imprimir/Copiar/Word) usam o mesmo guard, sem exigir frescor (X5/Task18 + onda-4)', () => {
     // PDF/prontuário/Word não podem sair com "MEDIDAS E PARÂMETROS" vazio e
-    // cara de completo — mesmo guard do handleEmitir, uma função só.
-    for (const fn of ['async function handleImprimir()', 'function handleCopiarFormatado()', 'function handleCopiarTexto()', 'async function handleBaixarWord()']) {
+    // cara de completo — mesmo guard do handleEmitir, uma função só. `exige:
+    // false`: tabela vazia ainda bloqueia (não há o que raspar), mas
+    // desatualizada agora é só aviso — um laudo JÁ EMITIDO reaberto tem
+    // `tabelaFrescaRef` sempre falso (a rodada não pinta de novo) e travar
+    // essas 4 saídas ali tiraria Copiar/Word do caso mais comum de reabrir.
+    const acoes = {
+      'async function handleImprimir()': 'imprimir',
+      'function handleCopiarFormatado()': 'copiar',
+      'function handleCopiarTexto()': 'copiar',
+      'async function handleBaixarWord()': 'baixar o Word',
+    };
+    for (const [fn, acao] of Object.entries(acoes)) {
       const corpo = pageSrc.split(fn)[1]?.slice(0, 400) || '';
-      assert.match(corpo, /if \(!tabelaProntaOuAvisa\(\)\) return;/,
-        `${fn} precisa chamar tabelaProntaOuAvisa() antes de raspar #params-tbody`);
+      const re = new RegExp(`if \\(!tabelaProntaOuAvisa\\('${acao.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}', false\\)\\) return;`);
+      assert.match(corpo, re,
+        `${fn} precisa chamar tabelaProntaOuAvisa('${acao}', false) antes de raspar #params-tbody`);
     }
   });
 
