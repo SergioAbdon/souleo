@@ -39,6 +39,10 @@ export default function LaudoTextoPage() {
   // /laudo-texto/A para /laudo-texto/B reusa a instância do componente (mesmo
   // segmento de rota), e o ref sobreviveria — a chave de A viraria trava no B.
   const emissaoKeyRef = useRef<{ id: string; key: string } | null>(null);
+  // X18: dirty flag do editor (mesmo padrão do motor) — setada pelo onDirty
+  // do EditorLaudo, zerada em salvamento/emissão COM sucesso. Lida só pelo
+  // beforeunload abaixo (não há autosave aqui).
+  const dirtyRef = useRef(false);
 
   const exameId = params.id as string;
   // Cabeçalho/rodapé da folha — mesmos dados que vão pro PDF (moldura única).
@@ -52,7 +56,13 @@ export default function LaudoTextoPage() {
   // Idade NA DATA DO EXAME (paridade com o motor) — ver paciente-fmt.
   const idade = idadeLabel(exame?.pacienteDtnasc as string | undefined, exame?.dataExame as string | undefined);
   // Laudo já assinado (doc, não estado de tela): trava o "Salvar rascunho".
-  const emitidoDoc = (exame?.status as string) === 'emitido' || !!exame?.emitidoEm;
+  //
+  // X17: por `status`, não por `emitidoEm` — mesmo critério e razão do
+  // `docFechado` do motor (laudo/[id]/page.tsx). `transferirExame` devolve o
+  // consumo, apaga o `pdfUrl` e põe `status:'andamento'`, mas MANTÉM o
+  // `emitidoEm` — o médico que recebeu o laudo justamente pra refazê-lo
+  // ficaria sem "Salvar rascunho" com `|| !!emitidoEm`.
+  const emitidoDoc = (exame?.status as string) === 'emitido';
   const clinicaEnd = fmtCep((workspace?.endereco as string) || '');
   // 2º telefone do local entrava no rodapé do motor e sumia no laudo-texto —
   // uma folha só, mesmo rodapé (S5-T10).
@@ -109,6 +119,21 @@ export default function LaudoTextoPage() {
     return () => clearInterval(iv);
   }, []);
 
+  // X18 (beforeunload): portado do motor (laudo/[id]/page.tsx) — avisa se há
+  // mudança não salva e o laudo não está emitido. Emitido é documento
+  // fechado (reemitir é ato explícito, não fechar a aba); não há o que
+  // perder ao sair.
+  useEffect(() => {
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      if (dirtyRef.current && !emitidoDoc) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [emitidoDoc]);
+
   function toast(msg: string) {
     const el = document.createElement('div');
     el.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:99999;background:#1E293B;color:#fff;padding:10px 20px;border-radius:9px;font-size:13px;font-weight:600;font-family:IBM Plex Sans,sans-serif;box-shadow:0 4px 20px rgba(0,0,0,.3);';
@@ -135,6 +160,7 @@ export default function LaudoTextoPage() {
       medicoUid: user.uid,
     }, user.uid);
     setSalvando(false);
+    if (ok) dirtyRef.current = false;
     toast(ok ? 'Rascunho salvo' : 'Erro ao salvar rascunho');
   }
 
@@ -226,6 +252,7 @@ export default function LaudoTextoPage() {
     }
 
     emissaoKeyRef.current = null;   // S7-T0.3: próxima emissão é intenção nova (cobra)
+    dirtyRef.current = false;       // X18: emitido com sucesso — nada mais a perder
     alert('Laudo emitido com sucesso!' + (resultado.pdfErro ? '\n(Aviso: o PDF falhou ao gerar — reemita ou contate o suporte.)' : ''));
     router.replace('/agenda');
   }
@@ -284,7 +311,8 @@ export default function LaudoTextoPage() {
             ],
           ]}
         >
-          <EditorLaudo ref={editorRef} placeholder="Digite o laudo…" />
+          <EditorLaudo ref={editorRef} placeholder="Digite o laudo…"
+            onDirty={() => { dirtyRef.current = true; }} />
         </MolduraA4>
       </div>
     </div>
