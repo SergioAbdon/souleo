@@ -123,11 +123,10 @@ export function pathSnapshotHtml(wsId: string, exameId: string, emissaoKey?: str
 // parâmetro solto) porque os dois usos são mutuamente exclusivos — assinatura
 // mais enxuta que dois métodos quase iguais.
 // ponytail: snapshots de tentativas PERDEDORAS (e o canônico de um exame já
-// migrado pro sufixado) ficam órfãos no bucket privado (deny-default, sem
-// link, ninguém lê de novo) — sem limpeza automática ainda. Entra junto do
-// P5 (apagar `laudos-html/` no `apagarExame`, Task 14 da onda 3); upgrade:
-// listar `laudos-html/{ws}/{exameId}*` e apagar tudo que não é o path atual
-// da gaveta quando o exame é apagado/cancelado.
+// migrado pro sufixado) só saem do bucket quando o exame INTEIRO é apagado
+// (`apagarSnapshotsExame` abaixo, chamada por `apagarExame` — Task 14/P5).
+// Cancelar/transferir não limpa: o snapshot pode ser de correção futura do
+// mesmo laudo.
 export async function salvarSnapshotHtml(
   html: string, wsId: string, exameId: string, nomeArq: string,
   destino?: { emissaoKey?: string | null } | { path: string },
@@ -196,4 +195,24 @@ export async function lerSnapshotHtml(
     } catch { /* tenta o proximo candidato (fallback pro canonico, quando existir) */ }
   }
   return null;   // sem snapshot (emitido antigo/PDF anexado), ou flag diz "sufixado" e ele nao existe — honesto: pdfDesatualizado, nao corpo velho
+}
+
+// P5/Task 14 (LGPD): "apagar o exame" tem que levar o snapshot clínico
+// junto — senão o laudo completo sobrevive órfão em laudos-html/. Path por
+// TENTATIVA desde o round 5 (ver pathSnapshotHtml acima): apagar só o
+// canônico deixa pra trás os sufixados de emissaoKey (inclusive de
+// tentativas perdedoras, que nem a gaveta aponta mais). Apaga os dois: o
+// canônico (exato, exame legado pré-onda-0) e tudo sob o prefixo
+// `{exameId}-` (o `-` no prefixo é o que impede exameId 'abc' apagar
+// também os objetos de 'abc2' — deleteFiles com prefix é um match de
+// string crua). Nunca lança: mesmo padrão dos vizinhos (apagarPdfObjeto),
+// limpeza de órfão não pode derrubar a exclusão do exame.
+export async function apagarSnapshotsExame(wsId: string, exameId: string): Promise<void> {
+  try {
+    const bucket = getStorage().bucket();
+    await bucket.file(pathSnapshotHtml(wsId, exameId)).delete({ ignoreNotFound: true });
+    await bucket.deleteFiles({ prefix: `laudos-html/${wsId}/${exameId}-` });
+  } catch (e) {
+    console.error('apagarSnapshotsExame (nao-critico):', e);
+  }
 }

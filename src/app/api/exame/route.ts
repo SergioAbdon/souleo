@@ -9,6 +9,7 @@ import { adminDb, adminStorage, requireUid } from '@/lib/auth-admin';
 import { resolverAssinatura } from '@/lib/billing-admin';
 import { apagarExame, cancelarExame, transferirExame } from '@/lib/exame-admin';
 import { apagarImagensExame } from '@/lib/imagens-dicom-admin';
+import { apagarSnapshotsExame } from '@/lib/pdf-storage';
 
 export const runtime = 'nodejs';
 
@@ -53,6 +54,7 @@ export async function POST(req: NextRequest) {
       wsId, exameId, uid, motivo, novoMedicoUid,
       subRef: assinatura?.ref ?? null, apagarPdf: apagadorDePdf(wsId),
       apagarImagens: async (w, e) => { await apagarImagensExame(adminStorage().bucket(), w, e); },
+      apagarSnapshot: apagarSnapshotsExame,
     });
     return NextResponse.json(r, { status: r.ok ? 200 : STATUS[(r as { motivo: string }).motivo] ?? 500 });
   } catch (e) {
