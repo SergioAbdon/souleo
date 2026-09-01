@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { IngestStateStore } from './ingest-state';
+import { IngestStateStore, MAX_TENTATIVAS_FALHA, StudySignature } from './ingest-state';
 
 // precisaProcessar/setSignature são in-memory; passamos um path em tmp só
 // porque o construtor exige um (não chamamos load/flush).
@@ -46,6 +46,40 @@ describe('IngestStateStore.precisaProcessar (contrato do Fix B / nSR = instances
     s.setSignature('e1', { nImg: 8, nImgTentadas: 9, nSR: 1, matched: true, at: 'x' });
     expect(s.precisaProcessar('e1', 9, 1)).toBe(false); // 9 tentadas = 9 no Orthanc
     expect(s.precisaProcessar('e1', 10, 1)).toBe(true); // chegou imagem nova
+  });
+});
+
+describe('IngestStateStore — retry limitado de falha transitória (Codex 31/08)', () => {
+  const comFalha = (extra: Partial<StudySignature>): StudySignature => ({
+    nImg: 8,
+    nImgTentadas: 9,
+    nImgFalhadas: 1,
+    tentativasFalha: 1,
+    nSR: 1,
+    matched: true,
+    at: new Date(Date.now() - 10 * 60_000).toISOString(), // backoff vencido
+    ...extra,
+  });
+
+  it('falha dentro do teto + backoff vencido → reprocessa e entra na fila de retry', () => {
+    const s = novoStore();
+    s.setSignature('e1', comFalha({}));
+    expect(s.precisaProcessar('e1', 9, 1)).toBe(true);
+    expect(s.estudosComRetryPendente()).toEqual(['e1']);
+  });
+
+  it('backoff ainda não venceu → segura', () => {
+    const s = novoStore();
+    s.setSignature('e1', comFalha({ at: new Date().toISOString() }));
+    expect(s.precisaProcessar('e1', 9, 1)).toBe(false);
+    expect(s.estudosComRetryPendente()).toEqual([]);
+  });
+
+  it('teto atingido → desiste (proteção do Achado 9 preservada)', () => {
+    const s = novoStore();
+    s.setSignature('e1', comFalha({ tentativasFalha: MAX_TENTATIVAS_FALHA }));
+    expect(s.precisaProcessar('e1', 9, 1)).toBe(false);
+    expect(s.estudosComRetryPendente()).toEqual([]);
   });
 });
 
