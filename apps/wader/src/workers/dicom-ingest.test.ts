@@ -252,6 +252,38 @@ describe('processarEstudo — two-stage / paralelo / Fix B', () => {
     expect(detalhes.map((d) => d.orthancInstanceId)).toEqual(['t2', 't1']);
   });
 
+  it('empate de InstanceNumber SOBREVIVE ao merge de imagem tardia — posicao persistida (Codex, 2ª rodada)', async () => {
+    // Rodada 1 já gravou t1 (InstanceNumber 5, posicao 2). Rodada 2 traz a
+    // tardia t2 com o MESMO InstanceNumber mas posicao 1 — tem que entrar ANTES.
+    exameStore['EX123'] = {
+      __id: 'docTieMerge', status: 'andamento', medidasDicom: { x: 1 },
+      imagensDicomDetalhes: [
+        { url: 'u_t1', path: 'p_t1', orthancInstanceId: 't1', serie: 1, instancia: 5, posicao: 2 },
+      ],
+    };
+    const client = makeClient({
+      series: [{
+        Modality: 'US', SeriesNumber: '1',
+        Instances: ['t2'], instanceNumbers: { t2: '5' }, indexInSeries: { t2: 1 },
+      }],
+    });
+    await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+    const detalhes = updates[1].obj.imagensDicomDetalhes as Array<{ orthancInstanceId: string }>;
+    expect(detalhes.map((d) => d.orthancInstanceId)).toEqual(['t2', 't1']);
+  });
+
+  it('metadado ausente NÃO vira undefined no write (Admin SDK rejeita undefined)', async () => {
+    exameStore['EX123'] = { __id: 'docUndef', status: 'aguardando' };
+    // Série sem SeriesNumber, instance sem InstanceNumber nem IndexInSeries.
+    const client = makeClient({ series: [{ Modality: 'US', Instances: ['i1'] }] });
+    await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+    const detalhes = updates[1].obj.imagensDicomDetalhes as Array<Record<string, unknown>>;
+    for (const [k, v] of Object.entries(detalhes[0])) {
+      expect(v, `campo ${k} não pode ser undefined num write do Firestore`).not.toBeUndefined();
+    }
+    expect(Object.keys(detalhes[0]).sort()).toEqual(['orthancInstanceId', 'path', 'url']);
+  });
+
   it('tag vazia ("") é AUSENTE, não zero: série sem SeriesNumber vai pro FIM (Codex, tríade 31/08)', async () => {
     exameStore['EX123'] = { __id: 'docVazio', status: 'aguardando' };
     const client = makeClient({

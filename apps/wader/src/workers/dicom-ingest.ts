@@ -91,8 +91,12 @@ interface ImagemDicom {
   orthancInstanceId: string;
   /** SeriesNumber DICOM — ordem de aquisição, nível série (item 3, 31/08/2026). */
   serie?: number;
-  /** InstanceNumber DICOM (fallback IndexInSeries) — ordem dentro da série. */
+  /** InstanceNumber DICOM — ordem dentro da série. */
   instancia?: number;
+  /** IndexInSeries do Orthanc — desempate quando InstanceNumber repete
+   *  (norma DICOM não exige unicidade). Persistido de propósito: sem ele, o
+   *  re-sort pós-merge não desempataria imagem TARDIA (Codex, tríade 31/08). */
+  posicao?: number;
 }
 
 /** Instância a baixar, já com a posição de aquisição resolvida. */
@@ -100,19 +104,24 @@ interface InstanciaParaBaixar {
   id: string;
   serie?: number;
   instancia?: number;
+  posicao?: number;
 }
 
 /**
- * Ordena a galeria pela ordem de AQUISIÇÃO: (SeriesNumber, InstanceNumber).
- * Entrada sem os campos (legado, ou série cujo expand falhou) vai pro fim,
- * preservando a ordem relativa que já tinha (sort é estável). Necessário
- * DEPOIS do merge por instância: `mesclarImagensPorInstancia` anexa imagem
- * nova no fim do Map — sem re-sort, uma imagem tardia furaria a ordem.
+ * Ordena a galeria pela ordem de AQUISIÇÃO:
+ * (SeriesNumber, InstanceNumber, IndexInSeries). Entrada sem os campos
+ * (legado, ou série cujo expand falhou) vai pro fim, preservando a ordem
+ * relativa que já tinha (sort é estável). Necessário DEPOIS do merge por
+ * instância: `mesclarImagensPorInstancia` anexa imagem nova no fim do Map —
+ * sem re-sort, uma imagem tardia furaria a ordem.
  */
 function ordenarPorAquisicao(imgs: ImagemDicom[]): ImagemDicom[] {
-  const chave = (n?: number) => (typeof n === 'number' && !isNaN(n) ? n : Number.MAX_SAFE_INTEGER);
+  const chave = (n?: number) => (typeof n === 'number' && isFinite(n) ? n : Number.MAX_SAFE_INTEGER);
   return [...imgs].sort(
-    (a, b) => chave(a.serie) - chave(b.serie) || chave(a.instancia) - chave(b.instancia),
+    (a, b) =>
+      chave(a.serie) - chave(b.serie) ||
+      chave(a.instancia) - chave(b.instancia) ||
+      chave(a.posicao) - chave(b.posicao),
   );
 }
 
@@ -152,7 +161,7 @@ async function baixarImagensParalelo(
     for (;;) {
       const i = next++;
       if (i >= instancias.length) return;
-      const { id: instanceId, serie, instancia } = instancias[i];
+      const { id: instanceId, serie, instancia, posicao } = instancias[i];
       try {
         const buffer = await client.getInstancePreview(instanceId);
         const upload = await uploadDicomPreview({
@@ -163,7 +172,18 @@ async function baixarImagensParalelo(
           buffer,
           contentType: 'image/jpeg',
         });
-        comSeq.push({ url: upload.url, path: upload.path, orthancInstanceId: instanceId, serie, instancia, seq: i + 1 });
+        // Campos de ordem só entram se EXISTEM: o Admin SDK rejeita
+        // `undefined` como valor (sem ignoreUndefinedProperties no projeto) —
+        // um estudo sem SeriesNumber derrubaria o write da etapa 2 inteira.
+        comSeq.push({
+          url: upload.url,
+          path: upload.path,
+          orthancInstanceId: instanceId,
+          ...(serie !== undefined ? { serie } : {}),
+          ...(instancia !== undefined ? { instancia } : {}),
+          ...(posicao !== undefined ? { posicao } : {}),
+          seq: i + 1,
+        });
         result.imagensProcessadas++;
         result.bytesTotais += upload.bytes;
       } catch (err) {
@@ -496,7 +516,7 @@ export async function processarEstudo(opts: {
   const numOuUndef = (v: unknown): number | undefined => {
     if (v == null || (typeof v === 'string' && v.trim() === '')) return undefined;
     const n = Number(v);
-    return isNaN(n) ? undefined : n;
+    return Number.isFinite(n) ? n : undefined;
   };
   const seriesEstudo = await opts.client.getStudySeries(opts.orthancStudyId);
   const seriesImagem = seriesEstudo
@@ -520,13 +540,14 @@ export async function processarEstudo(opts: {
         (a, b) =>
           (numOuUndef(a.MainDicomTags?.InstanceNumber) ?? a.IndexInSeries ?? Number.MAX_SAFE_INTEGER) -
             (numOuUndef(b.MainDicomTags?.InstanceNumber) ?? b.IndexInSeries ?? Number.MAX_SAFE_INTEGER) ||
-          (a.IndexInSeries ?? 0) - (b.IndexInSeries ?? 0),
+          (a.IndexInSeries ?? Number.MAX_SAFE_INTEGER) - (b.IndexInSeries ?? Number.MAX_SAFE_INTEGER),
       );
       for (const inst of insts) {
         instancias.push({
           id: inst.ID,
           serie,
-          instancia: numOuUndef(inst.MainDicomTags?.InstanceNumber) ?? inst.IndexInSeries,
+          instancia: numOuUndef(inst.MainDicomTags?.InstanceNumber) ?? numOuUndef(inst.IndexInSeries),
+          posicao: numOuUndef(inst.IndexInSeries),
         });
       }
     } catch (err) {

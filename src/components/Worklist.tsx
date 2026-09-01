@@ -161,13 +161,17 @@ export default function Worklist() {
   // fallback pro "HH:MM" (manual/legado). Antes contava desde o horario
   // AGENDADO pra exame Feegow (item 2, 31/08/2026).
   const calcEspera = useCallback((item: ExameItem): { texto: string; alerta: boolean } => {
-    // Guarda de mesmo-dia (Codex, tríade 31/08): `chegouEm` de OUTRO dia
-    // (dataExame corrigida na mão, importação atravessando meia-noite)
-    // mostraria "24h+" em alerta eterno — nesse caso cai no fallback HH:MM,
-    // que é ancorado em hoje por construção.
+    // Guarda de mesmo-dia (Codex, tríade 31/08, 2ª rodada): `chegouEm` de
+    // OUTRO dia (dataExame corrigida na mão, importação atravessando a
+    // meia-noite) mostraria "24h+" em alerta eterno. Nesse caso o cronômetro
+    // CALA — cair no HH:MM reinterpretaria o slot AGENDADO como chegada, o
+    // exato erro que o item 2 corrigiu. O fallback HH:MM fica só pra exame
+    // SEM chegouEm nenhum (manual/legado, onde ele é chegada de verdade).
     const chegouEmRaw = (item.chegouEm as { toDate?: () => Date } | undefined)?.toDate?.();
-    const chegouEm =
-      chegouEmRaw && chegouEmRaw.toDateString() === agora.toDateString() ? chegouEmRaw : undefined;
+    if (chegouEmRaw && chegouEmRaw.toDateString() !== agora.toDateString()) {
+      return { texto: '', alerta: false };
+    }
+    const chegouEm = chegouEmRaw;
     const hora = item.horarioChegada;
     if (!chegouEm && !hora) return { texto: '', alerta: false };
     const chegada = chegouEm ?? new Date();
