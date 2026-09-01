@@ -387,6 +387,12 @@ export async function gravarImportacao(dbAdmin: Firestore, args: {
           sexo: c.sexo ?? '', origem: 'FEEGOW',
           feegowAppointId: fgId,
           ...(ehMed ? { medicoUid: uid } : {}),
+          // Chegada REAL: a importacao so aceita status_id=4 (sala de espera),
+          // entao a 1a vez que o agendamento entra aqui E o check-in. tx.create
+          // garante que re-imports nao regravam (ALREADY_EXISTS). E o campo que
+          // ordena a worklist — `horarioChegada` acima e o horario AGENDADO do
+          // slot Feegow (`ag.horario`), que so serve de exibicao/fallback.
+          chegouEm: FieldValue.serverTimestamp(),
           versao: 1, criadoEm: FieldValue.serverTimestamp(),
         });
         tx.create(dbAdmin.doc(`workspaces/${wsId}/accIndex/${acc}`), {

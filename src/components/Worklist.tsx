@@ -11,6 +11,7 @@ import { savePaciente, saveExame, listenWorklist, listenNaoRealizados, getExame,
 import { abrirPdfUrl } from '@/lib/pdfUtils';
 import AnexarPdfModal from '@/components/agenda/AnexarPdfModal';
 import { dataLocalHoje } from '@/lib/utils';
+import { horaChegadaExibicao } from '@/lib/worklist-ordem';
 import { gerarAccessionNumber } from '@/lib/gerarAccessionNumber';
 import { db, auth } from '@/lib/firebase';
 import { doc, writeBatch, serverTimestamp } from 'firebase/firestore';
@@ -156,12 +157,28 @@ export default function Worklist() {
     return () => clearInterval(timer);
   }, []);
 
-  // Calcular tempo de espera
-  const calcEspera = useCallback((hora: string | undefined): { texto: string; alerta: boolean } => {
-    if (!hora) return { texto: '', alerta: false };
-    const [h, m] = hora.split(':').map(Number);
-    const chegada = new Date();
-    chegada.setHours(h, m, 0, 0);
+  // Calcular tempo de espera — desde a CHEGADA real (chegouEm) quando existe;
+  // fallback pro "HH:MM" (manual/legado). Antes contava desde o horario
+  // AGENDADO pra exame Feegow (item 2, 31/08/2026).
+  const calcEspera = useCallback((item: ExameItem): { texto: string; alerta: boolean } => {
+    // Guarda de mesmo-dia (Codex, tríade 31/08, 2ª rodada): `chegouEm` de
+    // OUTRO dia (dataExame corrigida na mão, importação atravessando a
+    // meia-noite) mostraria "24h+" em alerta eterno. Nesse caso o cronômetro
+    // CALA — cair no HH:MM reinterpretaria o slot AGENDADO como chegada, o
+    // exato erro que o item 2 corrigiu. O fallback HH:MM fica só pra exame
+    // SEM chegouEm nenhum (manual/legado, onde ele é chegada de verdade).
+    const chegouEmRaw = (item.chegouEm as { toDate?: () => Date } | undefined)?.toDate?.();
+    if (chegouEmRaw && chegouEmRaw.toDateString() !== agora.toDateString()) {
+      return { texto: '', alerta: false };
+    }
+    const chegouEm = chegouEmRaw;
+    const hora = item.horarioChegada;
+    if (!chegouEm && !hora) return { texto: '', alerta: false };
+    const chegada = chegouEm ?? new Date();
+    if (!chegouEm && hora) {
+      const [h, m] = hora.split(':').map(Number);
+      chegada.setHours(h, m, 0, 0);
+    }
     const diff = Math.floor((agora.getTime() - chegada.getTime()) / 60000);
     if (diff < 0) return { texto: '', alerta: false };
     if (diff < 60) return { texto: `${diff}min`, alerta: diff >= 30 };
@@ -621,18 +638,20 @@ export default function Worklist() {
             )}
             {filtrada.map(item => {
               const espera = item.status === 'aguardando' && dataSel === dataLocalHoje()
-                ? calcEspera(item.horarioChegada as string)
+                ? calcEspera(item)
                 : { texto: '', alerta: false };
               const origem = (item.origem as string) || 'MANUAL';
 
               const isNaoRealizado = item.status === 'nao-realizado';
               return (
                 <tr key={item.id} className={`border-b hover:bg-gray-50 transition ${espera.alerta ? 'bg-red-50/30' : ''} ${isNaoRealizado ? 'opacity-70' : ''}`}>
-                  {/* Hora (e data se não-realizado) */}
+                  {/* Hora da CHEGADA real (e data se não-realizado) — a lista é
+                      ordenada por chegouEm; mostrar o horário agendado aqui
+                      faria a coluna parecer embaralhada (item 2, 31/08/2026). */}
                   <td className="py-3 px-3 text-gray-500 font-mono text-xs">
                     {isNaoRealizado && item.dataExame
-                      ? <><div className="text-[10px] text-gray-400">{(item.dataExame as string).split('-').reverse().slice(0, 2).join('/')}</div><div>{item.horarioChegada || '—'}</div></>
-                      : (item.horarioChegada || '—')}
+                      ? <><div className="text-[10px] text-gray-400">{(item.dataExame as string).split('-').reverse().slice(0, 2).join('/')}</div><div>{horaChegadaExibicao(item) || '—'}</div></>
+                      : (horaChegadaExibicao(item) || '—')}
                   </td>
 
                   {/* ACC — clique pra copiar (transcrição manual no Vivid) */}

@@ -74,7 +74,16 @@ import { extrairMedidasDoEstudo } from '../adapters/dicom-sr-parser';
 // ── Fake OrthancClient configurável ────────────────────────────────────
 function makeClient(opts?: {
   accStudyLevel?: string;
-  series?: Array<{ Modality: string; Instances: string[] }>;
+  series?: Array<{
+    Modality: string;
+    Instances: string[];
+    /** SeriesNumber DICOM (item 3) — omitido = sem metadado de ordem. */
+    SeriesNumber?: string;
+    /** InstanceNumber por instance id (item 3) — omitido = sem metadado. */
+    instanceNumbers?: Record<string, string>;
+    /** IndexInSeries por instance id (desempate, tríade 31/08). */
+    indexInSeries?: Record<string, number>;
+  }>;
   previewDelays?: Record<string, number>;
   previewFails?: Set<string>;
   patientId?: string;
@@ -96,7 +105,22 @@ function makeClient(opts?: {
       PatientMainDicomTags: opts?.patientId ? { PatientID: opts.patientId } : {},
     }),
     getStudySeries: async () =>
-      series.map((s) => ({ MainDicomTags: { Modality: s.Modality }, Instances: s.Instances })),
+      series.map((s, idx) => ({
+        ID: `serie-${idx}`,
+        MainDicomTags: { Modality: s.Modality, SeriesNumber: s.SeriesNumber },
+        Instances: s.Instances,
+      })),
+    // Expand da série (item 3): devolve na MESMA ordem do array Instances —
+    // é o sort do ingest que tem que arrumar pela InstanceNumber.
+    getSeriesInstances: async (seriesId: string) => {
+      const s = series[Number(seriesId.replace('serie-', ''))];
+      if (!s) throw new Error(`série desconhecida: ${seriesId}`);
+      return s.Instances.map((id) => ({
+        ID: id,
+        IndexInSeries: s.indexInSeries?.[id],
+        MainDicomTags: { InstanceNumber: s.instanceNumbers?.[id] },
+      }));
+    },
     getInstancePreview: async (id: string) => {
       const d = opts?.previewDelays?.[id] ?? 0;
       if (d) await new Promise((r) => setTimeout(r, d));
@@ -175,6 +199,112 @@ describe('processarEstudo — two-stage / paralelo / Fix B', () => {
     exameStore['EX123'] = { __id: 'doc6', status: 'rascunho' };
     await processarEstudo({ client: makeClient(), orthancStudyId: 's1', wsId: WS });
     expect(updates[0].obj.status).toBe('rascunho');
+  });
+
+  it('ordem de AQUISIÇÃO (item 3): séries por SeriesNumber, instances por InstanceNumber — mesmo com o Orthanc devolvendo embaralhado', async () => {
+    exameStore['EX123'] = { __id: 'docOrd', status: 'aguardando' };
+    // Orthanc devolve a série 2 ANTES da 1, e as instances fora de ordem —
+    // exatamente o cenário real que embaralhava a galeria.
+    const client = makeClient({
+      series: [
+        { Modality: 'US', SeriesNumber: '2', Instances: ['b2', 'b1'], instanceNumbers: { b1: '1', b2: '2' } },
+        { Modality: 'US', SeriesNumber: '1', Instances: ['a3', 'a1', 'a2'], instanceNumbers: { a1: '1', a2: '2', a3: '3' } },
+        { Modality: 'SR', Instances: ['sr1'] },
+      ],
+    });
+    await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+    const detalhes = updates[1].obj.imagensDicomDetalhes as Array<{ orthancInstanceId: string; serie?: number; instancia?: number }>;
+    expect(detalhes.map((d) => d.orthancInstanceId)).toEqual(['a1', 'a2', 'a3', 'b1', 'b2']);
+    expect(detalhes[0]).toMatchObject({ serie: 1, instancia: 1 });
+    // imagensDicom (as URLs) segue a mesma ordem dos detalhes
+    expect(updates[1].obj.imagensDicom).toEqual(['url_1', 'url_2', 'url_3', 'url_4', 'url_5']);
+  });
+
+  it('imagem TARDIA entra no lugar certo, não no fim (re-sort pós-merge, item 3)', async () => {
+    // Exame já tem a1 (instancia 1) e a3 (instancia 3); chega a2 no reprocesso.
+    exameStore['EX123'] = {
+      __id: 'docMerge', status: 'andamento', medidasDicom: { x: 1 },
+      imagensDicomDetalhes: [
+        { url: 'u_a1', path: 'p_a1', orthancInstanceId: 'a1', serie: 1, instancia: 1 },
+        { url: 'u_a3', path: 'p_a3', orthancInstanceId: 'a3', serie: 1, instancia: 3 },
+      ],
+    };
+    const client = makeClient({
+      series: [{ Modality: 'US', SeriesNumber: '1', Instances: ['a2'], instanceNumbers: { a2: '2' } }],
+    });
+    await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+    const detalhes = updates[1].obj.imagensDicomDetalhes as Array<{ orthancInstanceId: string }>;
+    expect(detalhes.map((d) => d.orthancInstanceId)).toEqual(['a1', 'a2', 'a3']);
+  });
+
+  it('InstanceNumber EMPATADO desempata por IndexInSeries (Codex, tríade 31/08)', async () => {
+    exameStore['EX123'] = { __id: 'docTie', status: 'aguardando' };
+    const client = makeClient({
+      series: [{
+        Modality: 'US', SeriesNumber: '1',
+        Instances: ['t1', 't2'], // ordem interna do Orthanc: t1 primeiro
+        instanceNumbers: { t1: '5', t2: '5' }, // empate
+        indexInSeries: { t1: 2, t2: 1 }, // ...mas t2 foi adquirida antes
+      }],
+    });
+    await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+    const detalhes = updates[1].obj.imagensDicomDetalhes as Array<{ orthancInstanceId: string }>;
+    expect(detalhes.map((d) => d.orthancInstanceId)).toEqual(['t2', 't1']);
+  });
+
+  it('empate de InstanceNumber SOBREVIVE ao merge de imagem tardia — posicao persistida (Codex, 2ª rodada)', async () => {
+    // Rodada 1 já gravou t1 (InstanceNumber 5, posicao 2). Rodada 2 traz a
+    // tardia t2 com o MESMO InstanceNumber mas posicao 1 — tem que entrar ANTES.
+    exameStore['EX123'] = {
+      __id: 'docTieMerge', status: 'andamento', medidasDicom: { x: 1 },
+      imagensDicomDetalhes: [
+        { url: 'u_t1', path: 'p_t1', orthancInstanceId: 't1', serie: 1, instancia: 5, posicao: 2 },
+      ],
+    };
+    const client = makeClient({
+      series: [{
+        Modality: 'US', SeriesNumber: '1',
+        Instances: ['t2'], instanceNumbers: { t2: '5' }, indexInSeries: { t2: 1 },
+      }],
+    });
+    await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+    const detalhes = updates[1].obj.imagensDicomDetalhes as Array<{ orthancInstanceId: string }>;
+    expect(detalhes.map((d) => d.orthancInstanceId)).toEqual(['t2', 't1']);
+  });
+
+  it('metadado ausente NÃO vira undefined no write (Admin SDK rejeita undefined)', async () => {
+    exameStore['EX123'] = { __id: 'docUndef', status: 'aguardando' };
+    // Série sem SeriesNumber, instance sem InstanceNumber nem IndexInSeries.
+    const client = makeClient({ series: [{ Modality: 'US', Instances: ['i1'] }] });
+    await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+    const detalhes = updates[1].obj.imagensDicomDetalhes as Array<Record<string, unknown>>;
+    for (const [k, v] of Object.entries(detalhes[0])) {
+      expect(v, `campo ${k} não pode ser undefined num write do Firestore`).not.toBeUndefined();
+    }
+    expect(Object.keys(detalhes[0]).sort()).toEqual(['orthancInstanceId', 'path', 'url']);
+  });
+
+  it('tag vazia ("") é AUSENTE, não zero: série sem SeriesNumber vai pro FIM (Codex, tríade 31/08)', async () => {
+    exameStore['EX123'] = { __id: 'docVazio', status: 'aguardando' };
+    const client = makeClient({
+      series: [
+        { Modality: 'US', SeriesNumber: '', Instances: ['z1'], instanceNumbers: { z1: '1' } },
+        { Modality: 'US', SeriesNumber: '1', Instances: ['a1'], instanceNumbers: { a1: '1' } },
+      ],
+    });
+    await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+    const detalhes = updates[1].obj.imagensDicomDetalhes as Array<{ orthancInstanceId: string; serie?: number }>;
+    expect(detalhes.map((d) => d.orthancInstanceId)).toEqual(['a1', 'z1']);
+    expect(detalhes[1].serie).toBeUndefined(); // '' NÃO virou 0
+  });
+
+  it('expand da série falhando: NÃO derruba a etapa 2 — usa a ordem interna (fallback)', async () => {
+    exameStore['EX123'] = { __id: 'docFb', status: 'aguardando' };
+    const client = makeClient({ series: [{ Modality: 'US', Instances: ['i1', 'i2'] }] });
+    client.getSeriesInstances = async () => { throw new Error('expand boom'); };
+    const r = await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+    expect(r.imagensProcessadas).toBe(2);
+    expect(updates[1].obj.imagensDicom).toEqual(['url_1', 'url_2']);
   });
 
   it('ordenação paralela: imagens saem ordenadas por seq mesmo completando fora de ordem', async () => {

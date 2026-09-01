@@ -103,7 +103,15 @@ function LaudoPageInner() {
   const [exame, setExame] = useState<Record<string, unknown> | null>(null);
   const [popupOpen, setPopupOpen] = useState(false);
   const [emitido, setEmitido] = useState(false);
-  const [dicomImportado, setDicomImportado] = useState(false);
+  // Assinaturas (chave|valor|unidade) das medidas SR OFERECIDAS na última
+  // importação (item 5, 31/08/2026). Substitui o boolean `dicomImportado`:
+  // com ele, medida que o Vivid mandava DEPOIS da 1ª importação aparecia no
+  // contador mas o botão ficava travado em "✅ Importado" — só sair e
+  // reabrir o laudo destravava. Assinatura em vez de só a chave (Codex,
+  // tríade 31/08): o Vivid pode reenviar a MESMA medida com valor corrigido
+  // — valor novo também reabre o botão.
+  const [chavesImportadas, setChavesImportadas] = useState<Set<string>>(new Set());
+  const assinaturaSr = (i: InputImport) => `${i.key}|${i.valor}|${i.unit}`;
   // Estado da galeria DICOM (modal full-screen com thumbnails + lightbox).
   // Adicionada em 14/05/2026 — médico consegue ver as imagens dentro do laudo.
   const [galeriaOpen, setGaleriaOpen] = useState(false);
@@ -219,11 +227,14 @@ function LaudoPageInner() {
   // Último exame que a página preencheu — distingue carga inicial de TROCA de
   // exame no bloco de reset (S5-T2 fix2).
   const exameAnteriorRef = useRef<string | null>(null);
-  // Guard SEPARADO da seleção de imagens (FIX F1, S4-T12 fix): a seleção só
-  // pode ser inicializada na primeira snapshot QUE JÁ TEM imagens. Amarrada
-  // ao guard acima, o médico que abrisse o laudo antes do Wader terminar
-  // ficava com seleção [] pra sempre — e emitia o laudo SEM imagem nenhuma.
-  const selecaoInicializada = useRef(false);
+  // Guard SEPARADO da seleção de imagens (FIX F1, S4-T12; reformado no item 4,
+  // 31/08/2026): `true` = o MÉDICO é dono da seleção (havia seleção salva no
+  // doc, ou ele clicou numa imagem nesta sessão) — daí pra frente snapshot
+  // nova só PODA, nunca acrescenta. Enquanto `false`, a seleção é o default
+  // "primeiras 8" RECALCULADO a cada snapshot — imagem que o Wader sobe com o
+  // laudo já aberto entra sozinha no PDF (antes o default era fotografado na
+  // 1ª snapshot com imagem e congelava; reabrir o laudo "consertava").
+  const selecaoPersonalizada = useRef(false);
   // Perfil do aparelho (S4-T13, decisão 16): mapa medida-do-SR → campo do
   // laudo, editável no cartão Integrações. Nasce no default embutido, então
   // falha de leitura NUNCA derruba a importação — só mantém a whitelist.
@@ -343,7 +354,10 @@ function LaudoPageInner() {
     // laudo emitido abria DESTRAVADO e a seleção de imagens ficava a do
     // paciente anterior. Zerar aqui é o mesmo escopo do onSnapshot.
     primeiraSnapshot.current = true;
-    selecaoInicializada.current = false;
+    selecaoPersonalizada.current = false;
+    // Navegar laudo→laudo sem desmontar não pode herdar o "já importado" do
+    // exame anterior (mesma família dos guards acima).
+    setChavesImportadas(new Set());
     // Restauração e merge também são POR EXAME (S5-T2, nota pendente da T1):
     // navegar laudo→laudo sem desmontar levava o texto do paciente anterior
     // como "geração conhecida" — o merge protegeria frases do laudo errado.
@@ -390,38 +404,35 @@ function LaudoPageInner() {
           if (dados.emitidoEm) setEmitido(true);
         }
 
-        // Inicializa seleção de imagens pra impressão — na primeira snapshot
-        // QUE JÁ TRAZ imagens (guard próprio, FIX F1). Sem imagens não há o
-        // que inicializar: a snapshot seguinte do Wader é que vai valer.
-        //  - Se já tem `imagensSelecionadasPdf` salvo → usa (filtrado)
-        //  - Senão → default = primeiras 8 (ou todas, se exame tem <8)
-        //    Esse default só vive em memória; só persiste no Firestore
-        //    quando médico toggle alguma imagem (auto-save abaixo).
-        // Já inicializada NÃO re-roda: a escolha do médico é soberana.
+        // Seleção de imagens pra impressão (item 4, 31/08/2026):
+        //  - Seleção SALVA no doc → médico é o dono (selecaoPersonalizada):
+        //    usa filtrada, e snapshots seguintes só PODAM (nunca re-marcam o
+        //    que ele desmarcou).
+        //  - Sem seleção salva e médico ainda não clicou → default =
+        //    primeiras 8, RECALCULADO a cada snapshot: imagem que o Wader
+        //    sobe com o laudo aberto entra sozinha (antes congelava na 1ª
+        //    snapshot com imagem — só reabrir o laudo atualizava o PDF).
+        //    O default só vive em memória; persiste quando o médico toca
+        //    numa imagem (auto-save do toggle).
+        // Guard `todas.length > 0` (FIX F1 + review M1): snapshot com
+        // `imagensDicom` vazio (transitório antes do Wader escrever) não
+        // vale nada — nem inicializa, nem zera o que já está selecionado.
         const todas = (dados.imagensDicom as string[] | undefined) || [];
-        if (!selecaoInicializada.current && todas.length > 0) {
-          selecaoInicializada.current = true;
+        if (todas.length > 0) {
           const salvas = dados.imagensSelecionadasPdf as string[] | undefined;
-          if (salvas && Array.isArray(salvas)) {
+          if (!selecaoPersonalizada.current && salvas && Array.isArray(salvas)) {
+            selecaoPersonalizada.current = true;
             // Filtra URLs salvas que ainda existem em imagensDicom (defensivo
             // contra remap/reprocessamento que mudou URLs)
             setImagensSelecionadasPdf(salvas.filter((u) => todas.includes(u)));
-          } else {
+          } else if (!selecaoPersonalizada.current) {
             setImagensSelecionadasPdf(todas.slice(0, 8));
+          } else {
+            // nº17 (S5-T7): poda a seleção em TODA snapshot — se uma URL
+            // selecionada sumiu de `imagensDicom` (reprocesso/remap do
+            // Wader), tira da seleção. NUNCA adiciona por cima do médico.
+            setImagensSelecionadasPdf((sel) => sel.filter((u) => todas.includes(u)));
           }
-        }
-        // nº17 (S5-T7): poda a seleção em TODA snapshot (não só na 1a) — se
-        // uma URL selecionada sumiu de `imagensDicom` (reprocesso/remap do
-        // Wader), tira da seleção. NUNCA adiciona: se o médico desmarcou uma
-        // imagem, uma snapshot nova não a marca de volta.
-        // Guard `todas.length > 0` (review M1): uma snapshot com
-        // `imagensDicom` vazio (carga/transitório antes do Wader escrever)
-        // NÃO deve zerar a seleção pra sempre — `selecaoInicializada` já
-        // ficou `true` na 1a vez que houve imagem, então a inicialização não
-        // roda de novo pra repopular. A mesma regra do guard F1 de
-        // inicialização (vazio = "não vale nada ainda") vale aqui.
-        if (todas.length > 0) {
-          setImagensSelecionadasPdf((sel) => sel.filter((u) => todas.includes(u)));
         }
       },
       (err) => console.warn('laudo onSnapshot:', err),
@@ -442,6 +453,9 @@ function LaudoPageInner() {
    */
   async function handleToggleSelecaoImagem(url: string) {
     if (!workspace?.id || !exameId || !user?.uid) return;
+    // A partir do 1º clique o médico é o dono da seleção — o default
+    // "primeiras 8" para de recalcular (item 4, 31/08/2026).
+    selecaoPersonalizada.current = true;
     const novaLista = imagensSelecionadasPdf.includes(url)
       ? imagensSelecionadasPdf.filter((u) => u !== url) // remove
       : [...imagensSelecionadasPdf, url]; // adiciona no fim
@@ -1355,7 +1369,10 @@ function LaudoPageInner() {
       el.dispatchEvent(new Event('change', { bubbles: true }));
       preenchidos++;
     }
-    setDicomImportado(true);
+    // Marca como "vistas" TODAS as medidas oferecidas nesta rodada (não só as
+    // marcadas): o que o médico desmarcou foi decisão dele — não é motivo pra
+    // reabrir o botão. Só medida NOVA (chave nova OU valor novo) reabre.
+    setChavesImportadas(new Set(inputsImportaveis.map(assinaturaSr)));
     const aviso = naoImportados.length > 0
       ? `\n\n⚠️ ${naoImportados.length} não importada${naoImportados.length === 1 ? '' : 's'} — confira o Perfil do aparelho em Integrações:\n${naoImportados.join('\n')}`
       : '';
@@ -1961,10 +1978,9 @@ function LaudoPageInner() {
   function handleLimpar() {
     if (!confirm('Limpar todos os campos?')) return;
     limparCampos();
-    // nº14-alto (S5 corr): "Limpar" zera as medidas mas deixava
-    // `dicomImportado` true — o botão "📡 Importar" continuava mostrando o
-    // selo de "já importado" mesmo com os campos todos vazios de novo.
-    setDicomImportado(false);
+    // nº14-alto (S5 corr): "Limpar" zera as medidas mas deixava o selo de
+    // "já importado" — o botão "📡 Importar" tem que voltar clicável.
+    setChavesImportadas(new Set());
   }
 
   /**
@@ -2075,7 +2091,12 @@ function LaudoPageInner() {
         onSalvarEmitir={handleSalvarEmitir}
         onLimpar={handleLimpar}
         onImportarDicom={handleImportarDicom}
-        dicomImportado={dicomImportado}
+        dicomImportado={
+          // "Importado" só enquanto NADA novo chegou: toda medida oferecida
+          // hoje (chave E valor) já foi vista na última importação (item 5).
+          inputsImportaveis.length > 0 &&
+          inputsImportaveis.every((i) => chavesImportadas.has(assinaturaSr(i)))
+        }
         ortancAtivo={!!workspace?.ortancAtivo}
         totalMedidasDicom={schemaAntigo ? totalMedidasBrutas : inputsImportaveis.length}
         totalImagensDicom={((exame?.imagensDicom as string[] | undefined) || []).length}
