@@ -89,6 +89,31 @@ interface ImagemDicom {
   url: string;
   path: string;
   orthancInstanceId: string;
+  /** SeriesNumber DICOM — ordem de aquisição, nível série (item 3, 31/08/2026). */
+  serie?: number;
+  /** InstanceNumber DICOM (fallback IndexInSeries) — ordem dentro da série. */
+  instancia?: number;
+}
+
+/** Instância a baixar, já com a posição de aquisição resolvida. */
+interface InstanciaParaBaixar {
+  id: string;
+  serie?: number;
+  instancia?: number;
+}
+
+/**
+ * Ordena a galeria pela ordem de AQUISIÇÃO: (SeriesNumber, InstanceNumber).
+ * Entrada sem os campos (legado, ou série cujo expand falhou) vai pro fim,
+ * preservando a ordem relativa que já tinha (sort é estável). Necessário
+ * DEPOIS do merge por instância: `mesclarImagensPorInstancia` anexa imagem
+ * nova no fim do Map — sem re-sort, uma imagem tardia furaria a ordem.
+ */
+function ordenarPorAquisicao(imgs: ImagemDicom[]): ImagemDicom[] {
+  const chave = (n?: number) => (typeof n === 'number' && !isNaN(n) ? n : Number.MAX_SAFE_INTEGER);
+  return [...imgs].sort(
+    (a, b) => chave(a.serie) - chave(b.serie) || chave(a.instancia) - chave(b.instancia),
+  );
 }
 
 /**
@@ -117,7 +142,7 @@ async function baixarImagensParalelo(
   client: OrthancClient,
   wsId: string,
   exameId: string,
-  instanceIds: string[],
+  instancias: InstanciaParaBaixar[],
   result: IngestResult,
 ): Promise<ImagemDicom[]> {
   const comSeq: Array<ImagemDicom & { seq: number }> = [];
@@ -126,8 +151,8 @@ async function baixarImagensParalelo(
   async function runner(): Promise<void> {
     for (;;) {
       const i = next++;
-      if (i >= instanceIds.length) return;
-      const instanceId = instanceIds[i];
+      if (i >= instancias.length) return;
+      const { id: instanceId, serie, instancia } = instancias[i];
       try {
         const buffer = await client.getInstancePreview(instanceId);
         const upload = await uploadDicomPreview({
@@ -138,7 +163,7 @@ async function baixarImagensParalelo(
           buffer,
           contentType: 'image/jpeg',
         });
-        comSeq.push({ url: upload.url, path: upload.path, orthancInstanceId: instanceId, seq: i + 1 });
+        comSeq.push({ url: upload.url, path: upload.path, orthancInstanceId: instanceId, serie, instancia, seq: i + 1 });
         result.imagensProcessadas++;
         result.bytesTotais += upload.bytes;
       } catch (err) {
@@ -150,7 +175,7 @@ async function baixarImagensParalelo(
     }
   }
 
-  const n = Math.min(IMG_CONCURRENCY, instanceIds.length);
+  const n = Math.min(IMG_CONCURRENCY, instancias.length);
   await Promise.all(Array.from({ length: n }, () => runner()));
 
   comSeq.sort((a, b) => a.seq - b.seq);
@@ -459,26 +484,62 @@ export async function processarEstudo(opts: {
   // Só instances NÃO-SR: o /preview de uma instance SR devolve 415 (não há
   // JPG de Structured Report). Filtrar evita 2 "falhas" eternas por estudo e
   // mantém imagensProcessadas alinhado com o curImg do worker (também não-SR).
+  // Ordem de AQUISIÇÃO (item 3, 31/08/2026): `/studies/{id}/series` devolve
+  // séries e instances na ordem interna do banco do Orthanc — era isso que
+  // embaralhava a galeria. Ordena séries por SeriesNumber e, dentro de cada
+  // uma, expande as instances (1 chamada por série) pra ordenar por
+  // InstanceNumber (fallback IndexInSeries). Se o expand falhar, a série
+  // entra como antes (ordem interna, sem metadado) — nunca derruba a etapa 2.
+  const numOuUndef = (v: unknown): number | undefined => {
+    const n = Number(v);
+    return isNaN(n) ? undefined : n;
+  };
   const seriesEstudo = await opts.client.getStudySeries(opts.orthancStudyId);
-  const instanceIds = seriesEstudo
+  const seriesImagem = seriesEstudo
     .filter((s) => (s.MainDicomTags?.Modality ?? '') !== 'SR')
-    .flatMap((s) => s.Instances ?? []);
+    .sort(
+      (a, b) =>
+        (numOuUndef(a.MainDicomTags?.SeriesNumber) ?? Number.MAX_SAFE_INTEGER) -
+        (numOuUndef(b.MainDicomTags?.SeriesNumber) ?? Number.MAX_SAFE_INTEGER),
+    );
+  const instancias: InstanciaParaBaixar[] = [];
+  for (const s of seriesImagem) {
+    const serie = numOuUndef(s.MainDicomTags?.SeriesNumber);
+    try {
+      const insts = await opts.client.getSeriesInstances(s.ID);
+      insts.sort(
+        (a, b) =>
+          (numOuUndef(a.MainDicomTags?.InstanceNumber) ?? a.IndexInSeries ?? Number.MAX_SAFE_INTEGER) -
+          (numOuUndef(b.MainDicomTags?.InstanceNumber) ?? b.IndexInSeries ?? Number.MAX_SAFE_INTEGER),
+      );
+      for (const inst of insts) {
+        instancias.push({
+          id: inst.ID,
+          serie,
+          instancia: numOuUndef(inst.MainDicomTags?.InstanceNumber) ?? inst.IndexInSeries,
+        });
+      }
+    } catch (err) {
+      log.warn({ err, seriesId: s.ID }, 'Expand da série falhou — usando ordem interna do Orthanc');
+      for (const id of s.Instances ?? []) instancias.push({ id, serie });
+    }
+  }
   log.info(
-    { orthancStudyId: opts.orthancStudyId, exameId, acc: accession, imagens: instanceIds.length, concorrencia: IMG_CONCURRENCY },
-    'Baixando previews em paralelo (séries SR excluídas)',
+    { orthancStudyId: opts.orthancStudyId, exameId, acc: accession, imagens: instancias.length, concorrencia: IMG_CONCURRENCY },
+    'Baixando previews em paralelo (séries SR excluídas, ordem de aquisição)',
   );
 
   const imagensDicom = await baixarImagensParalelo(
     opts.client,
     opts.wsId,
     exameId,
-    instanceIds,
+    instancias,
     result,
   );
 
   const todasFalharam =
-    instanceIds.length > 0 && result.imagensProcessadas === 0 && result.imagensFalhadas > 0;
-  const semInstances = instanceIds.length === 0;
+    instancias.length > 0 && result.imagensProcessadas === 0 && result.imagensFalhadas > 0;
+  const semInstances = instancias.length === 0;
 
   if (!todasFalharam && !semInstances) {
     if (estudosEmExclusao.has(opts.orthancStudyId)) {
@@ -490,7 +551,7 @@ export async function processarEstudo(opts: {
     // que já tínhamos, a instance que falhou agora mantém a versão anterior.
     if (cofre) {
       const pendentesAtuais = (exameData.imagensDicomPendente as ImagemDicom[] | undefined) ?? [];
-      const pendentesFinais = mesclarImagensPorInstancia(pendentesAtuais, imagensDicom);
+      const pendentesFinais = ordenarPorAquisicao(mesclarImagensPorInstancia(pendentesAtuais, imagensDicom));
       await exameRef.update({
         imagensDicomPendente: pendentesFinais,
         atualizadoEm: FieldValue.serverTimestamp(),
@@ -498,7 +559,7 @@ export async function processarEstudo(opts: {
       });
     } else {
       const detalhesAtuais = (exameData.imagensDicomDetalhes as ImagemDicom[] | undefined) ?? [];
-      const detalhesFinais = mesclarImagensPorInstancia(detalhesAtuais, imagensDicom);
+      const detalhesFinais = ordenarPorAquisicao(mesclarImagensPorInstancia(detalhesAtuais, imagensDicom));
       await exameRef.update({
         imagensDicom: detalhesFinais.map((i) => i.url),
         imagensDicomDetalhes: detalhesFinais,

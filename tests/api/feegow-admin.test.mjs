@@ -33,6 +33,9 @@ describe('gravarImportacao', () => {
     assert.equal(ex1.medicoExecutor, '');
     assert.ok((await db.doc(`workspaces/${WS}/accIndex/${ex1.acc}`).get()).exists, 'reserva de ACC criada');
     assert.match(ex1.acc, /^EX\d{14}$/); // contrato DICOM: EX + 14 digitos = 16 chars (Vivid/Wader)
+    // item 2 (31/08/2026): chegada REAL — importacao so aceita sala de espera,
+    // entao o instante do create e o check-in. E o campo que ordena a worklist.
+    assert.ok(ex1.chegouEm instanceof Timestamp, 'chegouEm gravado como serverTimestamp');
   });
   test('re-importar os mesmos candidatos e idempotente', async () => {
     const { criados } = await gravarImportacao(db, {

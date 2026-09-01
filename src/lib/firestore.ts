@@ -7,6 +7,7 @@
 import { db } from './firebase';
 import { dataLocalHoje, dataLocalBRT } from './utils';
 import { gerarAccessionNumber } from './gerarAccessionNumber';
+import { ordenarPorChegada } from './worklist-ordem';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc,
   query, where, orderBy, limit, onSnapshot, serverTimestamp,
@@ -349,7 +350,9 @@ export function listenWorklist(wsId: string, callback: (items: Record<string, un
       orderBy('horarioChegada', 'asc')
     ),
     snap => {
-      const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Ordem de CHEGADA real (item 2, 31/08/2026): o orderBy acima e so o
+      // indice/fallback — `horarioChegada` de exame Feegow e o slot AGENDADO.
+      const items = ordenarPorChegada(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       callback(items);
     },
     err => console.error('listenWorklist:', err)

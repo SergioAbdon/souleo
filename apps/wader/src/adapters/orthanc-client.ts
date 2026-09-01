@@ -244,6 +244,17 @@ export class OrthancClient {
   }
 
   /**
+   * Lista as instâncias de uma série EXPANDIDAS (com `MainDicomTags` e
+   * `IndexInSeries`) — 1 chamada por série, em vez de 1 `getInstance` por
+   * imagem. É o que permite ordenar a galeria pela ordem de AQUISIÇÃO
+   * (`InstanceNumber`), que o `/studies/{id}/series` não fornece: lá o
+   * array `Instances` vem na ordem interna do banco do Orthanc.
+   */
+  async getSeriesInstances(seriesId: string): Promise<OrthancInstance[]> {
+    return this.get<OrthancInstance[]>(`/series/${encodeURIComponent(seriesId)}/instances`);
+  }
+
+  /**
    * Baixa preview JPG de uma instância (imagem pré-renderizada pelo Orthanc).
    * Retorna o Buffer da imagem.
    */

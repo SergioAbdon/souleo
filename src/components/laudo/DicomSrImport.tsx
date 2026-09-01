@@ -15,7 +15,7 @@
 //   - Após importar: campos do motor preenchidos, médico edita normal
 // ════════════════════════════════════════════════════════════════════
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { InputImport } from '@/lib/dicom-sr-mapping';
 
 type Props = {
@@ -63,18 +63,30 @@ export default function DicomSrImport({
 }: Props) {
   // Default: todas marcadas (médico geralmente quer importar tudo)
   const [marcadas, setMarcadas] = useState<Set<string>>(new Set());
+  // Chaves que o modal JÁ apresentou nesta abertura — vazio = recém-aberto.
+  const conhecidasRef = useRef<Set<string>>(new Set());
 
-  // Reset quando abre — re-marca todas.
-  // Dep é SÓ `[open]` (S4-T12, achado 25): com `inputs` na lista, qualquer
-  // re-render do pai que criasse um array novo re-marcava tudo por cima das
-  // caixas que o médico tinha acabado de desmarcar. O pai agora memoiza a
-  // lista, então o conteúdo na abertura é sempre o corrente.
+  // Abertura re-marca todas (reset). Com o modal ABERTO, medida nova que o
+  // Wader grava no meio (tela viva) entra na lista MARCADA — antes o efeito
+  // só rodava em `open` e a recém-chegada nascia desmarcada, ou seja, não era
+  // importada no clique (item 5, 31/08/2026). O que o médico desmarcou fica
+  // desmarcado: só chave DESCONHECIDA ganha check. `inputs` é memoizado no
+  // pai (S4-T12, achado 25) — a dep só dispara quando `medidasDicom` muda.
   useEffect(() => {
-    if (open) {
-      setMarcadas(new Set(inputs.map((i) => i.key)));
+    if (!open) {
+      conhecidasRef.current = new Set();
+      return;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+    const primeiraVez = conhecidasRef.current.size === 0;
+    setMarcadas((prev) => {
+      const next = new Set<string>();
+      for (const i of inputs) {
+        if (primeiraVez || !conhecidasRef.current.has(i.key) || prev.has(i.key)) next.add(i.key);
+      }
+      return next;
+    });
+    if (inputs.length > 0) conhecidasRef.current = new Set(inputs.map((i) => i.key));
+  }, [open, inputs]);
 
   // ESC fecha
   useEffect(() => {

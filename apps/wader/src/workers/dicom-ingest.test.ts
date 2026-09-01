@@ -74,7 +74,14 @@ import { extrairMedidasDoEstudo } from '../adapters/dicom-sr-parser';
 // ── Fake OrthancClient configurável ────────────────────────────────────
 function makeClient(opts?: {
   accStudyLevel?: string;
-  series?: Array<{ Modality: string; Instances: string[] }>;
+  series?: Array<{
+    Modality: string;
+    Instances: string[];
+    /** SeriesNumber DICOM (item 3) — omitido = sem metadado de ordem. */
+    SeriesNumber?: string;
+    /** InstanceNumber por instance id (item 3) — omitido = sem metadado. */
+    instanceNumbers?: Record<string, string>;
+  }>;
   previewDelays?: Record<string, number>;
   previewFails?: Set<string>;
   patientId?: string;
@@ -96,7 +103,21 @@ function makeClient(opts?: {
       PatientMainDicomTags: opts?.patientId ? { PatientID: opts.patientId } : {},
     }),
     getStudySeries: async () =>
-      series.map((s) => ({ MainDicomTags: { Modality: s.Modality }, Instances: s.Instances })),
+      series.map((s, idx) => ({
+        ID: `serie-${idx}`,
+        MainDicomTags: { Modality: s.Modality, SeriesNumber: s.SeriesNumber },
+        Instances: s.Instances,
+      })),
+    // Expand da série (item 3): devolve na MESMA ordem do array Instances —
+    // é o sort do ingest que tem que arrumar pela InstanceNumber.
+    getSeriesInstances: async (seriesId: string) => {
+      const s = series[Number(seriesId.replace('serie-', ''))];
+      if (!s) throw new Error(`série desconhecida: ${seriesId}`);
+      return s.Instances.map((id) => ({
+        ID: id,
+        MainDicomTags: { InstanceNumber: s.instanceNumbers?.[id] },
+      }));
+    },
     getInstancePreview: async (id: string) => {
       const d = opts?.previewDelays?.[id] ?? 0;
       if (d) await new Promise((r) => setTimeout(r, d));
@@ -175,6 +196,51 @@ describe('processarEstudo — two-stage / paralelo / Fix B', () => {
     exameStore['EX123'] = { __id: 'doc6', status: 'rascunho' };
     await processarEstudo({ client: makeClient(), orthancStudyId: 's1', wsId: WS });
     expect(updates[0].obj.status).toBe('rascunho');
+  });
+
+  it('ordem de AQUISIÇÃO (item 3): séries por SeriesNumber, instances por InstanceNumber — mesmo com o Orthanc devolvendo embaralhado', async () => {
+    exameStore['EX123'] = { __id: 'docOrd', status: 'aguardando' };
+    // Orthanc devolve a série 2 ANTES da 1, e as instances fora de ordem —
+    // exatamente o cenário real que embaralhava a galeria.
+    const client = makeClient({
+      series: [
+        { Modality: 'US', SeriesNumber: '2', Instances: ['b2', 'b1'], instanceNumbers: { b1: '1', b2: '2' } },
+        { Modality: 'US', SeriesNumber: '1', Instances: ['a3', 'a1', 'a2'], instanceNumbers: { a1: '1', a2: '2', a3: '3' } },
+        { Modality: 'SR', Instances: ['sr1'] },
+      ],
+    });
+    await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+    const detalhes = updates[1].obj.imagensDicomDetalhes as Array<{ orthancInstanceId: string; serie?: number; instancia?: number }>;
+    expect(detalhes.map((d) => d.orthancInstanceId)).toEqual(['a1', 'a2', 'a3', 'b1', 'b2']);
+    expect(detalhes[0]).toMatchObject({ serie: 1, instancia: 1 });
+    // imagensDicom (as URLs) segue a mesma ordem dos detalhes
+    expect(updates[1].obj.imagensDicom).toEqual(['url_1', 'url_2', 'url_3', 'url_4', 'url_5']);
+  });
+
+  it('imagem TARDIA entra no lugar certo, não no fim (re-sort pós-merge, item 3)', async () => {
+    // Exame já tem a1 (instancia 1) e a3 (instancia 3); chega a2 no reprocesso.
+    exameStore['EX123'] = {
+      __id: 'docMerge', status: 'andamento', medidasDicom: { x: 1 },
+      imagensDicomDetalhes: [
+        { url: 'u_a1', path: 'p_a1', orthancInstanceId: 'a1', serie: 1, instancia: 1 },
+        { url: 'u_a3', path: 'p_a3', orthancInstanceId: 'a3', serie: 1, instancia: 3 },
+      ],
+    };
+    const client = makeClient({
+      series: [{ Modality: 'US', SeriesNumber: '1', Instances: ['a2'], instanceNumbers: { a2: '2' } }],
+    });
+    await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+    const detalhes = updates[1].obj.imagensDicomDetalhes as Array<{ orthancInstanceId: string }>;
+    expect(detalhes.map((d) => d.orthancInstanceId)).toEqual(['a1', 'a2', 'a3']);
+  });
+
+  it('expand da série falhando: NÃO derruba a etapa 2 — usa a ordem interna (fallback)', async () => {
+    exameStore['EX123'] = { __id: 'docFb', status: 'aguardando' };
+    const client = makeClient({ series: [{ Modality: 'US', Instances: ['i1', 'i2'] }] });
+    client.getSeriesInstances = async () => { throw new Error('expand boom'); };
+    const r = await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+    expect(r.imagensProcessadas).toBe(2);
+    expect(updates[1].obj.imagensDicom).toEqual(['url_1', 'url_2']);
   });
 
   it('ordenação paralela: imagens saem ordenadas por seq mesmo completando fora de ordem', async () => {
