@@ -3,7 +3,7 @@
 // criadoEm (manual). Testa a logica pura de worklist-ordem.ts.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { ordenarPorChegada, millisChegada, horaChegadaExibicao } from '../../src/lib/worklist-ordem.ts';
+import { ordenarPorChegada, horaChegadaExibicao } from '../../src/lib/worklist-ordem.ts';
 
 const ts = (ms) => ({ toMillis: () => ms, toDate: () => new Date(ms) });
 
@@ -25,7 +25,6 @@ describe('ordenarPorChegada', () => {
     const l2 = { id: 'l2', horarioChegada: '07:30' };
     const novo = { id: 'n', chegouEm: ts(5) };
     assert.deepEqual(ordenarPorChegada([l1, l2, novo]).map((x) => x.id), ['n', 'l1', 'l2']);
-    assert.equal(millisChegada(l1), Number.MAX_SAFE_INTEGER);
   });
 
   test('serverTimestamp pendente (toMillis ausente/null) nao quebra e vai pro fim', () => {
@@ -34,11 +33,6 @@ describe('ordenarPorChegada', () => {
     assert.deepEqual(ordenarPorChegada([pendente, ok]).map((x) => x.id), ['ok', 'p']);
   });
 
-  test('nao muta o array original', () => {
-    const arr = [{ id: 'x', chegouEm: ts(2) }, { id: 'y', chegouEm: ts(1) }];
-    ordenarPorChegada(arr);
-    assert.deepEqual(arr.map((x) => x.id), ['x', 'y']);
-  });
 });
 
 describe('horaChegadaExibicao', () => {

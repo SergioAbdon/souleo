@@ -490,7 +490,11 @@ export async function processarEstudo(opts: {
   // uma, expande as instances (1 chamada por série) pra ordenar por
   // InstanceNumber (fallback IndexInSeries). Se o expand falhar, a série
   // entra como antes (ordem interna, sem metadado) — nunca derruba a etapa 2.
+  // Tag DICOM vazia ('' ou espaços) é AUSENTE, não zero — Number('') === 0
+  // jogaria a série/instance sem número pro TOPO da galeria (Codex, tríade
+  // 31/08) em vez do fim.
   const numOuUndef = (v: unknown): number | undefined => {
+    if (v == null || (typeof v === 'string' && v.trim() === '')) return undefined;
     const n = Number(v);
     return isNaN(n) ? undefined : n;
   };
@@ -507,10 +511,16 @@ export async function processarEstudo(opts: {
     const serie = numOuUndef(s.MainDicomTags?.SeriesNumber);
     try {
       const insts = await opts.client.getSeriesInstances(s.ID);
+      // InstanceNumber não é único por norma DICOM — desempate por
+      // IndexInSeries (Codex, tríade 31/08), senão o empate preservaria a
+      // ordem interna do Orthanc (a fonte original do embaralhamento).
+      // Este pré-sort é o ÚNICO lugar com IndexInSeries em mãos; o re-sort
+      // pós-merge (ordenarPorAquisicao) é estável e herda o desempate.
       insts.sort(
         (a, b) =>
           (numOuUndef(a.MainDicomTags?.InstanceNumber) ?? a.IndexInSeries ?? Number.MAX_SAFE_INTEGER) -
-          (numOuUndef(b.MainDicomTags?.InstanceNumber) ?? b.IndexInSeries ?? Number.MAX_SAFE_INTEGER),
+            (numOuUndef(b.MainDicomTags?.InstanceNumber) ?? b.IndexInSeries ?? Number.MAX_SAFE_INTEGER) ||
+          (a.IndexInSeries ?? 0) - (b.IndexInSeries ?? 0),
       );
       for (const inst of insts) {
         instancias.push({

@@ -81,6 +81,8 @@ function makeClient(opts?: {
     SeriesNumber?: string;
     /** InstanceNumber por instance id (item 3) — omitido = sem metadado. */
     instanceNumbers?: Record<string, string>;
+    /** IndexInSeries por instance id (desempate, tríade 31/08). */
+    indexInSeries?: Record<string, number>;
   }>;
   previewDelays?: Record<string, number>;
   previewFails?: Set<string>;
@@ -115,6 +117,7 @@ function makeClient(opts?: {
       if (!s) throw new Error(`série desconhecida: ${seriesId}`);
       return s.Instances.map((id) => ({
         ID: id,
+        IndexInSeries: s.indexInSeries?.[id],
         MainDicomTags: { InstanceNumber: s.instanceNumbers?.[id] },
       }));
     },
@@ -232,6 +235,35 @@ describe('processarEstudo — two-stage / paralelo / Fix B', () => {
     await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
     const detalhes = updates[1].obj.imagensDicomDetalhes as Array<{ orthancInstanceId: string }>;
     expect(detalhes.map((d) => d.orthancInstanceId)).toEqual(['a1', 'a2', 'a3']);
+  });
+
+  it('InstanceNumber EMPATADO desempata por IndexInSeries (Codex, tríade 31/08)', async () => {
+    exameStore['EX123'] = { __id: 'docTie', status: 'aguardando' };
+    const client = makeClient({
+      series: [{
+        Modality: 'US', SeriesNumber: '1',
+        Instances: ['t1', 't2'], // ordem interna do Orthanc: t1 primeiro
+        instanceNumbers: { t1: '5', t2: '5' }, // empate
+        indexInSeries: { t1: 2, t2: 1 }, // ...mas t2 foi adquirida antes
+      }],
+    });
+    await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+    const detalhes = updates[1].obj.imagensDicomDetalhes as Array<{ orthancInstanceId: string }>;
+    expect(detalhes.map((d) => d.orthancInstanceId)).toEqual(['t2', 't1']);
+  });
+
+  it('tag vazia ("") é AUSENTE, não zero: série sem SeriesNumber vai pro FIM (Codex, tríade 31/08)', async () => {
+    exameStore['EX123'] = { __id: 'docVazio', status: 'aguardando' };
+    const client = makeClient({
+      series: [
+        { Modality: 'US', SeriesNumber: '', Instances: ['z1'], instanceNumbers: { z1: '1' } },
+        { Modality: 'US', SeriesNumber: '1', Instances: ['a1'], instanceNumbers: { a1: '1' } },
+      ],
+    });
+    await processarEstudo({ client, orthancStudyId: 's1', wsId: WS });
+    const detalhes = updates[1].obj.imagensDicomDetalhes as Array<{ orthancInstanceId: string; serie?: number }>;
+    expect(detalhes.map((d) => d.orthancInstanceId)).toEqual(['a1', 'z1']);
+    expect(detalhes[1].serie).toBeUndefined(); // '' NÃO virou 0
   });
 
   it('expand da série falhando: NÃO derruba a etapa 2 — usa a ordem interna (fallback)', async () => {

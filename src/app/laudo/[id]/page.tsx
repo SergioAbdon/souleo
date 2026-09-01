@@ -103,12 +103,15 @@ function LaudoPageInner() {
   const [exame, setExame] = useState<Record<string, unknown> | null>(null);
   const [popupOpen, setPopupOpen] = useState(false);
   const [emitido, setEmitido] = useState(false);
-  // Chaves SR OFERECIDAS na última importação (item 5, 31/08/2026). Substitui
-  // o boolean `dicomImportado`: com ele, medida que o Vivid mandava DEPOIS da
-  // 1ª importação aparecia no contador mas o botão ficava travado em
-  // "✅ Importado" — só sair e reabrir o laudo destravava. Guardando as
-  // chaves, medida nova ⇒ botão reabre sozinho.
+  // Assinaturas (chave|valor|unidade) das medidas SR OFERECIDAS na última
+  // importação (item 5, 31/08/2026). Substitui o boolean `dicomImportado`:
+  // com ele, medida que o Vivid mandava DEPOIS da 1ª importação aparecia no
+  // contador mas o botão ficava travado em "✅ Importado" — só sair e
+  // reabrir o laudo destravava. Assinatura em vez de só a chave (Codex,
+  // tríade 31/08): o Vivid pode reenviar a MESMA medida com valor corrigido
+  // — valor novo também reabre o botão.
   const [chavesImportadas, setChavesImportadas] = useState<Set<string>>(new Set());
+  const assinaturaSr = (i: InputImport) => `${i.key}|${i.valor}|${i.unit}`;
   // Estado da galeria DICOM (modal full-screen com thumbnails + lightbox).
   // Adicionada em 14/05/2026 — médico consegue ver as imagens dentro do laudo.
   const [galeriaOpen, setGaleriaOpen] = useState(false);
@@ -1366,10 +1369,10 @@ function LaudoPageInner() {
       el.dispatchEvent(new Event('change', { bubbles: true }));
       preenchidos++;
     }
-    // Marca como "vistas" TODAS as chaves oferecidas nesta rodada (não só as
+    // Marca como "vistas" TODAS as medidas oferecidas nesta rodada (não só as
     // marcadas): o que o médico desmarcou foi decisão dele — não é motivo pra
-    // reabrir o botão. Só chave NOVA (medida que chegou depois) reabre.
-    setChavesImportadas(new Set(inputsImportaveis.map((i) => i.key)));
+    // reabrir o botão. Só medida NOVA (chave nova OU valor novo) reabre.
+    setChavesImportadas(new Set(inputsImportaveis.map(assinaturaSr)));
     const aviso = naoImportados.length > 0
       ? `\n\n⚠️ ${naoImportados.length} não importada${naoImportados.length === 1 ? '' : 's'} — confira o Perfil do aparelho em Integrações:\n${naoImportados.join('\n')}`
       : '';
@@ -2089,10 +2092,10 @@ function LaudoPageInner() {
         onLimpar={handleLimpar}
         onImportarDicom={handleImportarDicom}
         dicomImportado={
-          // "Importado" só enquanto NADA novo chegou: toda chave oferecida
-          // hoje já foi vista na última importação (item 5, 31/08/2026).
+          // "Importado" só enquanto NADA novo chegou: toda medida oferecida
+          // hoje (chave E valor) já foi vista na última importação (item 5).
           inputsImportaveis.length > 0 &&
-          inputsImportaveis.every((i) => chavesImportadas.has(i.key))
+          inputsImportaveis.every((i) => chavesImportadas.has(assinaturaSr(i)))
         }
         ortancAtivo={!!workspace?.ortancAtivo}
         totalMedidasDicom={schemaAntigo ? totalMedidasBrutas : inputsImportaveis.length}

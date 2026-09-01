@@ -352,6 +352,10 @@ export function listenWorklist(wsId: string, callback: (items: Record<string, un
     snap => {
       // Ordem de CHEGADA real (item 2, 31/08/2026): o orderBy acima e so o
       // indice/fallback — `horarioChegada` de exame Feegow e o slot AGENDADO.
+      // SENTINELA (Ruflo): isto so funciona porque a query NAO pagina (lista o
+      // dia inteiro). Se algum dia entrar limit()/cursor aqui, o corte tem que
+      // ser por chegouEm/criadoEm — cortar pelo orderBy de horarioChegada
+      // derrubaria os pacientes errados e reintroduziria o bug da fila.
       const items = ordenarPorChegada(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       callback(items);
     },

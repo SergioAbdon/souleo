@@ -19,7 +19,7 @@ function tsChegada(item: Record<string, unknown>): TsLike {
 }
 
 /** Millis da chegada; sem timestamp (pending write/legado) vai pro fim. */
-export function millisChegada(item: Record<string, unknown>): number {
+function millisChegada(item: Record<string, unknown>): number {
   const ms = tsChegada(item)?.toMillis?.();
   return typeof ms === 'number' ? ms : Number.MAX_SAFE_INTEGER;
 }
