@@ -1,6 +1,6 @@
 # Ajustes 31/08 — worklist por chegada real, imagens em ordem, laudo vivo de verdade
 
-**Data:** 31/08–01/09/2026 · **Branch:** `ajustes-worklist-imagens-sr` · **Status:** tríade APPROVED (Codex READY FOR MERGE em 2 rodadas, Ruflo sem crítico/médio, Ponytail 2/3 aplicados) · aguardando merge+deploy com Sergio
+**Data:** 31/08–01/09/2026 · **Branch:** `ajustes-worklist-imagens-sr` · **Status:** MERGED na master 01/09 (commit 3331192) com aval explícito do Sergio; deploy Vercel disparado. Tríade APPROVED (Codex READY FOR MERGE em 2 rodadas, Ruflo sem crítico/médio, Ponytail 2/3 aplicados)
 
 Sergio relatou 5 problemas. O item 1 (nome "ECO TRANSTORACICO" no laudo) **não precisou de código**: o título vem do catálogo Clínica → Tipos de Exame (`workspaces/{ws}/tiposLaudo`), basta renomear lá — Sergio faz. Itens 2–5 abaixo.
 
