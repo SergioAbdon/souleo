@@ -51,8 +51,9 @@ Transtorácico" no catálogo (Clínica → Tipos de Exame), sem código.
    `camposAdministrativosUpdate()` (sem `sexo`); o CADASTRO continua aceitando
    sexo (ficha/Feegow) e a ficha do paciente segue editável pela recepção.
    Worklist parou de propagar sexo na edição. Regra+código+fixture no mesmo
-   commit, com teste de payload real (rules 152). **Falta publicar a regra**
-   (`firebase deploy --only firestore:rules`) — aguarda confirmação.
+   commit, com teste de payload real (rules 152). **Regra PUBLICADA em
+   01/09/2026** com aval explícito do Sergio ("pode publicar então!") —
+   `firebase deploy --only firestore:rules`, release em cloud.firestore.
 2. **Reemissão × correção administrativa** — Sergio perguntou "o corpo pode
    ficar e só o cabeçalho ser editado?": SIM, é o que a correção congelada já
    faz; o furo era a tela ABERTA segurar o valor velho e a reemissão coletar
