@@ -183,7 +183,7 @@ export class DicomIngestWorker {
         );
       }
 
-      for (const studyId of stable.keys()) {
+      for (const [studyId, seqEntrada] of stable) {
         try {
           // Contagem ATUAL no Orthanc (barata: só conta instances por
           // modalidade, não baixa nada). Decide se precisa (re)processar.
@@ -197,16 +197,21 @@ export class DicomIngestWorker {
               else curImg += n;
             }
           } catch {
-            // Estudo pode ter sido apagado entre o change e agora. Se ele
-            // estava na fila de retry, a consulta falhada CONSOME uma
-            // tentativa (e renova `at` pro backoff) — senão um estudo
-            // apagado direto no Orthanc seria consultado a cada tick pra
-            // sempre (retry eterno que o teto existe pra impedir).
+            // Consulta falhou. A ORIGEM da fila decide (Codex final, achado 1):
+            //  - Sentinela -1 (fila de retry): consome uma tentativa e renova
+            //    `at` — senão um estudo APAGADO direto no Orthanc seria
+            //    consultado a cada tick pra sempre (o teto existe pra isso).
+            //  - StableStudy REAL: o evento (único sinal de conteúdo novo) é
+            //    consumido aqui — abre GERAÇÃO NOVA de retry (tentativas=1)
+            //    pra fila re-enfileirar depois. Herdar/estourar o teto antigo
+            //    travava o estudo pra sempre: teto batido + imagem nova +
+            //    consulta flakey = imagem nunca processada.
             const sigSumido = this.store.getSignature(studyId);
-            if (sigSumido?.tentativasFalha) {
+            if (sigSumido?.matched && (sigSumido.tentativasFalha || seqEntrada !== -1)) {
               this.store.setSignature(studyId, {
                 ...sigSumido,
-                tentativasFalha: sigSumido.tentativasFalha + 1,
+                tentativasFalha:
+                  seqEntrada === -1 ? (sigSumido.tentativasFalha ?? 0) + 1 : 1,
                 at: new Date().toISOString(),
               });
             }

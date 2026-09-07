@@ -293,6 +293,36 @@ describe('DicomIngestWorker — retry limitado de falha transitória de imagem',
     expect(processarEstudo).toHaveBeenCalledTimes(1); // só o processamento original
   });
 
+  it('teto batido + conteúdo novo + consulta flakey NÃO trava o estudo (Codex final, achado 1)', async () => {
+    const estado = { nInstances: 3, emitStable: true };
+    const worker = makeRetryWorker('retry-destrava', estado);
+    const store = (worker as any).store;
+    processarEstudoImpl = async () =>
+      estado.nInstances >= 4 ? resultado(4, 0) : resultado(2, 1); // falha até a instance nova chegar
+
+    await (worker as any).tick(); // tentativa 1 (StableStudy)
+    backdate(store, 'S1', 10);
+    await (worker as any).tick(); // tentativa 2
+    backdate(store, 'S1', 10);
+    await (worker as any).tick(); // tentativa 3 = teto
+    expect(store.getSignature('S1').tentativasFalha).toBe(3);
+
+    // Instance nova chega → StableStudy REAL, mas a consulta falha bem
+    // nesse tick (Orthanc flakey). O evento é consumido — se a falha
+    // herdasse o teto (3→4), a imagem nova NUNCA seria processada.
+    estado.nInstances = -1;
+    estado.emitStable = true;
+    await (worker as any).tick(); // consulta falha no StableStudy real
+    expect(store.getSignature('S1').tentativasFalha).toBe(1); // geração NOVA
+
+    estado.nInstances = 4; // Orthanc voltou
+    backdate(store, 'S1', 10);
+    await (worker as any).tick(); // fila de retry re-enfileira → processa
+    expect(processarEstudo).toHaveBeenCalledTimes(4);
+    expect(store.getSignature('S1')).toMatchObject({ nImg: 4, nImgTentadas: 4 });
+    expect(store.getSignature('S1').tentativasFalha).toBeUndefined();
+  });
+
   it('ticks sobrepostos: o atrasado é pulado (não processa o mesmo estudo 2×)', async () => {
     const estado = { nInstances: 3, emitStable: true };
     const worker = makeRetryWorker('retry-overlap', estado);

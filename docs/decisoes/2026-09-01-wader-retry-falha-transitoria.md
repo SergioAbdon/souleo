@@ -14,10 +14,11 @@ manual (`reprocessarDicom`).
 
 Retry automático **limitado**, preservando o teto do Achado 9:
 
-- `StudySignature` ganha `nImgFalhadas` (quantas falharam no último
-  processamento) e `tentativasFalha` (processamentos consecutivos com falha).
-  Sucesso limpa os dois campos. Estado antigo em disco sem os campos = sem
-  pendência (compatível).
+- `StudySignature` ganha `tentativasFalha` (processamentos consecutivos com
+  falha de imagem; presença = pendência de retry). Sucesso limpa o campo.
+  Estado antigo em disco sem o campo = sem pendência (compatível). O nº de
+  imagens falhadas não é persistido (corte Ponytail na tríade — já vai pro
+  log/`result.errors`).
 - **Teto:** `MAX_TENTATIVAS_FALHA = 3` processamentos falhados (original + 2
   retentativas). Depois disso, só instance nova ou reprocesso manual destravam.
 - **Backoff:** `2^tentativas` minutos sobre o `at` da assinatura (2 min após a
@@ -29,9 +30,18 @@ Retry automático **limitado**, preservando o teto do Achado 9:
   (`curImg > nImgTentadas` ou `curSR > nSR`), o processamento é uma geração
   nova e `tentativasFalha` recomeça — senão estudo que estourou o teto e depois
   ganhou instance ficava sem os retries prometidos (achado M1 do Codex).
-- **Estudo apagado no Orthanc consome tentativa:** `getStudySeries` falhando
-  pra estudo na fila de retry incrementa `tentativasFalha` e renova `at` —
-  senão o ID seria consultado a cada tick pra sempre (achado M3 do Codex).
+- **Consulta falhada — a origem da fila decide** (achado M3 do Codex +
+  achado 1 da revisão final): `getStudySeries` falhando pra estudo que entrou
+  pela fila de retry (sentinela) CONSOME uma tentativa e renova `at` — senão
+  um ID apagado direto no Orthanc seria consultado a cada tick pra sempre.
+  Já pra estudo `matched` que entrou por `StableStudy` REAL, a falha abre
+  geração nova (`tentativasFalha = 1`): o evento — único sinal do conteúdo
+  novo — foi consumido, e herdar/estourar o teto antigo travaria a imagem
+  nova pra sempre. Cobre também o estudo conhecido SEM pendência cuja
+  consulta falhou no StableStudy (metade do achado 2 da revisão final).
+  Fica de fora, registrado como pendência pré-existente: estudo NUNCA visto
+  (sem assinatura) cuja primeira consulta falha — o evento se perde como
+  sempre se perdeu; destravar exige reenvio/reprocesso manual.
 - **Guard de tick sobreposto:** `tickEmAndamento` pula o tick que dispararia em
   paralelo com um tick lento — corrida pré-existente que o retry alargava
   (uploads duplicados, contador subcontado; achado M2 do Codex).
