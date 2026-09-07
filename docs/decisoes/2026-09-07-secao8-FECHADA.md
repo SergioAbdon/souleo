@@ -1,7 +1,9 @@
 # ADR — SEÇÃO 8 FECHADA (Histórico e Extrato) — última do mapa das 8 seções
 
 **Data:** 07/09/2026 · **Levantamento + 3 ondas no mesmo dia**
-**Merges:** onda 1 `81d248e` · onda 2 `07fc253` (⚠️ **regra AINDA NÃO publicada** — ver Pendências) · onda 3 `c1277f0`
+**Merges:** onda 1 `81d248e` · onda 2 `07fc253` · onda 3 `c1277f0`
+**Regra da onda 2 PUBLICADA em 07/09/2026** com aval do Sergio ("coloque todas os ajustes no ar")
+— `firebase deploy --only firestore:rules`, release em cloud.firestore. Vercel Production ● Ready.
 **Placar final:** unit **771** · rules **162** · tsc+lint limpos (piso de partida 763/152 — só subiu).
 **Esteira:** levantamento do fluxo real → 30 achados por tríade (Codex 17 · Ruflo 6 · Ponytail 7) →
 plano de 3 ondas (`docs/planos/2026-09-07-secao8-plano-correcao.md`) → SDD (implementador +
@@ -64,9 +66,8 @@ Ruflo arquitetura, Ponytail deletar) → merges com aval do Sergio.
 
 ## Pendências (ação do Sergio)
 
-1. ⚠️ **PUBLICAR a regra da onda 2** (`firebase deploy --only firestore:rules`) — o C2 (contador
-   adulterável) só fecha DE VERDADE com a regra no ar. Código novo convive com regra velha e nova.
-2. Clique de verificação no Extrato em produção pós-deploy (popup abre? duplo-clique conta 1?)
+1. ~~Publicar a regra da onda 2~~ ✅ **PUBLICADA 07/09** (aval "coloque no ar"). C2 fechado de verdade.
+2. Clique de verificação no Extrato em produção (popup abre? duplo-clique conta 1?)
    — nenhuma rodada teve navegador logado; código verificado por inspeção em 3+ revisões.
 3. Lixo na raiz do repo (`$TMPDIR_X`, `caixa`, `TEMP` — artefatos de hook, untracked): apagar
    quando quiser.
