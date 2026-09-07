@@ -236,9 +236,9 @@ export default function Extrato() {
     }
   }
 
-  // Tríade onda-3 (Codex-2 Important): fmtDate/fmtEmitido entravam CRUS —
+  // Tríade S7 onda-3 (Codex-2 Important): as datas entravam CRUAS —
   // dataExame é campo administrativo (recepção grava, exame não-emitido) e
-  // fmtDate devolve o valor BRUTO sem formatar quando não bate o formato
+  // fmtDataExame devolve o valor BRUTO sem formatar quando não bate o formato
   // AAAA-MM-DD esperado (`p.length === 3`), então um payload em dataExame
   // chegava intacto no document.write. Regra: todo `${...}` de dado
   // dinâmico passa por escaparHtml, sem exceção "esse aqui é só uma data".
@@ -359,7 +359,7 @@ export default function Extrato() {
                     <td className="py-2.5 px-3 text-gray-500 text-xs font-mono">{fmtDataExame(ex.dataExame)}</td>
                     <td className="py-2.5 px-3 text-gray-400 text-xs">{fmtDataHora(ex.emitidoEm)}</td>
                     <td className="py-2.5 px-3 font-semibold text-[#1E3A5F] text-xs">{ex.pacienteNome || '—'}</td>
-                    <td className="py-2.5 px-3 text-gray-500 text-xs">{tiposMap[ex.tipoExame as string]?.nome || ex.tipoExame}</td>
+                    <td className="py-2.5 px-3 text-gray-500 text-xs">{tiposMap[ex.tipoExame as string]?.nome || ex.tipoExame || '—'}</td>
                     <td className="py-2.5 px-3 text-gray-500 text-xs">{ex.convenio || '—'}</td>
                   </tr>
                 ))}

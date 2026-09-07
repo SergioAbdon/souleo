@@ -57,7 +57,9 @@ export default function Historico() {
   const [convOpcoes, setConvOpcoes] = useState<string[]>([]);
   // Opções do dropdown (C13): acumuladas por local — derivar da página filtrada
   // colapsava a lista pra 1 opção e escondia convênios fora da 1ª página.
-  useEffect(() => { setConvOpcoes([]); }, [wsIdSel]);
+  // convenioSel também reseta: filtro herdado do local anterior deixava o
+  // local novo filtrado por convênio que talvez nem exista lá (achado task 14).
+  useEffect(() => { setConvOpcoes([]); setConvenioSel(''); }, [wsIdSel]);
 
   // Catálogo de tipos de laudo (X20, Ponytail-7) — hook compartilhado com
   // Worklist/ficha do paciente. Sem ele, "Ver"/imprimir não tinham como
