@@ -15,6 +15,7 @@ import { useRouter } from 'next/navigation';
 import { rotaDoLaudo } from '@/lib/tipos-laudo';
 import { postCorrigirLaudo, msgErroCorrecao } from '@/lib/corrigir-laudo-client';
 import { useTiposLaudo } from '@/hooks/useTiposLaudo';
+import { fmtDataExame, fmtDataHora } from '@/lib/fmt-data';
 
 type ExameItem = Record<string, unknown> & {
   id: string; pacienteNome?: string; tipoExame?: string;
@@ -235,22 +236,6 @@ export default function Historico() {
     }
   }
 
-  // ── Formatação ──
-
-  function fmtDate(d: string | undefined): string {
-    if (!d) return '—';
-    const p = d.split('-');
-    return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : d;
-  }
-
-  function fmtEmitido(ex: ExameItem): string {
-    try {
-      const dt = ex.emitidoEm?.toDate?.();
-      if (dt) return dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    } catch { /* */ }
-    return '—';
-  }
-
   return (
     <div>
       {/* Filtros */}
@@ -308,13 +293,13 @@ export default function Historico() {
             <tbody>
               {filtrados.map(ex => (
                 <tr key={ex.id} className="border-b hover:bg-gray-50 transition">
-                  <td className="py-3 px-3 text-gray-500 text-xs font-mono">{fmtDate(ex.dataExame)}</td>
+                  <td className="py-3 px-3 text-gray-500 text-xs font-mono">{fmtDataExame(ex.dataExame)}</td>
                   <td className="py-3 px-3">
                     <div className="font-semibold text-[#1E3A5F]">{ex.pacienteNome || '—'}</div>
                   </td>
                   <td className="py-3 px-3 text-gray-500 text-xs">{TIPOS_EXAME[ex.tipoExame as string] || ex.tipoExame}</td>
                   <td className="py-3 px-3 text-gray-500 text-xs">{ex.convenio || '—'}</td>
-                  <td className="py-3 px-3 text-gray-400 text-xs">{fmtEmitido(ex)}</td>
+                  <td className="py-3 px-3 text-gray-400 text-xs">{fmtDataHora(ex.emitidoEm)}</td>
                   <td className="py-3 px-3 text-right">
                     <div className="flex items-center justify-end gap-1.5">
                       {/* X20: rota por modalidade (rotaDoLaudo) — antes ia sempre pro

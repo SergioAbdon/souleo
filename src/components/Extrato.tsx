@@ -16,6 +16,7 @@ import { podeVerFinanceiro } from '@/lib/permissoes';
 // Mesmo escape same-origin do X11/X12 — este HTML vira document.write (about:blank
 // herda a origem do app) e paciente/convênio/local são graváveis pela recepção.
 import { escaparHtml } from '@/lib/html-escape';
+import { fmtDataExame, fmtDataHora } from '@/lib/fmt-data';
 
 type ExameItem = Record<string, unknown> & {
   id: string; pacienteNome?: string; tipoExame?: string;
@@ -243,8 +244,8 @@ export default function Extrato() {
     const linhas = exames.map(ex => {
       const conv = (ex.convenio as string) || 'SEM CONVÊNIO';
       return `<tr>
-        <td>${escaparHtml(fmtDate(ex.dataExame))}</td>
-        <td>${escaparHtml(fmtEmitido(ex))}</td>
+        <td>${escaparHtml(fmtDataExame(ex.dataExame))}</td>
+        <td>${escaparHtml(fmtDataHora(ex.emitidoEm))}</td>
         <td>${escaparHtml(ex.pacienteNome || '—')}</td>
         <td>${escaparHtml(TIPOS_EXAME[ex.tipoExame as string] || ex.tipoExame || '—')}</td>
         <td>${escaparHtml(conv)}</td>
@@ -275,7 +276,7 @@ export default function Extrato() {
       @media print { body { padding: 10px; } }
     </style></head><body>
     <h1>Extrato de Honorários — ${wsNomeEsc}</h1>
-    <h2>Período: ${escaparHtml(fmtDate(dateFrom))} a ${escaparHtml(fmtDate(dateTo))}</h2>
+    <h2>Período: ${escaparHtml(fmtDataExame(dateFrom))} a ${escaparHtml(fmtDataExame(dateTo))}</h2>
     <table><thead><tr><th>Data Exame</th><th>Emitido em</th><th>Paciente</th><th>Tipo</th><th>Convênio</th></tr></thead>
     <tbody>${linhas}</tbody></table>
     <h2>Resumo por Convênio</h2>
@@ -284,21 +285,6 @@ export default function Extrato() {
     <div class="total">TOTAL: ${exames.length} exames — R$ ${totalGeral.toFixed(2)}</div>
     <script>window.print();</script>
     </body></html>`;
-  }
-
-  // Formatação
-  function fmtDate(d: string | undefined): string {
-    if (!d) return '—';
-    const p = d.split('-');
-    return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : d;
-  }
-
-  function fmtEmitido(ex: ExameItem): string {
-    try {
-      const dt = ex.emitidoEm?.toDate?.();
-      if (dt) return dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    } catch { /* */ }
-    return '—';
   }
 
   if (!podeVerFinanceiro(papel)) {
@@ -365,8 +351,8 @@ export default function Extrato() {
               <tbody>
                 {exames.map(ex => (
                   <tr key={ex.id} className="border-b hover:bg-gray-50 transition">
-                    <td className="py-2.5 px-3 text-gray-500 text-xs font-mono">{fmtDate(ex.dataExame)}</td>
-                    <td className="py-2.5 px-3 text-gray-400 text-xs">{fmtEmitido(ex)}</td>
+                    <td className="py-2.5 px-3 text-gray-500 text-xs font-mono">{fmtDataExame(ex.dataExame)}</td>
+                    <td className="py-2.5 px-3 text-gray-400 text-xs">{fmtDataHora(ex.emitidoEm)}</td>
                     <td className="py-2.5 px-3 font-semibold text-[#1E3A5F] text-xs">{ex.pacienteNome || '—'}</td>
                     <td className="py-2.5 px-3 text-gray-500 text-xs">{TIPOS_EXAME[ex.tipoExame as string] || ex.tipoExame}</td>
                     <td className="py-2.5 px-3 text-gray-500 text-xs">{ex.convenio || '—'}</td>
