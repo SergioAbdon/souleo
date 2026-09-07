@@ -53,7 +53,6 @@ describe('IngestStateStore — retry limitado de falha transitória (Codex 31/08
   const comFalha = (extra: Partial<StudySignature>): StudySignature => ({
     nImg: 8,
     nImgTentadas: 9,
-    nImgFalhadas: 1,
     tentativasFalha: 1,
     nSR: 1,
     matched: true,

@@ -203,10 +203,10 @@ export class DicomIngestWorker {
             // apagado direto no Orthanc seria consultado a cada tick pra
             // sempre (retry eterno que o teto existe pra impedir).
             const sigSumido = this.store.getSignature(studyId);
-            if (sigSumido?.nImgFalhadas) {
+            if (sigSumido?.tentativasFalha) {
               this.store.setSignature(studyId, {
                 ...sigSumido,
-                tentativasFalha: (sigSumido.tentativasFalha ?? 1) + 1,
+                tentativasFalha: sigSumido.tentativasFalha + 1,
                 at: new Date().toISOString(),
               });
             }
@@ -254,10 +254,10 @@ export class DicomIngestWorker {
               nSR: curSR,
               matched: true,
               at: new Date().toISOString(),
-              // Retry limitado (Codex 31/08): falha registra contagem +
-              // tentativa acumulada; sucesso limpa (campos ausentes).
+              // Retry limitado (Codex 31/08): falha registra a tentativa
+              // acumulada; sucesso limpa (campo ausente). Quantas imagens
+              // falharam já vai pro log/result.errors — não precisa persistir.
               ...(result.imagensFalhadas > 0 && {
-                nImgFalhadas: result.imagensFalhadas,
                 tentativasFalha: (conteudoNovo ? 0 : (sig?.tentativasFalha ?? 0)) + 1,
               }),
             });

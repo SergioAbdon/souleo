@@ -57,3 +57,18 @@ Reprocesso manual (`reprocessarDicom`) não atualiza a assinatura — um retry
 automático redundante após reprocesso manual bem-sucedido é idempotente e
 capado pelo teto. Ordenação por aquisição (série/instância) intocada, como
 pedido.
+
+## Tríade pré-merge (01/09, sessão do notebook)
+
+- **Codex** — adversarial na sessão implementadora (M1 geração nova, M2 tick sobreposto,
+  M3 estudo apagado — todos tratados acima) + re-verificação final pós-cortes.
+- **Ponytail** — 1 corte aplicado: `nImgFalhadas` era redundante (`tentativasFalha`
+  presente já marca a pendência; o nº de falhadas segue no log/`result.errors`).
+- **Ruflo** — sem bloqueio; 2 dívidas de fronteira registradas como follow-up:
+  (1) `at` acumulou papel duplo (última vez processado + relógio do backoff) —
+  documentado na interface; separar num campo próprio se algum dia for exibido;
+  (2) a fórmula de "conteúdo novo" existe no worker (`conteudoNovo`) e no store
+  (`precisaProcessar`) — se a base mudar num lado, o outro diverge em silêncio;
+  candidato a `store.ehGeracaoNova()` numa onda futura.
+
+Merge na master junto com a suíte combinada: wader 119 · tsc limpo.

@@ -215,7 +215,6 @@ describe('DicomIngestWorker — retry limitado de falha transitória de imagem',
     expect(store.getSignature('S1')).toMatchObject({
       nImg: 2,
       nImgTentadas: 3,
-      nImgFalhadas: 1,
       tentativasFalha: 1,
     });
 
@@ -226,7 +225,7 @@ describe('DicomIngestWorker — retry limitado de falha transitória de imagem',
     await (worker as any).tick(); // retenta e agora dá certo
     expect(processarEstudo).toHaveBeenCalledTimes(2);
     expect(store.getSignature('S1')).toMatchObject({ nImg: 3, nImgTentadas: 3 });
-    expect(store.getSignature('S1').nImgFalhadas).toBeUndefined();
+    expect(store.getSignature('S1').tentativasFalha).toBeUndefined();
 
     await (worker as any).tick(); // sem pendência → nada a fazer
     expect(processarEstudo).toHaveBeenCalledTimes(2);

@@ -37,21 +37,23 @@ export interface StudySignature {
    */
   nImgTentadas?: number;
   /**
-   * Nº de imagens que FALHARAM no último processamento (Codex 31/08).
-   * Achado 9 protegia contra loop infinito, mas engolia falha TRANSITÓRIA
-   * (timeout de rede): curImg nunca passava de nImgTentadas e a imagem só
-   * voltava com instance nova ou reprocesso manual. Com este campo + o
-   * contador abaixo, o worker retenta sozinho, com backoff e teto.
-   * Ausente/0 = sem pendência (sucesso limpa).
+   * Nº de processamentos consecutivos que terminaram com falha de imagem
+   * (retry limitado, Codex 31/08). Achado 9 protegia contra loop infinito,
+   * mas engolia falha TRANSITÓRIA (timeout de rede): curImg nunca passava
+   * de nImgTentadas e a imagem só voltava com instance nova ou reprocesso
+   * manual. Presente (>0) = pendência de retry; sucesso limpa (ausente).
    */
-  nImgFalhadas?: number;
-  /** Nº de processamentos consecutivos que terminaram com falha de imagem. */
   tentativasFalha?: number;
   /** Nº de instances SR já vistas (mesma unidade que `precisaProcessar` compara). */
   nSR: number;
   /** Casou com um exame no LEO. */
   matched: boolean;
-  /** ISO da última vez que processamos esse estudo. */
+  /**
+   * ISO da última vez que processamos esse estudo — E relógio do backoff de
+   * retry (Ruflo, papel duplo assumido): consulta falhada de estudo na fila
+   * de retry também renova `at`, pra tentativa consumida contar no backoff.
+   * Não exibir como "último processamento" em telemetria sem separar antes.
+   */
   at: string;
 }
 
@@ -170,8 +172,8 @@ export class IngestStateStore {
 
   /** Falha de imagem pendente de retry (dentro do teto e com backoff vencido)? */
   private retryPendente(s: StudySignature): boolean {
-    if (!s.nImgFalhadas) return false;
-    const tentativas = s.tentativasFalha ?? 1;
+    if (!s.tentativasFalha) return false;
+    const tentativas = s.tentativasFalha;
     if (tentativas >= MAX_TENTATIVAS_FALHA) return false;
     const ultimaEm = Date.parse(s.at);
     // `at` ilegível (estado antigo/corrompido) ⇒ trata backoff como vencido.
