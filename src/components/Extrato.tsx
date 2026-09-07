@@ -46,9 +46,9 @@ export default function Extrato() {
   const [extratoInfo, setExtratoInfo] = useState({ emitidos: 0, mes: '' });
   const [gerado, setGerado] = useState(false);
   const [gerandoExtrato, setGerandoExtrato] = useState(false);
-  // Anti-corrida: troca de local dispara nova carga/consulta; a resposta lenta
-  // do local anterior nao pode sobrescrever honorarios/contador/exames — o
-  // contador stale chegaria a gerar/logar cobranca pro local errado.
+  // Anti-corrida: troca de local dispara nova carga; a resposta lenta do local
+  // anterior nao pode sobrescrever honorarios/contador — o contador stale
+  // chegaria a gerar/logar cobranca pro local errado. (Exames: consultaGenRef.)
   const genRef = useRef(0);
   // Corrida da CONSULTA (handleConsultar × troca de filtros): domínio separado
   // do genRef de honorários — na troca de local os dois effects rodam no mesmo
@@ -78,8 +78,8 @@ export default function Extrato() {
 
   // Buscar exames — só quando clica "Consultar". Percorre TODAS as páginas
   // (C1: teto fixo de 500 truncava período movimentado e o extrato saía com
-  // total errado). meuGen = ++genRef (C3): consulta nova ou troca de datas
-  // invalida a resposta lenta da anterior.
+  // total errado). meuGen = ++consultaGenRef (C3): consulta nova ou troca de
+  // datas invalida a resposta lenta da anterior.
   async function handleConsultar() {
     if (!wsIdSel || !dateFrom || !dateTo) return;
     const meuGen = ++consultaGenRef.current;
