@@ -15,22 +15,29 @@ import { TIPOS_LAUDO_PADRAO, type TipoLaudo } from '@/lib/tipos-laudo';
 // Lido 1x no mount (não precisa de onSnapshot aqui; a página de edição em
 // Clínica é quem observa live).
 export function useTiposLaudo(wsId: string | undefined): { tipos: TipoLaudo[]; tiposMap: Record<string, TipoLaudo> } {
-  const [tipos, setTipos] = useState<TipoLaudo[]>(TIPOS_LAUDO_PADRAO);
+  // Carga ETIQUETADA pelo local (triade S8 onda3): o catalogo so vale pro
+  // wsId que o carregou — na troca de local a derivacao abaixo volta pro
+  // padrao ate a carga nova chegar, sem setState sincrono no effect.
+  const [carga, setCarga] = useState<{ ws: string; tipos: TipoLaudo[] } | null>(null);
 
   useEffect(() => {
     if (!wsId) return;
+    let vivo = true; // resposta velha nao pode clobrar a carga do local novo
     (async () => {
       try {
         const snap = await getDocs(query(collection(db, 'workspaces', wsId, 'tiposLaudo'), orderBy('ordem', 'asc')));
+        if (!vivo) return;
         const lista = snap.docs.map(d => d.data() as TipoLaudo);
-        setTipos(lista.length > 0 ? lista : TIPOS_LAUDO_PADRAO);
+        setCarga({ ws: wsId, tipos: lista.length > 0 ? lista : TIPOS_LAUDO_PADRAO });
       } catch (e) {
         console.error('carregar tiposLaudo:', e);
-        setTipos(TIPOS_LAUDO_PADRAO);
+        if (vivo) setCarga({ ws: wsId, tipos: TIPOS_LAUDO_PADRAO });
       }
     })();
+    return () => { vivo = false; };
   }, [wsId]);
 
+  const tipos = carga && carga.ws === wsId ? carga.tipos : TIPOS_LAUDO_PADRAO;
   const tiposMap: Record<string, TipoLaudo> = {};
   for (const t of tipos) tiposMap[t.id] = t;
 

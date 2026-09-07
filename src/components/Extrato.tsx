@@ -16,6 +16,8 @@ import { podeVerFinanceiro } from '@/lib/permissoes';
 // Mesmo escape same-origin do X11/X12 — este HTML vira document.write (about:blank
 // herda a origem do app) e paciente/convênio/local são graváveis pela recepção.
 import { escaparHtml } from '@/lib/html-escape';
+import { fmtDataExame, fmtDataHora } from '@/lib/fmt-data';
+import { useTiposLaudo } from '@/hooks/useTiposLaudo';
 
 type ExameItem = Record<string, unknown> & {
   id: string; pacienteNome?: string; tipoExame?: string;
@@ -23,17 +25,11 @@ type ExameItem = Record<string, unknown> & {
   emitidoEm?: { toDate?: () => Date };
 };
 
-const TIPOS_EXAME: Record<string, string> = {
-  'eco_tt': 'Eco TT',
-  'doppler_carotidas': 'Carótidas',
-  'eco_te': 'Eco TE',
-  'eco_stress': 'Eco Stress',
-};
-
 export default function Extrato() {
   const { workspace, papel, user } = useAuth();
 
   const wsIdSel = workspace?.id || '';
+  const { tiposMap } = useTiposLaudo(wsIdSel || undefined);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [exames, setExames] = useState<ExameItem[]>([]);
@@ -44,6 +40,7 @@ export default function Extrato() {
   const [editandoValores, setEditandoValores] = useState(false);
   const [salvandoValores, setSalvandoValores] = useState(false);
   const [extratoInfo, setExtratoInfo] = useState({ emitidos: 0, mes: '' });
+  const [extratoFranquia, setExtratoFranquia] = useState<number | null>(null);
   const [gerado, setGerado] = useState(false);
   const [gerandoExtrato, setGerandoExtrato] = useState(false);
   // Anti-corrida: troca de local dispara nova carga; a resposta lenta do local
@@ -62,11 +59,20 @@ export default function Extrato() {
   useEffect(() => {
     if (!wsIdSel) return;
     const meuGen = ++genRef.current;
+    // Franquia do local anterior não pode ficar na tela durante a troca, nem
+    // sobreviver a uma falha do check (triade onda3) — null é o "não sei ainda".
+    setExtratoFranquia(null);
     getHonorarios(wsIdSel).then(h => {
       if (meuGen !== genRef.current) return;
-      setHonorarios(h);
-      setUsarValorUnico(h.valorUnico !== null);
-      setValorUnicoInput(h.valorUnico !== null ? String(h.valorUnico) : '');
+      if (!h) { alert('Não foi possível carregar os valores de honorários — os totais podem sair zerados.'); }
+      const cfg = h || { convenios: {}, valorUnico: null };
+      setHonorarios(cfg);
+      setUsarValorUnico(cfg.valorUnico !== null);
+      setValorUnicoInput(cfg.valorUnico !== null ? String(cfg.valorUnico) : '');
+    });
+    checkExtratoLimit(wsIdSel).then(l => {
+      if (meuGen !== genRef.current) return;
+      if (l.pode) setExtratoFranquia(l.franquia);
     });
     const anoMes = anoMesAtual();
     setExtratoInfo(prev => ({ ...prev, mes: anoMes }));
@@ -100,7 +106,7 @@ export default function Extrato() {
         return;
       }
       todos.push(...(result.items as ExameItem[]));
-      cursor = result.lastDoc as DocumentSnapshot | null;
+      cursor = result.lastDoc;
       if (!result.hasMore) { completo = true; break; }
     }
     if (!completo) {
@@ -163,10 +169,11 @@ export default function Extrato() {
       convenios: honorarios.convenios,
       valorUnico: usarValorUnico ? Math.max(0, parseFloat(valorUnicoInput) || 0) : null,
     };
-    await saveHonorarios(wsIdSel, config);
+    const ok = await saveHonorarios(wsIdSel, config);
+    setSalvandoValores(false);
+    if (!ok) { alert('Não foi possível salvar os valores. Tente novamente.'); return; }
     setHonorarios(config);
     setEditandoValores(false);
-    setSalvandoValores(false);
   }
 
   // Toggle valor único
@@ -232,9 +239,9 @@ export default function Extrato() {
     }
   }
 
-  // Tríade onda-3 (Codex-2 Important): fmtDate/fmtEmitido entravam CRUS —
+  // Tríade S7 onda-3 (Codex-2 Important): as datas entravam CRUAS —
   // dataExame é campo administrativo (recepção grava, exame não-emitido) e
-  // fmtDate devolve o valor BRUTO sem formatar quando não bate o formato
+  // fmtDataExame devolve o valor BRUTO sem formatar quando não bate o formato
   // AAAA-MM-DD esperado (`p.length === 3`), então um payload em dataExame
   // chegava intacto no document.write. Regra: todo `${...}` de dado
   // dinâmico passa por escaparHtml, sem exceção "esse aqui é só uma data".
@@ -243,10 +250,10 @@ export default function Extrato() {
     const linhas = exames.map(ex => {
       const conv = (ex.convenio as string) || 'SEM CONVÊNIO';
       return `<tr>
-        <td>${escaparHtml(fmtDate(ex.dataExame))}</td>
-        <td>${escaparHtml(fmtEmitido(ex))}</td>
+        <td>${escaparHtml(fmtDataExame(ex.dataExame))}</td>
+        <td>${escaparHtml(fmtDataHora(ex.emitidoEm))}</td>
         <td>${escaparHtml(ex.pacienteNome || '—')}</td>
-        <td>${escaparHtml(TIPOS_EXAME[ex.tipoExame as string] || ex.tipoExame || '—')}</td>
+        <td>${escaparHtml(tiposMap[ex.tipoExame as string]?.nome || ex.tipoExame || '—')}</td>
         <td>${escaparHtml(conv)}</td>
       </tr>`;
     }).join('');
@@ -275,7 +282,7 @@ export default function Extrato() {
       @media print { body { padding: 10px; } }
     </style></head><body>
     <h1>Extrato de Honorários — ${wsNomeEsc}</h1>
-    <h2>Período: ${escaparHtml(fmtDate(dateFrom))} a ${escaparHtml(fmtDate(dateTo))}</h2>
+    <h2>Período: ${escaparHtml(fmtDataExame(dateFrom))} a ${escaparHtml(fmtDataExame(dateTo))}</h2>
     <table><thead><tr><th>Data Exame</th><th>Emitido em</th><th>Paciente</th><th>Tipo</th><th>Convênio</th></tr></thead>
     <tbody>${linhas}</tbody></table>
     <h2>Resumo por Convênio</h2>
@@ -284,21 +291,6 @@ export default function Extrato() {
     <div class="total">TOTAL: ${exames.length} exames — R$ ${totalGeral.toFixed(2)}</div>
     <script>window.print();</script>
     </body></html>`;
-  }
-
-  // Formatação
-  function fmtDate(d: string | undefined): string {
-    if (!d) return '—';
-    const p = d.split('-');
-    return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : d;
-  }
-
-  function fmtEmitido(ex: ExameItem): string {
-    try {
-      const dt = ex.emitidoEm?.toDate?.();
-      if (dt) return dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    } catch { /* */ }
-    return '—';
   }
 
   if (!podeVerFinanceiro(papel)) {
@@ -327,9 +319,11 @@ export default function Extrato() {
 
       {/* Info billing do extrato */}
       <div className="text-xs text-gray-400 mb-3">
-        {extratoInfo.emitidos === 0
-          ? `Nenhum extrato emitido em ${wsNome} neste mês (1 grátis)`
-          : `${extratoInfo.emitidos} extrato(s) emitido(s) em ${wsNome} neste mês${extratoInfo.emitidos >= 1 ? ' — próximo será cobrado' : ''}`}
+        {extratoFranquia === -1
+          ? `${extratoInfo.emitidos} extrato(s) emitido(s) em ${wsNome} neste mês — ilimitados no seu plano`
+          : extratoInfo.emitidos === 0
+            ? `Nenhum extrato emitido em ${wsNome} neste mês${extratoFranquia !== null ? ` (${extratoFranquia} grátis)` : ''}`
+            : `${extratoInfo.emitidos} extrato(s) emitido(s) em ${wsNome} neste mês${extratoFranquia !== null && extratoInfo.emitidos >= extratoFranquia ? ' — próximo será cobrado' : ''}`}
       </div>
 
       {/* Conteúdo */}
@@ -365,10 +359,10 @@ export default function Extrato() {
               <tbody>
                 {exames.map(ex => (
                   <tr key={ex.id} className="border-b hover:bg-gray-50 transition">
-                    <td className="py-2.5 px-3 text-gray-500 text-xs font-mono">{fmtDate(ex.dataExame)}</td>
-                    <td className="py-2.5 px-3 text-gray-400 text-xs">{fmtEmitido(ex)}</td>
+                    <td className="py-2.5 px-3 text-gray-500 text-xs font-mono">{fmtDataExame(ex.dataExame)}</td>
+                    <td className="py-2.5 px-3 text-gray-400 text-xs">{fmtDataHora(ex.emitidoEm)}</td>
                     <td className="py-2.5 px-3 font-semibold text-[#1E3A5F] text-xs">{ex.pacienteNome || '—'}</td>
-                    <td className="py-2.5 px-3 text-gray-500 text-xs">{TIPOS_EXAME[ex.tipoExame as string] || ex.tipoExame}</td>
+                    <td className="py-2.5 px-3 text-gray-500 text-xs">{tiposMap[ex.tipoExame as string]?.nome || ex.tipoExame || '—'}</td>
                     <td className="py-2.5 px-3 text-gray-500 text-xs">{ex.convenio || '—'}</td>
                   </tr>
                 ))}

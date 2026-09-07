@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getHistorico, getExame, type HistoricoResult } from '@/lib/firestore';
+import { getHistorico, getExame, type HistoricoResult, type FiltrosHistorico } from '@/lib/firestore';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
 import { podeCancelarLaudo, podeCorrigirAdministrativo } from '@/lib/permissoes';
 import { DocumentSnapshot } from 'firebase/firestore';
@@ -15,19 +15,13 @@ import { useRouter } from 'next/navigation';
 import { rotaDoLaudo } from '@/lib/tipos-laudo';
 import { postCorrigirLaudo, msgErroCorrecao } from '@/lib/corrigir-laudo-client';
 import { useTiposLaudo } from '@/hooks/useTiposLaudo';
+import { fmtDataExame, fmtDataHora } from '@/lib/fmt-data';
 
 type ExameItem = Record<string, unknown> & {
   id: string; pacienteNome?: string; tipoExame?: string;
   dataExame?: string; convenio?: string; solicitante?: string;
   emitidoEm?: { toDate?: () => Date }; medicoUid?: string; status?: string;
   pdfUrl?: string; pdfErro?: string;
-};
-
-const TIPOS_EXAME: Record<string, string> = {
-  'eco_tt': 'Eco TT',
-  'doppler_carotidas': 'Carótidas',
-  'eco_te': 'Eco TE',
-  'eco_stress': 'Eco Stress',
 };
 
 export default function Historico() {
@@ -60,6 +54,15 @@ export default function Historico() {
   // anterior nao pode sobrescrever a lista do local atual.
   const genRef = useRef(0);
 
+  const [convOpcoes, setConvOpcoes] = useState<string[]>([]);
+  // Opções do dropdown (C13): acumuladas por local — derivar da página filtrada
+  // colapsava a lista pra 1 opção e escondia convênios fora da 1ª página.
+  // convenioSel também reseta: filtro herdado do local anterior deixava o
+  // local novo filtrado por convênio que talvez nem exista lá (achado task 14).
+  // setState com o mesmo valor não re-renderiza nem re-dispara fetchData —
+  // sem o `prev ?`, convenioSel='' já vigente disparava fetchData 2x na troca.
+  useEffect(() => { setConvOpcoes([]); setConvenioSel(prev => prev ? '' : prev); }, [wsIdSel]);
+
   // Catálogo de tipos de laudo (X20, Ponytail-7) — hook compartilhado com
   // Worklist/ficha do paciente. Sem ele, "Ver"/imprimir não tinham como
   // saber a modalidade real do tipo e caíam sempre no motor de eco
@@ -72,17 +75,22 @@ export default function Historico() {
     const meuGen = ++genRef.current;
     setLoading(true);
     setCursor(null);
-    const filtros: Record<string, unknown> = { limitN: 50 };
-    if (dateFrom) filtros.dateFrom = dateFrom;
-    if (dateTo) filtros.dateTo = dateTo;
-    if (convenioSel) filtros.convenio = convenioSel;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result: HistoricoResult = await getHistorico(wsIdSel, filtros as any);
+    const filtros: FiltrosHistorico = {
+      limitN: 50,
+      ...(dateFrom && { dateFrom }),
+      ...(dateTo && { dateTo }),
+      ...(convenioSel && { convenio: convenioSel }),
+    };
+    const result: HistoricoResult = await getHistorico(wsIdSel, filtros);
     if (meuGen !== genRef.current) return;
     setErroCarga(!!result.erro);
     setExames(result.items as ExameItem[]);
-    setCursor(result.lastDoc as DocumentSnapshot | null);
+    setCursor(result.lastDoc);
     setHasMore(result.hasMore);
+    if (!convenioSel) {
+      const novos = result.items.map(e => (e as ExameItem).convenio).filter(Boolean) as string[];
+      setConvOpcoes(prev => [...new Set([...prev, ...novos])].sort());
+    }
     setLoading(false);
   }, [wsIdSel, dateFrom, dateTo, convenioSel]);
 
@@ -90,28 +98,31 @@ export default function Historico() {
     if (!wsIdSel || !cursor || loadingMore) return;
     const meuGen = genRef.current;
     setLoadingMore(true);
-    const filtros: Record<string, unknown> = { limitN: 50, cursor };
-    if (dateFrom) filtros.dateFrom = dateFrom;
-    if (dateTo) filtros.dateTo = dateTo;
-    if (convenioSel) filtros.convenio = convenioSel;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result: HistoricoResult = await getHistorico(wsIdSel, filtros as any);
-    if (meuGen !== genRef.current) return;
+    const filtros: FiltrosHistorico = {
+      limitN: 50,
+      cursor,
+      ...(dateFrom && { dateFrom }),
+      ...(dateTo && { dateTo }),
+      ...(convenioSel && { convenio: convenioSel }),
+    };
+    const result: HistoricoResult = await getHistorico(wsIdSel, filtros);
+    if (meuGen !== genRef.current) { setLoadingMore(false); return; }
     if (result.erro) {
       alert('Não foi possível carregar mais. Tente novamente.');
       setLoadingMore(false);
       return;
     }
     setExames(prev => [...prev, ...(result.items as ExameItem[])]);
-    setCursor(result.lastDoc as DocumentSnapshot | null);
+    setCursor(result.lastDoc);
     setHasMore(result.hasMore);
+    if (!convenioSel) {
+      const novos = result.items.map(e => (e as ExameItem).convenio).filter(Boolean) as string[];
+      setConvOpcoes(prev => [...new Set([...prev, ...novos])].sort());
+    }
     setLoadingMore(false);
   }
 
   useEffect(() => { fetchData(); }, [fetchData]);
-
-  // Convênios disponíveis nos resultados
-  const conveniosUnicos = [...new Set(exames.map(e => e.convenio).filter(Boolean))] as string[];
 
   // Filtro client-side por nome
   const filtrados = busca
@@ -124,26 +135,20 @@ export default function Historico() {
 
   // ── Ações ──
 
-  async function imprimirPdf(exameId: string) {
-    if (!wsIdSel) return;
-    try {
-      const ex = await getExame(wsIdSel, exameId);
-      const dados = ex as Record<string, unknown>;
-      if (dados?.pdfUrl) {
-        abrirPdfUrl(dados.pdfUrl as string);
-        return;
-      }
-      // X20: despacha pela modalidade real do tipo, não sempre pro motor.
-      const rota = rotaDoLaudo(exameId, dados?.tipoExame as string | undefined, tiposMap);
-      if (rota) { router.push(rota); return; }
-      // Ruflo-1: modalidade 'pdf' nao tem editor proprio (e o pdfUrl acima ja
-      // era nulo) — nao ha o que abrir aqui, so anexar pela Worklist.
-      alert('Exame de anexo — use a Worklist para anexar o PDF.');
-    } catch (e) {
-      console.error('Erro ao abrir PDF:', e);
-      // Sem `dados` (a leitura falhou) não há tipo pra despachar.
-      router.push('/laudo/' + exameId);
+  // 🖨️: abre o PDF emitido. Fast-path pela linha carregada; sem pdfUrl na
+  // linha, confere o doc FRESCO (PDF pode ter sido regerado em outra aba —
+  // triade onda3) antes de cair na tela do laudo.
+  async function imprimirPdf(ex: ExameItem) {
+    if (ex.pdfUrl) { abrirPdfUrl(ex.pdfUrl); return; }
+    if (wsIdSel) {
+      try {
+        const fresco = await getExame(wsIdSel, ex.id) as Record<string, unknown> | null;
+        if (fresco?.pdfUrl) { abrirPdfUrl(fresco.pdfUrl as string); return; }
+      } catch { /* segue pro fallback de rota */ }
     }
+    const rota = rotaDoLaudo(ex.id, ex.tipoExame, tiposMap);
+    if (rota) { router.push(rota); return; }
+    alert('Exame de anexo — use a Worklist para anexar o PDF.');
   }
 
   // Botão "👁 Ver" da tabela: mesma lógica do fallback de imprimirPdf, mas
@@ -235,22 +240,6 @@ export default function Historico() {
     }
   }
 
-  // ── Formatação ──
-
-  function fmtDate(d: string | undefined): string {
-    if (!d) return '—';
-    const p = d.split('-');
-    return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : d;
-  }
-
-  function fmtEmitido(ex: ExameItem): string {
-    try {
-      const dt = ex.emitidoEm?.toDate?.();
-      if (dt) return dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    } catch { /* */ }
-    return '—';
-  }
-
   return (
     <div>
       {/* Filtros */}
@@ -265,7 +254,7 @@ export default function Historico() {
         <select value={convenioSel} onChange={e => setConvenioSel(e.target.value)}
           className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] w-36">
           <option value="">Todos convênios</option>
-          {conveniosUnicos.map(c => <option key={c} value={c}>{c}</option>)}
+          {convOpcoes.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
         <input type="text" placeholder="Buscar nome..." value={busca} onChange={e => setBusca(e.target.value)}
           className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] min-w-[150px]" />
@@ -290,7 +279,13 @@ export default function Historico() {
       ) : filtrados.length === 0 ? (
         <div className="text-center py-12 text-gray-300">
           <p className="text-3xl mb-2">📁</p>
-          <p className="text-sm">{busca ? `Nenhum resultado para "${busca}"` : 'Nenhum laudo emitido'}</p>
+          <p className="text-sm">{busca ? `Nenhum resultado para "${busca}" nas páginas carregadas` : 'Nenhum laudo emitido'}</p>
+          {busca && hasMore && (
+            <button onClick={carregarMais} disabled={loadingMore}
+              className="mt-3 px-4 py-1.5 bg-[#1E3A5F] text-white text-xs rounded-lg hover:bg-[#2563EB] transition disabled:opacity-50">
+              {loadingMore ? 'Carregando...' : 'Buscar nas próximas páginas'}
+            </button>
+          )}
         </div>
       ) : (
         <div className="bg-white rounded-lg overflow-hidden border border-gray-100">
@@ -308,13 +303,13 @@ export default function Historico() {
             <tbody>
               {filtrados.map(ex => (
                 <tr key={ex.id} className="border-b hover:bg-gray-50 transition">
-                  <td className="py-3 px-3 text-gray-500 text-xs font-mono">{fmtDate(ex.dataExame)}</td>
+                  <td className="py-3 px-3 text-gray-500 text-xs font-mono">{fmtDataExame(ex.dataExame)}</td>
                   <td className="py-3 px-3">
                     <div className="font-semibold text-[#1E3A5F]">{ex.pacienteNome || '—'}</div>
                   </td>
-                  <td className="py-3 px-3 text-gray-500 text-xs">{TIPOS_EXAME[ex.tipoExame as string] || ex.tipoExame}</td>
+                  <td className="py-3 px-3 text-gray-500 text-xs">{tiposMap[ex.tipoExame as string]?.nome || ex.tipoExame || '—'}</td>
                   <td className="py-3 px-3 text-gray-500 text-xs">{ex.convenio || '—'}</td>
-                  <td className="py-3 px-3 text-gray-400 text-xs">{fmtEmitido(ex)}</td>
+                  <td className="py-3 px-3 text-gray-400 text-xs">{fmtDataHora(ex.emitidoEm)}</td>
                   <td className="py-3 px-3 text-right">
                     <div className="flex items-center justify-end gap-1.5">
                       {/* X20: rota por modalidade (rotaDoLaudo) — antes ia sempre pro
@@ -323,7 +318,7 @@ export default function Historico() {
                         className="bg-green-100 text-green-700 px-2.5 py-1 rounded text-xs font-semibold hover:bg-green-200 transition">
                         👁 Ver
                       </button>
-                      <button onClick={() => imprimirPdf(ex.id)}
+                      <button onClick={() => imprimirPdf(ex)}
                         className="bg-gray-100 text-gray-600 px-2.5 py-1 rounded text-xs font-semibold hover:bg-gray-200 transition">
                         🖨️
                       </button>
