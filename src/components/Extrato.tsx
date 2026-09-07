@@ -322,7 +322,7 @@ export default function Extrato() {
         {extratoFranquia === -1
           ? `${extratoInfo.emitidos} extrato(s) emitido(s) em ${wsNome} neste mês — ilimitados no seu plano`
           : extratoInfo.emitidos === 0
-            ? `Nenhum extrato emitido em ${wsNome} neste mês${extratoFranquia ? ` (${extratoFranquia} grátis)` : ' (1 grátis)'}`
+            ? `Nenhum extrato emitido em ${wsNome} neste mês${extratoFranquia !== null ? ` (${extratoFranquia} grátis)` : ''}`
             : `${extratoInfo.emitidos} extrato(s) emitido(s) em ${wsNome} neste mês${extratoFranquia !== null && extratoInfo.emitidos >= extratoFranquia ? ' — próximo será cobrado' : ''}`}
       </div>
 
