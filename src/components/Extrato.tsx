@@ -88,7 +88,9 @@ export default function Extrato() {
     const todos: ExameItem[] = [];
     let cursor: DocumentSnapshot | null = null;
     // ponytail: teto de 40 paginas (20.000 laudos) — acima disso é uso fora da
-    // curva; subir o teto se algum dia um período real chegar perto.
+    // curva; se o teto for atingido com dados ainda por vir, ABORTA com aviso
+    // em vez de publicar um extrato truncado como se fosse o período inteiro.
+    let completo = false;
     for (let pag = 0; pag < 40; pag++) {
       const result = await getHistorico(wsIdSel, { dateFrom, dateTo, limitN: 500, cursor });
       if (meuGen !== consultaGenRef.current) return;
@@ -99,7 +101,12 @@ export default function Extrato() {
       }
       todos.push(...(result.items as ExameItem[]));
       cursor = result.lastDoc as DocumentSnapshot | null;
-      if (!result.hasMore) break;
+      if (!result.hasMore) { completo = true; break; }
+    }
+    if (!completo) {
+      setLoading(false);
+      alert('Período com laudos demais para um único extrato — divida em períodos menores.');
+      return;
     }
     setExames(todos);
     carregadoWsId.current = wsIdSel;
@@ -187,8 +194,11 @@ export default function Extrato() {
       return;
     }
     setGerandoExtrato(true);
+    // Mes calculado UMA vez: viaja do check ao incremento (achado triade —
+    // clique na virada do mes verificava um mes e incrementava o seguinte).
+    const anoMes = anoMesAtual();
     try {
-      const limiteExtrato = await checkExtratoLimit(wsIdSel);
+      const limiteExtrato = await checkExtratoLimit(wsIdSel, anoMes);
       if (!limiteExtrato.pode) {
         win.close();
         alert('Não foi possível verificar seu plano. Tente novamente.');
@@ -198,7 +208,6 @@ export default function Extrato() {
         const msg = `Voce ja usou ${limiteExtrato.usados} de ${limiteExtrato.franquia} extrato(s) gratis neste mes.\nO proximo custara R$ ${limiteExtrato.custo.toFixed(2)}.\n\nDeseja continuar?`;
         if (!confirm(msg)) { win.close(); return; }
       }
-      const anoMes = anoMesAtual();
       await incrementarExtrato(wsIdSel, anoMes);
       await logAction('extrato_emitido', { wsId: wsIdSel, periodo: `${dateFrom} a ${dateTo}`, totalExames: exames.length, totalValor: totalGeral }, user.uid);
       setExtratoInfo(prev => prev.mes === anoMes

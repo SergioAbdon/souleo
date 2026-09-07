@@ -223,7 +223,7 @@ export type CheckExtratoResult = {
   franquia: number; // -1 = ilimitado
 };
 
-export async function checkExtratoLimit(wsId: string): Promise<CheckExtratoResult> {
+export async function checkExtratoLimit(wsId: string, anoMes?: string): Promise<CheckExtratoResult> {
   try {
     const sub = await getSubscription(wsId);
     if (!sub) return { pode: false, gratis: false, custo: 0, usados: 0, franquia: 0 };
@@ -236,9 +236,10 @@ export async function checkExtratoLimit(wsId: string): Promise<CheckExtratoResul
       return { pode: true, gratis: true, custo: 0, usados: 0, franquia: -1 };
     }
 
-    // Buscar contador do mes atual (dono único do formato: anoMesAtual)
-    const anoMes = anoMesAtual();
-    const snap = await getDoc(doc(db, 'workspaces', wsId, 'extratos', anoMes));
+    // Mes vem do chamador quando a MESMA operacao vai incrementar depois
+    // (check e incremento no mesmo mes).
+    const mes = anoMes || anoMesAtual();
+    const snap = await getDoc(doc(db, 'workspaces', wsId, 'extratos', mes));
     const usados = snap.exists() ? (snap.data().emitidos || 0) : 0;
 
     if (usados < franquia) {
