@@ -104,8 +104,9 @@ export default function Extrato() {
 
   // Resetar quando muda filtros — e invalidar consulta em voo (C3): sem o ++,
   // a resposta lenta do período antigo preenchia a tela e o extrato saía
-  // rotulado com as datas novas.
-  useEffect(() => { genRef.current++; setGerado(false); setExames([]); }, [wsIdSel, dateFrom, dateTo]);
+  // rotulado com as datas novas. setLoading(false) aqui: o runner invalidado
+  // sai no guard sem tocar em estado, então o dono do reset é este effect.
+  useEffect(() => { genRef.current++; setLoading(false); setGerado(false); setExames([]); }, [wsIdSel, dateFrom, dateTo]);
 
   // Nome do workspace selecionado
   const wsNome = workspace?.nomeClinica || 'Consultório';
