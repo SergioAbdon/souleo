@@ -49,6 +49,10 @@ export default function Extrato() {
   // do local anterior nao pode sobrescrever honorarios/contador/exames — o
   // contador stale chegaria a gerar/logar cobranca pro local errado.
   const genRef = useRef(0);
+  // Corrida da CONSULTA (handleConsultar × troca de filtros): domínio separado
+  // do genRef de honorários — na troca de local os dois effects rodam no mesmo
+  // commit e um ref único fazia o reset invalidar a resposta de honorários.
+  const consultaGenRef = useRef(0);
   // De qual local sao os `exames` exibidos. Na janela de troca, wsIdSel ja e o
   // B mas os exames ainda sao do A; so gera extrato quando batem.
   const carregadoWsId = useRef('');
@@ -77,7 +81,7 @@ export default function Extrato() {
   // invalida a resposta lenta da anterior.
   async function handleConsultar() {
     if (!wsIdSel || !dateFrom || !dateTo) return;
-    const meuGen = ++genRef.current;
+    const meuGen = ++consultaGenRef.current;
     setLoading(true);
     setGerado(false);
     const todos: ExameItem[] = [];
@@ -86,7 +90,7 @@ export default function Extrato() {
     // curva; subir o teto se algum dia um período real chegar perto.
     for (let pag = 0; pag < 40; pag++) {
       const result = await getHistorico(wsIdSel, { dateFrom, dateTo, limitN: 500, cursor });
-      if (meuGen !== genRef.current) return;
+      if (meuGen !== consultaGenRef.current) return;
       if (result.erro) {
         setLoading(false);
         alert('Não foi possível consultar os exames. Tente novamente.');
@@ -106,7 +110,10 @@ export default function Extrato() {
   // a resposta lenta do período antigo preenchia a tela e o extrato saía
   // rotulado com as datas novas. setLoading(false) aqui: o runner invalidado
   // sai no guard sem tocar em estado, então o dono do reset é este effect.
-  useEffect(() => { genRef.current++; setLoading(false); setGerado(false); setExames([]); }, [wsIdSel, dateFrom, dateTo]);
+  // consultaGenRef (nao genRef): esse effect roda no mesmo commit do effect de
+  // honorários na troca de local — um ref compartilhado invalidava a resposta
+  // de honorários que acabou de capturar seu proprio meuGen.
+  useEffect(() => { consultaGenRef.current++; setLoading(false); setGerado(false); setExames([]); }, [wsIdSel, dateFrom, dateTo]);
 
   // Nome do workspace selecionado
   const wsNome = workspace?.nomeClinica || 'Consultório';
