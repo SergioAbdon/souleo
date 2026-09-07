@@ -354,7 +354,12 @@ service cloud.firestore {
 
     // ── Trilhas append-only ──
     match /logs/{logId} {
-      allow create: if auth();
+      // S8 onda 2 (R4): mesmo fechamento do `consumo` — auth() sozinho deixava
+      // qualquer logado forjar trilha em nome de outro medico/clinica. Cliente
+      // so cria log ASSINADO com o proprio uid; 'sistema' e uid alheio, so
+      // Admin SDK. Chamadores reais conferidos: Extrato (user.uid) e Direx
+      // configuracoes (superadmin).
+      allow create: if superadmin() || (auth() && request.resource.data.medicoUid == uid());
       allow read:   if superadmin();
       allow update, delete: if false;
     }

@@ -419,8 +419,10 @@ describe('8. Direx e trilhas', () => {
     await assertFails(getDocs(collection(como(DR_A), 'pagamentos')));
     await assertFails(getDocs(collection(como(DR_A), 'historicoFinanceiro')));
   });
-  test('qualquer autenticado grava log; so o Direx le', async () => {
-    await assertSucceeds(addDoc(collection(como(RITA), 'logs'), { tipo: 'teste' }));
+  test('autenticado grava log assinado com o proprio uid; so o Direx le', async () => {
+    // S8 onda 2 (R4): auth() sozinho virou auth() + autor == uid() — ver
+    // 'log so nasce assinado com o proprio uid' na secao 8.
+    await assertSucceeds(addDoc(collection(como(RITA), 'logs'), { tipo: 'teste', medicoUid: RITA }));
     await assertFails(getDocs(collection(como(RITA), 'logs')));
     await assertSucceeds(getDocs(collection(como(ADMIN), 'logs')));
   });
@@ -873,5 +875,13 @@ describe('secao 8 — honorarios e contador de extratos', () => {
   });
   test('medico nao apaga o contador do mes', async () => {
     await assertFails(deleteDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/extratos`, '2026-08')));
+  });
+  test('log so nasce assinado com o proprio uid', async () => {
+    await assertSucceeds(addDoc(collection(como(DR_A2), 'logs'),
+      { tipo: 'extrato_emitido', wsId: LOCAL_A1, ts: serverTimestamp(), medicoUid: DR_A2 }));
+    await assertFails(addDoc(collection(como(DR_A2), 'logs'),
+      { tipo: 'extrato_emitido', wsId: LOCAL_A1, ts: serverTimestamp(), medicoUid: DR_A }));
+    await assertFails(addDoc(collection(como(DR_A2), 'logs'),
+      { tipo: 'qualquer', ts: serverTimestamp(), medicoUid: 'sistema' }));
   });
 });
