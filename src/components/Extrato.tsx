@@ -133,10 +133,14 @@ export default function Extrato() {
     return acc;
   }, {});
 
-  // Obter valor de um convênio
+  // Obter valor de um convênio. Defensivo (triade onda2): a regra valida a
+  // FORMA do doc mas não os valores dentro do mapa — valor não-numérico ou
+  // negativo vira 0 em vez de quebrar toFixed na tela/HTML.
   function getValor(conv: string): number {
-    if (usarValorUnico && honorarios.valorUnico !== null) return honorarios.valorUnico;
-    return honorarios.convenios[conv] || 0;
+    const v = usarValorUnico && honorarios.valorUnico !== null
+      ? honorarios.valorUnico
+      : honorarios.convenios[conv];
+    return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0;
   }
 
   // Total geral
@@ -208,7 +212,15 @@ export default function Extrato() {
         const msg = `Voce ja usou ${limiteExtrato.usados} de ${limiteExtrato.franquia} extrato(s) gratis neste mes.\nO proximo custara R$ ${limiteExtrato.custo.toFixed(2)}.\n\nDeseja continuar?`;
         if (!confirm(msg)) { win.close(); return; }
       }
-      await incrementarExtrato(wsIdSel, anoMes);
+      // Fail-CLOSED (triade onda2, Codex): regra monotonica nova pode negar o
+      // incremento (doc legado malformado) — gerar sem contar seria subcontagem
+      // eterna e silenciosa. Aborta e aponta o caminho.
+      const contou = await incrementarExtrato(wsIdSel, anoMes);
+      if (!contou) {
+        win.close();
+        alert('Não foi possível registrar o extrato no contador do mês. Tente novamente; se persistir, contate o suporte.');
+        return;
+      }
       await logAction('extrato_emitido', { wsId: wsIdSel, periodo: `${dateFrom} a ${dateTo}`, totalExames: exames.length, totalValor: totalGeral }, user.uid);
       setExtratoInfo(prev => prev.mes === anoMes
         ? { mes: anoMes, emitidos: prev.emitidos + 1 }

@@ -54,6 +54,9 @@ before(async () => {
     await setDoc(doc(db, `workspaces/${LOCAL_A1}/pacientes`, 'pac1'), { nome: 'Paciente A1' });
     await setDoc(doc(db, `workspaces/${LOCAL_A1}/config`, 'honorarios'), { convenios: { UNIMED: 120 }, valorUnico: null });
     await setDoc(doc(db, `workspaces/${LOCAL_A1}/extratos`, '2026-08'), { emitidos: 3 });
+    // Doc legado malformado (triade onda2, Codex): campo fora da whitelist
+    // sobrevive ao merge do incrementarExtrato -> hasOnly nega pra sempre.
+    await setDoc(doc(db, `workspaces/${LOCAL_A1}/extratos`, '2026-07'), { emitidos: 3, lixo: true });
 
     // Exame cadastrado pela recepcao, ainda sem medico definido (secao 10).
     await setDoc(doc(db, `workspaces/${LOCAL_A1}/exames`, 'exSemAutor'), {
@@ -875,6 +878,18 @@ describe('secao 8 — honorarios e contador de extratos', () => {
   });
   test('medico nao apaga o contador do mes', async () => {
     await assertFails(deleteDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/extratos`, '2026-08')));
+  });
+  // Documenta o fail-closed do Extrato.tsx (achado ALTO, triade onda2): a
+  // regra monotonica nega o incremento no doc legado malformado (mantem
+  // 'lixo' na pos-imagem do merge, hasOnly barra) — cliente aborta em vez de
+  // gerar sem contar.
+  test('doc legado malformado barra o incremento (payload real)', async () => {
+    await assertFails(setDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/extratos`, '2026-07'),
+      { emitidos: increment(1), ultimoEm: serverTimestamp() }, { merge: true }));
+  });
+  test('ultimoEm forjado (nao-timestamp) e barrado', async () => {
+    await assertFails(setDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/extratos`, '2026-08'),
+      { emitidos: increment(1), ultimoEm: 'agora' }, { merge: true }));
   });
   test('log so nasce assinado com o proprio uid', async () => {
     await assertSucceeds(addDoc(collection(como(DR_A2), 'logs'),

@@ -282,10 +282,12 @@ service cloud.firestore {
         allow read: if superadmin() || ehMedicoNoLocal(wsId);
         allow create: if superadmin() || (ehMedicoNoLocal(wsId)
           && request.resource.data.keys().hasOnly(['emitidos', 'ultimoEm'])
-          && request.resource.data.emitidos == 1);
+          && request.resource.data.emitidos == 1
+          && request.resource.data.ultimoEm is timestamp);
         allow update: if superadmin() || (ehMedicoNoLocal(wsId)
           && request.resource.data.keys().hasOnly(['emitidos', 'ultimoEm'])
-          && request.resource.data.emitidos == resource.data.emitidos + 1);
+          && request.resource.data.emitidos == resource.data.emitidos + 1
+          && request.resource.data.ultimoEm is timestamp);
         allow delete: if superadmin();
       }
     }
