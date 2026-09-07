@@ -8,7 +8,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getHistorico, getHonorarios, saveHonorarios, getExtratoContador, incrementarExtrato, logAction } from '@/lib/firestore';
+import { getHistorico, getHonorarios, saveHonorarios, getExtratoContador, incrementarExtrato, logAction, anoMesAtual } from '@/lib/firestore';
 import { checkExtratoLimit } from '@/lib/billing';
 import type { HonorariosConfig } from '@/lib/firestore';
 import { podeVerFinanceiro } from '@/lib/permissoes';
@@ -62,8 +62,7 @@ export default function Extrato() {
       setUsarValorUnico(h.valorUnico !== null);
       setValorUnicoInput(h.valorUnico !== null ? String(h.valorUnico) : '');
     });
-    const agora = new Date();
-    const anoMes = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}`;
+    const anoMes = anoMesAtual();
     setExtratoInfo(prev => ({ ...prev, mes: anoMes }));
     getExtratoContador(wsIdSel, anoMes).then(c => {
       if (meuGen !== genRef.current) return;

@@ -464,6 +464,14 @@ export async function saveHonorarios(wsId: string, config: HonorariosConfig) {
 
 // ══ BILLING DO EXTRATO (1 grátis/mês/local) ════════════════════
 
+// Mês de referência do contador de extratos ("AAAA-MM", fuso local).
+// Dono único (P4): Extrato.tsx e checkExtratoLimit calculavam cada um o seu —
+// página aberta na virada do mês checava o limite num mês e incrementava no outro (C5).
+export function anoMesAtual(): string {
+  const agora = new Date();
+  return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}`;
+}
+
 export type ExtratoContador = {
   emitidos: number;
   ultimoEm?: unknown;

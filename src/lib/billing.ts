@@ -10,6 +10,7 @@ import {
   query, where, limit, serverTimestamp, Timestamp
 } from 'firebase/firestore';
 import { previaEmissao, SubCiclo } from './ciclo';
+import { anoMesAtual } from './firestore';
 
 // ══ TIPOS ════════════════════════════════════════════════════════
 
@@ -235,9 +236,8 @@ export async function checkExtratoLimit(wsId: string): Promise<CheckExtratoResul
       return { pode: true, gratis: true, custo: 0, usados: 0, franquia: -1 };
     }
 
-    // Buscar contador do mes atual
-    const agora = new Date();
-    const anoMes = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}`;
+    // Buscar contador do mes atual (dono único do formato: anoMesAtual)
+    const anoMes = anoMesAtual();
     const snap = await getDoc(doc(db, 'workspaces', wsId, 'extratos', anoMes));
     const usados = snap.exists() ? (snap.data().emitidos || 0) : 0;
 
