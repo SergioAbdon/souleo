@@ -33,7 +33,10 @@ num prompt para esses MCPs, perguntar ao Sergio — a decisão de expor é dele.
 5. **DOCUMENTAR** — decisões vão para `docs/decisoes/AAAA-MM-DD-titulo.md`
    (fonte da verdade, compartilha entre máquinas via git, conforme protocolo Dual
    Claude acima). Ao fim da sessão, espelhar um resumo curto no vault Obsidian
-   (`Leo/Decisões/`) para visão cross-projeto.
+   (`Leo/Decisões/`) para visão cross-projeto. Se a sessão mudou o QUADRO GERAL
+   (seção fechada, motor virado, roadmap alterado), atualizar também
+   `Leo/Leo - Visão Geral.md` e `Leo/Roadmap/` — de 09/08 a 07/09 ninguém era
+   dono dessas notas e elas apodreceram no placeholder.
 
 ### Pipeline padrão de FEATURE (fechado com o Sergio em 10/08/2026)
 
