@@ -356,7 +356,9 @@ service cloud.firestore {
 
     // ── Trilhas append-only ──
     match /logs/{logId} {
-      // S8 onda 2 (R4): mesmo fechamento do `consumo` — auth() sozinho deixava
+      // S8 onda 2 (R4): mesmo MOTIVO do fechamento do `consumo` (la, create
+      // virou false; aqui o cliente ainda escreve, so que assinado) — auth()
+      // sozinho deixava
       // qualquer logado forjar trilha em nome de outro medico/clinica. Cliente
       // so cria log ASSINADO com o proprio uid; 'sistema' e uid alheio, so
       // Admin SDK. Chamadores reais conferidos: Extrato (user.uid) e Direx

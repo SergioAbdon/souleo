@@ -458,7 +458,17 @@ export async function getHonorarios(wsId: string): Promise<HonorariosConfig> {
 
 export async function saveHonorarios(wsId: string, config: HonorariosConfig) {
   try {
-    await setDoc(doc(db, 'workspaces', wsId, 'config', 'honorarios'), config);
+    // Backstop do C9 (Ruflo A3): a regra valida so `valorUnico` — os valores
+    // DENTRO do mapa `convenios` nao sao validaveis por rule. O clamp da UI
+    // vive nos handlers do Extrato; aqui e a ultima linha antes do banco, pra
+    // nenhum chamador futuro persistir valor negativo/nao-numerico.
+    const soPositivo = (v: unknown) =>
+      typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0;
+    await setDoc(doc(db, 'workspaces', wsId, 'config', 'honorarios'), {
+      convenios: Object.fromEntries(
+        Object.entries(config.convenios).map(([k, v]) => [k, soPositivo(v)])),
+      valorUnico: config.valorUnico === null ? null : soPositivo(config.valorUnico),
+    });
     return true;
   } catch (e) { console.error('saveHonorarios:', e); return false; }
 }
@@ -491,6 +501,10 @@ export async function incrementarExtrato(wsId: string, anoMes: string) {
     // Atômico (C15): setDoc+merge com increment cria em 1 ou soma 1 na mesma
     // escrita — o get+set anterior perdia contagem quando 2 cliques corriam
     // na criação do doc do mês.
+    // ACOPLADO à regra (Ruflo A1): firestore.rules /extratos/ só aceita
+    // exatamente esta forma — hasOnly(['emitidos','ultimoEm']), pós-imagem
+    // == anterior+1 (ou 1 na criação), ultimoEm timestamp. Mudou a escrita
+    // aqui? A regra e tests/rules acompanham no MESMO commit.
     await setDoc(doc(db, 'workspaces', wsId, 'extratos', anoMes),
       { emitidos: increment(1), ultimoEm: now() }, { merge: true });
     return true;
