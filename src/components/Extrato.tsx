@@ -45,6 +45,7 @@ export default function Extrato() {
   const [salvandoValores, setSalvandoValores] = useState(false);
   const [extratoInfo, setExtratoInfo] = useState({ emitidos: 0, mes: '' });
   const [gerado, setGerado] = useState(false);
+  const [gerandoExtrato, setGerandoExtrato] = useState(false);
   // Anti-corrida: troca de local dispara nova carga/consulta; a resposta lenta
   // do local anterior nao pode sobrescrever honorarios/contador/exames — o
   // contador stale chegaria a gerar/logar cobranca pro local errado.
@@ -169,32 +170,45 @@ export default function Extrato() {
     }
   }
 
-  // Gerar extrato (imprimir)
+  // Gerar extrato (imprimir). Ordem importa: window.open ANTES de qualquer
+  // await (C10 — popup fora do gesto do clique era bloqueado e a contagem já
+  // tinha acontecido); trava de duplo-clique (C4); erro do checkExtratoLimit
+  // aborta em vez de contar às cegas (C14).
   async function handleGerarExtrato() {
-    if (!wsIdSel || !user?.uid) return;
+    if (!wsIdSel || !user?.uid || gerandoExtrato) return;
     // Nao cobrar/logar o local B com os exames ainda do A (janela de troca).
     if (carregadoWsId.current !== wsIdSel) {
       alert('Aguarde os dados do local carregarem.');
       return;
     }
-
-    // Billing check — verifica limite do plano
-    const limiteExtrato = await checkExtratoLimit(wsIdSel);
-    if (!limiteExtrato.gratis) {
-      const msg = limiteExtrato.franquia === -1
-        ? 'Extrato ilimitado no seu plano.'
-        : `Voce ja usou ${limiteExtrato.usados} de ${limiteExtrato.franquia} extrato(s) gratis neste mes.\nO proximo custara R$ ${limiteExtrato.custo.toFixed(2)}.\n\nDeseja continuar?`;
-      if (limiteExtrato.custo > 0 && !confirm(msg)) return;
-    }
-
-    await incrementarExtrato(wsIdSel, extratoInfo.mes);
-    await logAction('extrato_emitido', { wsId: wsIdSel, periodo: `${dateFrom} a ${dateTo}`, totalExames: exames.length, totalValor: totalGeral }, user.uid);
-    setExtratoInfo(prev => ({ ...prev, emitidos: prev.emitidos + 1 }));
-
-    // Gerar HTML para impressão
-    const html = gerarHtmlExtrato();
     const win = window.open('', '_blank');
-    if (win) { win.document.write(html); win.document.close(); }
+    if (!win) {
+      alert('O navegador bloqueou a janela do extrato. Habilite popups para este site e tente de novo.');
+      return;
+    }
+    setGerandoExtrato(true);
+    try {
+      const limiteExtrato = await checkExtratoLimit(wsIdSel);
+      if (!limiteExtrato.pode) {
+        win.close();
+        alert('Não foi possível verificar seu plano. Tente novamente.');
+        return;
+      }
+      if (!limiteExtrato.gratis && limiteExtrato.custo > 0) {
+        const msg = `Voce ja usou ${limiteExtrato.usados} de ${limiteExtrato.franquia} extrato(s) gratis neste mes.\nO proximo custara R$ ${limiteExtrato.custo.toFixed(2)}.\n\nDeseja continuar?`;
+        if (!confirm(msg)) { win.close(); return; }
+      }
+      const anoMes = anoMesAtual();
+      await incrementarExtrato(wsIdSel, anoMes);
+      await logAction('extrato_emitido', { wsId: wsIdSel, periodo: `${dateFrom} a ${dateTo}`, totalExames: exames.length, totalValor: totalGeral }, user.uid);
+      setExtratoInfo(prev => prev.mes === anoMes
+        ? { mes: anoMes, emitidos: prev.emitidos + 1 }
+        : { mes: anoMes, emitidos: 1 });
+      win.document.write(gerarHtmlExtrato());
+      win.document.close();
+    } finally {
+      setGerandoExtrato(false);
+    }
   }
 
   // Tríade onda-3 (Codex-2 Important): fmtDate/fmtEmitido entravam CRUS —
@@ -431,9 +445,9 @@ export default function Extrato() {
 
           {/* Botão gerar extrato */}
           <div className="flex justify-center">
-            <button onClick={handleGerarExtrato}
-              className="bg-[#1E3A5F] text-white px-8 py-3 rounded-lg font-semibold hover:bg-[#2563EB] transition flex items-center gap-2">
-              🖨️ Gerar Extrato
+            <button onClick={handleGerarExtrato} disabled={gerandoExtrato}
+              className="bg-[#1E3A5F] text-white px-8 py-3 rounded-lg font-semibold hover:bg-[#2563EB] transition flex items-center gap-2 disabled:opacity-50">
+              {gerandoExtrato ? 'Gerando...' : '🖨️ Gerar Extrato'}
             </button>
           </div>
         </>
