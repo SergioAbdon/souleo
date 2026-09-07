@@ -96,7 +96,7 @@ export default function Extrato() {
         return;
       }
       todos.push(...(result.items as ExameItem[]));
-      cursor = result.lastDoc as DocumentSnapshot | null;
+      cursor = result.lastDoc;
       if (!result.hasMore) { completo = true; break; }
     }
     if (!completo) {

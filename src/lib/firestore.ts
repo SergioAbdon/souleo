@@ -393,7 +393,7 @@ export type FiltrosHistorico = {
 
 export type HistoricoResult = {
   items: Record<string, unknown>[];
-  lastDoc: unknown; // DocumentSnapshot — ultimo doc pra proxima pagina
+  lastDoc: DocumentSnapshot | null;
   hasMore: boolean;
   erro?: boolean;   // true = consulta falhou (indice/permissao/rede) — NAO e "sem laudos" (C11)
 };
@@ -435,7 +435,7 @@ export async function getHistorico(wsId: string, filtros?: FiltrosHistorico): Pr
 
     return {
       items: docs.map(d => Object.assign({ id: d.id }, d.data())),
-      lastDoc,
+      lastDoc: lastDoc as DocumentSnapshot | null,
       hasMore,
     };
   } catch (e) { console.error('getHistorico:', e); return { items: [], lastDoc: null, hasMore: false, erro: true }; }

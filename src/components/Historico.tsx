@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getHistorico, getExame, type HistoricoResult } from '@/lib/firestore';
+import { getHistorico, type HistoricoResult, type FiltrosHistorico } from '@/lib/firestore';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
 import { podeCancelarLaudo, podeCorrigirAdministrativo } from '@/lib/permissoes';
 import { DocumentSnapshot } from 'firebase/firestore';
@@ -66,16 +66,17 @@ export default function Historico() {
     const meuGen = ++genRef.current;
     setLoading(true);
     setCursor(null);
-    const filtros: Record<string, unknown> = { limitN: 50 };
-    if (dateFrom) filtros.dateFrom = dateFrom;
-    if (dateTo) filtros.dateTo = dateTo;
-    if (convenioSel) filtros.convenio = convenioSel;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result: HistoricoResult = await getHistorico(wsIdSel, filtros as any);
+    const filtros: FiltrosHistorico = {
+      limitN: 50,
+      ...(dateFrom && { dateFrom }),
+      ...(dateTo && { dateTo }),
+      ...(convenioSel && { convenio: convenioSel }),
+    };
+    const result: HistoricoResult = await getHistorico(wsIdSel, filtros);
     if (meuGen !== genRef.current) return;
     setErroCarga(!!result.erro);
     setExames(result.items as ExameItem[]);
-    setCursor(result.lastDoc as DocumentSnapshot | null);
+    setCursor(result.lastDoc);
     setHasMore(result.hasMore);
     setLoading(false);
   }, [wsIdSel, dateFrom, dateTo, convenioSel]);
@@ -84,12 +85,14 @@ export default function Historico() {
     if (!wsIdSel || !cursor || loadingMore) return;
     const meuGen = genRef.current;
     setLoadingMore(true);
-    const filtros: Record<string, unknown> = { limitN: 50, cursor };
-    if (dateFrom) filtros.dateFrom = dateFrom;
-    if (dateTo) filtros.dateTo = dateTo;
-    if (convenioSel) filtros.convenio = convenioSel;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result: HistoricoResult = await getHistorico(wsIdSel, filtros as any);
+    const filtros: FiltrosHistorico = {
+      limitN: 50,
+      cursor,
+      ...(dateFrom && { dateFrom }),
+      ...(dateTo && { dateTo }),
+      ...(convenioSel && { convenio: convenioSel }),
+    };
+    const result: HistoricoResult = await getHistorico(wsIdSel, filtros);
     if (meuGen !== genRef.current) return;
     if (result.erro) {
       alert('Não foi possível carregar mais. Tente novamente.');
@@ -97,7 +100,7 @@ export default function Historico() {
       return;
     }
     setExames(prev => [...prev, ...(result.items as ExameItem[])]);
-    setCursor(result.lastDoc as DocumentSnapshot | null);
+    setCursor(result.lastDoc);
     setHasMore(result.hasMore);
     setLoadingMore(false);
   }
@@ -118,26 +121,13 @@ export default function Historico() {
 
   // ── Ações ──
 
-  async function imprimirPdf(exameId: string) {
-    if (!wsIdSel) return;
-    try {
-      const ex = await getExame(wsIdSel, exameId);
-      const dados = ex as Record<string, unknown>;
-      if (dados?.pdfUrl) {
-        abrirPdfUrl(dados.pdfUrl as string);
-        return;
-      }
-      // X20: despacha pela modalidade real do tipo, não sempre pro motor.
-      const rota = rotaDoLaudo(exameId, dados?.tipoExame as string | undefined, tiposMap);
-      if (rota) { router.push(rota); return; }
-      // Ruflo-1: modalidade 'pdf' nao tem editor proprio (e o pdfUrl acima ja
-      // era nulo) — nao ha o que abrir aqui, so anexar pela Worklist.
-      alert('Exame de anexo — use a Worklist para anexar o PDF.');
-    } catch (e) {
-      console.error('Erro ao abrir PDF:', e);
-      // Sem `dados` (a leitura falhou) não há tipo pra despachar.
-      router.push('/laudo/' + exameId);
-    }
+  // 🖨️: abre o PDF emitido; sem PDF, cai na tela do laudo (P3 — a versão
+  // anterior refazia um getExame só pra ler o pdfUrl que já está na linha).
+  function imprimirPdf(ex: ExameItem) {
+    if (ex.pdfUrl) { abrirPdfUrl(ex.pdfUrl); return; }
+    const rota = rotaDoLaudo(ex.id, ex.tipoExame, tiposMap);
+    if (rota) { router.push(rota); return; }
+    alert('Exame de anexo — use a Worklist para anexar o PDF.');
   }
 
   // Botão "👁 Ver" da tabela: mesma lógica do fallback de imprimirPdf, mas
@@ -301,7 +291,7 @@ export default function Historico() {
                         className="bg-green-100 text-green-700 px-2.5 py-1 rounded text-xs font-semibold hover:bg-green-200 transition">
                         👁 Ver
                       </button>
-                      <button onClick={() => imprimirPdf(ex.id)}
+                      <button onClick={() => imprimirPdf(ex)}
                         className="bg-gray-100 text-gray-600 px-2.5 py-1 rounded text-xs font-semibold hover:bg-gray-200 transition">
                         🖨️
                       </button>
