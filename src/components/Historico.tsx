@@ -54,6 +54,11 @@ export default function Historico() {
   // anterior nao pode sobrescrever a lista do local atual.
   const genRef = useRef(0);
 
+  const [convOpcoes, setConvOpcoes] = useState<string[]>([]);
+  // Opções do dropdown (C13): acumuladas por local — derivar da página filtrada
+  // colapsava a lista pra 1 opção e escondia convênios fora da 1ª página.
+  useEffect(() => { setConvOpcoes([]); }, [wsIdSel]);
+
   // Catálogo de tipos de laudo (X20, Ponytail-7) — hook compartilhado com
   // Worklist/ficha do paciente. Sem ele, "Ver"/imprimir não tinham como
   // saber a modalidade real do tipo e caíam sempre no motor de eco
@@ -78,6 +83,10 @@ export default function Historico() {
     setExames(result.items as ExameItem[]);
     setCursor(result.lastDoc);
     setHasMore(result.hasMore);
+    if (!convenioSel) {
+      const novos = result.items.map(e => (e as ExameItem).convenio).filter(Boolean) as string[];
+      setConvOpcoes(prev => [...new Set([...prev, ...novos])].sort());
+    }
     setLoading(false);
   }, [wsIdSel, dateFrom, dateTo, convenioSel]);
 
@@ -102,13 +111,14 @@ export default function Historico() {
     setExames(prev => [...prev, ...(result.items as ExameItem[])]);
     setCursor(result.lastDoc);
     setHasMore(result.hasMore);
+    if (!convenioSel) {
+      const novos = result.items.map(e => (e as ExameItem).convenio).filter(Boolean) as string[];
+      setConvOpcoes(prev => [...new Set([...prev, ...novos])].sort());
+    }
     setLoadingMore(false);
   }
 
   useEffect(() => { fetchData(); }, [fetchData]);
-
-  // Convênios disponíveis nos resultados
-  const conveniosUnicos = [...new Set(exames.map(e => e.convenio).filter(Boolean))] as string[];
 
   // Filtro client-side por nome
   const filtrados = busca
@@ -233,7 +243,7 @@ export default function Historico() {
         <select value={convenioSel} onChange={e => setConvenioSel(e.target.value)}
           className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] w-36">
           <option value="">Todos convênios</option>
-          {conveniosUnicos.map(c => <option key={c} value={c}>{c}</option>)}
+          {convOpcoes.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
         <input type="text" placeholder="Buscar nome..." value={busca} onChange={e => setBusca(e.target.value)}
           className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] min-w-[150px]" />
@@ -258,7 +268,13 @@ export default function Historico() {
       ) : filtrados.length === 0 ? (
         <div className="text-center py-12 text-gray-300">
           <p className="text-3xl mb-2">📁</p>
-          <p className="text-sm">{busca ? `Nenhum resultado para "${busca}"` : 'Nenhum laudo emitido'}</p>
+          <p className="text-sm">{busca ? `Nenhum resultado para "${busca}" nas páginas carregadas` : 'Nenhum laudo emitido'}</p>
+          {busca && hasMore && (
+            <button onClick={carregarMais} disabled={loadingMore}
+              className="mt-3 px-4 py-1.5 bg-[#1E3A5F] text-white text-xs rounded-lg hover:bg-[#2563EB] transition disabled:opacity-50">
+              {loadingMore ? 'Carregando...' : 'Buscar nas próximas páginas'}
+            </button>
+          )}
         </div>
       ) : (
         <div className="bg-white rounded-lg overflow-hidden border border-gray-100">
