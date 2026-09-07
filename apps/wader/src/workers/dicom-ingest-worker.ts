@@ -39,6 +39,7 @@ export interface DicomIngestWorkerOptions {
 export class DicomIngestWorker {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  private tickEmAndamento = false;
   private execCount = 0;
   private lastTickAt: Date | null = null;
   private lastError: string | null = null;
@@ -108,6 +109,12 @@ export class DicomIngestWorker {
   }
 
   private async tick(): Promise<void> {
+    // Tick que dura mais que intervalSec não pode ganhar um irmão em
+    // paralelo — dois ticks veriam a mesma assinatura e processariam o
+    // mesmo estudo simultaneamente (uploads duplicados, contador de retry
+    // subcontado). O atrasado é simplesmente pulado.
+    if (this.tickEmAndamento) return;
+    this.tickEmAndamento = true;
     this.execCount++;
     this.lastTickAt = new Date();
     try {
@@ -162,6 +169,13 @@ export class DicomIngestWorker {
         }
       }
 
+      // Retry limitado (Codex 31/08): estudo com imagem falhada por motivo
+      // transitório volta pra fila com backoff, sem esperar instance nova
+      // nem reprocesso manual. Teto em MAX_TENTATIVAS_FALHA (ingest-state).
+      for (const id of this.store.estudosComRetryPendente()) {
+        if (!stable.has(id)) stable.set(id, -1);
+      }
+
       if (stable.size > 0) {
         log.info(
           { count: stable.size, desde, ate: changes.Last },
@@ -183,7 +197,19 @@ export class DicomIngestWorker {
               else curImg += n;
             }
           } catch {
-            // Estudo pode ter sido apagado entre o change e agora — ignora.
+            // Estudo pode ter sido apagado entre o change e agora. Se ele
+            // estava na fila de retry, a consulta falhada CONSOME uma
+            // tentativa (e renova `at` pro backoff) — senão um estudo
+            // apagado direto no Orthanc seria consultado a cada tick pra
+            // sempre (retry eterno que o teto existe pra impedir).
+            const sigSumido = this.store.getSignature(studyId);
+            if (sigSumido?.nImgFalhadas) {
+              this.store.setSignature(studyId, {
+                ...sigSumido,
+                tentativasFalha: (sigSumido.tentativasFalha ?? 1) + 1,
+                at: new Date().toISOString(),
+              });
+            }
             continue;
           }
 
@@ -196,6 +222,13 @@ export class DicomIngestWorker {
           // ganhou série SR nova (curSR subiu). Reprocesso disparado por imagem
           // nova reusa as medidas já gravadas — não re-baixa/re-parseia o SR.
           const forceSr = !!sig && curSR > sig.nSR;
+
+          // Conteúdo novo no Orthanc abre uma "geração" nova de retries:
+          // o contador zera. Sem isso, estudo que estourou o teto e depois
+          // ganhou instance nova reprocessaria uma vez mas ficaria sem os
+          // retries prometidos se a falha transitória repetisse.
+          const conteudoNovo =
+            !sig || curImg > (sig.nImgTentadas ?? sig.nImg) || curSR > sig.nSR;
 
           const result = await processarEstudo({
             client: this.opts.client,
@@ -221,6 +254,12 @@ export class DicomIngestWorker {
               nSR: curSR,
               matched: true,
               at: new Date().toISOString(),
+              // Retry limitado (Codex 31/08): falha registra contagem +
+              // tentativa acumulada; sucesso limpa (campos ausentes).
+              ...(result.imagensFalhadas > 0 && {
+                nImgFalhadas: result.imagensFalhadas,
+                tentativasFalha: (conteudoNovo ? 0 : (sig?.tentativasFalha ?? 0)) + 1,
+              }),
             });
           } else {
             this.estudosOrfaos++;
@@ -288,6 +327,8 @@ export class DicomIngestWorker {
     } catch (err) {
       this.lastError = (err as Error).message;
       log.warn({ err: this.lastError }, 'Tick falhou (Orthanc inacessível?)');
+    } finally {
+      this.tickEmAndamento = false;
     }
   }
 }

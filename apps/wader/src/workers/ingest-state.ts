@@ -36,6 +36,17 @@ export interface StudySignature {
    * Orthanc já tem tudo que tentamos) em vez de `nImg` (só o que deu certo).
    */
   nImgTentadas?: number;
+  /**
+   * Nº de imagens que FALHARAM no último processamento (Codex 31/08).
+   * Achado 9 protegia contra loop infinito, mas engolia falha TRANSITÓRIA
+   * (timeout de rede): curImg nunca passava de nImgTentadas e a imagem só
+   * voltava com instance nova ou reprocesso manual. Com este campo + o
+   * contador abaixo, o worker retenta sozinho, com backoff e teto.
+   * Ausente/0 = sem pendência (sucesso limpa).
+   */
+  nImgFalhadas?: number;
+  /** Nº de processamentos consecutivos que terminaram com falha de imagem. */
+  tentativasFalha?: number;
   /** Nº de instances SR já vistas (mesma unidade que `precisaProcessar` compara). */
   nSR: number;
   /** Casou com um exame no LEO. */
@@ -50,10 +61,24 @@ export interface PersistedIngestState {
   studies: Record<string, StudySignature>;
 }
 
-const EMPTY: PersistedIngestState = { lastSeq: 0, studies: {} };
+// Função, não const: `{ ...EMPTY }` era cópia RASA — todas as instâncias
+// compartilhavam o MESMO objeto `studies` (setSignature de uma vazava pra
+// outra). Em produção só há um store; testes com 2+ stores expunham o bug.
+const vazio = (): PersistedIngestState => ({ lastSeq: 0, studies: {} });
+
+/**
+ * Teto de processamentos FALHADOS antes de desistir do retry automático
+ * (3 = tentativa original + 2 retentativas). Depois disso, só instance
+ * nova ou reprocesso manual (`reprocessarDicom`) destravam — preserva a
+ * proteção do Achado 9 contra falha permanente (instance corrompida).
+ */
+export const MAX_TENTATIVAS_FALHA = 3;
+
+/** Backoff entre retentativas: 2 min após a 1ª falha, 4 min após a 2ª. */
+const backoffMs = (tentativas: number) => 60_000 * 2 ** tentativas;
 
 export class IngestStateStore {
-  private state: PersistedIngestState = { ...EMPTY };
+  private state: PersistedIngestState = vazio();
   private readonly file: string;
   private saveTimer: NodeJS.Timeout | null = null;
   private dirty = false;
@@ -81,7 +106,7 @@ export class IngestStateStore {
     } catch (err) {
       log.warn({ err, file: this.file }, 'Falha ao ler estado do ingest — começando do zero');
     }
-    this.state = { ...EMPTY };
+    this.state = vazio();
   }
 
   getLastSeq(): number {
@@ -138,12 +163,35 @@ export class IngestStateStore {
     const base = s.nImgTentadas ?? s.nImg;
     if (curImg > base) return true;
     if (curSR > s.nSR) return true;
+    // Retry limitado (Codex 31/08): falha transitória retenta com backoff/teto.
+    if (this.retryPendente(s)) return true;
     return false;
+  }
+
+  /** Falha de imagem pendente de retry (dentro do teto e com backoff vencido)? */
+  private retryPendente(s: StudySignature): boolean {
+    if (!s.nImgFalhadas) return false;
+    const tentativas = s.tentativasFalha ?? 1;
+    if (tentativas >= MAX_TENTATIVAS_FALHA) return false;
+    const ultimaEm = Date.parse(s.at);
+    // `at` ilegível (estado antigo/corrompido) ⇒ trata backoff como vencido.
+    return !Number.isFinite(ultimaEm) || Date.now() - ultimaEm >= backoffMs(tentativas);
+  }
+
+  /**
+   * Estudos com falha de imagem elegíveis pra retentar AGORA. O tick precisa
+   * disto porque sem instance nova o Orthanc não emite novo StableStudy —
+   * o retry tem que ser enfileirado ativamente pelo worker.
+   */
+  estudosComRetryPendente(): string[] {
+    return Object.entries(this.state.studies)
+      .filter(([, s]) => this.retryPendente(s))
+      .map(([id]) => id);
   }
 
   /** Zera cursor + assinaturas (debug / re-processar tudo). */
   reset(): void {
-    this.state = { ...EMPTY, studies: {} };
+    this.state = vazio();
     this.dirty = true;
     this.flush();
   }
