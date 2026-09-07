@@ -4,8 +4,9 @@ import { readFileSync } from 'node:fs';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import {
   doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection, getDocs, query, where,
+  increment, serverTimestamp,
 } from 'firebase/firestore';
-import { payloadCreateProfile, payloadCadastroExame, payloadEditarExame, payloadTipoLaudo, payloadSalvarLaudo } from './fixtures.mjs';
+import { payloadCreateProfile, payloadCadastroExame, payloadEditarExame, payloadTipoLaudo, payloadSalvarLaudo, payloadHonorarios } from './fixtures.mjs';
 
 let env;
 
@@ -51,8 +52,11 @@ before(async () => {
       pacienteNome: 'Paciente B', medicoUid: DR_B, status: 'emitido',
     });
     await setDoc(doc(db, `workspaces/${LOCAL_A1}/pacientes`, 'pac1'), { nome: 'Paciente A1' });
-    await setDoc(doc(db, `workspaces/${LOCAL_A1}/config`, 'honorarios'), { UNIMED: 120 });
+    await setDoc(doc(db, `workspaces/${LOCAL_A1}/config`, 'honorarios'), { convenios: { UNIMED: 120 }, valorUnico: null });
     await setDoc(doc(db, `workspaces/${LOCAL_A1}/extratos`, '2026-08'), { emitidos: 3 });
+    // Doc legado malformado (triade onda2, Codex): campo fora da whitelist
+    // sobrevive ao merge do incrementarExtrato -> hasOnly nega pra sempre.
+    await setDoc(doc(db, `workspaces/${LOCAL_A1}/extratos`, '2026-07'), { emitidos: 3, lixo: true });
 
     // Exame cadastrado pela recepcao, ainda sem medico definido (secao 10).
     await setDoc(doc(db, `workspaces/${LOCAL_A1}/exames`, 'exSemAutor'), {
@@ -182,7 +186,7 @@ describe('2. papeis', () => {
   });
   test('medico le e escreve honorarios', async () => {
     await assertSucceeds(getDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/config`, 'honorarios')));
-    await assertSucceeds(setDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/config`, 'honorarios'), { UNIMED: 150 }));
+    await assertSucceeds(setDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/config`, 'honorarios'), payloadHonorarios()));
   });
 });
 
@@ -418,8 +422,10 @@ describe('8. Direx e trilhas', () => {
     await assertFails(getDocs(collection(como(DR_A), 'pagamentos')));
     await assertFails(getDocs(collection(como(DR_A), 'historicoFinanceiro')));
   });
-  test('qualquer autenticado grava log; so o Direx le', async () => {
-    await assertSucceeds(addDoc(collection(como(RITA), 'logs'), { tipo: 'teste' }));
+  test('autenticado grava log assinado com o proprio uid; so o Direx le', async () => {
+    // S8 onda 2 (R4): auth() sozinho virou auth() + autor == uid() — ver
+    // 'log so nasce assinado com o proprio uid' na secao 8.
+    await assertSucceeds(addDoc(collection(como(RITA), 'logs'), { tipo: 'teste', medicoUid: RITA }));
     await assertFails(getDocs(collection(como(RITA), 'logs')));
     await assertSucceeds(getDocs(collection(como(ADMIN), 'logs')));
   });
@@ -840,5 +846,57 @@ describe('19. flag reprocessarDicom e do medico autor (S4-T15 fix)', () => {
   // VAZIO — hasOnly(administrativos) passa trivialmente e o teste mentiria.
   test('recepcao NAO pede reprocessamento (nao e administracao de fila)', async () => {
     await assertFails(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exFila1'), { reprocessarDicom: true }));
+  });
+});
+
+describe('secao 8 — honorarios e contador de extratos', () => {
+  test('medico nao grava campo fora da whitelist de honorarios', async () => {
+    await assertFails(setDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/config`, 'honorarios'),
+      payloadHonorarios({ hack: true })));
+  });
+  test('valorUnico negativo e barrado', async () => {
+    await assertFails(setDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/config`, 'honorarios'),
+      payloadHonorarios({ valorUnico: -50 })));
+  });
+  test('medico nao cria outro doc sob config/', async () => {
+    await assertFails(setDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/config`, 'outra-coisa'), { x: 1 }));
+  });
+  test('recepcao nao escreve honorarios', async () => {
+    await assertFails(setDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/config`, 'honorarios'), payloadHonorarios()));
+  });
+  // Contador: payload real do incrementarExtrato = setDoc merge {emitidos: increment(1), ultimoEm}
+  test('medico incrementa o contador do mes (payload real, doc novo e existente)', async () => {
+    await assertSucceeds(setDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/extratos`, '2026-09'),
+      { emitidos: increment(1), ultimoEm: serverTimestamp() }, { merge: true }));
+    await assertSucceeds(setDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/extratos`, '2026-08'),
+      { emitidos: increment(1), ultimoEm: serverTimestamp() }, { merge: true }));
+  });
+  test('medico nao zera nem salta o contador', async () => {
+    await assertFails(setDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/extratos`, '2026-08'), { emitidos: 0 }));
+    await assertFails(setDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/extratos`, '2026-08'),
+      { emitidos: increment(5), ultimoEm: serverTimestamp() }, { merge: true }));
+  });
+  test('medico nao apaga o contador do mes', async () => {
+    await assertFails(deleteDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/extratos`, '2026-08')));
+  });
+  // Documenta o fail-closed do Extrato.tsx (achado ALTO, triade onda2): a
+  // regra monotonica nega o incremento no doc legado malformado (mantem
+  // 'lixo' na pos-imagem do merge, hasOnly barra) — cliente aborta em vez de
+  // gerar sem contar.
+  test('doc legado malformado barra o incremento (payload real)', async () => {
+    await assertFails(setDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/extratos`, '2026-07'),
+      { emitidos: increment(1), ultimoEm: serverTimestamp() }, { merge: true }));
+  });
+  test('ultimoEm forjado (nao-timestamp) e barrado', async () => {
+    await assertFails(setDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/extratos`, '2026-08'),
+      { emitidos: increment(1), ultimoEm: 'agora' }, { merge: true }));
+  });
+  test('log so nasce assinado com o proprio uid', async () => {
+    await assertSucceeds(addDoc(collection(como(DR_A2), 'logs'),
+      { tipo: 'extrato_emitido', wsId: LOCAL_A1, ts: serverTimestamp(), medicoUid: DR_A2 }));
+    await assertFails(addDoc(collection(como(DR_A2), 'logs'),
+      { tipo: 'extrato_emitido', wsId: LOCAL_A1, ts: serverTimestamp(), medicoUid: DR_A }));
+    await assertFails(addDoc(collection(como(DR_A2), 'logs'),
+      { tipo: 'qualquer', ts: serverTimestamp(), medicoUid: 'sistema' }));
   });
 });
