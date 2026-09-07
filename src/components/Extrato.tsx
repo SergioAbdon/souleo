@@ -144,7 +144,7 @@ export default function Extrato() {
 
   // Atualizar valor de convênio local
   function setValorConvenio(conv: string, valor: string) {
-    const num = parseFloat(valor) || 0;
+    const num = Math.max(0, parseFloat(valor) || 0);
     setHonorarios(prev => ({
       ...prev,
       convenios: { ...prev.convenios, [conv]: num }
@@ -157,7 +157,7 @@ export default function Extrato() {
     setSalvandoValores(true);
     const config: HonorariosConfig = {
       convenios: honorarios.convenios,
-      valorUnico: usarValorUnico ? (parseFloat(valorUnicoInput) || 0) : null,
+      valorUnico: usarValorUnico ? Math.max(0, parseFloat(valorUnicoInput) || 0) : null,
     };
     await saveHonorarios(wsIdSel, config);
     setHonorarios(config);
@@ -170,7 +170,7 @@ export default function Extrato() {
     const novo = !usarValorUnico;
     setUsarValorUnico(novo);
     if (novo) {
-      const val = parseFloat(valorUnicoInput) || 0;
+      const val = Math.max(0, parseFloat(valorUnicoInput) || 0);
       setHonorarios(prev => ({ ...prev, valorUnico: val }));
     } else {
       setHonorarios(prev => ({ ...prev, valorUnico: null }));
@@ -388,10 +388,10 @@ export default function Extrato() {
                 {usarValorUnico && (
                   <div className="mt-2 flex items-center gap-2">
                     <span className="text-xs text-gray-500">R$</span>
-                    <input type="number" step="0.01" value={valorUnicoInput}
+                    <input type="number" step="0.01" min="0" value={valorUnicoInput}
                       onChange={e => {
                         setValorUnicoInput(e.target.value);
-                        setHonorarios(prev => ({ ...prev, valorUnico: parseFloat(e.target.value) || 0 }));
+                        setHonorarios(prev => ({ ...prev, valorUnico: Math.max(0, parseFloat(e.target.value) || 0) }));
                       }}
                       className="border rounded px-2 py-1 text-sm w-24 focus:outline-none focus:border-[#1E3A5F]" />
                   </div>
@@ -419,7 +419,7 @@ export default function Extrato() {
                         {editandoValores && !usarValorUnico ? (
                           <div className="flex items-center gap-1">
                             <span className="text-xs text-gray-400">R$</span>
-                            <input type="number" step="0.01"
+                            <input type="number" step="0.01" min="0"
                               value={honorarios.convenios[conv] || ''}
                               onChange={e => setValorConvenio(conv, e.target.value)}
                               className="border rounded px-2 py-0.5 text-sm w-20 focus:outline-none focus:border-[#1E3A5F]" />
