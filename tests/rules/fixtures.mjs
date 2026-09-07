@@ -94,6 +94,16 @@ export const payloadSalvarLaudo = (extra = {}) => ({
 });
 
 /**
+ * Payload identico ao que `saveHonorarios()` envia (src/lib/firestore.ts):
+ * so `convenios` (mapa) e `valorUnico` (number | null).
+ */
+export const payloadHonorarios = (extra = {}) => ({
+  convenios: { UNIMED: 150, PARTICULAR: 300 },
+  valorUnico: null,
+  ...extra,
+});
+
+/**
  * Payload identico ao que a tela Clinica→Tipos de laudo grava (Task 3).
  */
 export const payloadTipoLaudo = (extra = {}) => ({

@@ -258,12 +258,36 @@ service cloud.firestore {
         allow delete: if ehDonoDoLocal(wsId);
       }
 
-      // Honorarios, extratos e demais ajustes do local: financeiro, so quem
-      // atende (medico) ou o dono — recepcao nao ve valor por convenio.
-      // superadmin(): Lacuna 1 do levantamento — sem ele o suporte perdia
-      // acesso a honorarios e contador de extrato (a publicada sempre teve).
-      match /config/{docId}   { allow read, write: if superadmin() || ehMedicoNoLocal(wsId); }
-      match /extratos/{docId} { allow read, write: if superadmin() || ehMedicoNoLocal(wsId); }
+      // Honorarios/extratos: financeiro, so quem atende (medico) ou o dono —
+      // recepcao nao ve valor por convenio. superadmin(): suporte (Lacuna 1).
+      // S8 onda 2 (C2/R5): whitelist de forma — unicos caminhos gravaveis do
+      // workspace que nao tinham hasOnly(). `config` so aceita o doc
+      // 'honorarios' com os 2 campos do saveHonorarios (valores DENTRO do mapa
+      // `convenios` nao sao validaveis por regra — clamp no cliente, C9).
+      match /config/{docId} {
+        allow read: if superadmin() || ehMedicoNoLocal(wsId);
+        allow create, update: if superadmin() || (ehMedicoNoLocal(wsId)
+          && docId == 'honorarios'
+          && request.resource.data.keys().hasOnly(['convenios', 'valorUnico'])
+          && request.resource.data.convenios is map
+          && (request.resource.data.valorUnico == null
+              || (request.resource.data.valorUnico is number
+                  && request.resource.data.valorUnico >= 0)));
+        allow delete: if superadmin();
+      }
+      // Contador de extratos (C2): nasce em 1 e so anda +1 — zerar, saltar ou
+      // apagar o mes e evasao do "1 gratis/mes". O incrementarExtrato do
+      // cliente (setDoc merge + increment(1)) passa nos dois ramos.
+      match /extratos/{docId} {
+        allow read: if superadmin() || ehMedicoNoLocal(wsId);
+        allow create: if superadmin() || (ehMedicoNoLocal(wsId)
+          && request.resource.data.keys().hasOnly(['emitidos', 'ultimoEm'])
+          && request.resource.data.emitidos == 1);
+        allow update: if superadmin() || (ehMedicoNoLocal(wsId)
+          && request.resource.data.keys().hasOnly(['emitidos', 'ultimoEm'])
+          && request.resource.data.emitidos == resource.data.emitidos + 1);
+        allow delete: if superadmin();
+      }
     }
 
     // ── VINCULOS ── leitura do proprio e do dono da conta; escrita so servidor
