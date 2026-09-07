@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getHistorico, type HistoricoResult, type FiltrosHistorico } from '@/lib/firestore';
+import { getHistorico, getExame, type HistoricoResult, type FiltrosHistorico } from '@/lib/firestore';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
 import { podeCancelarLaudo, podeCorrigirAdministrativo } from '@/lib/permissoes';
 import { DocumentSnapshot } from 'firebase/firestore';
@@ -59,7 +59,9 @@ export default function Historico() {
   // colapsava a lista pra 1 opção e escondia convênios fora da 1ª página.
   // convenioSel também reseta: filtro herdado do local anterior deixava o
   // local novo filtrado por convênio que talvez nem exista lá (achado task 14).
-  useEffect(() => { setConvOpcoes([]); setConvenioSel(''); }, [wsIdSel]);
+  // setState com o mesmo valor não re-renderiza nem re-dispara fetchData —
+  // sem o `prev ?`, convenioSel='' já vigente disparava fetchData 2x na troca.
+  useEffect(() => { setConvOpcoes([]); setConvenioSel(prev => prev ? '' : prev); }, [wsIdSel]);
 
   // Catálogo de tipos de laudo (X20, Ponytail-7) — hook compartilhado com
   // Worklist/ficha do paciente. Sem ele, "Ver"/imprimir não tinham como
@@ -104,7 +106,7 @@ export default function Historico() {
       ...(convenioSel && { convenio: convenioSel }),
     };
     const result: HistoricoResult = await getHistorico(wsIdSel, filtros);
-    if (meuGen !== genRef.current) return;
+    if (meuGen !== genRef.current) { setLoadingMore(false); return; }
     if (result.erro) {
       alert('Não foi possível carregar mais. Tente novamente.');
       setLoadingMore(false);
@@ -133,10 +135,17 @@ export default function Historico() {
 
   // ── Ações ──
 
-  // 🖨️: abre o PDF emitido; sem PDF, cai na tela do laudo (P3 — a versão
-  // anterior refazia um getExame só pra ler o pdfUrl que já está na linha).
-  function imprimirPdf(ex: ExameItem) {
+  // 🖨️: abre o PDF emitido. Fast-path pela linha carregada; sem pdfUrl na
+  // linha, confere o doc FRESCO (PDF pode ter sido regerado em outra aba —
+  // triade onda3) antes de cair na tela do laudo.
+  async function imprimirPdf(ex: ExameItem) {
     if (ex.pdfUrl) { abrirPdfUrl(ex.pdfUrl); return; }
+    if (wsIdSel) {
+      try {
+        const fresco = await getExame(wsIdSel, ex.id) as Record<string, unknown> | null;
+        if (fresco?.pdfUrl) { abrirPdfUrl(fresco.pdfUrl as string); return; }
+      } catch { /* segue pro fallback de rota */ }
+    }
     const rota = rotaDoLaudo(ex.id, ex.tipoExame, tiposMap);
     if (rota) { router.push(rota); return; }
     alert('Exame de anexo — use a Worklist para anexar o PDF.');
@@ -298,7 +307,7 @@ export default function Historico() {
                   <td className="py-3 px-3">
                     <div className="font-semibold text-[#1E3A5F]">{ex.pacienteNome || '—'}</div>
                   </td>
-                  <td className="py-3 px-3 text-gray-500 text-xs">{tiposMap[ex.tipoExame as string]?.nome || ex.tipoExame}</td>
+                  <td className="py-3 px-3 text-gray-500 text-xs">{tiposMap[ex.tipoExame as string]?.nome || ex.tipoExame || '—'}</td>
                   <td className="py-3 px-3 text-gray-500 text-xs">{ex.convenio || '—'}</td>
                   <td className="py-3 px-3 text-gray-400 text-xs">{fmtDataHora(ex.emitidoEm)}</td>
                   <td className="py-3 px-3 text-right">

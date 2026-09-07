@@ -59,6 +59,9 @@ export default function Extrato() {
   useEffect(() => {
     if (!wsIdSel) return;
     const meuGen = ++genRef.current;
+    // Franquia do local anterior não pode ficar na tela durante a troca, nem
+    // sobreviver a uma falha do check (triade onda3) — null é o "não sei ainda".
+    setExtratoFranquia(null);
     getHonorarios(wsIdSel).then(h => {
       if (meuGen !== genRef.current) return;
       if (!h) { alert('Não foi possível carregar os valores de honorários — os totais podem sair zerados.'); }
@@ -69,7 +72,7 @@ export default function Extrato() {
     });
     checkExtratoLimit(wsIdSel).then(l => {
       if (meuGen !== genRef.current) return;
-      setExtratoFranquia(l.franquia);
+      if (l.pode) setExtratoFranquia(l.franquia);
     });
     const anoMes = anoMesAtual();
     setExtratoInfo(prev => ({ ...prev, mes: anoMes }));

@@ -19,16 +19,20 @@ export function useTiposLaudo(wsId: string | undefined): { tipos: TipoLaudo[]; t
 
   useEffect(() => {
     if (!wsId) return;
+    let vivo = true; // invalida resposta velha na troca de local (triade S8 onda3)
+    setTipos(TIPOS_LAUDO_PADRAO); // nao exibir catalogo do local anterior
     (async () => {
       try {
         const snap = await getDocs(query(collection(db, 'workspaces', wsId, 'tiposLaudo'), orderBy('ordem', 'asc')));
+        if (!vivo) return;
         const lista = snap.docs.map(d => d.data() as TipoLaudo);
         setTipos(lista.length > 0 ? lista : TIPOS_LAUDO_PADRAO);
       } catch (e) {
         console.error('carregar tiposLaudo:', e);
-        setTipos(TIPOS_LAUDO_PADRAO);
+        if (vivo) setTipos(TIPOS_LAUDO_PADRAO);
       }
     })();
+    return () => { vivo = false; };
   }, [wsId]);
 
   const tiposMap: Record<string, TipoLaudo> = {};
