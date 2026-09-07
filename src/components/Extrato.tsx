@@ -40,6 +40,7 @@ export default function Extrato() {
   const [editandoValores, setEditandoValores] = useState(false);
   const [salvandoValores, setSalvandoValores] = useState(false);
   const [extratoInfo, setExtratoInfo] = useState({ emitidos: 0, mes: '' });
+  const [extratoFranquia, setExtratoFranquia] = useState<number | null>(null);
   const [gerado, setGerado] = useState(false);
   const [gerandoExtrato, setGerandoExtrato] = useState(false);
   // Anti-corrida: troca de local dispara nova carga; a resposta lenta do local
@@ -60,9 +61,15 @@ export default function Extrato() {
     const meuGen = ++genRef.current;
     getHonorarios(wsIdSel).then(h => {
       if (meuGen !== genRef.current) return;
-      setHonorarios(h);
-      setUsarValorUnico(h.valorUnico !== null);
-      setValorUnicoInput(h.valorUnico !== null ? String(h.valorUnico) : '');
+      if (!h) { alert('Não foi possível carregar os valores de honorários — os totais podem sair zerados.'); }
+      const cfg = h || { convenios: {}, valorUnico: null };
+      setHonorarios(cfg);
+      setUsarValorUnico(cfg.valorUnico !== null);
+      setValorUnicoInput(cfg.valorUnico !== null ? String(cfg.valorUnico) : '');
+    });
+    checkExtratoLimit(wsIdSel).then(l => {
+      if (meuGen !== genRef.current) return;
+      setExtratoFranquia(l.franquia);
     });
     const anoMes = anoMesAtual();
     setExtratoInfo(prev => ({ ...prev, mes: anoMes }));
@@ -159,10 +166,11 @@ export default function Extrato() {
       convenios: honorarios.convenios,
       valorUnico: usarValorUnico ? Math.max(0, parseFloat(valorUnicoInput) || 0) : null,
     };
-    await saveHonorarios(wsIdSel, config);
+    const ok = await saveHonorarios(wsIdSel, config);
+    setSalvandoValores(false);
+    if (!ok) { alert('Não foi possível salvar os valores. Tente novamente.'); return; }
     setHonorarios(config);
     setEditandoValores(false);
-    setSalvandoValores(false);
   }
 
   // Toggle valor único
@@ -308,9 +316,11 @@ export default function Extrato() {
 
       {/* Info billing do extrato */}
       <div className="text-xs text-gray-400 mb-3">
-        {extratoInfo.emitidos === 0
-          ? `Nenhum extrato emitido em ${wsNome} neste mês (1 grátis)`
-          : `${extratoInfo.emitidos} extrato(s) emitido(s) em ${wsNome} neste mês${extratoInfo.emitidos >= 1 ? ' — próximo será cobrado' : ''}`}
+        {extratoFranquia === -1
+          ? `${extratoInfo.emitidos} extrato(s) emitido(s) em ${wsNome} neste mês — ilimitados no seu plano`
+          : extratoInfo.emitidos === 0
+            ? `Nenhum extrato emitido em ${wsNome} neste mês${extratoFranquia ? ` (${extratoFranquia} grátis)` : ' (1 grátis)'}`
+            : `${extratoInfo.emitidos} extrato(s) emitido(s) em ${wsNome} neste mês${extratoFranquia !== null && extratoInfo.emitidos >= extratoFranquia ? ' — próximo será cobrado' : ''}`}
       </div>
 
       {/* Conteúdo */}
