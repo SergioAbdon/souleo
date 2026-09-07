@@ -487,13 +487,11 @@ export async function getExtratoContador(wsId: string, anoMes: string): Promise<
 
 export async function incrementarExtrato(wsId: string, anoMes: string) {
   try {
-    const ref = doc(db, 'workspaces', wsId, 'extratos', anoMes);
-    const snap = await getDoc(ref);
-    if (snap.exists()) {
-      await updateDoc(ref, { emitidos: increment(1), ultimoEm: now() });
-    } else {
-      await setDoc(ref, { emitidos: 1, ultimoEm: now() });
-    }
+    // Atômico (C15): setDoc+merge com increment cria em 1 ou soma 1 na mesma
+    // escrita — o get+set anterior perdia contagem quando 2 cliques corriam
+    // na criação do doc do mês.
+    await setDoc(doc(db, 'workspaces', wsId, 'extratos', anoMes),
+      { emitidos: increment(1), ultimoEm: now() }, { merge: true });
     return true;
   } catch (e) { console.error('incrementarExtrato:', e); return false; }
 }
