@@ -7,8 +7,9 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { DocumentSnapshot } from 'firebase/firestore';
 import { useAuth } from '@/contexts/AuthContext';
-import { getHistorico, getHonorarios, saveHonorarios, getExtratoContador, incrementarExtrato, logAction } from '@/lib/firestore';
+import { getHistorico, getHonorarios, saveHonorarios, getExtratoContador, incrementarExtrato, logAction, anoMesAtual } from '@/lib/firestore';
 import { checkExtratoLimit } from '@/lib/billing';
 import type { HonorariosConfig } from '@/lib/firestore';
 import { podeVerFinanceiro } from '@/lib/permissoes';
@@ -44,10 +45,15 @@ export default function Extrato() {
   const [salvandoValores, setSalvandoValores] = useState(false);
   const [extratoInfo, setExtratoInfo] = useState({ emitidos: 0, mes: '' });
   const [gerado, setGerado] = useState(false);
-  // Anti-corrida: troca de local dispara nova carga/consulta; a resposta lenta
-  // do local anterior nao pode sobrescrever honorarios/contador/exames — o
-  // contador stale chegaria a gerar/logar cobranca pro local errado.
+  const [gerandoExtrato, setGerandoExtrato] = useState(false);
+  // Anti-corrida: troca de local dispara nova carga; a resposta lenta do local
+  // anterior nao pode sobrescrever honorarios/contador — o contador stale
+  // chegaria a gerar/logar cobranca pro local errado. (Exames: consultaGenRef.)
   const genRef = useRef(0);
+  // Corrida da CONSULTA (handleConsultar × troca de filtros): domínio separado
+  // do genRef de honorários — na troca de local os dois effects rodam no mesmo
+  // commit e um ref único fazia o reset invalidar a resposta de honorários.
+  const consultaGenRef = useRef(0);
   // De qual local sao os `exames` exibidos. Na janela de troca, wsIdSel ja e o
   // B mas os exames ainda sao do A; so gera extrato quando batem.
   const carregadoWsId = useRef('');
@@ -62,8 +68,7 @@ export default function Extrato() {
       setUsarValorUnico(h.valorUnico !== null);
       setValorUnicoInput(h.valorUnico !== null ? String(h.valorUnico) : '');
     });
-    const agora = new Date();
-    const anoMes = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}`;
+    const anoMes = anoMesAtual();
     setExtratoInfo(prev => ({ ...prev, mes: anoMes }));
     getExtratoContador(wsIdSel, anoMes).then(c => {
       if (meuGen !== genRef.current) return;
@@ -71,22 +76,52 @@ export default function Extrato() {
     });
   }, [wsIdSel]);
 
-  // Buscar exames — só quando clica "Consultar"
+  // Buscar exames — só quando clica "Consultar". Percorre TODAS as páginas
+  // (C1: teto fixo de 500 truncava período movimentado e o extrato saía com
+  // total errado). meuGen = ++consultaGenRef (C3): consulta nova ou troca de
+  // datas invalida a resposta lenta da anterior.
   async function handleConsultar() {
     if (!wsIdSel || !dateFrom || !dateTo) return;
-    const meuGen = genRef.current;
+    const meuGen = ++consultaGenRef.current;
     setLoading(true);
     setGerado(false);
-    const result = await getHistorico(wsIdSel, { dateFrom, dateTo, limitN: 500 });
-    if (meuGen !== genRef.current) return;
-    setExames(result.items as ExameItem[]);
+    const todos: ExameItem[] = [];
+    let cursor: DocumentSnapshot | null = null;
+    // ponytail: teto de 40 paginas (20.000 laudos) — acima disso é uso fora da
+    // curva; se o teto for atingido com dados ainda por vir, ABORTA com aviso
+    // em vez de publicar um extrato truncado como se fosse o período inteiro.
+    let completo = false;
+    for (let pag = 0; pag < 40; pag++) {
+      const result = await getHistorico(wsIdSel, { dateFrom, dateTo, limitN: 500, cursor });
+      if (meuGen !== consultaGenRef.current) return;
+      if (result.erro) {
+        setLoading(false);
+        alert('Não foi possível consultar os exames. Tente novamente.');
+        return;
+      }
+      todos.push(...(result.items as ExameItem[]));
+      cursor = result.lastDoc as DocumentSnapshot | null;
+      if (!result.hasMore) { completo = true; break; }
+    }
+    if (!completo) {
+      setLoading(false);
+      alert('Período com laudos demais para um único extrato — divida em períodos menores.');
+      return;
+    }
+    setExames(todos);
     carregadoWsId.current = wsIdSel;
     setLoading(false);
     setGerado(true);
   }
 
-  // Resetar quando muda filtros
-  useEffect(() => { setGerado(false); setExames([]); }, [wsIdSel, dateFrom, dateTo]);
+  // Resetar quando muda filtros — e invalidar consulta em voo (C3): sem o ++,
+  // a resposta lenta do período antigo preenchia a tela e o extrato saía
+  // rotulado com as datas novas. setLoading(false) aqui: o runner invalidado
+  // sai no guard sem tocar em estado, então o dono do reset é este effect.
+  // consultaGenRef (nao genRef): esse effect roda no mesmo commit do effect de
+  // honorários na troca de local — um ref compartilhado invalidava a resposta
+  // de honorários que acabou de capturar seu proprio meuGen.
+  useEffect(() => { consultaGenRef.current++; setLoading(false); setGerado(false); setExames([]); }, [wsIdSel, dateFrom, dateTo]);
 
   // Nome do workspace selecionado
   const wsNome = workspace?.nomeClinica || 'Consultório';
@@ -142,32 +177,47 @@ export default function Extrato() {
     }
   }
 
-  // Gerar extrato (imprimir)
+  // Gerar extrato (imprimir). Ordem importa: window.open ANTES de qualquer
+  // await (C10 — popup fora do gesto do clique era bloqueado e a contagem já
+  // tinha acontecido); trava de duplo-clique (C4); erro do checkExtratoLimit
+  // aborta em vez de contar às cegas (C14).
   async function handleGerarExtrato() {
-    if (!wsIdSel || !user?.uid) return;
+    if (!wsIdSel || !user?.uid || gerandoExtrato) return;
     // Nao cobrar/logar o local B com os exames ainda do A (janela de troca).
     if (carregadoWsId.current !== wsIdSel) {
       alert('Aguarde os dados do local carregarem.');
       return;
     }
-
-    // Billing check — verifica limite do plano
-    const limiteExtrato = await checkExtratoLimit(wsIdSel);
-    if (!limiteExtrato.gratis) {
-      const msg = limiteExtrato.franquia === -1
-        ? 'Extrato ilimitado no seu plano.'
-        : `Voce ja usou ${limiteExtrato.usados} de ${limiteExtrato.franquia} extrato(s) gratis neste mes.\nO proximo custara R$ ${limiteExtrato.custo.toFixed(2)}.\n\nDeseja continuar?`;
-      if (limiteExtrato.custo > 0 && !confirm(msg)) return;
-    }
-
-    await incrementarExtrato(wsIdSel, extratoInfo.mes);
-    await logAction('extrato_emitido', { wsId: wsIdSel, periodo: `${dateFrom} a ${dateTo}`, totalExames: exames.length, totalValor: totalGeral }, user.uid);
-    setExtratoInfo(prev => ({ ...prev, emitidos: prev.emitidos + 1 }));
-
-    // Gerar HTML para impressão
-    const html = gerarHtmlExtrato();
     const win = window.open('', '_blank');
-    if (win) { win.document.write(html); win.document.close(); }
+    if (!win) {
+      alert('O navegador bloqueou a janela do extrato. Habilite popups para este site e tente de novo.');
+      return;
+    }
+    setGerandoExtrato(true);
+    // Mes calculado UMA vez: viaja do check ao incremento (achado triade —
+    // clique na virada do mes verificava um mes e incrementava o seguinte).
+    const anoMes = anoMesAtual();
+    try {
+      const limiteExtrato = await checkExtratoLimit(wsIdSel, anoMes);
+      if (!limiteExtrato.pode) {
+        win.close();
+        alert('Não foi possível verificar seu plano. Tente novamente.');
+        return;
+      }
+      if (!limiteExtrato.gratis && limiteExtrato.custo > 0) {
+        const msg = `Voce ja usou ${limiteExtrato.usados} de ${limiteExtrato.franquia} extrato(s) gratis neste mes.\nO proximo custara R$ ${limiteExtrato.custo.toFixed(2)}.\n\nDeseja continuar?`;
+        if (!confirm(msg)) { win.close(); return; }
+      }
+      await incrementarExtrato(wsIdSel, anoMes);
+      await logAction('extrato_emitido', { wsId: wsIdSel, periodo: `${dateFrom} a ${dateTo}`, totalExames: exames.length, totalValor: totalGeral }, user.uid);
+      setExtratoInfo(prev => prev.mes === anoMes
+        ? { mes: anoMes, emitidos: prev.emitidos + 1 }
+        : { mes: anoMes, emitidos: 1 });
+      win.document.write(gerarHtmlExtrato());
+      win.document.close();
+    } finally {
+      setGerandoExtrato(false);
+    }
   }
 
   // Tríade onda-3 (Codex-2 Important): fmtDate/fmtEmitido entravam CRUS —
@@ -404,9 +454,9 @@ export default function Extrato() {
 
           {/* Botão gerar extrato */}
           <div className="flex justify-center">
-            <button onClick={handleGerarExtrato}
-              className="bg-[#1E3A5F] text-white px-8 py-3 rounded-lg font-semibold hover:bg-[#2563EB] transition flex items-center gap-2">
-              🖨️ Gerar Extrato
+            <button onClick={handleGerarExtrato} disabled={gerandoExtrato}
+              className="bg-[#1E3A5F] text-white px-8 py-3 rounded-lg font-semibold hover:bg-[#2563EB] transition flex items-center gap-2 disabled:opacity-50">
+              {gerandoExtrato ? 'Gerando...' : '🖨️ Gerar Extrato'}
             </button>
           </div>
         </>

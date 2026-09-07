@@ -395,6 +395,7 @@ export type HistoricoResult = {
   items: Record<string, unknown>[];
   lastDoc: unknown; // DocumentSnapshot — ultimo doc pra proxima pagina
   hasMore: boolean;
+  erro?: boolean;   // true = consulta falhou (indice/permissao/rede) — NAO e "sem laudos" (C11)
 };
 
 export async function getHistorico(wsId: string, filtros?: FiltrosHistorico): Promise<HistoricoResult> {
@@ -437,7 +438,7 @@ export async function getHistorico(wsId: string, filtros?: FiltrosHistorico): Pr
       lastDoc,
       hasMore,
     };
-  } catch (e) { console.error('getHistorico:', e); return { items: [], lastDoc: null, hasMore: false }; }
+  } catch (e) { console.error('getHistorico:', e); return { items: [], lastDoc: null, hasMore: false, erro: true }; }
 }
 
 // ══ HONORÁRIOS (valores por convênio por workspace) ═════════════
@@ -464,6 +465,14 @@ export async function saveHonorarios(wsId: string, config: HonorariosConfig) {
 
 // ══ BILLING DO EXTRATO (1 grátis/mês/local) ════════════════════
 
+// Mês de referência do contador de extratos ("AAAA-MM", fuso local).
+// Dono único (P4): Extrato.tsx e checkExtratoLimit calculavam cada um o seu —
+// página aberta na virada do mês checava o limite num mês e incrementava no outro (C5).
+export function anoMesAtual(): string {
+  const agora = new Date();
+  return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}`;
+}
+
 export type ExtratoContador = {
   emitidos: number;
   ultimoEm?: unknown;
@@ -479,13 +488,11 @@ export async function getExtratoContador(wsId: string, anoMes: string): Promise<
 
 export async function incrementarExtrato(wsId: string, anoMes: string) {
   try {
-    const ref = doc(db, 'workspaces', wsId, 'extratos', anoMes);
-    const snap = await getDoc(ref);
-    if (snap.exists()) {
-      await updateDoc(ref, { emitidos: increment(1), ultimoEm: now() });
-    } else {
-      await setDoc(ref, { emitidos: 1, ultimoEm: now() });
-    }
+    // Atômico (C15): setDoc+merge com increment cria em 1 ou soma 1 na mesma
+    // escrita — o get+set anterior perdia contagem quando 2 cliques corriam
+    // na criação do doc do mês.
+    await setDoc(doc(db, 'workspaces', wsId, 'extratos', anoMes),
+      { emitidos: increment(1), ultimoEm: now() }, { merge: true });
     return true;
   } catch (e) { console.error('incrementarExtrato:', e); return false; }
 }

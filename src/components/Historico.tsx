@@ -48,6 +48,9 @@ export default function Historico() {
   const [deleteNome, setDeleteNome] = useState('');
   const [cancelId, setCancelId] = useState<string | null>(null);
   const [cancelMotivo, setCancelMotivo] = useState('');
+  // C11: falha na consulta (indice/permissao/rede) e diferente de "sem laudos" —
+  // sem isto o catch de getHistorico virava silenciosamente "Nenhum laudo emitido".
+  const [erroCarga, setErroCarga] = useState(false);
   // Ruflo-2: espelho do botao "Regerar PDF" do Worklist — laudo emitido
   // (franquia ja cobrada) sem PDF por falha do Puppeteer. Sem isto a
   // recuperacao so existia no mesmo dia (Worklist filtra por `dataSel`); o
@@ -76,6 +79,7 @@ export default function Historico() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result: HistoricoResult = await getHistorico(wsIdSel, filtros as any);
     if (meuGen !== genRef.current) return;
+    setErroCarga(!!result.erro);
     setExames(result.items as ExameItem[]);
     setCursor(result.lastDoc as DocumentSnapshot | null);
     setHasMore(result.hasMore);
@@ -93,6 +97,11 @@ export default function Historico() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result: HistoricoResult = await getHistorico(wsIdSel, filtros as any);
     if (meuGen !== genRef.current) return;
+    if (result.erro) {
+      alert('Não foi possível carregar mais. Tente novamente.');
+      setLoadingMore(false);
+      return;
+    }
     setExames(prev => [...prev, ...(result.items as ExameItem[])]);
     setCursor(result.lastDoc as DocumentSnapshot | null);
     setHasMore(result.hasMore);
@@ -271,6 +280,12 @@ export default function Historico() {
         <div className="text-center py-12 text-gray-300">
           <span className="text-3xl animate-pulse">🫀</span>
           <p className="text-sm mt-2">Carregando histórico...</p>
+        </div>
+      ) : erroCarga ? (
+        <div className="text-center py-12 text-gray-300">
+          <p className="text-3xl mb-2">⚠️</p>
+          <p className="text-sm text-gray-500">Não foi possível carregar o histórico.</p>
+          <button onClick={fetchData} className="mt-3 px-4 py-1.5 bg-[#1E3A5F] text-white text-xs rounded-lg hover:bg-[#2563EB] transition">Tentar novamente</button>
         </div>
       ) : filtrados.length === 0 ? (
         <div className="text-center py-12 text-gray-300">
