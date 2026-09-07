@@ -395,6 +395,7 @@ export type HistoricoResult = {
   items: Record<string, unknown>[];
   lastDoc: unknown; // DocumentSnapshot — ultimo doc pra proxima pagina
   hasMore: boolean;
+  erro?: boolean;   // true = consulta falhou (indice/permissao/rede) — NAO e "sem laudos" (C11)
 };
 
 export async function getHistorico(wsId: string, filtros?: FiltrosHistorico): Promise<HistoricoResult> {
@@ -437,7 +438,7 @@ export async function getHistorico(wsId: string, filtros?: FiltrosHistorico): Pr
       lastDoc,
       hasMore,
     };
-  } catch (e) { console.error('getHistorico:', e); return { items: [], lastDoc: null, hasMore: false }; }
+  } catch (e) { console.error('getHistorico:', e); return { items: [], lastDoc: null, hasMore: false, erro: true }; }
 }
 
 // ══ HONORÁRIOS (valores por convênio por workspace) ═════════════
