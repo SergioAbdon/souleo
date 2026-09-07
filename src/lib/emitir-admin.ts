@@ -39,7 +39,7 @@ import type { Firestore } from 'firebase-admin/firestore';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { resolverAssinatura } from './billing-admin';
 import { emissaoMudou } from './correcao-admin';
-import { podeGirar, proximoCicloFim } from './ciclo';
+import { podeGirar, proximoCicloFim, vigente } from './ciclo';
 // Tríade onda-3 (Ruflo-A2): emissaoKeyValida morava aqui — moveu pra
 // pdf-path.ts (dono declarado do FORMATO de chave/path, puro, zero
 // imports). Re-exportada abaixo: /api/emitir/route.ts e
@@ -449,9 +449,19 @@ export async function emitirComCobranca(db: Firestore, p: {
     let tipo: 'franquia' | 'creditos' | null = null;
     if (cicloFim && agora <= cicloFim && franquiaUsada < franquiaMensal) {
       tipo = 'franquia';
-    } else if (creditosExtras > 0) {
+    } else if (
+      creditosExtras > 0 &&
+      // E13 (decisao Sergio 01/09, ADR 2026-08-30-secao7-renovacao-ciclo):
+      // credito extra so emite em conta VIGENTE — antes, trial vencido com
+      // 1 credito emitia pra sempre, sem limite de tempo. `vigente()` e o
+      // mesmo predicado de dinheiro/churn do Direx (ciclo.ts): conta paga
+      // (gira sozinha) sempre passa; trial/sem-franquia vencido, nao. O
+      // credito nao e apagado — fica guardado e volta a valer quando a
+      // conta reativar (tambem decisao do Sergio).
+      vigente({ cicloFim, franquiaMensal, tipo: sub.tipo as string }, agora)
+    ) {
       tipo = 'creditos';
-    } else if (cicloFim && agora > cicloFim && creditosExtras <= 0) {
+    } else if (cicloFim && agora > cicloFim) {
       return { ok: false, motivo: 'expirado' };
     } else {
       return { ok: false, motivo: 'sem_saldo' };

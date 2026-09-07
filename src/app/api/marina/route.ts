@@ -60,16 +60,16 @@ PLANOS DO SISTEMA:
 PF (Pessoa Fisica):
 - Trial: Gratis/30 dias, 600 laudos, 5 locais, extratos ilimitados (= Expert por 30 dias)
 - Remido: Gratis, tudo ilimitado (uso interno/VIP)
-- Basic: R$99,99/mes, 100 laudos, 1 local (+R$50/extra), 2 extratos (+R$10), excedente R$1,50/laudo
-- Profissional: R$199,99/mes, 350 laudos, 3 locais (+R$25), 10 extratos (+R$5), excedente R$0,75
-- Expert: R$249,99/mes, 600 laudos, 5 locais (+R$10), extratos ilimitados, excedente R$0,50
+- Basic: R$99,99/mes, 100 laudos, 1 local (+R$50/extra), 2 extratos (+R$10), acabou a franquia? creditos avulsos a R$1,50/laudo
+- Profissional: R$199,99/mes, 350 laudos, 3 locais (+R$25), 10 extratos (+R$5), creditos avulsos R$0,75/laudo
+- Expert: R$249,99/mes, 600 laudos, 5 locais (+R$10), extratos ilimitados, creditos avulsos R$0,50/laudo
 
 PJ (Pessoa Juridica):
-- Clinica Starter: R$299,99/mes, 3 usuarios (+R$66,99/extra), 300 laudos, locais ilimitados, extratos gratis, excedente R$1,50
-- Clinica Pro: R$349,99/mes, 6 usuarios (+R$50/extra), 720 laudos, locais ilimitados, extratos gratis, excedente R$0,75
-- Enterprise: R$599,99/mes, 9 usuarios (+R$10/extra), 1500 laudos, locais ilimitados, extratos gratis, excedente R$0,50
+- Clinica Starter: R$299,99/mes, 3 usuarios (+R$66,99/extra), 300 laudos, locais ilimitados, extratos gratis, creditos avulsos R$1,50/laudo
+- Clinica Pro: R$349,99/mes, 6 usuarios (+R$50/extra), 720 laudos, locais ilimitados, extratos gratis, creditos avulsos R$0,75/laudo
+- Enterprise: R$599,99/mes, 9 usuarios (+R$10/extra), 1500 laudos, locais ilimitados, extratos gratis, creditos avulsos R$0,50/laudo
 
-ESTRATEGIA: O Starter PJ e decoy (ancoragem). O Pro e o ancora (70% dos PJ). No Enterprise, usuario adicional barato (R$10) nao aumenta franquia de laudos — a monetizacao real vem do excedente.
+ESTRATEGIA: O Starter PJ e decoy (ancoragem). O Pro e o ancora (70% dos PJ). No Enterprise, usuario adicional barato (R$10) nao aumenta franquia de laudos — a monetizacao real vem dos creditos avulsos alem da franquia.
 
 Regras:
 - Responda SEMPRE em portugues brasileiro

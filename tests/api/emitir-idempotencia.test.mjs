@@ -472,6 +472,29 @@ describe('billing e autoria seguem intactos (E9: primeira rede do caminho de din
     assert.equal(r.motivo, 'expirado');
     assert.equal(await usada(), 0);
   });
+  // E13 (decisao Sergio 01/09, ADR 2026-08-30-secao7-renovacao-ciclo):
+  // credito extra so emite em conta VIGENTE. Antes, trial vencido com 1
+  // credito emitia PRA SEMPRE (o braco 'expirado' so disparava com
+  // creditosExtras <= 0). O credito NAO e apagado — fica guardado.
+  test('E13: trial vencido COM credito → expirado, credito fica guardado', async () => {
+    await db.doc(`subscriptions/${CONTA}`).update({
+      cicloFim: new Date(Date.now() - 864e5), tipo: 'trial', creditosExtras: 3,
+    });
+    const id = await seedExame();
+    const r = await emitir(id, KEY_A);
+    assert.equal(r.motivo, 'expirado');
+    assert.equal((await db.doc(`subscriptions/${CONTA}`).get()).data().creditosExtras, 3);
+    assert.equal(await consumos(id), 0);
+  });
+  test('E13: conta paga vigente com franquia estourada segue emitindo por credito', async () => {
+    await db.doc(`subscriptions/${CONTA}`).update({
+      cicloFim: new Date(Date.now() + 10 * 864e5), tipo: 'paid',
+      franquiaUsada: 600, creditosExtras: 1,
+    });
+    const id = await seedExame();
+    const r = await emitir(id, KEY_A);
+    assert.equal(r.tipo, 'creditos');
+  });
   test('workspace sem assinatura → sem_plano', async () => {
     await db.doc('workspaces/wsSemPlanoE').set({ contaId: 'contaSemPlanoE' });
     await db.doc('workspaces/wsSemPlanoE/exames/e1').set({ status: 'andamento', medicoUid: MED });

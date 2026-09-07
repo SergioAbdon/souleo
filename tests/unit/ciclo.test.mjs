@@ -5,7 +5,7 @@
 // arquivos importam esta funcao, entao so pode existir 1 predicado).
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { podeGirar, proximoCicloFim, vigente } from '../../src/lib/ciclo.ts';
+import { podeGirar, proximoCicloFim, vigente, previaEmissao } from '../../src/lib/ciclo.ts';
 
 const dia = (n) => n * 864e5;
 
@@ -74,5 +74,41 @@ describe('vigente — "essa assinatura ainda conta como ativa" (dinheiro/churn)'
   test('paga, nao-trial, SEM cicloFim -> nao vigente (nao gira, nao emite por franquia, sem MRR)', () => {
     assert.equal(vigente({ franquiaMensal: 600, tipo: 'paid' }, new Date()), false,
       'sem cicloFim nao ha ciclo pago pra contar como mensalidade — mesmo com franquia/creditos');
+  });
+});
+
+// ── previaEmissao — a cadeia do pré-voo, pura (E13, decisão Sergio 01/09) ──
+describe('previaEmissao — E13: crédito só em conta vigente', () => {
+  const dia = (off) => new Date(Date.now() + off * 864e5);
+
+  test('trial vencido COM crédito → expirado (antes emitia pra sempre)', () => {
+    assert.deepEqual(
+      previaEmissao({ cicloFim: dia(-1), franquiaMensal: 600, franquiaUsada: 0, creditosExtras: 3, tipo: 'trial' }, new Date()),
+      { pode: false, motivo: 'expirado' });
+  });
+  test('paga vencida → franquia (o servidor gira sozinho — E11 D)', () => {
+    assert.deepEqual(
+      previaEmissao({ cicloFim: dia(-5), franquiaMensal: 600, franquiaUsada: 600, creditosExtras: 0, tipo: 'paid' }, new Date()),
+      { pode: true, tipo: 'franquia' });
+  });
+  test('vigente com franquia estourada e crédito → creditos', () => {
+    assert.deepEqual(
+      previaEmissao({ cicloFim: dia(10), franquiaMensal: 600, franquiaUsada: 600, creditosExtras: 1, tipo: 'trial' }, new Date()),
+      { pode: true, tipo: 'creditos' });
+  });
+  test('cicloFim NULO com crédito → sem_saldo (sem ciclo não há vigência; antes o cliente fazia new Date(null)=1970 e divergia do servidor)', () => {
+    assert.deepEqual(
+      previaEmissao({ cicloFim: null, franquiaMensal: 600, franquiaUsada: 0, creditosExtras: 5, tipo: 'trial' }, new Date()),
+      { pode: false, motivo: 'sem_saldo' });
+  });
+  test('trial vigente com franquia disponível → franquia (nada mudou no caminho feliz)', () => {
+    assert.deepEqual(
+      previaEmissao({ cicloFim: dia(10), franquiaMensal: 600, franquiaUsada: 10, creditosExtras: 0, tipo: 'trial' }, new Date()),
+      { pode: true, tipo: 'franquia' });
+  });
+  test('trial vencido sem crédito → expirado (comportamento de sempre)', () => {
+    assert.deepEqual(
+      previaEmissao({ cicloFim: dia(-1), franquiaMensal: 600, franquiaUsada: 0, creditosExtras: 0, tipo: 'trial' }, new Date()),
+      { pode: false, motivo: 'expirado' });
   });
 });

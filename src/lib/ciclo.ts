@@ -55,6 +55,37 @@ export function proximoCicloFim(cicloFimVelhoMs: number, agoraMs: number): numbe
   return novoFimMs;
 }
 
+// Prévia PURA da decisão de emissão — a MESMA cadeia de braços que
+// `emitirComCobranca` (emitir-admin.ts) percorre dentro da transação, menos
+// o giro em si (o servidor gira e cobra; aqui `podeGirar` já responde
+// 'franquia' porque o servidor VAI girar). É o corpo de `checkEmissao`
+// (billing.ts), extraído pra cá na revisão do E13 (Codex): pura = testável
+// em unit, e `cicloFim` nulo/ilegível é normalizado por `comoData` — sem a
+// divergência do cliente que fazia `new Date(null)` virar 1970.
+export type PreviaEmissao =
+  | { pode: true; tipo: 'franquia' | 'creditos' }
+  | { pode: false; motivo: 'expirado' | 'sem_saldo' };
+
+export function previaEmissao(
+  sub: SubCiclo & { franquiaUsada?: number; creditosExtras?: number },
+  agora: Date,
+): PreviaEmissao {
+  const fim = comoData(sub.cicloFim);
+  const franquiaUsada = sub.franquiaUsada || 0;
+  const franquiaMensal = sub.franquiaMensal || 0;
+  const creditosExtras = sub.creditosExtras || 0;
+
+  // E11 opção D: conta paga vencida gira sozinha no próximo emitir.
+  if (podeGirar(sub, agora)) return { pode: true, tipo: 'franquia' };
+  // E13 (decisão Sergio 01/09): vencida e NÃO-vigente = expirado, mesmo com
+  // crédito — trial vencido com crédito emitia pra sempre.
+  if (fim && agora > fim && !vigente(sub, agora)) return { pode: false, motivo: 'expirado' };
+  if (fim && agora <= fim && franquiaUsada < franquiaMensal) return { pode: true, tipo: 'franquia' };
+  // Crédito extra só em conta vigente (sem cicloFim não há vigência).
+  if (creditosExtras > 0 && vigente(sub, agora)) return { pode: true, tipo: 'creditos' };
+  return { pode: false, motivo: 'sem_saldo' };
+}
+
 // "Essa assinatura ainda conta como ativa" pra dinheiro/churn (MRR,
 // cancelamentos, inadimplentes, badge Ativo/Expirado). Vencida NAO e mais
 // sinonimo de inativa: conta paga gira sozinha no proximo emitir.

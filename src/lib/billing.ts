@@ -9,7 +9,7 @@ import {
   collection, doc, getDoc, setDoc, getDocs, updateDoc, addDoc,
   query, where, limit, serverTimestamp, Timestamp
 } from 'firebase/firestore';
-import { podeGirar } from './ciclo';
+import { previaEmissao, SubCiclo } from './ciclo';
 
 // ══ TIPOS ════════════════════════════════════════════════════════
 
@@ -189,37 +189,26 @@ export async function checkEmissao(wsId: string): Promise<CheckResult> {
     const sub = await getSubscription(wsId);
     if (!sub) return { pode: false, motivo: 'sem_plano' };
 
-    const agora = new Date();
-    const cicloFim = (sub.cicloFim as Timestamp)?.toDate?.()
-      || new Date(sub.cicloFim as string);
-
-    const franquiaUsada = (sub.franquiaUsada as number) || 0;
-    const franquiaMensal = (sub.franquiaMensal as number) || 0;
-    const creditosExtras = (sub.creditosExtras as number) || 0;
-
     // E11 opcao D (ADR 2026-08-30): o SERVIDOR gira o ciclo dentro da
     // transacao de emitirComCobranca (src/lib/emitir-admin.ts) quando acha a
     // assinatura elegivel — isto aqui e SO a previa do cliente (nao escreve
-    // nada). Sem espelhar a MESMA regra, o pre-voo dizia 'expirado' no dia
-    // 31 e o medico nem abria o editor pra chegar na rota que de fato gira
-    // (e a modalidade 'pdf', que pula o pre-voo, renovava sozinha enquanto
-    // ECOTT/motor ficava travado na tela). `podeGirar` (ciclo.ts) e a MESMA
-    // funcao que emitir-admin.ts usa pra girar de verdade — antes disto era
-    // o mesmo predicado escrito 2x em texto (pin cross-file, aposentado).
-    if (podeGirar({ cicloFim, franquiaMensal, tipo: sub.tipo as string }, agora)) {
-      return { pode: true, tipo: 'franquia', sub };
-    }
-
-    if (agora > cicloFim && creditosExtras <= 0) {
-      return { pode: false, motivo: 'expirado', sub };
-    }
-    if (franquiaUsada < franquiaMensal && agora <= cicloFim) {
-      return { pode: true, tipo: 'franquia', sub };
-    }
-    if (creditosExtras > 0) {
-      return { pode: true, tipo: 'creditos', sub };
-    }
-    return { pode: false, motivo: 'sem_saldo', sub };
+    // nada). A cadeia inteira de bracos (giro → expirado E13 → franquia →
+    // creditos) vive em `previaEmissao` (ciclo.ts, pura, unit-testada) — a
+    // MESMA que o servidor percorre; antes era o mesmo predicado escrito 2x
+    // em texto e o E13 quase criou uma 3a copia.
+    const r = previaEmissao(
+      {
+        cicloFim: sub.cicloFim as SubCiclo['cicloFim'],
+        franquiaMensal: (sub.franquiaMensal as number) || 0,
+        franquiaUsada: (sub.franquiaUsada as number) || 0,
+        creditosExtras: (sub.creditosExtras as number) || 0,
+        tipo: sub.tipo as string,
+      },
+      new Date(),
+    );
+    return r.pode
+      ? { pode: true, tipo: r.tipo, sub }
+      : { pode: false, motivo: r.motivo, sub };
   } catch (e) { console.error('checkEmissao:', e); return { pode: false, motivo: 'erro' }; }
 }
 
