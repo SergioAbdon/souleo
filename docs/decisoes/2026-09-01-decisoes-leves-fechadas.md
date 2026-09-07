@@ -45,10 +45,16 @@
 Nome do laudo: Sergio renomeia "Eco Transtorácico" → "Ecocardiograma
 Transtorácico" no catálogo (Clínica → Tipos de Exame), sem código.
 
-## Sobra da Seção 5 (ainda aberta — explicada ao Sergio em 01/09)
+## Sobra da Seção 5 — FECHADA em código (01/09, commit 804cab2)
 
-1. `sexo` na whitelist administrativa das rules contradiz a decisão nº24 (sexo é
-   trava do motor). Fechar = tirar da whitelist + publicar regra (pede
-   confirmação do Sergio).
-2. Reemissão desfaz correção administrativa em silêncio (o modal avisa).
-   Conviver ou fechar de vez — aguardando o Sergio entender/decidir.
+1. **nº24 na camada de dados** (Sergio aceitou): update de não-médico usa
+   `camposAdministrativosUpdate()` (sem `sexo`); o CADASTRO continua aceitando
+   sexo (ficha/Feegow) e a ficha do paciente segue editável pela recepção.
+   Worklist parou de propagar sexo na edição. Regra+código+fixture no mesmo
+   commit, com teste de payload real (rules 152). **Falta publicar a regra**
+   (`firebase deploy --only firestore:rules`) — aguarda confirmação.
+2. **Reemissão × correção administrativa** — Sergio perguntou "o corpo pode
+   ficar e só o cabeçalho ser editado?": SIM, é o que a correção congelada já
+   faz; o furo era a tela ABERTA segurar o valor velho e a reemissão coletar
+   dele. Fechado com `proximoValorAdmin` (three-way puro em correcao-admin.ts,
+   pinado): a correção entra na tela viva; digitação do médico é soberana.
