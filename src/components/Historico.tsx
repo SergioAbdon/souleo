@@ -24,13 +24,6 @@ type ExameItem = Record<string, unknown> & {
   pdfUrl?: string; pdfErro?: string;
 };
 
-const TIPOS_EXAME: Record<string, string> = {
-  'eco_tt': 'Eco TT',
-  'doppler_carotidas': 'Carótidas',
-  'eco_te': 'Eco TE',
-  'eco_stress': 'Eco Stress',
-};
-
 export default function Historico() {
   const { workspace, user, papel, profile } = useAuth();
   const router = useRouter();
@@ -297,7 +290,7 @@ export default function Historico() {
                   <td className="py-3 px-3">
                     <div className="font-semibold text-[#1E3A5F]">{ex.pacienteNome || '—'}</div>
                   </td>
-                  <td className="py-3 px-3 text-gray-500 text-xs">{TIPOS_EXAME[ex.tipoExame as string] || ex.tipoExame}</td>
+                  <td className="py-3 px-3 text-gray-500 text-xs">{tiposMap[ex.tipoExame as string]?.nome || ex.tipoExame}</td>
                   <td className="py-3 px-3 text-gray-500 text-xs">{ex.convenio || '—'}</td>
                   <td className="py-3 px-3 text-gray-400 text-xs">{fmtDataHora(ex.emitidoEm)}</td>
                   <td className="py-3 px-3 text-right">

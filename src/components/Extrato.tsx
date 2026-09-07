@@ -17,6 +17,7 @@ import { podeVerFinanceiro } from '@/lib/permissoes';
 // herda a origem do app) e paciente/convênio/local são graváveis pela recepção.
 import { escaparHtml } from '@/lib/html-escape';
 import { fmtDataExame, fmtDataHora } from '@/lib/fmt-data';
+import { useTiposLaudo } from '@/hooks/useTiposLaudo';
 
 type ExameItem = Record<string, unknown> & {
   id: string; pacienteNome?: string; tipoExame?: string;
@@ -24,17 +25,11 @@ type ExameItem = Record<string, unknown> & {
   emitidoEm?: { toDate?: () => Date };
 };
 
-const TIPOS_EXAME: Record<string, string> = {
-  'eco_tt': 'Eco TT',
-  'doppler_carotidas': 'Carótidas',
-  'eco_te': 'Eco TE',
-  'eco_stress': 'Eco Stress',
-};
-
 export default function Extrato() {
   const { workspace, papel, user } = useAuth();
 
   const wsIdSel = workspace?.id || '';
+  const { tiposMap } = useTiposLaudo(wsIdSel || undefined);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [exames, setExames] = useState<ExameItem[]>([]);
@@ -247,7 +242,7 @@ export default function Extrato() {
         <td>${escaparHtml(fmtDataExame(ex.dataExame))}</td>
         <td>${escaparHtml(fmtDataHora(ex.emitidoEm))}</td>
         <td>${escaparHtml(ex.pacienteNome || '—')}</td>
-        <td>${escaparHtml(TIPOS_EXAME[ex.tipoExame as string] || ex.tipoExame || '—')}</td>
+        <td>${escaparHtml(tiposMap[ex.tipoExame as string]?.nome || ex.tipoExame || '—')}</td>
         <td>${escaparHtml(conv)}</td>
       </tr>`;
     }).join('');
@@ -354,7 +349,7 @@ export default function Extrato() {
                     <td className="py-2.5 px-3 text-gray-500 text-xs font-mono">{fmtDataExame(ex.dataExame)}</td>
                     <td className="py-2.5 px-3 text-gray-400 text-xs">{fmtDataHora(ex.emitidoEm)}</td>
                     <td className="py-2.5 px-3 font-semibold text-[#1E3A5F] text-xs">{ex.pacienteNome || '—'}</td>
-                    <td className="py-2.5 px-3 text-gray-500 text-xs">{TIPOS_EXAME[ex.tipoExame as string] || ex.tipoExame}</td>
+                    <td className="py-2.5 px-3 text-gray-500 text-xs">{tiposMap[ex.tipoExame as string]?.nome || ex.tipoExame}</td>
                     <td className="py-2.5 px-3 text-gray-500 text-xs">{ex.convenio || '—'}</td>
                   </tr>
                 ))}
