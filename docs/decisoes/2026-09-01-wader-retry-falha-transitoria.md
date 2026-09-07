@@ -81,4 +81,4 @@ pedido.
   (`precisaProcessar`) — se a base mudar num lado, o outro diverge em silêncio;
   candidato a `store.ehGeracaoNova()` numa onda futura.
 
-Merge na master junto com a suíte combinada: wader 119 · tsc limpo.
+Merge na master junto com a suíte combinada: wader 120 · tsc limpo (contagem final pós-revisão Codex).
