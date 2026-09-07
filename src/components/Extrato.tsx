@@ -7,6 +7,7 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { DocumentSnapshot } from 'firebase/firestore';
 import { useAuth } from '@/contexts/AuthContext';
 import { getHistorico, getHonorarios, saveHonorarios, getExtratoContador, incrementarExtrato, logAction, anoMesAtual } from '@/lib/firestore';
 import { checkExtratoLimit } from '@/lib/billing';
@@ -70,22 +71,41 @@ export default function Extrato() {
     });
   }, [wsIdSel]);
 
-  // Buscar exames — só quando clica "Consultar"
+  // Buscar exames — só quando clica "Consultar". Percorre TODAS as páginas
+  // (C1: teto fixo de 500 truncava período movimentado e o extrato saía com
+  // total errado). meuGen = ++genRef (C3): consulta nova ou troca de datas
+  // invalida a resposta lenta da anterior.
   async function handleConsultar() {
     if (!wsIdSel || !dateFrom || !dateTo) return;
-    const meuGen = genRef.current;
+    const meuGen = ++genRef.current;
     setLoading(true);
     setGerado(false);
-    const result = await getHistorico(wsIdSel, { dateFrom, dateTo, limitN: 500 });
-    if (meuGen !== genRef.current) return;
-    setExames(result.items as ExameItem[]);
+    const todos: ExameItem[] = [];
+    let cursor: DocumentSnapshot | null = null;
+    // ponytail: teto de 40 paginas (20.000 laudos) — acima disso é uso fora da
+    // curva; subir o teto se algum dia um período real chegar perto.
+    for (let pag = 0; pag < 40; pag++) {
+      const result = await getHistorico(wsIdSel, { dateFrom, dateTo, limitN: 500, cursor });
+      if (meuGen !== genRef.current) return;
+      if (result.erro) {
+        setLoading(false);
+        alert('Não foi possível consultar os exames. Tente novamente.');
+        return;
+      }
+      todos.push(...(result.items as ExameItem[]));
+      cursor = result.lastDoc as DocumentSnapshot | null;
+      if (!result.hasMore) break;
+    }
+    setExames(todos);
     carregadoWsId.current = wsIdSel;
     setLoading(false);
     setGerado(true);
   }
 
-  // Resetar quando muda filtros
-  useEffect(() => { setGerado(false); setExames([]); }, [wsIdSel, dateFrom, dateTo]);
+  // Resetar quando muda filtros — e invalidar consulta em voo (C3): sem o ++,
+  // a resposta lenta do período antigo preenchia a tela e o extrato saía
+  // rotulado com as datas novas.
+  useEffect(() => { genRef.current++; setGerado(false); setExames([]); }, [wsIdSel, dateFrom, dateTo]);
 
   // Nome do workspace selecionado
   const wsNome = workspace?.nomeClinica || 'Consultório';
