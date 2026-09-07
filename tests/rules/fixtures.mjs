@@ -64,7 +64,9 @@ export const payloadEditarExame = (extra = {}) => ({
   convenio: 'BRADESCO',
   solicitante: 'DR FULANO',
   tipoExame: 'doppler_carotidas',
-  sexo: 'F',
+  // `sexo` saiu do payload de EDICAO em 01/09/2026 (nº24 na camada de dados):
+  // pos-cadastro so o medico altera — a regra nega via
+  // camposAdministrativosUpdate() e o cliente (Worklist) parou de enviar.
   atualizadoEm: new Date(),
   ...extra,
 });

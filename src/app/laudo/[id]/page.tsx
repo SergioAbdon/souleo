@@ -22,6 +22,7 @@ import DicomSrImport from '@/components/laudo/DicomSrImport';
 import { normalizarParaImport, prefixoArquivoPorTipo, isSchemaAntigo, InputImport, MedidaSr, MapaSr, SR_TO_MOTOR } from '@/lib/dicom-sr-mapping';
 import { carregarPerfilAparelho } from '@/lib/perfil-aparelho';
 import { precisaConfirmarEmissao, SEM_SELECAO_PREFIXO } from '@/lib/emissao-guarda';
+import { proximoValorAdmin } from '@/lib/correcao-admin';
 import { decidirFontePreenchimento, rascunhoExpirado, SETE_DIAS_MS, type RascunhoLocal } from '@/lib/rascunho-restauracao';
 import BancoFrases from '@/components/laudo/BancoFrases';
 import EditorLaudo from '@/components/laudo/EditorLaudo';
@@ -235,6 +236,10 @@ function LaudoPageInner() {
   // laudo já aberto entra sozinha no PDF (antes o default era fotografado na
   // 1ª snapshot com imagem e congelava; reabrir o laudo "consertava").
   const selecaoPersonalizada = useRef(false);
+  // Último convênio/solicitante VISTOS no doc — base do three-way merge que
+  // deixa a correção administrativa da recepção entrar na tela aberta
+  // (decisão Sergio 01/09; ver comentário no onSnapshot).
+  const adminDocRef = useRef<{ convenio: string; solicitante: string } | null>(null);
   // Perfil do aparelho (S4-T13, decisão 16): mapa medida-do-SR → campo do
   // laudo, editável no cartão Integrações. Nasce no default embutido, então
   // falha de leitura NUNCA derruba a importação — só mantém a whitelist.
@@ -358,6 +363,9 @@ function LaudoPageInner() {
     // Navegar laudo→laudo sem desmontar não pode herdar o "já importado" do
     // exame anterior (mesma família dos guards acima).
     setChavesImportadas(new Set());
+    // Sync da correção administrativa recomeça por exame (sem herdar o
+    // convênio do paciente anterior como "valor antigo").
+    adminDocRef.current = null;
     // Restauração e merge também são POR EXAME (S5-T2, nota pendente da T1):
     // navegar laudo→laudo sem desmontar levava o texto do paciente anterior
     // como "geração conhecida" — o merge protegeria frases do laudo errado.
@@ -395,6 +403,29 @@ function LaudoPageInner() {
         // sempre mostrava o default (true), mesmo que o medico tivesse
         // desmarcado o toggle na hora de emitir.
         setImagensIncluidasNoPdf((dados.incluirImagensNoPdf as boolean | undefined) ?? true);
+
+        // Correção administrativa VIVA (decisão Sergio 01/09, fecha a
+        // pendência 3 do ADR da S5): a recepção corrige convênio/solicitante
+        // pelo modal da Worklist COM este laudo aberto → o doc muda, mas a
+        // tela só preenchia campo VAZIO, então o input segurava o valor
+        // velho — e a próxima reemissão coletava da tela e DESFAZIA a
+        // correção em silêncio. Regra de sincronização (three-way): só troca
+        // o input se ele ainda está com o valor ANTIGO do doc (ou vazio) —
+        // digitação do médico nunca é sobrescrita; empate = nada a fazer.
+        const adminNovo = {
+          convenio: (dados.convenio as string) || '',
+          solicitante: (dados.solicitante as string) || '',
+        };
+        const adminAntigo = adminDocRef.current;
+        if (adminAntigo) {
+          for (const campo of ['convenio', 'solicitante'] as const) {
+            const el = document.getElementById(campo) as HTMLInputElement | null;
+            if (!el) continue;
+            const v = proximoValorAdmin(adminNovo[campo], adminAntigo[campo], el.value);
+            if (v !== null) el.value = v;
+          }
+        }
+        adminDocRef.current = adminNovo;
 
         // `emitido` SÓ na primeira snapshot (guard de ref): depois disso o
         // state é do médico — reinicializar a cada gravação do Wader

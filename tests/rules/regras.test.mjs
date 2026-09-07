@@ -659,6 +659,16 @@ describe('14. worklist — administracao da fila por membro do local (Secao 2)',
   test('recepcao NAO troca o medicoUid', async () => {
     await assertFails(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), { medicoUid: RITA }));
   });
+  // nº24 fechado na camada de dados (Sergio, 01/09/2026): sexo muda as
+  // referencias do laudo (massa VE, aorta) — pos-cadastro so o medico altera.
+  // O CADASTRO com sexo continua valendo (teste 'recepcao cadastra exame SEM
+  // medicoUid' abaixo usa payloadCadastroExame, que tem sexo).
+  test('recepcao NAO altera sexo pos-cadastro (nº24 — referencia clinica)', async () => {
+    await assertFails(updateDoc(doc(como(RITA), `workspaces/${LOCAL_A1}/exames`, 'exFila1'), { sexo: 'M' }));
+  });
+  test('medico-autor altera sexo (a trava e dele)', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), { sexo: 'M' }));
+  });
   test('medico NAO-autor edita administrativo do rascunho do colega (concessao documentada)', async () => {
     await assertSucceeds(updateDoc(doc(como(DR_A2), `workspaces/${LOCAL_A1}/exames`, 'exComAutor'), { horarioChegada: '11:00' }));
   });

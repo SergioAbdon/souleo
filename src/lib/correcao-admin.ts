@@ -30,6 +30,22 @@ function trocar(html: string, rotulo: string, valor: string): string | null {
     abre + (escaparHtml(valor.trim()) || '—') + fecha);
 }
 
+// Three-way do campo administrativo na TELA VIVA do laudo (decisão Sergio
+// 01/09/2026 — fecha "reemissão desfaz correção em silêncio"): a recepção
+// corrige convênio/solicitante com o laudo aberto; o input não-controlado
+// segura o valor velho e a próxima reemissão coletaria da tela, regravando
+// o antigo por cima. Regra: o doc mudou E a tela ainda mostra o valor
+// ANTIGO do doc (ou está vazia) → escreve o novo; a tela divergiu do
+// antigo = digitação do médico, soberana. Retorna o valor a escrever no
+// input, ou null pra não mexer. Puro — pinado em corrigir-laudo.test.mjs.
+export function proximoValorAdmin(
+  novoDoc: string, antigoDoc: string, telaAtual: string,
+): string | null {
+  if (novoDoc === antigoDoc) return null;
+  if (telaAtual && telaAtual !== antigoDoc) return null;
+  return novoDoc;
+}
+
 // Devolve o HTML com convênio/solicitante trocados, ou `null` se o snapshot
 // não tem os dois blocos-âncora (emitido por template antigo/desconhecido).
 // null = a rota grava os campos no doc e NÃO regera o PDF.

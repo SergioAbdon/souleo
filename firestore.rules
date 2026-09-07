@@ -90,11 +90,21 @@ service cloud.firestore {
     // tocado por nao-medico e negado (fail-closed). Decisao Dr. Sergio (ADR 8.4):
     // editar/liberar conteudo de laudo, ate em rascunho, e ATO MEDICO.
     // `status` estar nesta lista NAO reabre a transicao livre: statusSoDoServidor() (match /exames/) governa por cima, esta whitelist so limita QUAIS campos.
+    // ATENCAO: esta e a lista do CREATE (cadastro). O UPDATE de nao-medico usa
+    // camposAdministrativosUpdate() logo abaixo — lista MENOR, sem `sexo`.
     function camposAdministrativos() {
       return ['id', 'acc', 'pacienteId', 'pacienteNome', 'pacienteDtnasc',
         'cpf', 'feegowPacienteId', 'tipoExame', 'dataExame', 'horarioChegada',
         'status', 'convenio', 'solicitante', 'medicoExecutor', 'sexo', 'origem',
         'feegowAppointId', 'medicoUid', 'mwlStatus', 'versao', 'criadoEm', 'atualizadoEm'];
+    }
+    // Decisao nº24 fechada na camada de dados (Sergio, 01/09/2026): sexo muda
+    // as REFERENCIAS do laudo (massa do VE, aorta — cortes por sexo), entao
+    // pos-cadastro so o medico altera. O CADASTRO (create acima) continua
+    // aceitando sexo — vem da ficha/Feegow; e a FICHA do paciente segue
+    // editavel pela recepcao (colecao pacientes, regra propria).
+    function camposAdministrativosUpdate() {
+      return camposAdministrativos().removeAll(['sexo']);
     }
 
     // ── CONTAS ── so o servidor cria e altera
@@ -232,7 +242,7 @@ service cloud.firestore {
                               // no ADMINISTRATIVO da fila pre-assinatura (Secao 2, A2).
                               // Campo clinico tocado aqui e negado (ADR 8.4); autor
                               // intacto; emitido corrige via /api/corrigir-laudo.
-                              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(camposAdministrativos())));
+                              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(camposAdministrativosUpdate())));
         // Apagar/cancelar/transferir passam pelo servidor (log + franquia)
         allow delete: if false;
       }

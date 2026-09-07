@@ -6,7 +6,7 @@ import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { resolverPapel, podeCorrigir } from '../../src/lib/exame-admin.ts';
 import { readFile } from 'node:fs/promises';
-import { substituirCamposAdministrativos, emissaoMudou } from '../../src/lib/correcao-admin.ts';
+import { substituirCamposAdministrativos, emissaoMudou, proximoValorAdmin } from '../../src/lib/correcao-admin.ts';
 import { sanitizarNomeArq, pathPdf } from '../../src/lib/pdf-path.ts';
 
 let db;
@@ -260,5 +260,25 @@ describe('pdf-path — alvo estavel entre emissao e correcao', () => {
   test('exames diferentes do mesmo paciente NAO colidem (fix I3)', () => {
     const nome = sanitizarNomeArq('ECOTT JOSILENE DA SILVA', 'marco');
     assert.notEqual(pathPdf('wsC', 'marco', nome), pathPdf('wsC', 'setembro', nome));
+  });
+});
+
+// Three-way da correcao administrativa na TELA VIVA (decisao Sergio 01/09):
+// a recepcao corrige convenio/solicitante com o laudo aberto e o input
+// nao-controlado nao pode segurar o valor velho — senao a reemissao coleta
+// da tela e DESFAZ a correcao em silencio (pendencia 3 do ADR da S5).
+describe('proximoValorAdmin (three-way do campo administrativo na tela viva)', () => {
+  test('doc corrigiu e a tela ainda mostra o valor antigo → escreve o novo', () => {
+    assert.equal(proximoValorAdmin('BRADESCO', 'UNIMED', 'UNIMED'), 'BRADESCO');
+  });
+  test('tela vazia (antes do preencherExame de 500ms) → escreve o novo, sem corrida', () => {
+    assert.equal(proximoValorAdmin('BRADESCO', 'UNIMED', ''), 'BRADESCO');
+  });
+  test('medico digitou outra coisa → digitacao soberana, nao mexe', () => {
+    assert.equal(proximoValorAdmin('BRADESCO', 'UNIMED', 'PARTICULAR'), null);
+    assert.equal(proximoValorAdmin('BRADESCO', 'UNIMED', 'UNIMED '), null); // ate um espaco a mais e edicao
+  });
+  test('doc nao mudou → nao mexe (inclusive no proprio pending write do medico)', () => {
+    assert.equal(proximoValorAdmin('UNIMED', 'UNIMED', 'qualquer coisa'), null);
   });
 });

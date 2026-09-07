@@ -15,7 +15,7 @@ import { horaChegadaExibicao } from '@/lib/worklist-ordem';
 import { gerarAccessionNumber } from '@/lib/gerarAccessionNumber';
 import { db, auth } from '@/lib/firebase';
 import { doc, writeBatch, serverTimestamp } from 'firebase/firestore';
-import { soAdministrativos } from '@/lib/campos-exame';
+import { soAdministrativos, CAMPOS_EXAME_CRIACAO } from '@/lib/campos-exame';
 import { useRouter } from 'next/navigation';
 import { checkEmissao } from '@/lib/billing';
 import DicomGallery from '@/components/laudo/DicomGallery';
@@ -295,7 +295,13 @@ export default function Worklist() {
           convenio: pacConvenio,
           solicitante: pacSolicitante,
           tipoExame: pacTipoExame,
-          sexo: pacSexo,
+          // `sexo` NAO propaga mais pro EXAME na edicao (nº24 fechado na
+          // camada de dados, 01/09/2026): pos-cadastro, sexo e do medico —
+          // muda referencia clinica (massa VE, aorta). A FICHA (dadosFicha
+          // acima) continua recebendo a correcao; o exame aberto e ajustado
+          // pelo medico no laudo. A regra nega de qualquer forma
+          // (camposAdministrativosUpdate) — tirar daqui evita o batch
+          // inteiro falhar em silencio.
           // Achado 8: CPF e a chave de pareamento DICOM — propaga pro exame.
           // Vazio = "nao mexer" (mesma filosofia do #7c da ficha): esvaziar o
           // campo NAO apaga o CPF gravado.
@@ -316,7 +322,7 @@ export default function Worklist() {
 
       const agora2 = new Date();
       const horaChegada = agora2.toTimeString().slice(0, 5);
-      const novoExameId = await saveExame(workspace.id, soAdministrativos({
+      const novoExameId = await saveExame(workspace.id, soAdministrativos({ // lista de criação: cadastro traz sexo
         acc: gerarAccessionNumber(agora2),
         pacienteId: pacId,
         pacienteNome: pacNome.trim().toUpperCase(),
@@ -331,7 +337,7 @@ export default function Worklist() {
         medicoExecutor: assinaComoAutor ? (profile?.nome as string || '') : '',
         sexo: pacSexo,
         origem: 'MANUAL',
-      }), assinaComoAutor ? (profile?.id as string || '') : '');
+      }, CAMPOS_EXAME_CRIACAO), assinaComoAutor ? (profile?.id as string || '') : '');
 
       if (!novoExameId) {
         setPacErro('A ficha do paciente foi salva, mas o exame NÃO entrou na fila. Tente salvar de novo. (Detalhe no Console — F12.)');
