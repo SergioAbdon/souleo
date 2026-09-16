@@ -7,7 +7,10 @@
 // PROTEÇÃO:
 // - Motor server-side (não vai pro bundle)
 // - Auth Firebase obrigatória (token Bearer)
-// - Rate limit por IP (60 calls/min)
+// - Rate limit por UID (60 calls/min) — F5a: era por IP, e a clínica inteira
+//   sai por UM IP: dois médicos laudando dividiam o mesmo balde e um podia
+//   travar a tabela do outro (achado Codex, spec §8). Auth roda ANTES do
+//   limite: a chave é o uid verificado, não header forjável.
 // ══════════════════════════════════════════════════════════════════
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -32,7 +35,7 @@ if (!getApps().length) {
 }
 const fbAuth = getAuth();
 
-// ── Rate Limiter (in-memory por IP) ──
+// ── Rate Limiter (in-memory por UID; janela fixa, por instância) ──
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_MAX = 60;       // 60 cálculos por minuto
 const RATE_LIMIT_WINDOW = 60000; // 1 minuto
@@ -71,23 +74,20 @@ async function verificarAuth(req: NextRequest): Promise<string | null> {
  */
 export async function POST(req: NextRequest) {
   try {
-    // 1. Rate limit por IP
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-      || req.headers.get('x-real-ip')
-      || 'unknown';
-    if (!checkRateLimit(ip)) {
-      return NextResponse.json(
-        { ok: false, error: 'Rate limit excedido (60/min). Aguarde 1 minuto.' },
-        { status: 429 }
-      );
-    }
-
-    // 2. Auth obrigatória
+    // 1. Auth obrigatória (antes do limite — a chave do balde é o uid)
     const uid = await verificarAuth(req);
     if (!uid) {
       return NextResponse.json(
         { ok: false, error: 'Autenticação requerida' },
         { status: 401 }
+      );
+    }
+
+    // 2. Rate limit por UID — cada médico tem o próprio balde de 60/min
+    if (!checkRateLimit(uid)) {
+      return NextResponse.json(
+        { ok: false, error: 'Rate limit excedido (60/min). Aguarde 1 minuto.' },
+        { status: 429 }
       );
     }
 

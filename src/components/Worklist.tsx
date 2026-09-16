@@ -5,17 +5,26 @@
 // Botões por status conforme V7 aprovado
 // ══════════════════════════════════════════════════════════════════
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { savePaciente, saveExame, listenWorklist, listenNaoRealizados, getExame, getPaciente } from '@/lib/firestore';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
+import AnexarPdfModal from '@/components/agenda/AnexarPdfModal';
 import { dataLocalHoje } from '@/lib/utils';
+import { horaChegadaExibicao } from '@/lib/worklist-ordem';
 import { gerarAccessionNumber } from '@/lib/gerarAccessionNumber';
 import { db, auth } from '@/lib/firebase';
-import { doc, getDoc, collection, writeBatch, serverTimestamp, type DocumentReference } from 'firebase/firestore';
+import { doc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { soAdministrativos, CAMPOS_EXAME_CRIACAO } from '@/lib/campos-exame';
 import { useRouter } from 'next/navigation';
 import { checkEmissao } from '@/lib/billing';
 import DicomGallery from '@/components/laudo/DicomGallery';
+import { podeEditarLaudo, podeRemoverDaFila, podeCorrigirAdministrativo, ehMedico } from '@/lib/permissoes';
+import StatusPill from '@/components/shell/StatusPill';
+import { modalidadeDe, rotaDoLaudo } from '@/lib/tipos-laudo';
+import { postCorrigirLaudo, msgErroCorrecao } from '@/lib/corrigir-laudo-client';
+import { useTiposLaudo } from '@/hooks/useTiposLaudo';
+import type { AcaoFeegow } from '@/lib/feegow-admin';
 
 // v3: helper pra enviar token Firebase nas chamadas Feegow
 async function feegowAuthFetch(url: string, options?: RequestInit) {
@@ -26,45 +35,29 @@ async function feegowAuthFetch(url: string, options?: RequestInit) {
   });
 }
 
-// Enviar worklist (MWL) ao Orthanc — fire-and-forget, falha silenciosa
-async function enviarMwlOrthanc(dados: {
-  wsId: string; exameId: string; pacienteNome: string; pacienteId?: string;
-  pacienteDtnasc?: string; sexo?: string; tipoExame?: string;
-  dataExame?: string; horarioChegada?: string; medicoNome?: string;
-}) {
-  try {
-    const token = await auth.currentUser?.getIdToken();
-    const res = await fetch('/api/orthanc', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token || ''}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'criar_mwl', ...dados }),
-    });
-    const result = await res.json();
-    if (result.ok) console.log(`Orthanc MWL: ${dados.pacienteNome} → ${result.accessionNumber}`);
-    else console.warn('Orthanc MWL falhou:', result.error);
-  } catch {
-    console.warn('Orthanc MWL: nao enviado (offline?)');
-  }
-}
-
 type ExameItem = Record<string, unknown> & {
   id: string; pacienteId?: string; pacienteNome?: string; pacienteDtnasc?: string;
   status?: string; tipoExame?: string; dataExame?: string; horarioChegada?: string;
   convenio?: string; solicitante?: string; sexo?: string; origem?: string;
-  feegowAppointId?: string | number;
-};
-
-const TIPOS_EXAME: Record<string, string> = {
-  'eco_tt': 'Eco TT',
-  'doppler_carotidas': 'Carótidas',
-  'eco_te': 'Eco TE',
-  'eco_stress': 'Eco Stress',
+  feegowAppointId?: string | number; medicoUid?: string;
+  acc?: string; cpf?: string; imagensDicom?: string[]; mwlStatus?: string;
+  pdfUrl?: string; pdfErro?: string;
 };
 
 export default function Worklist() {
-  const { workspace, profile, membership } = useAuth();
+  const { workspace, profile, papel, user } = useAuth();
   const router = useRouter();
-  const ehMedico = membership?.role === 'medico';
+  const wsId = workspace?.id;
+
+  // Quem pode nascer como AUTOR de exame: perfil medico E papel dono/medico
+  // no local (MEDREC — medico de perfil com papel recepcao — nao assina aqui).
+  const assinaComoAutor = ehMedico(profile) && (papel === 'dono' || papel === 'medico');
+
+  // Catálogo de tipos de laudo (Sub-plano 3, Ponytail-7): coleção vazia ou
+  // erro de leitura cai no default embutido — nunca fica sem opção no select
+  // nem sem rótulo. Hook compartilhado com Histórico e a ficha do paciente.
+  const { tipos, tiposMap } = useTiposLaudo(wsId);
+  const tiposAtivos = tipos.filter(t => t.ativo !== false).sort((a, b) => a.ordem - b.ordem);
 
   const [worklist, setWorklist] = useState<ExameItem[]>([]);
   const [naoRealizados, setNaoRealizados] = useState<ExameItem[]>([]);
@@ -73,6 +66,14 @@ export default function Worklist() {
   const [statusSel, setStatusSel] = useState<string>('todos');
   const [agora, setAgora] = useState(new Date());
   const [modalPac, setModalPac] = useState(false);
+  const [anexarPdf, setAnexarPdf] = useState<ExameItem | null>(null);
+  // Correção administrativa de laudo emitido (S5-T5/D4) — recepção troca
+  // convênio/solicitante sem médico, sem crédito e sem tocar no laudo.
+  const [corrigirAdm, setCorrigirAdm] = useState<ExameItem | null>(null);
+  const [admConvenio, setAdmConvenio] = useState('');
+  const [admSolicitante, setAdmSolicitante] = useState('');
+  const [admSalvando, setAdmSalvando] = useState(false);
+  const [regerandoPdf, setRegerandoPdf] = useState<string | null>(null);   // exameId em voo
   const [editPacId, setEditPacId] = useState<string | null>(null);
   const [editExameId, setEditExameId] = useState<string | null>(null);
 
@@ -91,6 +92,14 @@ export default function Worklist() {
   const [cpfBuscando, setCpfBuscando] = useState(false);
   const [cpfFeegow, setCpfFeegow] = useState(false); // indica se dados vieram do Feegow
 
+  // Guard de corrida do modal (Achado 5): cada abertura incrementa a geracao;
+  // resposta atrasada de getPaciente de uma abertura anterior é descartada.
+  const editReq = useRef(0);
+
+  // CPF atual do campo, conferido na CHEGADA da resposta (Achado 6): se o
+  // usuario corrigiu o CPF enquanto a busca A voava, a resposta de A e descartada.
+  const pacCpfRef = useRef('');
+
   // Galeria DICOM aberta direto do Worklist (modo secretária — não entra no motor).
   // Adicionado em 14/05/2026: antes, clicar em "📸 Imagens" abria o laudo inteiro,
   // mas secretária/usuário não-médico não deve passar pelo motor.
@@ -99,7 +108,9 @@ export default function Worklist() {
   // impressão ("INDEPENDENTE DA SELEÇÃO DO MÉDICO, ELA PODE IMPRIMIR TODA CASO
   // JULGUE NECESSARIO. POR PADRAO SELECIONA AS 8 PRIMEIRAS"). Seleção é local
   // (efêmera, não persiste no Firestore) — não interfere com a seleção do médico.
-  const [galeria, setGaleria] = useState<{ imagens: string[]; paciente: string; tipo: string } | null>(null);
+  // `exameId` entra aqui (S4-T12) só pra galeria conseguir pedir as URLs
+  // assinadas — as imagens novas nascem privadas no Storage.
+  const [galeria, setGaleria] = useState<{ exameId: string; imagens: string[]; paciente: string; tipo: string } | null>(null);
   const [secretariaSelecionadas, setSecretariaSelecionadas] = useState<string[]>([]);
 
   // Quando galeria abre, default = 8 primeiras imagens
@@ -115,8 +126,13 @@ export default function Worklist() {
     );
   }
 
+  // Atualizar pacCpfRef sempre que pacCpf muda (Achado 6)
+  useEffect(() => {
+    pacCpfRef.current = pacCpf.replace(/\D/g, '');
+  }, [pacCpf]);
+
   // Listener worklist (reage à data selecionada e ao workspace)
-  const wsId = workspace?.id;
+
   useEffect(() => {
     if (!wsId) return;
     const unsub = listenWorklist(wsId, (items) => {
@@ -125,14 +141,15 @@ export default function Worklist() {
     return () => unsub();
   }, [wsId, dataSel]);
 
-  // Listener "nao-realizados" últimos 30 dias (passivo, só pra tab de auditoria)
+  // Aba passiva de auditoria: so assina os 30 dias quando o filtro abre
+  // (antes rodava em todo mount — leitura Firestore permanente a toa).
   useEffect(() => {
-    if (!wsId) return;
+    if (!wsId || statusSel !== 'nao-realizado') return;
     const unsub = listenNaoRealizados(wsId, (items) => {
       setNaoRealizados(items as ExameItem[]);
     }, 30);
     return () => unsub();
-  }, [wsId]);
+  }, [wsId, statusSel]);
 
   // Timer — atualiza a cada 30s
   useEffect(() => {
@@ -140,12 +157,28 @@ export default function Worklist() {
     return () => clearInterval(timer);
   }, []);
 
-  // Calcular tempo de espera
-  const calcEspera = useCallback((hora: string | undefined): { texto: string; alerta: boolean } => {
-    if (!hora) return { texto: '', alerta: false };
-    const [h, m] = hora.split(':').map(Number);
-    const chegada = new Date();
-    chegada.setHours(h, m, 0, 0);
+  // Calcular tempo de espera — desde a CHEGADA real (chegouEm) quando existe;
+  // fallback pro "HH:MM" (manual/legado). Antes contava desde o horario
+  // AGENDADO pra exame Feegow (item 2, 31/08/2026).
+  const calcEspera = useCallback((item: ExameItem): { texto: string; alerta: boolean } => {
+    // Guarda de mesmo-dia (Codex, tríade 31/08, 2ª rodada): `chegouEm` de
+    // OUTRO dia (dataExame corrigida na mão, importação atravessando a
+    // meia-noite) mostraria "24h+" em alerta eterno. Nesse caso o cronômetro
+    // CALA — cair no HH:MM reinterpretaria o slot AGENDADO como chegada, o
+    // exato erro que o item 2 corrigiu. O fallback HH:MM fica só pra exame
+    // SEM chegouEm nenhum (manual/legado, onde ele é chegada de verdade).
+    const chegouEmRaw = (item.chegouEm as { toDate?: () => Date } | undefined)?.toDate?.();
+    if (chegouEmRaw && chegouEmRaw.toDateString() !== agora.toDateString()) {
+      return { texto: '', alerta: false };
+    }
+    const chegouEm = chegouEmRaw;
+    const hora = item.horarioChegada;
+    if (!chegouEm && !hora) return { texto: '', alerta: false };
+    const chegada = chegouEm ?? new Date();
+    if (!chegouEm && hora) {
+      const [h, m] = hora.split(':').map(Number);
+      chegada.setHours(h, m, 0, 0);
+    }
     const diff = Math.floor((agora.getTime() - chegada.getTime()) / 60000);
     if (diff < 0) return { texto: '', alerta: false };
     if (diff < 60) return { texto: `${diff}min`, alerta: diff >= 30 };
@@ -157,10 +190,13 @@ export default function Worklist() {
   // ── Ações ──
 
   function abrirNovoPaciente() {
+    editReq.current++;
     setEditPacId(null); setEditExameId(null);
     setPacNome(''); setPacCpf(''); setPacDtnasc(''); setPacSexo('');
-    setPacTel(''); setPacConvenio(''); setPacSolicitante(profile?.nome as string || '');
-    setPacTipoExame('eco_tt'); setPacErro(''); setCpfFeegow(false);
+    setPacTel(''); setPacConvenio(''); setPacSolicitante(assinaComoAutor ? (profile?.nome as string || '') : '');
+    // Default = 'eco_tt' se existir no catálogo (menor surpresa); senão o primeiro tipo ativo.
+    setPacTipoExame(tiposAtivos.some(t => t.id === 'eco_tt') ? 'eco_tt' : (tiposAtivos[0]?.id || 'eco_tt'));
+    setPacErro(''); setCpfFeegow(false);
     setModalPac(true);
   }
 
@@ -169,8 +205,10 @@ export default function Worklist() {
     if (cpfLimpo.length < 11) return;
     setCpfBuscando(true);
     try {
-      const res = await feegowAuthFetch(`/api/feegow?action=buscar_cpf&cpf=${cpfLimpo}&wsId=${workspace?.id || ''}`);
+      const acao: AcaoFeegow = 'buscar_cpf';
+      const res = await feegowAuthFetch(`/api/feegow?action=${acao}&cpf=${cpfLimpo}&wsId=${workspace?.id || ''}`);
       const data = await res.json();
+      if (pacCpfRef.current !== cpfLimpo) return; // campo ja tem OUTRO cpf
       if (data.ok && data.encontrado && data.paciente) {
         const p = data.paciente;
         if (p.nome) setPacNome(p.nome);
@@ -186,6 +224,7 @@ export default function Worklist() {
   }
 
   async function editarPaciente(item: ExameItem) {
+    const req = ++editReq.current;
     setEditPacId(item.pacienteId as string || null);
     setEditExameId(item.id);
     setPacNome(item.pacienteNome as string || '');
@@ -206,6 +245,7 @@ export default function Worklist() {
     // exames antigos). Assíncrono: modal já abriu, campos se completam.
     if (item.pacienteId && workspace?.id) {
       const pac = await getPaciente(workspace.id, item.pacienteId as string) as Record<string, unknown> | null;
+      if (req !== editReq.current) return; // modal ja e de OUTRO paciente
       if (pac) {
         if (pac.cpf) setPacCpf(pac.cpf as string);
         if (pac.telefone) setPacTel(pac.telefone as string);
@@ -230,67 +270,80 @@ export default function Worklist() {
     // edição (ex: corrigir convênio). CPF é a chave de pareamento DICOM.
     if (cpfLimpo) pacData.cpf = cpfLimpo;
     if (pacTel) pacData.telefone = pacTel;
-    if (editPacId) pacData.id = editPacId;
-
-    const pacId = await savePaciente(workspace.id, pacData);
-    if (!pacId) { setPacErro('Erro ao salvar paciente.'); setPacLoading(false); return; }
 
     if (editExameId) {
-      // Atualizando paciente de um exame existente
-      const okExame = await saveExame(workspace.id, {
-        id: editExameId,
-        pacienteNome: pacNome.trim().toUpperCase(),
-        pacienteDtnasc: pacDtnasc,
-        convenio: pacConvenio,
-        solicitante: pacSolicitante,
-        tipoExame: pacTipoExame,
-        sexo: pacSexo,
-      }, profile?.id || '');
-      if (!okExame) {
+      // Edicao: ficha + exame na MESMA escrita (Achado 3 — antes a ficha
+      // salvava e o exame falhava, com a tela dizendo que nada gravou).
+      try {
+        const batch = writeBatch(db);
+        const dadosFicha: Record<string, unknown> = {
+          nome: pacNome.trim().toUpperCase(),
+          dtnasc: pacDtnasc,
+          sexo: pacSexo,
+          convenio: pacConvenio,
+        };
+        if (cpfLimpo) dadosFicha.cpf = cpfLimpo;
+        if (pacTel) dadosFicha.telefone = pacTel;
+        dadosFicha.atualizadoEm = serverTimestamp();
+
+        if (editPacId) {
+          batch.update(doc(db, 'workspaces', workspace.id, 'pacientes', editPacId), dadosFicha);
+        }
+        batch.update(doc(db, 'workspaces', workspace.id, 'exames', editExameId), soAdministrativos({
+          pacienteNome: pacNome.trim().toUpperCase(),
+          pacienteDtnasc: pacDtnasc,
+          convenio: pacConvenio,
+          solicitante: pacSolicitante,
+          tipoExame: pacTipoExame,
+          // `sexo` NAO propaga mais pro EXAME na edicao (nº24 fechado na
+          // camada de dados, 01/09/2026): pos-cadastro, sexo e do medico —
+          // muda referencia clinica (massa VE, aorta). A FICHA (dadosFicha
+          // acima) continua recebendo a correcao; o exame aberto e ajustado
+          // pelo medico no laudo. A regra nega de qualquer forma
+          // (camposAdministrativosUpdate) — tirar daqui evita o batch
+          // inteiro falhar em silencio.
+          // Achado 8: CPF e a chave de pareamento DICOM — propaga pro exame.
+          // Vazio = "nao mexer" (mesma filosofia do #7c da ficha): esvaziar o
+          // campo NAO apaga o CPF gravado.
+          ...(cpfLimpo ? { cpf: cpfLimpo } : {}),
+          atualizadoEm: serverTimestamp(),
+        }));
+        await batch.commit();
+      } catch (e) {
+        console.error('editar paciente:', e);
         setPacErro('Não foi possível salvar a alteração. Nada foi gravado. (Detalhe no Console — F12.)');
         setPacLoading(false);
         return;
       }
     } else {
       // Novo paciente — criar exame na fila
+      const pacId = await savePaciente(workspace.id, pacData);
+      if (!pacId) { setPacErro('Erro ao salvar paciente.'); setPacLoading(false); return; }
+
       const agora2 = new Date();
       const horaChegada = agora2.toTimeString().slice(0, 5);
-      const novoExameId = await saveExame(workspace.id, {
+      const novoExameId = await saveExame(workspace.id, soAdministrativos({ // lista de criação: cadastro traz sexo
         acc: gerarAccessionNumber(agora2),
         pacienteId: pacId,
         pacienteNome: pacNome.trim().toUpperCase(),
         pacienteDtnasc: pacDtnasc,
-        cpf: pacCpf.replace(/\D/g, ''),
+        cpf: cpfLimpo,
         tipoExame: pacTipoExame,
         dataExame: dataLocalHoje(),
         horarioChegada: horaChegada,
         status: 'aguardando',
         convenio: pacConvenio,
         solicitante: pacSolicitante,
-        medicoExecutor: profile?.nome as string || '',
+        medicoExecutor: assinaComoAutor ? (profile?.nome as string || '') : '',
         sexo: pacSexo,
         origem: 'MANUAL',
-      }, profile?.id || '');
+      }, CAMPOS_EXAME_CRIACAO), assinaComoAutor ? (profile?.id as string || '') : '');
 
       if (!novoExameId) {
-        setPacErro('Não foi possível criar o exame na fila. Nada foi gravado. (Detalhe no Console — F12.)');
+        setPacErro('A ficha do paciente foi salva, mas o exame NÃO entrou na fila. Tente salvar de novo. (Detalhe no Console — F12.)');
         setPacLoading(false);
         return;
       }
-
-      // Enviar MWL ao Orthanc (fire-and-forget)
-      enviarMwlOrthanc({
-        wsId: workspace.id,
-        exameId: novoExameId,
-        pacienteNome: pacNome.trim().toUpperCase(),
-        pacienteId: pacCpf.replace(/\D/g, ''),
-        pacienteDtnasc: pacDtnasc,
-        sexo: pacSexo,
-        tipoExame: pacTipoExame,
-        dataExame: dataLocalHoje(),
-        horarioChegada: horaChegada,
-        medicoNome: profile?.nome as string || '',
-      });
     }
 
     setPacLoading(false);
@@ -298,13 +351,20 @@ export default function Worklist() {
   }
 
   async function removerDaFila(item: ExameItem) {
-    if (!confirm(`Remover ${item.pacienteNome} da fila?`)) return;
+    // Achado 8: exame FEEGOW sai da fila via cancelar (doc fica, .wl some
+    // pela elegibilidade — nunca apaga, senao a reimportacao destrava e o
+    // Feegow devolve o mesmo agendamento). Manual continua apagando de fato.
+    const feegow = item.origem === 'FEEGOW';
+    const msg = feegow
+      ? `Remover ${item.pacienteNome} da fila? Sai da fila e fica registrado como cancelado (visível na ficha do paciente).`
+      : `Remover ${item.pacienteNome} da fila?`;
+    if (!confirm(msg)) return;
     if (!workspace?.id) return;
     try {
       const res = await feegowAuthFetch('/api/exame', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ acao: 'apagar', wsId: workspace.id, exameId: item.id }),
+        body: JSON.stringify({ acao: feegow ? 'cancelar' : 'apagar', wsId: workspace.id, exameId: item.id }),
       });
       const data = await res.json();
       if (!data.ok) {
@@ -319,139 +379,44 @@ export default function Worklist() {
   }
 
   async function importarFeegow() {
-    if (!workspace?.id || !profile?.id) return;
+    if (!workspace?.id) return;
     setFeegowLoading(true);
     try {
-      const res = await feegowAuthFetch(`/api/feegow?action=importar&wsId=${workspace?.id || ''}`);
-      const data = await res.json();
-      if (!data.ok || !data.pacientes?.length) {
-        alert(data.pacientes?.length === 0 ? 'Nenhum paciente aguardando no Feegow.' : (data.error || 'Erro ao buscar Feegow'));
-        setFeegowLoading(false);
-        return;
-      }
-
-      // Dedup por AGENDAMENTO do Feegow (feegowAppointId), NÃO por nome.
-      // Um paciente pode ter 2+ exames no mesmo dia (ex.: eco + carótidas):
-      // cada agendamento tem feegowAppointId único. Deduplicar por nome
-      // descartava silenciosamente o 2º exame do paciente.
-      const apptsNaFila = new Set(
-        worklist.map(w => String(w.feegowAppointId ?? '')).filter(Boolean)
-      );
-      const nomesNaFila = new Set(worklist.map(w => (w.pacienteNome || '').toUpperCase()));
-      const novos = data.pacientes.filter((p: Record<string, string>) => {
-        const appt = String(p.feegowAppointId ?? '');
-        if (appt) return !apptsNaFila.has(appt);
-        // Candidato sem feegowAppointId (raro): cai no dedup legado por nome.
-        return !nomesNaFila.has(p.pacienteNome);
+      const acao: AcaoFeegow = 'importar';
+      const res = await feegowAuthFetch(`/api/feegow?wsId=${workspace.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: acao }),
       });
-
-      if (novos.length === 0) {
-        alert('Todos os pacientes do Feegow já estão na fila.');
-        setFeegowLoading(false);
-        return;
+      const data = await res.json();
+      if (!data.ok) {
+        if (data.error === 'sem_acesso_ao_local') {
+          alert('Seu usuário não tem acesso a este local.');
+        } else if (data.error === 'feegow_sem_procmap') {
+          alert('Nenhum procedimento mapeado. Vá em Integrações > Feegow e mapeie os procedimentos.');
+        } else if (data.error === 'feegow_desligado') {
+          alert('A integração Feegow está desligada. Ligue em Integrações > Feegow.');
+        } else {
+          alert(data.error || 'Erro ao importar do Feegow.');
+        }
+      } else {
+        // D4: a tela conta a verdade — criados/ignorados/falhas/naoRealizados,
+        // nao mais um "Nenhum paciente aguardando" que escondia descarte.
+        const partes = [`${data.criados.length} importado(s)`];
+        if (data.ignorados?.length) partes.push(`${data.ignorados.reduce((s: number, i: { qtd: number }) => s + i.qtd, 0)} ignorado(s) — procedimento não mapeado (ids: ${data.ignorados.map((i: { procedimentoId: number }) => i.procedimentoId).join(', ')}) — mapeie em Integrações > Feegow`);
+        if (data.falhas?.length) partes.push(`${data.falhas.length} falha(s) de busca — tente de novo`);
+        if (data.naoRealizados) partes.push(`${data.naoRealizados} marcado(s) não-realizado (desmarcou/faltou no Feegow)`);
+        // Reimportacao: quem ja esta na fila nao e criado nem falha — sem esta
+        // linha a diferenca entre total e criados ficaria muda (a msg antiga
+        // "ja estao na fila" dizia isso e foi preservada aqui em numero).
+        // Nao subtrai falhas (achado herdado da Task 3): total = candidatos.length
+        // em montarCandidatos NUNCA inclui falhas — o `continue` do push em
+        // `falhas` vem antes do push em `candidatos`. Subtrair de novo aqui
+        // contava falha duas vezes e subcontava "ja estava(m) na fila".
+        const jaNaFila = data.total - data.criados.length - (data.descartados || 0);
+        if (jaNaFila > 0) partes.push(`${jaNaFila} já estava(m) na fila`);
+        alert(partes.join('\n'));
       }
-
-      // Idempotência por feegowAppointId (ADR 2026-06-22): doc id determinístico
-      // `fg-<appointId>` + checagem de existência. Assim re-clique, 2 abas ou
-      // import concorrente NÃO duplicam (colapsam no MESMO doc), e re-importar
-      // NÃO sobrescreve um exame que o médico já começou (existe → pula).
-      // Candidato sem feegowAppointId (raro) cai no id aleatório de sempre.
-      const comAppt = novos.filter((p: Record<string, string>) => p.feegowAppointId);
-      const semAppt = novos.filter((p: Record<string, string>) => !p.feegowAppointId);
-
-      const refsAppt = comAppt.map((p: Record<string, string>) =>
-        doc(db, 'workspaces', workspace.id, 'exames', `fg-${p.feegowAppointId}`),
-      );
-      const existentes = await Promise.all(refsAppt.map((r: DocumentReference) => getDoc(r)));
-
-      const aCriar = [
-        ...comAppt
-          .map((pac: Record<string, string>, i: number) => ({ pac, exameRef: refsAppt[i], existe: existentes[i].exists() }))
-          .filter((x: { existe: boolean }) => !x.existe)
-          .map((x: { pac: Record<string, string>; exameRef: ReturnType<typeof doc> }) => ({ pac: x.pac, exameRef: x.exameRef })),
-        ...semAppt.map((pac: Record<string, string>) => ({
-          pac,
-          exameRef: doc(collection(db, 'workspaces', workspace.id, 'exames')),
-        })),
-      ];
-
-      if (aCriar.length === 0) {
-        alert('Todos os pacientes do Feegow já estão na fila.');
-        setFeegowLoading(false);
-        return;
-      }
-
-      // v3: writeBatch — tudo ou nada (atomico)
-      const batch = writeBatch(db);
-      const examesCriados: Array<{ exameId: string; pac: Record<string, string> }> = [];
-      // Timestamp base do batch — cada exame ganha offset de 10ms pra evitar
-      // colisão de ACC quando loop roda em sub-centésimo de segundo.
-      const baseTime = new Date();
-
-      for (let i = 0; i < aCriar.length; i++) {
-        const { pac, exameRef } = aCriar[i];
-        // Paciente: id determinístico por feegowPacienteId (não duplica o
-        // paciente quando ele tem 2 exames no dia). merge:true = não sobrescreve.
-        const pacRef = pac.feegowPacienteId
-          ? doc(db, 'workspaces', workspace.id, 'pacientes', `fg-${pac.feegowPacienteId}`)
-          : doc(collection(db, 'workspaces', workspace.id, 'pacientes'));
-        batch.set(pacRef, {
-          id: pacRef.id,
-          nome: pac.pacienteNome,
-          cpf: pac.cpf,
-          dtnasc: pac.pacienteDtnasc,
-          sexo: pac.sexo,
-          telefone: pac.telefone,
-          feegowPacienteId: pac.feegowPacienteId,
-          criadoEm: serverTimestamp(),
-        }, { merge: true });
-
-        // Exame: id determinístico `fg-<appointId>` (os já existentes foram
-        // filtrados acima). set sem merge — não mexe em status de exame em curso.
-        batch.set(exameRef, {
-          id: exameRef.id,
-          acc: gerarAccessionNumber(baseTime, i * 10),
-          pacienteId: pacRef.id,
-          pacienteNome: pac.pacienteNome,
-          pacienteDtnasc: pac.pacienteDtnasc,
-          cpf: pac.cpf,
-          feegowPacienteId: pac.feegowPacienteId,
-          tipoExame: pac.tipoExame,
-          dataExame: pac.dataExame,
-          horarioChegada: pac.horarioChegada,
-          status: 'aguardando',
-          convenio: pac.convenio,
-          solicitante: profile?.nome as string || '',
-          medicoExecutor: pac.medicoExecutor || (profile?.nome as string || ''),
-          sexo: pac.sexo,
-          origem: 'FEEGOW',
-          feegowAppointId: pac.feegowAppointId,
-          medicoUid: profile.id as string,
-          versao: 1,
-          criadoEm: serverTimestamp(),
-        });
-        examesCriados.push({ exameId: exameRef.id, pac });
-      }
-
-      await batch.commit();
-
-      // Enviar MWL ao Orthanc (fire-and-forget, não bloqueia)
-      for (const { exameId, pac } of examesCriados) {
-        enviarMwlOrthanc({
-          wsId: workspace.id,
-          exameId,
-          pacienteNome: pac.pacienteNome,
-          pacienteId: pac.cpf,
-          pacienteDtnasc: pac.pacienteDtnasc,
-          sexo: pac.sexo,
-          tipoExame: pac.tipoExame,
-          dataExame: pac.dataExame,
-          horarioChegada: pac.horarioChegada,
-          medicoNome: profile?.nome as string || '',
-        });
-      }
-
-      alert(`${examesCriados.length} paciente(s) importado(s) do Feegow!`);
     } catch (e) {
       console.error('importarFeegow:', e);
       alert('Erro ao conectar com o Feegow.');
@@ -466,78 +431,164 @@ export default function Worklist() {
       const dados = ex as Record<string, unknown>;
       if (dados?.pdfUrl) {
         abrirPdfUrl(dados.pdfUrl as string);
-      } else {
-        // Fallback: abrir o laudo em modo leitura (PDF ainda não foi gerado)
-        router.push('/laudo/' + exameId);
+        return;
       }
+      // Fallback: abrir o laudo em modo leitura (PDF ainda não foi gerado)
+      // — despacha pela modalidade real do tipo (X20), não sempre pro motor.
+      const rota = rotaDoLaudo(exameId, dados?.tipoExame as string | undefined, tiposMap);
+      if (rota) { router.push(rota); return; }
+      // Ruflo-1: modalidade 'pdf' nao tem editor proprio — nao ha o que
+      // abrir; os botoes "✏️ Editar"/"🔁 Regerar PDF" da mesma linha anexam.
+      alert('Este exame é de anexo (PDF do aparelho) — use "✏️ Editar" ou "🔁 Regerar PDF" para anexar.');
     } catch (e) {
       console.error('Erro ao abrir PDF:', e);
+      // Sem `dados` (a leitura falhou) não há tipo pra despachar — mesmo
+      // fallback de sempre, equivalente ao default de rotaDoLaudo p/ tipo ausente.
       router.push('/laudo/' + exameId);
     }
   }
 
   // ── Editar laudo emitido (medico apenas) ──
-  // Apenas navega pro motor de laudo. O alerta de credito e consumo
-  // acontecem dentro do motor, no botao "Desbloquear campos".
-  function editarLaudoEmitido(exameId: string) {
-    router.push('/laudo/' + exameId);
+  // Despacha por modalidade do tipo de laudo (catálogo tiposLaudo, Sub-plano 3).
+  // Tipo desconhecido/sem catálogo carregado ainda → fallback 'motor' (comportamento antigo).
+  function editarLaudoEmitido(item: ExameItem) {
+    const tipoId = (item.tipoExame as string) || '';
+    const modalidade = modalidadeDe(tiposMap[tipoId], tipoId);
+    if (modalidade === 'pdf') {
+      setAnexarPdf(item);
+      return;
+    }
+    const rota = rotaDoLaudo(item.id, tipoId, tiposMap);
+    if (rota) router.push(rota);
   }
 
-  async function abrirLaudo(exameId: string) {
-    // Verificar billing antes de abrir
-    if (workspace?.id) {
-      const check = await checkEmissao(workspace.id);
-      if (!check.pode) {
-        alert(check.motivo === 'expirado'
-          ? 'Seu plano expirou. Renove para continuar emitindo laudos.'
-          : check.motivo === 'sem_saldo'
-          ? 'Franquia do mês esgotada. Adquira créditos extras.'
-          : 'Nenhum plano ativo encontrado.');
+  // ── Correção administrativa (S5-T5/D4) ──
+  // Mesma rota da tela do laudo: o servidor reescreve SÓ convênio/solicitante
+  // no HTML congelado da emissão e regera o PDF. Sem crédito, sem médico.
+  function abrirCorrecaoAdm(item: ExameItem) {
+    setAdmConvenio((item.convenio as string) || '');
+    setAdmSolicitante((item.solicitante as string) || '');
+    setCorrigirAdm(item);
+  }
+
+  async function salvarCorrecaoAdm() {
+    if (!corrigirAdm || !workspace?.id || admSalvando) return;
+    setAdmSalvando(true);
+    try {
+      const r = await postCorrigirLaudo({
+        wsId: workspace.id, exameId: corrigirAdm.id, convenio: admConvenio, solicitante: admSolicitante,
+      });
+      if (!r.ok) {
+        alert(msgErroCorrecao(r.error, 'correcao'));
+        if (r.error === 'reemitido_durante_correcao') setCorrigirAdm(null);
         return;
       }
+      alert(r.pdfDesatualizado
+        ? 'Correção salva. Este laudo é antigo: o PDF continua com o dado anterior — peça ao médico para reemitir se precisar do PDF corrigido.'
+        : r.pdfErro ? 'Correção salva. O PDF falhou ao ser regerado — tente imprimir de novo mais tarde.'
+        : 'Correção salva — PDF atualizado.');
+      setCorrigirAdm(null);
+    } catch {
+      alert('Erro de conexão ao salvar a correção.');
+    } finally {
+      setAdmSalvando(false);
     }
-    router.push('/laudo/' + exameId);
+  }
+
+  // ── Regerar PDF (Task 6, P4/E4): a emissao falhou DEPOIS de cobrar a
+  // franquia (laudo `emitido` sem `pdfUrl`, marcado com `pdfErro`). Reusa a
+  // MESMA rota da correcao administrativa, com o convenio/solicitante ATUAIS
+  // do exame (sem mudar nada) — regera o PDF a partir do snapshot congelado
+  // na emissao, sem transacao de billing e sem 2a franquia.
+  async function regerarPdf(item: ExameItem) {
+    if (!workspace?.id || regerandoPdf) return;
+    setRegerandoPdf(item.id);
+    try {
+      const r = await postCorrigirLaudo({ wsId: workspace.id, exameId: item.id, acao: 'regerar' });
+      if (!r.ok) {
+        alert(msgErroCorrecao(r.error, 'regerar'));
+        return;
+      }
+      // Snapshot ausente (emitido antigo) ou falha nova do Puppeteer: honesto
+      // — nao ha o que recuperar aqui, so reemitir de novo (2a franquia).
+      if (r.pdfDesatualizado || r.pdfErro) {
+        alert('Snapshot indisponível — reemita o laudo.');
+        return;
+      }
+      alert('PDF regerado com sucesso.');
+    } catch {
+      alert('Erro de conexão ao regerar o PDF.');
+    } finally {
+      setRegerandoPdf(null);
+    }
+  }
+
+  async function checarBillingOuAvisar(): Promise<boolean> {
+    if (!workspace?.id) return true;
+    const check = await checkEmissao(workspace.id);
+    if (check.pode) return true;
+    alert(check.motivo === 'expirado'
+      ? 'Seu plano expirou. Renove para continuar emitindo laudos.'
+      : check.motivo === 'sem_saldo'
+      ? 'Franquia do mês esgotada. Adquira créditos extras.'
+      : 'Nenhum plano ativo encontrado.');
+    return false;
+  }
+
+  // Dispatch por modalidade do tipo de laudo (catálogo tiposLaudo, Sub-plano 3).
+  // Tipo desconhecido/sem catálogo carregado ainda → fallback 'motor' (comportamento antigo).
+  async function abrirLaudo(item: ExameItem) {
+    const tipoId = (item.tipoExame as string) || '';
+    const modalidade = modalidadeDe(tiposMap[tipoId], tipoId);
+    if (modalidade === 'pdf') {
+      // Ato do médico (mesma matriz do Laudar) — a rota /api/emitir também
+      // recusa 403 nao_medico, isso aqui só evita a recepção abrir o modal à toa.
+      if (!assinaComoAutor) {
+        alert('Anexar o PDF é ato do médico.');
+        return;
+      }
+      setAnexarPdf(item);
+      return;
+    }
+    if (!(await checarBillingOuAvisar())) return;
+    const rota = rotaDoLaudo(item.id, tipoId, tiposMap);
+    if (rota) router.push(rota);
   }
 
   // Filtrar por status + busca texto
-  const fonteDados = statusSel === 'nao-realizado' ? naoRealizados : worklist;
+  // cancelado some da fila (revisão Task 4, item 2): o confirm() de remover
+  // avisa que sai da fila — sem este filtro a linha continuava aparecendo
+  // (só perdia os botões de ação) e o operador achava que nada aconteceu.
+  // nao-realizado CONTINUA visível (esmaecido) — é auditoria, não fila.
+  const worklistVisivel = worklist.filter(it => it.status !== 'cancelado');
+  const fonteDados = statusSel === 'nao-realizado' ? naoRealizados : worklistVisivel;
   const filtrada = fonteDados.filter(it => {
     if (statusSel !== 'todos' && statusSel !== 'nao-realizado' && it.status !== statusSel) return false;
     if (busca) {
       const nome = (it.pacienteNome as string || '').toLowerCase();
-      const cpf = (it.pacienteDtnasc as string || '');
-      if (!nome.includes(busca.toLowerCase()) && !cpf.includes(busca)) return false;
+      const cpf = String(it.cpf ?? '');
+      const buscaDigitos = busca.replace(/\D/g, '');
+      if (!nome.includes(busca.toLowerCase()) && !(buscaDigitos && cpf.includes(buscaDigitos))) return false;
     }
     return true;
   });
-
-  const statusBadge: Record<string, { cor: string; icone: string; texto: string }> = {
-    aguardando: { cor: 'bg-yellow-100 text-yellow-700', icone: '⏳', texto: 'Aguardando' },
-    andamento: { cor: 'bg-blue-100 text-blue-700', icone: '✏️', texto: 'Em andamento' },
-    rascunho: { cor: 'bg-gray-100 text-gray-600', icone: '📝', texto: 'Rascunho' },
-    emitido: { cor: 'bg-green-100 text-green-700', icone: '✅', texto: 'Emitido' },
-  };
 
   return (
     <div>
       {/* Barra de ações */}
       <div className="flex items-center gap-3 mb-4">
         <input type="date" value={dataSel} onChange={e => setDataSel(e.target.value)}
-          className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] w-40" />
+          className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1 w-40" />
         {dataSel !== dataLocalHoje() && (
           <button onClick={() => setDataSel(dataLocalHoje())}
-            className="text-xs text-[#2563EB] hover:underline whitespace-nowrap">Hoje</button>
+            className="text-xs text-p2 hover:underline whitespace-nowrap">Hoje</button>
         )}
-        <input type="text" placeholder="Buscar por nome..."
+        <input type="text" placeholder="Buscar por nome ou CPF..."
           value={busca} onChange={e => setBusca(e.target.value)}
-          className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+          className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
         <button onClick={abrirNovoPaciente}
-          className="bg-[#2563EB] text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition whitespace-nowrap">
+          className="bg-p2 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition whitespace-nowrap">
           + Paciente
-        </button>
-        <button onClick={abrirNovoPaciente}
-          className="border border-gray-300 px-4 py-2 rounded-lg text-sm font-semibold text-gray-600 hover:bg-gray-50 transition whitespace-nowrap">
-          📋 Laudo rápido
         </button>
         <button onClick={importarFeegow} disabled={feegowLoading}
           className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-700 transition whitespace-nowrap disabled:opacity-50">
@@ -549,7 +600,7 @@ export default function Worklist() {
       <div className="flex gap-2 mb-3 text-xs">
         <button onClick={() => setStatusSel('todos')}
           className={`px-3 py-1 rounded-full font-semibold transition ${statusSel === 'todos' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-          Todos ({worklist.length})
+          Todos ({worklistVisivel.length})
         </button>
         <button onClick={() => setStatusSel('aguardando')}
           className={`px-3 py-1 rounded-full font-semibold transition ${statusSel === 'aguardando' ? 'bg-yellow-500 text-white' : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'}`}>
@@ -566,13 +617,14 @@ export default function Worklist() {
         <button onClick={() => setStatusSel('nao-realizado')}
           title="Exames não realizados nos últimos 30 dias (auditoria de no-show)"
           className={`px-3 py-1 rounded-full font-semibold transition ${statusSel === 'nao-realizado' ? 'bg-gray-500 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-          🚫 Não realizados ({naoRealizados.length})
+          🚫 Não realizados{statusSel === 'nao-realizado' ? ` (${naoRealizados.length})` : ''}
         </button>
       </div>
 
       {/* Tabela */}
       <div className="bg-white rounded-lg overflow-hidden border border-gray-100">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
           <thead>
             <tr className="border-b text-xs text-gray-400 uppercase bg-gray-50">
               <th className="py-2 px-3 text-left w-16">Hora</th>
@@ -591,18 +643,21 @@ export default function Worklist() {
               </td></tr>
             )}
             {filtrada.map(item => {
-              const badge = statusBadge[item.status as string] || statusBadge.aguardando;
-              const espera = item.status === 'aguardando' ? calcEspera(item.horarioChegada as string) : { texto: '', alerta: false };
+              const espera = item.status === 'aguardando' && dataSel === dataLocalHoje()
+                ? calcEspera(item)
+                : { texto: '', alerta: false };
               const origem = (item.origem as string) || 'MANUAL';
 
               const isNaoRealizado = item.status === 'nao-realizado';
               return (
                 <tr key={item.id} className={`border-b hover:bg-gray-50 transition ${espera.alerta ? 'bg-red-50/30' : ''} ${isNaoRealizado ? 'opacity-70' : ''}`}>
-                  {/* Hora (e data se não-realizado) */}
+                  {/* Hora da CHEGADA real (e data se não-realizado) — a lista é
+                      ordenada por chegouEm; mostrar o horário agendado aqui
+                      faria a coluna parecer embaralhada (item 2, 31/08/2026). */}
                   <td className="py-3 px-3 text-gray-500 font-mono text-xs">
                     {isNaoRealizado && item.dataExame
-                      ? <><div className="text-[10px] text-gray-400">{(item.dataExame as string).split('-').reverse().slice(0, 2).join('/')}</div><div>{item.horarioChegada || '—'}</div></>
-                      : (item.horarioChegada || '—')}
+                      ? <><div className="text-[10px] text-gray-400">{(item.dataExame as string).split('-').reverse().slice(0, 2).join('/')}</div><div>{horaChegadaExibicao(item) || '—'}</div></>
+                      : (horaChegadaExibicao(item) || '—')}
                   </td>
 
                   {/* ACC — clique pra copiar (transcrição manual no Vivid) */}
@@ -611,7 +666,7 @@ export default function Worklist() {
                       <button
                         onClick={() => { navigator.clipboard.writeText(item.acc as string); }}
                         title="Clique para copiar (transcrição manual no Vivid)"
-                        className="font-mono text-[13px] font-bold text-[#1E3A5F] hover:bg-blue-50 px-1.5 py-0.5 rounded transition cursor-pointer"
+                        className="font-mono text-[13px] font-bold text-p1 hover:bg-blue-50 px-1.5 py-0.5 rounded transition cursor-pointer"
                       >
                         {item.acc as string}
                       </button>
@@ -622,13 +677,46 @@ export default function Worklist() {
 
                   {/* Paciente */}
                   <td className="py-3 px-3">
-                    <div className="font-semibold text-[#1E3A5F] text-sm">{item.pacienteNome || '—'}</div>
+                    {item.pacienteId ? (
+                      <button
+                        onClick={() => router.push(`/pacientes/${item.pacienteId}`)}
+                        className="font-semibold text-p1 text-sm hover:underline cursor-pointer bg-transparent border-0 p-0 text-left"
+                      >
+                        {item.pacienteNome || '—'}
+                      </button>
+                    ) : (
+                      <div className="font-semibold text-p1 text-sm">{item.pacienteNome || '—'}</div>
+                    )}
                     <div className="text-xs text-gray-400 flex items-center gap-2 mt-0.5 flex-wrap">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${badge.cor}`}>{badge.icone} {badge.texto}</span>
-                      <span>{TIPOS_EXAME[item.tipoExame as string] || item.tipoExame}</span>
+                      <StatusPill status={item.status as string} />
+                      <span>{tiposMap[item.tipoExame as string]?.nome || item.tipoExame}</span>
                       <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${origem === 'FEEGOW' ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-400'}`}>
                         {origem}
                       </span>
+                      {item.mwlStatus === 'falhou' && (
+                        <span title="Worklist não chegou ao aparelho — digite o ACC manualmente no Vivid"
+                          className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-600">
+                          📡 SEM MWL
+                        </span>
+                      )}
+                      {/* Cofre do emitido (S4-T15 fix X1): o Wader recebeu estudo
+                          novo num exame JÁ EMITIDO — foi tudo pros campos-sombra
+                          e alguém tem que revisar. Sem esta pílula a fila de
+                          revisão existia só no Firestore. */}
+                      {item.dicomAtualizacaoPendente === true && (
+                        <span title="Chegou imagem/medida nova depois da emissão — revise antes de corrigir o laudo"
+                          className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700">
+                          📥 DICOM NOVO — REVISAR
+                        </span>
+                      )}
+                      {/* Ingestão falhou: o erro ficava só no log do Wader e na
+                          tela de conferência. A recepção vê aqui e reenvia. */}
+                      {typeof item.dicomUltimoErro === 'string' && item.dicomUltimoErro.trim() !== '' && (
+                        <span title={item.dicomUltimoErro as string}
+                          className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-600">
+                          ⚠️ IMAGEM FALHOU
+                        </span>
+                      )}
                     </div>
                   </td>
 
@@ -660,6 +748,11 @@ export default function Worklist() {
                         // 3 grupos de ação. 'imagens-recebidas'/'erro-imagens'
                         // (legados do pipeline DICOM) → andamento.
                         const st = item.status as string;
+                        // cancelado/nao-realizado: terminal, sem acao (achado 8 — a
+                        // Task 4 passou a produzir os dois no MESMO dia — reconciliacao
+                        // via Feegow e remover-da-fila FEEGOW — e sem este corte eles
+                        // caiam no braco 'andamento' e ganhavam "▶ Continuar" enganoso).
+                        if (st === 'cancelado' || st === 'nao-realizado') return null;
                         let grupo: 'aguardando' | 'andamento' | 'emitido';
                         if (st === 'emitido') grupo = 'emitido';
                         else if (st === 'aguardando' || st === 'rascunho') grupo = 'aguardando';
@@ -668,16 +761,18 @@ export default function Worklist() {
                         if (grupo === 'aguardando') {
                           return (
                             <>
-                              <Btn cor="blue" onClick={() => abrirLaudo(item.id)}>📋 Laudar</Btn>
+                              <Btn cor="blue" onClick={() => abrirLaudo(item)}>📋 Laudar</Btn>
                               <Btn cor="gray" onClick={() => editarPaciente(item)}>👤 Editar</Btn>
-                              <Btn cor="red" onClick={() => removerDaFila(item)}>🗑</Btn>
+                              {podeRemoverDaFila(papel) && (
+                                <Btn cor="red" onClick={() => removerDaFila(item)}>🗑</Btn>
+                              )}
                             </>
                           );
                         }
                         if (grupo === 'andamento') {
                           return (
                             <>
-                              <Btn cor="blue" onClick={() => abrirLaudo(item.id)}>▶ Continuar</Btn>
+                              <Btn cor="blue" onClick={() => abrirLaudo(item)}>▶ Continuar</Btn>
                               <Btn cor="gray" onClick={() => editarPaciente(item)}>👤 Editar</Btn>
                             </>
                           );
@@ -685,8 +780,26 @@ export default function Worklist() {
                         // emitido
                         return (
                           <>
-                            {ehMedico && (
-                              <Btn cor="amber" onClick={() => editarLaudoEmitido(item.id)}>✏️ Editar</Btn>
+                            {podeEditarLaudo(profile, item, user?.uid || '') && (
+                              <Btn cor="amber" onClick={() => editarLaudoEmitido(item)}>✏️ Editar</Btn>
+                            )}
+                            {/* Correção administrativa (S5-T5/D4): convênio errado
+                                é erro de recepção — ela corrige sem chamar o médico,
+                                sem crédito e sem encostar no corpo do laudo. */}
+                            {podeCorrigirAdministrativo(papel) && (
+                              <Btn cor="gray" onClick={() => abrirCorrecaoAdm(item)}>✏️ convênio/solicitante</Btn>
+                            )}
+                            {/* P4/E4 (Task 6): laudo emitido (franquia ja cobrada) sem
+                                PDF — a rota marcou pdfErro no catch. Regenera do
+                                snapshot pela mesma rota da correcao, sem 2a franquia.
+                                Gate: dono/recepcao (podeCorrigirAdministrativo) OU o
+                                medico-autor — mesma dupla que a rota /api/corrigir-laudo
+                                autoriza no servidor (podeCorrigir); sem o 2o braco o
+                                medico que pagou a franquia nao via o proprio botao. */}
+                            {(podeCorrigirAdministrativo(papel) || item.medicoUid === user?.uid) && item.pdfErro && !item.pdfUrl && (
+                              <Btn cor="red" onClick={() => regerarPdf(item)}>
+                                {regerandoPdf === item.id ? 'Regerando...' : '🔁 Regerar PDF'}
+                              </Btn>
                             )}
                             <Btn cor="gray" onClick={() => imprimirPdf(item.id)}>🖨️ Imprimir</Btn>
                           </>
@@ -701,9 +814,10 @@ export default function Worklist() {
                           agora abre <DicomGallery /> direto no contexto do Worklist. */}
                       {Array.isArray(item.imagensDicom) && (item.imagensDicom as unknown[]).length > 0 && (
                         <Btn cor="cyan" onClick={() => setGaleria({
+                          exameId: item.id as string,
                           imagens: item.imagensDicom as string[],
                           paciente: (item.pacienteNome as string) || '',
-                          tipo: TIPOS_EXAME[(item.tipoExame as string) || ''] || (item.tipoExame as string) || '',
+                          tipo: tiposMap[(item.tipoExame as string) || '']?.nome || (item.tipoExame as string) || '',
                         })}>
                           📸 Imagens ({(item.imagensDicom as unknown[]).length})
                         </Btn>
@@ -714,14 +828,53 @@ export default function Worklist() {
               );
             })}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
+
+      {/* Modal Correção administrativa (S5-T5/D4) — só os 2 campos que a
+          recepção pode mexer em laudo emitido. Nome/CPF/datas continuam no
+          fluxo clínico (Editar → reemitir). */}
+      {corrigirAdm && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => !admSalvando && setCorrigirAdm(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="bg-p1 text-white px-5 py-3 rounded-t-xl">
+              <h2 className="font-bold text-sm">✏️ Corrigir convênio / solicitante</h2>
+            </div>
+            <div className="p-5 space-y-3">
+              <p className="text-xs text-gray-500">
+                {(corrigirAdm.pacienteNome as string) || '—'} · laudo emitido. O texto do laudo não muda — só estes dois campos, no PDF e na cobrança.
+              </p>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Convênio</label>
+                <input type="text" value={admConvenio} onChange={e => setAdmConvenio(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Médico solicitante</label>
+                <input type="text" value={admSolicitante} onChange={e => setAdmSolicitante(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 px-5 pb-5">
+              <button onClick={() => setCorrigirAdm(null)} disabled={admSalvando}
+                className="px-4 py-2 rounded-lg text-sm font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-50">
+                Cancelar
+              </button>
+              <button onClick={salvarCorrecaoAdm} disabled={admSalvando}
+                className="px-4 py-2 rounded-lg text-sm font-semibold bg-p2 text-white hover:bg-blue-700 disabled:opacity-50">
+                {admSalvando ? 'Salvando...' : 'Salvar correção'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Paciente */}
       {modalPac && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setModalPac(false)}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
-            <div className="bg-[#1E3A5F] text-white px-5 py-3 rounded-t-xl">
+            <div className="bg-p1 text-white px-5 py-3 rounded-t-xl">
               <h2 className="font-bold text-sm">{editExameId ? '✏️ Editar Paciente' : '+ Novo Paciente'}</h2>
             </div>
             <div className="p-5 space-y-3">
@@ -730,7 +883,7 @@ export default function Worklist() {
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Nome completo *</label>
                 <input type="text" value={pacNome} onChange={e => setPacNome(e.target.value)}
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
               </div>
 
               <div className="grid grid-cols-3 gap-3">
@@ -743,12 +896,12 @@ export default function Worklist() {
                     onChange={e => { setPacCpf(e.target.value); setCpfFeegow(false); }}
                     onBlur={e => buscarCpfFeegow(e.target.value)}
                     placeholder="000.000.000-00"
-                    className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] ${cpfFeegow ? 'border-green-400 bg-green-50' : ''}`} />
+                    className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1 ${cpfFeegow ? 'border-green-400 bg-green-50' : ''}`} />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Sexo</label>
                   <select value={pacSexo} onChange={e => setPacSexo(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]">
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1">
                     <option value="">—</option>
                     <option value="M">Masculino</option>
                     <option value="F">Feminino</option>
@@ -757,7 +910,7 @@ export default function Worklist() {
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Nascimento</label>
                   <input type="date" value={pacDtnasc} onChange={e => setPacDtnasc(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
                 </div>
               </div>
 
@@ -765,33 +918,33 @@ export default function Worklist() {
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Tipo exame</label>
                   <select value={pacTipoExame} onChange={e => setPacTipoExame(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]">
-                    {Object.entries(TIPOS_EXAME).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1">
+                    {tiposAtivos.map(t => <option key={t.id} value={t.id}>{t.icone} {t.nome}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Convênio</label>
                   <input type="text" value={pacConvenio} onChange={e => setPacConvenio(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Solicitante</label>
                   <input type="text" value={pacSolicitante} onChange={e => setPacSolicitante(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Telefone</label>
                 <input type="text" value={pacTel} onChange={e => setPacTel(e.target.value)}
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]"
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1"
                   placeholder="(00) 00000-0000" />
               </div>
             </div>
             <div className="px-5 py-3 border-t flex justify-end gap-3">
               <button onClick={() => setModalPac(false)} className="px-4 py-2 text-sm text-gray-500 border rounded-lg hover:bg-gray-50">Cancelar</button>
               <button onClick={handleSalvarPaciente} disabled={pacLoading}
-                className="px-6 py-2 text-sm bg-[#2563EB] text-white rounded-lg font-semibold hover:bg-blue-700 transition disabled:opacity-50">
+                className="px-6 py-2 text-sm bg-p2 text-white rounded-lg font-semibold hover:bg-blue-700 transition disabled:opacity-50">
                 {pacLoading ? 'Salvando...' : 'Salvar'}
               </button>
             </div>
@@ -806,11 +959,38 @@ export default function Worklist() {
         open={galeria !== null}
         onClose={() => setGaleria(null)}
         imagens={galeria?.imagens || []}
+        wsId={wsId}
+        exameId={galeria?.exameId}
         pacienteNome={galeria?.paciente}
         tipoExame={galeria?.tipo}
         permitirSelecao
         selecionadas={secretariaSelecionadas}
         onToggleSelecao={handleToggleSelecaoSecretaria}
+      />
+
+      {/* Anexar PDF (modalidade 'pdf' — ECG/MAPA/Holter/Ergométrico, Task 5).
+          Só abre pra quem assina como autor; a rota /api/emitir confirma. */}
+      <AnexarPdfModal
+        open={anexarPdf !== null}
+        onClose={() => setAnexarPdf(null)}
+        exame={anexarPdf ? {
+          id: anexarPdf.id,
+          pacienteNome: anexarPdf.pacienteNome as string,
+          // X21: `tipoExame` tem que continuar sendo o ID do catálogo — vai
+          // em `dadosFinais` pro /api/emitir, que grava por cima do campo no
+          // doc. Mandar o NOME (nome de exibição) corrompia o dado: a
+          // próxima leitura de `modalidadeDe` não reconhecia o id e caía no
+          // default 'motor'. Nome de exibição vai à parte, em `tipoNome`.
+          tipoExame: anexarPdf.tipoExame as string,
+          tipoNome: tiposMap[(anexarPdf.tipoExame as string) || '']?.nome,
+          convenio: anexarPdf.convenio as string,
+          // Ruflo-2: só `status === 'emitido'` divergia do servidor num
+          // exame reaberto pra 'andamento' — `emitidoEm` continua no doc
+          // (E22), então reanexar ali TAMBÉM é reemissão de verdade.
+          jaEmitido: anexarPdf.status === 'emitido' || !!anexarPdf.emitidoEm,
+        } : null}
+        wsId={workspace?.id || ''}
+        medicoUid={user?.uid || ''}
       />
     </div>
   );
@@ -819,7 +999,7 @@ export default function Worklist() {
 // ── Botão de ação ──
 function Btn({ cor, onClick, children }: { cor: 'blue' | 'green' | 'gray' | 'red' | 'amber' | 'cyan'; onClick: () => void; children: React.ReactNode }) {
   const cores = {
-    blue: 'bg-[#2563EB] text-white hover:bg-blue-700',
+    blue: 'bg-p2 text-white hover:bg-blue-700',
     green: 'bg-green-100 text-green-700 hover:bg-green-200',
     gray: 'bg-gray-100 text-gray-600 hover:bg-gray-200',
     red: 'bg-red-50 text-red-500 hover:bg-red-100',

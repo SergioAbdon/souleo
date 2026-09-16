@@ -1218,7 +1218,7 @@ function renderizarLaudo(d){
   const linhas=gerarAchados(d);
   let ah=`<button class="btn-add-top" onclick="abrirBanco(null,'top')">＋ Adicionar item</button>`;
   linhas.forEach(l=>{ ah+=renderLinha(l); });
-  document.getElementById('achados-body').innerHTML=ah;
+  const ab = document.getElementById('achados-body'); if (ab) ab.innerHTML = ah;
   document.querySelectorAll('.achado-editable').forEach(ar);
 
   // Conclusão
@@ -1226,7 +1226,7 @@ function renderizarLaudo(d){
   let ch='';
   concs.forEach((c,i)=>{ ch+=renderConcLinha(c,i+1); });
   ch+=`<li style="padding:3px 0;"><button class="btn-add-top" style="margin:0;" onclick="addConclusao()">＋ Adicionar item</button></li>`;
-  document.getElementById('conclusao-list').innerHTML=ch;
+  const cl = document.getElementById('conclusao-list'); if (cl) cl.innerHTML = ch;
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1432,21 +1432,7 @@ function inserirFraseSelecionada(){
   if(!fraseSelecionada) return;
   const f=banco.find(x=>x.id===fraseSelecionada);
   if(!f) return;
-  const body=document.getElementById('achados-body');
-  const novaDiv=document.createElement('div');
-  novaDiv.innerHTML=renderLinha(f.txt);
-  const nova=novaDiv.firstElementChild;
-
-  if(insertTarget&&insertTarget.pos==='top'){
-    // inserir logo após o botão "Adicionar item" no topo
-    const addBtn=body.querySelector('.btn-add-top');
-    body.insertBefore(nova,addBtn?addBtn.nextSibling:body.firstChild);
-  } else if(insertTarget&&insertTarget.target){
-    insertTarget.target.parentNode.insertBefore(nova,insertTarget.target.nextSibling);
-  } else {
-    body.appendChild(nova);
-  }
-  ar(nova.querySelector('.achado-editable'));
+  (window._onInserirFrase||function(){})(f.txt);
   fecharBanco();
 }
 
@@ -1457,74 +1443,6 @@ function calc(){
   const d=calcAll();
   renderizarLaudo(d);
   alertaIT();
-}
-
-// ══════════════════════════════════════════════════════════════════
-// PREMISSA 2: INTEGRAÇÃO DICOM SR
-// Recebe dados do Vivid T8 (ou qualquer aparelho) e preenche os
-// campos do DOM. O motor continua lendo do DOM como sempre.
-// ══════════════════════════════════════════════════════════════════
-
-// Mapeamento: Código DICOM SR (TID 5200) → Campo do DOM (id)
-const DICOM_TO_DOM = {
-  '18083-6': 'b9',    // LVEDD → VE diástole
-  '18085-1': 'b12',   // LVESD → VE sístole
-  '18157-8': 'b10',   // IVSd → Septo IV
-  '18159-4': 'b11',   // LVPWd → Parede posterior
-  '18043-0': 'b25',   // LVEF → Fração de ejeção
-  '18010-9': 'b8',    // LA → Átrio esquerdo
-  '18008-3': 'b7',    // AoRoot → Aorta
-  '18148-7': 'b13',   // RVEDD → VD basal
-  '18036-4': 'tapse',  // TAPSE
-  '18044-8': 'b50',   // Aortic Peak Velocity
-  '18045-5': 'b50p',  // Aortic Peak Gradient
-  '18046-3': 'b51',   // Aortic Mean Gradient
-  '18047-1': 'b52',   // Aortic Valve Area
-  '18060-4': 'b21',   // Mitral E Velocity
-  '18061-2': 'b22',   // Mitral A Velocity
-  '18029-9': 'psmap', // PASP
-};
-
-// Importar medidas de DICOM SR → preenche DOM → recalcula
-function importarDICOM(dicomData){
-  if(!dicomData || !dicomData.measurements) return {ok:false, msg:'Sem medidas no DICOM'};
-  let count = 0;
-  Object.entries(dicomData.measurements).forEach(([code, valor])=>{
-    const campoId = DICOM_TO_DOM[code];
-    if(campoId){
-      const el = document.getElementById(campoId);
-      if(el){ el.value = valor; count++; }
-    }
-  });
-  // Preencher dados do paciente se disponíveis
-  if(dicomData.patientName){
-    const el = document.getElementById('nome');
-    if(el) el.value = dicomData.patientName;
-  }
-  if(dicomData.studyDate){
-    const el = document.getElementById('dtexame');
-    if(el){
-      // DICOM usa YYYYMMDD, converter para YYYY-MM-DD
-      const d = dicomData.studyDate;
-      if(d.length===8) el.value = d.substring(0,4)+'-'+d.substring(4,6)+'-'+d.substring(6,8);
-      else el.value = d;
-    }
-  }
-  // Recalcular tudo
-  calc();
-  return {ok:true, count, msg:count+' medidas importadas do DICOM SR'};
-}
-
-// Importar de arquivo USB/pasta (recebe conteúdo já parseado)
-function importarDeArquivo(medidasObj){
-  if(!medidasObj) return {ok:false, msg:'Sem dados'};
-  let count = 0;
-  Object.entries(medidasObj).forEach(([campoId, valor])=>{
-    const el = document.getElementById(campoId);
-    if(el){ el.value = valor; count++; }
-  });
-  calc();
-  return {ok:true, count, msg:count+' campos preenchidos'};
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1555,9 +1473,6 @@ if(typeof registrarMotor === 'function'){
     gerarConclusao: gerarConclusao,
     renderizar: renderizarLaudo,
     calc: calc,
-    importarDICOM: importarDICOM,
-    importarDeArquivo: importarDeArquivo,
-    DICOM_TO_DOM: DICOM_TO_DOM,
     // Diastologia toggle
     setDiastModo: setDiastModo,
     setDiastManual: setDiastManual,
@@ -1568,4 +1483,4 @@ if(typeof registrarMotor === 'function'){
   });
 }
 
-console.log('%c🫀 Motor V8 MP4 (ECO TT) carregado — DICOM-ready ('+Object.keys(DICOM_TO_DOM).length+' campos) · Strain · i18n-prepared','color:#059669;font-weight:bold;font-size:11px;');
+console.log('%c🫀 Motor V8 MP4 (ECO TT) carregado — Strain · i18n-prepared','color:#059669;font-weight:bold;font-size:11px;');

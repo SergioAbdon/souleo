@@ -25,3 +25,94 @@ export const payloadCreateProfile = (uid, extra = {}) => ({
   atualizadoEm: new Date(),
   ...extra,
 });
+
+/**
+ * Payload identico ao cadastro manual da Worklist (handleSalvarPaciente →
+ * saveExame create, src/components/Worklist.tsx + src/lib/firestore.ts).
+ * SEM medicoUid: apos a correcao do Achado 1, exame criado por quem nao
+ * assina nasce orfao (um medico do local assume depois, no salvarLaudo).
+ */
+export const payloadCadastroExame = (extra = {}) => ({
+  id: 'exNovo',
+  acc: 'EX12082610300000',
+  pacienteId: 'pac1',
+  pacienteNome: 'PACIENTE NOVO',
+  pacienteDtnasc: '1980-01-02',
+  cpf: '12345678900',
+  tipoExame: 'eco_tt',
+  dataExame: '2026-08-12',
+  horarioChegada: '10:30',
+  status: 'aguardando',
+  convenio: 'UNIMED',
+  solicitante: '',
+  medicoExecutor: '',
+  sexo: 'F',
+  origem: 'MANUAL',
+  versao: 1,
+  criadoEm: new Date(),
+  ...extra,
+});
+
+/**
+ * Payload identico a EDICAO de paciente pela Worklist (handleSalvarPaciente
+ * com editExameId → writeBatch, Task 3). Inclui cpf (Achado 8) e atualizadoEm.
+ */
+export const payloadEditarExame = (extra = {}) => ({
+  pacienteNome: 'PACIENTE CORRIGIDO',
+  pacienteDtnasc: '1980-01-02',
+  cpf: '22222222222',
+  convenio: 'BRADESCO',
+  solicitante: 'DR FULANO',
+  tipoExame: 'doppler_carotidas',
+  // `sexo` saiu do payload de EDICAO em 01/09/2026 (nº24 na camada de dados):
+  // pos-cadastro so o medico altera — a regra nega via
+  // camposAdministrativosUpdate() e o cliente (Worklist) parou de enviar.
+  atualizadoEm: new Date(),
+  ...extra,
+});
+
+/**
+ * Payload identico ao que `salvarLaudo('andamento', {laudoHtml})` envia
+ * (src/app/laudo/[id]/page.tsx:1221, via saveExame → firestore.ts:293) — o
+ * autosave de 60s e o botao "Salvar rascunho", os DOIS unicos chamadores.
+ * saveExame acrescenta `atualizadoEm` sempre (firestore.ts:295).
+ */
+export const payloadSalvarLaudo = (extra = {}) => ({
+  id: 'exNovo',
+  medidas: { ddve: 50 },
+  pacienteNome: 'PACIENTE NOVO',
+  pacienteDtnasc: '1980-01-02',
+  dataExame: '2026-08-12',
+  convenio: 'UNIMED',
+  solicitante: '',
+  sexo: 'F',
+  status: 'andamento',
+  medicoUid: 'uidMedico',
+  laudoHtml: '<p>laudo</p>',
+  atualizadoEm: new Date(),
+  ...extra,
+});
+
+/**
+ * Payload identico ao que `saveHonorarios()` envia (src/lib/firestore.ts):
+ * so `convenios` (mapa) e `valorUnico` (number | null).
+ */
+export const payloadHonorarios = (extra = {}) => ({
+  convenios: { UNIMED: 150, PARTICULAR: 300 },
+  valorUnico: null,
+  ...extra,
+});
+
+/**
+ * Payload identico ao que a tela Clinica→Tipos de laudo grava (Task 3).
+ */
+export const payloadTipoLaudo = (extra = {}) => ({
+  id: 'ecg',
+  nome: 'ECG',
+  icone: '📈',
+  ativo: true,
+  ordem: 5,
+  modalidade: 'pdf',
+  atualizadoEm: new Date(),
+  ...extra,
+});

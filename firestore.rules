@@ -59,6 +59,16 @@ service cloud.firestore {
       return alcancaLocal(wsId) && vinc(contaDoLocal(wsId)).papel in ['dono', 'medico'];
     }
 
+    // Ato medico: tipoPerfil ausente conta como medico (default do app, licao do
+    // apagao de cadastro 09/08) OU == 'medico' explicito. Qualquer outro valor
+    // ('assistente', 'gestor', typo, '') NAO e medico — mesmo criterio do
+    // /api/emitir (matriz §4). E o eixo que a decisao do Dr. Sergio (ADR 8.4)
+    // exige para editar/liberar laudo.
+    function ehMedicoDeVerdade(u) {
+      return exists(/databases/$(database)/documents/profissionais/$(u))
+        && get(/databases/$(database)/documents/profissionais/$(u)).data.get('tipoPerfil', 'medico') == 'medico';
+    }
+
     // Precisa resistir a setDoc() sem merge: nesse caso a operacao ainda e
     // classificada como 'update', mas request.resource.data so tem os
     // campos enviados — o campo protegido pode desaparecer do resultado.
@@ -68,6 +78,33 @@ service cloud.firestore {
       return (campo in resource.data)
         ? (campo in request.resource.data && request.resource.data[campo] == resource.data[campo])
         : !(campo in request.resource.data);
+    }
+
+    // Campos ADMINISTRATIVOS do exame (pre-assinatura): identificacao do
+    // paciente, agendamento, convenio, metadados de fila. TUDO que o Worklist
+    // grava no cadastro — saveExame manual + import Feegow (src/components/
+    // Worklist.tsx) + os campos que saveExame acrescenta (src/lib/firestore.ts:
+    // id, status, versao, medicoUid, criadoEm, atualizadoEm). Conteudo CLINICO
+    // (medidas, achados, conclusoes, imagensSelecionadasPdf, medidasDicom...)
+    // NAO esta aqui: por ser whitelist, qualquer campo clinico OU desconhecido
+    // tocado por nao-medico e negado (fail-closed). Decisao Dr. Sergio (ADR 8.4):
+    // editar/liberar conteudo de laudo, ate em rascunho, e ATO MEDICO.
+    // `status` estar nesta lista NAO reabre a transicao livre: statusSoDoServidor() (match /exames/) governa por cima, esta whitelist so limita QUAIS campos.
+    // ATENCAO: esta e a lista do CREATE (cadastro). O UPDATE de nao-medico usa
+    // camposAdministrativosUpdate() logo abaixo — lista MENOR, sem `sexo`.
+    function camposAdministrativos() {
+      return ['id', 'acc', 'pacienteId', 'pacienteNome', 'pacienteDtnasc',
+        'cpf', 'feegowPacienteId', 'tipoExame', 'dataExame', 'horarioChegada',
+        'status', 'convenio', 'solicitante', 'medicoExecutor', 'sexo', 'origem',
+        'feegowAppointId', 'medicoUid', 'mwlStatus', 'versao', 'criadoEm', 'atualizadoEm'];
+    }
+    // Decisao nº24 fechada na camada de dados (Sergio, 01/09/2026): sexo muda
+    // as REFERENCIAS do laudo (massa do VE, aorta — cortes por sexo), entao
+    // pos-cadastro so o medico altera. O CADASTRO (create acima) continua
+    // aceitando sexo — vem da ficha/Feegow; e a FICHA do paciente segue
+    // editavel pela recepcao (colecao pacientes, regra propria).
+    function camposAdministrativosUpdate() {
+      return camposAdministrativos().removeAll(['sexo']);
     }
 
     // ── CONTAS ── so o servidor cria e altera
@@ -80,13 +117,56 @@ service cloud.firestore {
     match /workspaces/{wsId} {
       allow get, list: if superadmin()
                        || (resource != null && alcancaConta(resource.data.contaId, wsId));
+      // ortancAtivo intacto: espelho de integracoes/orthanc.ativo, so salvarIntegracao
+      // (Admin SDK) escreve, sempre no mesmo batch de integracoes/orthanc.ativo (achado 17).
       allow update:    if superadmin()
-                       || (ehDonoDoLocal(wsId) && intacto('contaId'));
+                       || (ehDonoDoLocal(wsId) && intacto('contaId') && intacto('ortancAtivo'));
       allow create, delete: if false;
 
       // Gaveta de segredos: ninguem pelo navegador, nem o superadmin.
       match /privado/{documento=**} {
         allow read, write: if false;
+      }
+
+      // Integracoes (Sub-plano 5): configuracao e estado de Feegow/Orthanc/Wader.
+      // Leitura: so o dono. O SEGREDO nao mora aqui — vai na gaveta privado/
+      // acima, que nenhum cliente le.
+      // Escrita: NINGUEM pelo cliente, nem o dono. Quem grava e sempre Admin
+      // SDK — a rota /api/integracoes (salvarIntegracao) e o batimento do
+      // Wader. Motivo: salvarIntegracao grava integracoes/orthanc.ativo e o
+      // espelho workspaces/{wsId}.ortancAtivo no MESMO writeBatch; se o cliente
+      // pudesse escrever aqui direto, ele mudaria orthanc.ativo sem o espelho
+      // acompanhar — o botao "Importar DICOM" (SidebarLaudo.tsx) some da tela
+      // do laudo com o Orthanc ligado, sem erro nenhum. Fechar a escrita e o
+      // que garante que os dois nunca divergem.
+      match /integracoes/{tipo} {
+        allow read: if ehDonoDoLocal(wsId);
+        allow write: if false;
+      }
+
+      // Perfil do aparelho (S4-T13): mapa medida-do-Vivid -> campo do laudo,
+      // editavel no cartao Integracoes (decisao Sergio: transparencia total).
+      // Diferente do generico /integracoes/{tipo} acima: SEM segredo, entao
+      // o CLIENTE escreve direto (mesmo padrao de tiposLaudo abaixo) — nao
+      // precisa de rota server-side so pra isso. Leitura: qualquer membro (o
+      // medico quer ver o que o aparelho manda, nao so o dono). Escrita: so
+      // o dono, mesma trava dos outros editores de integracoes.
+      //
+      // POR QUE ESTE BLOCO FUNCIONA CONVIVENDO COM O WILDCARD ACIMA: no
+      // Firestore, TODOS os blocos `match` que casam com o caminho sao
+      // avaliados e as permissoes sao UNIDAS (OR). NAO existe "o mais
+      // especifico vence" — isso e regra de roteador, nao de security rules.
+      // Aqui da certo porque o wildcard /integracoes/{tipo} NEGA write
+      // (`allow write: if false` nao tira permissao de ninguem, so nao
+      // concede) e este bloco CONCEDE create/update ao dono; a uniao concede.
+      // ⚠️ Se algum dia o wildcard passar a CONCEDER algo mais amplo, este
+      // bloco NAO vai restringir — a uniao continuaria concedendo o mais amplo.
+      // (testado em tests/rules, secao 18).
+      match /integracoes/perfilAparelho {
+        allow read: if superadmin() || alcancaLocal(wsId);
+        allow create, update: if ehDonoDoLocal(wsId)
+          && request.resource.data.keys().hasOnly(['nome', 'mapeamentos', 'atualizadoEm', 'atualizadoPor']);
+        allow delete: if false;
       }
 
       match /pacientes/{pacId} {
@@ -96,21 +176,42 @@ service cloud.firestore {
       }
 
       match /exames/{exameId} {
+        // `status` e DONO UNICO do servidor (fecha E10/E22) — motivo,
+        // levantamento tela por tela e a lista de status legados que
+        // obrigam a origem aberta: docs/decisoes/2026-08-30-secao7-regra-
+        // status.md §2-3. Unica transicao legitima do navegador:
+        // abrir/salvar o laudo (`status:'andamento'`).
+        function statusSoDoServidor() {
+          return resource.data.get('status', '') != 'cancelado'
+            && (intacto('status')
+                || (request.resource.data.get('status', '') == 'andamento'
+                    && resource.data.get('status', '') != 'emitido'));
+        }
         // Todo membro do local ve a fila e le o laudo do colega (D7 do spec)
         allow read:   if superadmin() || alcancaLocal(wsId);
-        // medicoUid so pode vir vazio (recepcao cadastra sem autor), ser o
-        // proprio uid de quem cria, ou ser definido pelo dono do local.
-        // E quem nao e medico NAO cria exame ja carimbado como emitido: sem
-        // esta linha, a recepcao gravaria um laudo com cara de assinado por
-        // fora do /api/emitir — sem PDF, sem log, sem franquia debitada.
-        // Mesmo vetor que derrubou a producao em 09/08; corrigido na regra
-        // publicada no commit b6a6577 e esquecido aqui ate a auditoria Ponytail.
+        // Ninguem cria exame ja carimbado como 'emitido' pelo navegador —
+        // nem o medico (era o mesmo E10 pela porta do create: laudo com cara
+        // de assinado sem PDF, sem log e sem franquia). Quem nasce emitido e
+        // sempre o Admin SDK (/api/emitir), que ignora regras. Grep 30/08:
+        // o unico create do cliente e o cadastro da fila (Worklist.tsx:302),
+        // sempre 'aguardando'. `emitidoEm`/`pdfUrl` tambem NAO podem nascer
+        // plantados (triade 2b, Codex Important) — senao um create 'aguardando'
+        // com os dois campos ja preenchidos e o mesmo E10 disfarcado, e um
+        // `pdfUrl` plantado no nascimento pode apontar pro laudo de OUTRO exame.
         allow create: if alcancaLocal(wsId)
-                      && (ehMedicoNoLocal(wsId)
-                          || request.resource.data.get('status', '') != 'emitido')
+                      && request.resource.data.get('status', '') != 'emitido'
+                      && !('emitidoEm' in request.resource.data)
+                      && !('pdfUrl' in request.resource.data)
                       && (!('medicoUid' in request.resource.data)
                           || request.resource.data.medicoUid == uid()
-                          || ehDonoDoLocal(wsId));
+                          || ehDonoDoLocal(wsId))
+                      // Quem NAO e medico-no-local so cria exame com campos
+                      // administrativos (cadastro/fila). Conteudo clinico ja no
+                      // create = ato medico: exige perfil medico E papel dono/medico
+                      // no local (igual /api/emitir). Medico-de-perfil com papel
+                      // recepcao NAO atende aqui — fica preso a whitelist.
+                      && (( ehMedicoDeVerdade(uid()) && ehMedicoNoLocal(wsId) )
+                          || request.resource.data.keys().hasOnly(camposAdministrativos()));
         // Conteudo do laudo: o autor edita; um exame sem autor ainda pode
         // ser assumido por qualquer medico do local. O dono ajusta qualquer um.
         // `intacto('medicoUid')` fecha a transferencia disfarcada de edicao: sem
@@ -119,22 +220,76 @@ service cloud.firestore {
         // Assumir exame sem autor continua valendo (medicoUid nao existia).
         // Cancelar e do servidor (/api/exame): devolve franquia e loga. Pelo
         // navegador o status 'cancelado' viraria laudo sumido sem devolucao.
-        // Reabrir para 'andamento' continua livre para o autor.
-        allow update: if request.resource.data.get('status', '') != 'cancelado'
-                      && ((ehDonoDoLocal(wsId) && intacto('medicoUid'))
-                          || (ehMedicoNoLocal(wsId)
-                              && (!('medicoUid' in resource.data) || resource.data.medicoUid == uid())
-                              && ('medicoUid' in resource.data ? intacto('medicoUid') : true)));
+        // Reabrir 'emitido' para 'andamento' FECHADO para o autor (E22,
+        // statusSoDoServidor acima) — a franquia ja foi cobrada e cancelar
+        // so devolve com o status ainda 'emitido'.
+        // Conteudo do laudo / reabrir emitido = ATO MEDICO (CRM) + autoria. Um
+        // dono NAO-medico nao edita laudo (decisao Dr. Sergio, ADR 8.4).
+        // Administracao da fila (exame NAO-emitido) continua do dono: paciente,
+        // convenio, agendamento — pre-assinatura, nao e ato medico. Correcao
+        // administrativa de EMITIDO vai pela /api/corrigir-laudo (log + servidor).
+        allow update: if statusSoDoServidor()
+                      && ((ehMedicoDeVerdade(uid()) && ehMedicoNoLocal(wsId)
+                            && (!('medicoUid' in resource.data) || resource.data.medicoUid == uid())
+                            && ('medicoUid' in resource.data ? intacto('medicoUid') : true)
+                            // emitidoEm/pdfUrl so o servidor grava (emitir-admin.ts:390,
+                            // publicarPdfSeAindaDono em :154) — sem isto o autor plantava
+                            // metade do carimbo de emissao mesmo com `status` fechado.
+                            && intacto('emitidoEm') && intacto('pdfUrl'))
+                          || (alcancaLocal(wsId) && intacto('medicoUid')
+                              && resource.data.get('status', '') != 'emitido'
+                              // Qualquer MEMBRO do local (dono, medico, recepcao) mexe
+                              // no ADMINISTRATIVO da fila pre-assinatura (Secao 2, A2).
+                              // Campo clinico tocado aqui e negado (ADR 8.4); autor
+                              // intacto; emitido corrige via /api/corrigir-laudo.
+                              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(camposAdministrativosUpdate())));
         // Apagar/cancelar/transferir passam pelo servidor (log + franquia)
         allow delete: if false;
       }
 
-      // Honorarios, extratos e demais ajustes do local: financeiro, so quem
-      // atende (medico) ou o dono — recepcao nao ve valor por convenio.
-      // superadmin(): Lacuna 1 do levantamento — sem ele o suporte perdia
-      // acesso a honorarios e contador de extrato (a publicada sempre teve).
-      match /config/{docId}   { allow read, write: if superadmin() || ehMedicoNoLocal(wsId); }
-      match /extratos/{docId} { allow read, write: if superadmin() || ehMedicoNoLocal(wsId); }
+      // Catalogo de tipos de laudo (Sub-plano 3): membro le (a Agenda lista
+      // os tipos no cadastro), so o DONO configura. Whitelist fail-closed.
+      match /tiposLaudo/{tipoId} {
+        allow read: if superadmin() || alcancaLocal(wsId);
+        allow create, update: if ehDonoDoLocal(wsId)
+          && request.resource.data.keys().hasOnly(['id', 'nome', 'icone', 'ativo',
+             'ordem', 'modalidade', 'motorId', 'modeloTexto', 'criadoEm', 'atualizadoEm'])
+          && request.resource.data.modalidade in ['motor', 'texto', 'pdf'];
+        allow delete: if ehDonoDoLocal(wsId);
+      }
+
+      // Honorarios/extratos: financeiro, so quem atende (medico) ou o dono —
+      // recepcao nao ve valor por convenio. superadmin(): suporte (Lacuna 1).
+      // S8 onda 2 (C2/R5): whitelist de forma — unicos caminhos gravaveis do
+      // workspace que nao tinham hasOnly(). `config` so aceita o doc
+      // 'honorarios' com os 2 campos do saveHonorarios (valores DENTRO do mapa
+      // `convenios` nao sao validaveis por regra — clamp no cliente, C9).
+      match /config/{docId} {
+        allow read: if superadmin() || ehMedicoNoLocal(wsId);
+        allow create, update: if superadmin() || (ehMedicoNoLocal(wsId)
+          && docId == 'honorarios'
+          && request.resource.data.keys().hasOnly(['convenios', 'valorUnico'])
+          && request.resource.data.convenios is map
+          && (request.resource.data.valorUnico == null
+              || (request.resource.data.valorUnico is number
+                  && request.resource.data.valorUnico >= 0)));
+        allow delete: if superadmin();
+      }
+      // Contador de extratos (C2): nasce em 1 e so anda +1 — zerar, saltar ou
+      // apagar o mes e evasao do "1 gratis/mes". O incrementarExtrato do
+      // cliente (setDoc merge + increment(1)) passa nos dois ramos.
+      match /extratos/{docId} {
+        allow read: if superadmin() || ehMedicoNoLocal(wsId);
+        allow create: if superadmin() || (ehMedicoNoLocal(wsId)
+          && request.resource.data.keys().hasOnly(['emitidos', 'ultimoEm'])
+          && request.resource.data.emitidos == 1
+          && request.resource.data.ultimoEm is timestamp);
+        allow update: if superadmin() || (ehMedicoNoLocal(wsId)
+          && request.resource.data.keys().hasOnly(['emitidos', 'ultimoEm'])
+          && request.resource.data.emitidos == resource.data.emitidos + 1
+          && request.resource.data.ultimoEm is timestamp);
+        allow delete: if superadmin();
+      }
     }
 
     // ── VINCULOS ── leitura do proprio e do dono da conta; escrita so servidor
@@ -170,15 +325,25 @@ service cloud.firestore {
       allow create: if auth() && profId == uid()
                     && (!('superadmin' in request.resource.data)
                         || request.resource.data.superadmin == false)
-                    && !('adminRole' in request.resource.data);
+                    && !('adminRole' in request.resource.data)
+                    // O selo so nasce 'nao_verificado' pelo navegador. O cadastro
+                    // real cria o perfil pelo servidor (Admin SDK, ignora regras);
+                    // create client-side NUNCA pode nascer 'verificado' (selo forjado).
+                    && (!('crmVerificacao' in request.resource.data)
+                        || request.resource.data.crmVerificacao.status == 'nao_verificado');
       // `tipoPerfil` tambem e imutavel pelo proprio: /api/emitir exige perfil
       // medico para assinar laudo (matriz §4), e sem isso um assistente com
       // papel dono se autopromovia a medico e passava no gate. Reenviar o MESMO
       // valor continua valendo (intacto permite igual) — o PerfilModal manda o
       // campo em todo save; so a MUDANCA e negada. O Direx (branch separado) muda.
+      // `crmVerificacao` (selo "CRM verificado no CFM") so o servidor/superadmin
+      // seta — senao o medico gravava status:'verificado' em si e forjava o selo.
+      // `crm`/`ufCrm` nascem no cadastro e nao mudam pelo proprio (a distincao e
+      // do onboarding). Reenviar o mesmo valor continua passando (intacto).
       allow update: if superadmin()
                     || (auth() && profId == uid()
-                        && intacto('superadmin') && intacto('adminRole') && intacto('tipoPerfil'));
+                        && intacto('superadmin') && intacto('adminRole') && intacto('tipoPerfil')
+                        && intacto('crmVerificacao') && intacto('crm') && intacto('ufCrm'));
       allow delete: if false;
     }
 
@@ -191,15 +356,23 @@ service cloud.firestore {
 
     // ── Trilhas append-only ──
     match /logs/{logId} {
-      allow create: if auth();
+      // S8 onda 2 (R4): mesmo MOTIVO do fechamento do `consumo` (la, create
+      // virou false; aqui o cliente ainda escreve, so que assinado) — auth()
+      // sozinho deixava
+      // qualquer logado forjar trilha em nome de outro medico/clinica. Cliente
+      // so cria log ASSINADO com o proprio uid; 'sistema' e uid alheio, so
+      // Admin SDK. Chamadores reais conferidos: Extrato (user.uid) e Direx
+      // configuracoes (superadmin).
+      allow create: if superadmin() || (auth() && request.resource.data.medicoUid == uid());
       allow read:   if superadmin();
       allow update, delete: if false;
     }
     // Ledger de franquia/creditos: SO o servidor Admin escreve (/api/emitir
-    // debita, /api/exame devolve). O `registrarConsumo` do cliente
-    // (src/lib/billing.ts) e codigo morto — nenhum chamador. Com `auth()`
-    // aqui, qualquer logado forjava devolucao ('cancelamento') e zerava a
-    // conta de consumo da propria clinica.
+    // debita, /api/exame devolve). O `registrarConsumo` do cliente que existia
+    // em src/lib/billing.ts era codigo morto sem chamador — apagado na
+    // triade da onda 2 (fix-wave, 30/08). Com `auth()` aqui, qualquer logado
+    // forjava devolucao ('cancelamento') e zerava a conta de consumo da
+    // propria clinica.
     match /consumo/{consumoId} {
       allow create: if false;
       allow read:   if superadmin();
@@ -226,6 +399,12 @@ service cloud.firestore {
     match /memberships/{memId} {
       allow get, list: if superadmin() || (auth() && resource.data.medicoUid == uid());
       allow write:     if false;
+    }
+
+    // ── CONVITES ── 100% servidor (Admin SDK). O cliente nunca le o token nem
+    // cria/aceita pelo navegador: convite e aceite passam por /api/convite.
+    match /convites/{conviteId} {
+      allow read, write: if false;
     }
 
     // ── Tudo o mais: fechado ──

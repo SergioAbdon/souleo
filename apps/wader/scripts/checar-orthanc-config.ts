@@ -1,6 +1,8 @@
 /**
- * Verifica se algum workspace já tem credenciais Orthanc salvas no Firestore
- * (configuradas via LocalModal do LEO web).
+ * Verifica se algum workspace tem o Orthanc configurado (campos canonicos
+ * pos Sub-plano 5: integracoes/orthanc.url/.ativo + privado/orthanc.user/.pass
+ * — nao mais workspaces/{id}.ortancUrl/User/Pass, campo legado ja limpo).
+ * Util pra rodar na PC da clinica se o Wader nao conectar.
  *
  * Uso: npx tsx scripts/checar-orthanc-config.ts
  */
@@ -27,23 +29,24 @@ async function main() {
   console.log(`Total de workspaces: ${snap.size}\n`);
 
   let achei = 0;
-  snap.forEach((doc) => {
+  for (const doc of snap.docs) {
     const data = doc.data();
-    const tem = data.ortancUrl || data.ortancUser || data.ortancPass;
-    if (!tem) return;
+    const integ = (await db.doc(`workspaces/${doc.id}/integracoes/orthanc`).get()).data();
+    if (!integ?.url) continue;
+    const priv = (await db.doc(`workspaces/${doc.id}/privado/orthanc`).get()).data();
     achei++;
     console.log(`▸ workspace: ${doc.id}`);
-    console.log(`  nomeClinica:  ${data.nomeClinica ?? '(sem nome)'}`);
-    console.log(`  ortancAtivo:  ${data.ortancAtivo ?? false}`);
-    console.log(`  ortancUrl:    ${data.ortancUrl ?? '(vazio)'}`);
-    console.log(`  ortancUser:   ${data.ortancUser ?? '(vazio)'}`);
-    console.log(`  ortancPass:   ${data.ortancPass ? '***' + String(data.ortancPass).slice(-3) + ' (mascarado)' : '(vazio)'}`);
+    console.log(`  nomeClinica: ${data.nomeClinica ?? '(sem nome)'}`);
+    console.log(`  ativo:       ${integ.ativo ?? false}`);
+    console.log(`  url:         ${integ.url}`);
+    console.log(`  user:        ${priv?.user ?? '(vazio)'}`);
+    console.log(`  senha:       ${priv?.pass ? 'presente' : '(vazio)'}`);
     console.log('');
-  });
+  }
 
   if (achei === 0) {
-    console.log('⚠️  Nenhum workspace tem credenciais Orthanc configuradas no Firestore.');
-    console.log('   Provavelmente nunca foi salvo via LocalModal do LEO web.\n');
+    console.log('⚠️  Nenhum workspace tem Orthanc configurado (integracoes/orthanc.url vazio).');
+    console.log('   Provavelmente nunca foi salvo via tela Integracoes do LEO web.\n');
   }
 
   process.exit(0);

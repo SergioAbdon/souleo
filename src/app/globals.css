@@ -1,26 +1,29 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* ══════════════════════════════════════════════════════════════════
+   LEO · Tokens do design system V7 (spec 2026-08-13, pré-definições
+   em Desktop/LEO/v7/css/leo_v9.1.css). Fonte única de cor da
+   plataforma — telas migram de hex hardcoded pra estes tokens.
+   ══════════════════════════════════════════════════════════════════ */
+@theme {
+  --font-sans: var(--font-ibm-plex), ui-sans-serif, system-ui, sans-serif;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-p1: #1E3A5F;       /* navy primário (V7 --P1) */
+  --color-p2: #2563EB;       /* azul de ação (V7 --P2) */
+  --color-p2-deep: #1D4ED8;  /* fim do gradiente de botão */
+  --color-surface: #F1F5F9;  /* fundo da área de trabalho */
+  --color-card: #FFFFFF;     /* superfície de card/sidebar */
+  --color-borda: #E2E8F0;
+  --color-ink: #1E293B;      /* texto principal */
+  --color-ink-2: #64748B;    /* texto secundário */
+  --color-ink-3: #94A3B8;    /* texto terciário/labels */
+  --color-ativo: #EEF2F8;    /* item de navegação ativo */
+  --color-alerta: #F59E0B;
+  --color-critico: #EF4444;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
 }

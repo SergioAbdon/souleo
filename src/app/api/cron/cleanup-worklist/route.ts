@@ -4,36 +4,28 @@
 // Exames com dataExame<hoje E status='aguardando' viram 'nao-realizado'
 // Wader detecta a mudança e remove .wl da pasta worklists/
 // ══════════════════════════════════════════════════════════════════
-
 import { NextRequest, NextResponse } from 'next/server';
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { adminDb } from '@/lib/auth-admin';
+import { dataLocalHoje } from '@/lib/utils';
 
-if (!getApps().length) {
-  initializeApp({
-    credential: cert({
-      projectId: 'leo-sistema-laudos',
-      clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL!,
-      privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-  });
-}
-const dbAdmin = getFirestore();
+export const runtime = 'nodejs';
 
 const CRON_SECRET = process.env.CRON_SECRET || '';
+const CHUNK = 400; // limite Firestore = 500 ops/batch
 
 export async function GET(req: NextRequest) {
-  // Vercel Cron envia Authorization: Bearer <CRON_SECRET>. Em dev (sem secret), permite.
-  if (CRON_SECRET) {
-    const auth = req.headers.get('authorization');
-    if (auth !== `Bearer ${CRON_SECRET}`) {
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  // FAIL-CLOSED (Achado 4): sem secret configurado em producao, NAO roda.
+  // Em dev (NODE_ENV != production) continua liberado pra teste local.
+  if (!CRON_SECRET) {
+    if (process.env.NODE_ENV === 'production') {
+      return NextResponse.json({ error: 'CRON_SECRET ausente' }, { status: 500 });
     }
+  } else if (req.headers.get('authorization') !== `Bearer ${CRON_SECRET}`) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
-  // "Hoje" em BRT (UTC-3 fixo, Brasil sem horário de verão desde 2019)
-  const hojeBRT = new Date(Date.now() - 3 * 60 * 60 * 1000);
-  const dataHoje = hojeBRT.toISOString().slice(0, 10);
+  const dbAdmin = adminDb();
+  const dataHoje = dataLocalHoje();
 
   let total = 0;
   const detalhes: { wsId: string; marcados: number }[] = [];
@@ -50,36 +42,38 @@ export async function GET(req: NextRequest) {
           .where('status', '==', 'aguardando')
           .where('dataExame', '<', dataHoje)
           .get();
-
         if (examesSnap.empty) continue;
 
-        const batch = dbAdmin.batch();
-        examesSnap.docs.forEach(doc => {
-          batch.update(doc.ref, {
-            status: 'nao-realizado',
-            naoRealizadoEm: new Date().toISOString(),
+        // Chunking (Achado 9): batch unico estourava o limite de 500 e
+        // NENHUM exame era marcado — com a resposta ainda dizendo ok.
+        const docs = examesSnap.docs;
+        for (let i = 0; i < docs.length; i += CHUNK) {
+          const batch = dbAdmin.batch();
+          docs.slice(i, i + CHUNK).forEach(d => {
+            batch.update(d.ref, {
+              status: 'nao-realizado',
+              naoRealizadoEm: new Date().toISOString(),
+            });
           });
-        });
-        await batch.commit();
-
-        total += examesSnap.size;
-        detalhes.push({ wsId, marcados: examesSnap.size });
+          await batch.commit();
+        }
+        total += docs.length;
+        detalhes.push({ wsId, marcados: docs.length });
       } catch (e) {
         erros.push(`${wsId}: ${e instanceof Error ? e.message : 'erro'}`);
       }
     }
 
+    // Erro parcial = 500 (Codex-10): 2xx faria monitor/log do Vercel tratar
+    // como sucesso. O corpo preserva o que JA foi processado.
     return NextResponse.json({
-      ok: true,
+      ok: erros.length === 0,
       hoje: dataHoje,
       totalMarcados: total,
       detalhes,
       erros: erros.length > 0 ? erros : undefined,
-    });
+    }, { status: erros.length > 0 ? 500 : 200 });
   } catch (e) {
-    return NextResponse.json({
-      ok: false,
-      error: e instanceof Error ? e.message : 'erro',
-    }, { status: 500 });
+    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'erro' }, { status: 500 });
   }
 }

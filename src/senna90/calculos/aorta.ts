@@ -5,11 +5,11 @@
 // - Roman MJ, Devereux RB et al. AJC 1989; 64: 507-512 (raiz <40 vs ≥40)
 // - Devereux RB et al. AJC 2012; 110: 1189-1194 (Strong Heart Study)
 //
-// Sistema de classificação por Desvio-Padrão (Z-score):
-// - Z ≤ 2: normal
-// - Z 2-3: ectasia leve
-// - Z 3-4: ectasia moderada
-// - Z > 4: ectasia importante
+// Z-score / fallback abaixo (classificarRaizAo) sobrevivem só como REDE DE
+// SEGURANÇA da raiz quando o exame não traz idade — seus graus internos
+// ('leve'/'moderada'/'importante') não viram texto de laudo desde a F1.
+// A régua clínica em vigor é a de tiers normal/dilatacao/aneurisma da
+// segunda metade deste arquivo (ACC/AHA 2022 + WASE 2022, Senna93 §2.2).
 //
 // Fallback (sem ASC): limites fixos por sexo (ASE 2015)
 // ══════════════════════════════════════════════════════════════════
@@ -77,81 +77,6 @@ export function classificarRaizAo(
   };
 }
 
-/**
- * Classifica aorta ascendente.
- * COMPORTAMENTO PRESERVADO: equação única (sem dependência etária — Devereux 2012).
- */
-export function classificarAoAscendente(
-  medidaMM: number,
-  sexo: Sexo,
-  asc: number | null
-): ResultadoAorta {
-  if (asc !== null && asc > 0) {
-    const a = 1.47;
-    const b = 0.91;
-    const sd = 0.22; // cm
-    const previstoCm = a + b * asc;
-    const medidaCm = medidaMM / 10;
-    const zScore = (medidaCm - previstoCm) / sd;
-    return {
-      medidaMM,
-      previstoMM: truncar(previstoCm * 10, 1),
-      sdMM: truncar(sd * 10, 1),
-      zScore: truncar(zScore, 2),
-      grau: classificarPorZ(zScore),
-      metodo: 'zscore',
-    };
-  }
-  // Fallback ASE 2015 — atualizado 07/05/2026
-  // Asc: M [37, 42, 50] | F [34, 39, 47]
-  const limites = sexo === 'F' ? [34, 39, 47] : [37, 42, 50];
-  return {
-    medidaMM,
-    previstoMM: null,
-    sdMM: null,
-    zScore: null,
-    grau: classificarPorFallback(medidaMM, limites),
-    metodo: 'fallback',
-  };
-}
-
-/**
- * Classifica arco aórtico.
- */
-export function classificarArcoAo(
-  medidaMM: number,
-  sexo: Sexo,
-  asc: number | null
-): ResultadoAorta {
-  if (asc !== null && asc > 0) {
-    const a = 1.26;
-    const b = 0.61;
-    const sd = 0.20; // cm
-    const previstoCm = a + b * asc;
-    const medidaCm = medidaMM / 10;
-    const zScore = (medidaCm - previstoCm) / sd;
-    return {
-      medidaMM,
-      previstoMM: truncar(previstoCm * 10, 1),
-      sdMM: truncar(sd * 10, 1),
-      zScore: truncar(zScore, 2),
-      grau: classificarPorZ(zScore),
-      metodo: 'zscore',
-    };
-  }
-  // Fallback ASE 2015 — atualizado 07/05/2026
-  // Arco: sem distinção de sexo (ASE Chamber Quantification 2015)
-  const limites = [36, 38, 42];
-  return {
-    medidaMM,
-    previstoMM: null,
-    sdMM: null,
-    zScore: null,
-    grau: classificarPorFallback(medidaMM, limites),
-    metodo: 'fallback',
-  };
-}
-
 // ── Helpers internos ──
 
 function classificarPorZ(z: number): 'normal' | 'leve' | 'moderada' | 'importante' {
@@ -173,36 +98,51 @@ function classificarPorFallback(
 }
 
 // ══════════════════════════════════════════════════════════════════
-// SPEC AORTA — Tiers normal/ectasia/aneurisma (Dr. Sérgio 16/05/2026)
+// SPEC AORTA — Tiers normal/dilatacao/aneurisma (Senna93 §2.2, F1)
 // ══════════════════════════════════════════════════════════════════
-// docs/decisoes/2026-05-16-spec-aorta.md
+// docs/decisoes/2026-05-16-spec-aorta.md (base) + spec Senna93 §2.2
+// (decisão do arco 26/08/2026, ACC/AHA 2022).
 //
-// Fronteira normal→ectasia, fonte mais recente POR SEGMENTO:
+// Fronteira normal→dilatação, fonte mais recente POR SEGMENTO:
 // • RAIZ : WASE 2022 (seio de Valsalva), corte por SEXO + IDADE =
 //   média + 1,96·DP (percentil 97,5, critério do paper). Sem idade
-//   no exame → cai no Z-score Roman validado (rede de segurança).
+//   no exame → cai no Z-score Roman validado (rede de segurança),
+//   e o motor emite o alerta AORTA_SEM_IDADE.
 // • ASCENDENTE : ASE/EACVI Chamber Quantification 2015 (Tabela 14,
 //   ascendente proximal) — Homem ≤ 38 · Mulher ≤ 35 mm (média+2DP).
-// • ARCO : ACR / ACRIN 6654 — Homem ≤ 35 · Mulher ≤ 32 mm.
+// • ARCO : NENHUMA diretriz tabula o normal do arco transverso.
+//   Teto prático ~40 mm (ACC/AHA 2022, "aproximado, não validado"),
+//   sem sexo e sem graus.
 //
-// Ectasia→aneurisma (ABSOLUTO): Raiz/Asc ≥ 50 mm (ACC/AHA 2022);
-// Arco ≥ 44 mm (♂) / ≥ 41 mm (♀) = ≥1,5× a média ACRIN.
-// Reconcilia a antiga divergência Z×absoluto — leve/mod/imp saem.
+// Dilatação→ANEURISMA (ABSOLUTO): Raiz/Asc ≥ 45 mm (ACC/AHA 2022,
+// adulto médio). O arco NUNCA vira "aneurisma" (sem tabela de normal).
+// 50 mm (raiz/asc) e 55 mm (arco) são limiares CIRÚRGICOS — viram
+// nota de encaminhamento (`notaCirurgica`), não mudam o nome do tier.
+// "Ectasia leve/moderada/importante" morreu (F1).
 //
 // Índice área transversal (cm²) ÷ altura (m): só Raiz/Asc; ≥ 10 ⇒
 // "com critérios de maior gravidade" (ACC/AHA 2022). Arco sem índice.
 // ══════════════════════════════════════════════════════════════════
 
-export type TierAorta = 'normal' | 'ectasia' | 'aneurisma';
+export type TierAorta = 'normal' | 'dilatacao' | 'aneurisma';
 
 export interface SegmentoAortaResult {
   medidaMM: number;
   tier: TierAorta;
   indiceCm2m: number | null; // só Raiz/Asc (precisa altura)
   graveIndice: boolean;      // indiceCm2m !== null && >= 10
+  notaCirurgica: boolean;    // raiz/asc >= 50 mm · arco >= 55 mm (ACC/AHA 2022)
 }
 
-const ANEURISMA_MM_RAIZ_ASC = 50;
+// ACC/AHA 2022 (spec Senna93 §2.2): dilatação = acima do previsto p/ sexo+idade
+// e < 45 mm; ANEURISMA >= 45 mm (adulto médio); 50/55 = limiares CIRÚRGICOS
+// (nota de encaminhamento, não mudança de nome). "Ectasia leve/mod/imp" morreu.
+const ANEURISMA_MM_RAIZ_ASC = 45;
+const NOTA_CIRURGICA_MM_RAIZ_ASC = 50;
+// Arco: NENHUMA diretriz tabula normal do arco; teto prático ~40 mm (ACC/AHA,
+// "aproximado, não validado"). > 40 = "dilatado" SEM graus; >= 55 = cirurgia.
+export const ARCO_NORMAL_MAX = 40;
+const NOTA_CIRURGICA_MM_ARCO = 55;
 
 /**
  * ASE/EACVI Chamber Quantification 2015, Tabela 14 — aorta ascendente
@@ -210,21 +150,8 @@ const ANEURISMA_MM_RAIZ_ASC = 50;
  * Limite superior do normal = média + 2 DP → Homem 38 · Mulher 35 mm.
  * Arco usa o mesmo (Chamber não tabula o arco transverso isolado).
  */
-function corteChamberAsc(sexo: Sexo): number {
+export function corteChamberAsc(sexo: Sexo): number {
   return sexo !== 'F' ? 38 : 35;
-}
-
-/**
- * ACR / ACRIN 6654 (rede de imagem do ACR — NLST) — ARCO transverso.
- * Normal (limite superior ≈ média+2DP): Homem 35 · Mulher 32 mm.
- * Aneurisma = ≥1,5× a média normal ACRIN: Homem 44 · Mulher 41 mm.
- * Caveats: medida TC borda-externa; população NLST 55–74 anos.
- */
-function corteArcoNormal(sexo: Sexo): number {
-  return sexo !== 'F' ? 35 : 32;
-}
-function corteArcoAneurisma(sexo: Sexo): number {
-  return sexo !== 'F' ? 44 : 41;
 }
 
 /**
@@ -245,13 +172,14 @@ export function indiceAortaAltura(
  * WASE 2022 — limite superior do normal da RAIZ (seio de Valsalva), mm.
  * Cutoff = média + 1,96·DP (percentil 97,5 — critério do paper WASE).
  * Faixas WASE: jovem ≤40 · médio 41–65 · idoso ≥66.
- *   Homem : 38 / 40 / 41      Mulher : 35 / 36 / 37
+ *   Homem : 38 / 40 / 41      Mulher : 35 / 36 / 38
+ * (♀ ≥66 anos: 37,5 mm cru arredonda para 38 — correção F1.)
  */
-function corteWaseRaiz(sexo: Sexo, idade: number): number {
+export function corteWaseRaiz(sexo: Sexo, idade: number): number {
   const homem = sexo !== 'F';
   if (idade <= 40) return homem ? 38 : 35;
   if (idade <= 65) return homem ? 40 : 36;
-  return homem ? 41 : 37;
+  return homem ? 41 : 38;
 }
 
 /** Monta o tier a partir de "está acima do normal?" + medida + altura. */
@@ -262,15 +190,16 @@ function montarTierRaizAsc(
 ): SegmentoAortaResult {
   const indiceCm2m = indiceAortaAltura(medidaMM, alturaCm);
   const graveIndice = indiceCm2m !== null && indiceCm2m >= 10;
+  const notaCirurgica = medidaMM >= NOTA_CIRURGICA_MM_RAIZ_ASC;
   if (!acimaDoNormal && medidaMM < ANEURISMA_MM_RAIZ_ASC) {
-    return { medidaMM, tier: 'normal', indiceCm2m, graveIndice };
+    return { medidaMM, tier: 'normal', indiceCm2m, graveIndice, notaCirurgica };
   }
-  const tier: TierAorta = medidaMM >= ANEURISMA_MM_RAIZ_ASC ? 'aneurisma' : 'ectasia';
-  return { medidaMM, tier, indiceCm2m, graveIndice };
+  const tier: TierAorta = medidaMM >= ANEURISMA_MM_RAIZ_ASC ? 'aneurisma' : 'dilatacao';
+  return { medidaMM, tier, indiceCm2m, graveIndice, notaCirurgica };
 }
 
 /**
- * Raiz aórtica — fronteira normal→ectasia pelo WASE 2022 (sexo+idade).
+ * Raiz aórtica — fronteira normal→dilatação pelo WASE 2022 (sexo+idade).
  * Sem idade no exame → Z-score Roman validado (rede de segurança).
  */
 export function tierRaizAo(
@@ -287,8 +216,8 @@ export function tierRaizAo(
 }
 
 /**
- * Aorta ascendente — fronteira normal→ectasia pelo ASE Chamber 2015:
- * normal ≤ 36 mm (absoluto). Aneurisma ≥ 50 mm. Mantém índice cm²/m.
+ * Aorta ascendente — fronteira normal→dilatação pelo ASE Chamber 2015
+ * (≤38 ♂ / ≤35 ♀). Aneurisma ≥ 45 mm. Mantém índice cm²/m.
  */
 export function tierAoAscendente(
   medidaMM: number,
@@ -299,10 +228,11 @@ export function tierAoAscendente(
   return montarTierRaizAsc(medidaMM > corteChamberAsc(sexo), medidaMM, alturaCm);
 }
 
-/** Arco — ACR/ACRIN sexo-específico: normal ≤35♂/≤32♀ · aneurisma ≥44♂/≥41♀. Sem índice. */
-export function tierArcoAo(medidaMM: number, sexo: Sexo): SegmentoAortaResult {
-  let tier: TierAorta = 'normal';
-  if (medidaMM >= corteArcoAneurisma(sexo)) tier = 'aneurisma';
-  else if (medidaMM > corteArcoNormal(sexo)) tier = 'ectasia';
-  return { medidaMM, tier, indiceCm2m: null, graveIndice: false };
+/** Arco — sem sexo, sem graus, sem índice (spec §2.2, decisão do arco 26/08). */
+export function tierArcoAo(medidaMM: number): SegmentoAortaResult {
+  const tier: TierAorta = medidaMM > ARCO_NORMAL_MAX ? 'dilatacao' : 'normal';
+  return {
+    medidaMM, tier, indiceCm2m: null, graveIndice: false,
+    notaCirurgica: medidaMM >= NOTA_CIRURGICA_MM_ARCO,
+  };
 }

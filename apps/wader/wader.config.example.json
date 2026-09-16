@@ -13,22 +13,13 @@
     "worklistPath": "C:\\Orthanc\\worklists"
   },
 
-  "backup": {
-    "path": "C:\\OneDrive\\LEO-DICOM",
-    "retentionDays": 30
-  },
-
   "polling": {
     "worklistSyncSec": 60,
-    "orthancChangesSec": 30
+    "_comentario_orthancChangesSec": "Chamada local barata (Orthanc na rede da clínica) — curto pra latência: médico vê a medida em segundos, não meio minuto.",
+    "orthancChangesSec": 5
   },
 
   "ui": {
-    "port": 8043,
-    "showTrayIcon": true
-  },
-
-  "telemetry": {
-    "sampleRate": 0.1
+    "port": 8043
   }
 }

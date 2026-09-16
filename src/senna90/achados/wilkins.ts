@@ -23,7 +23,7 @@ export const WK_DESC = {
   esp: [
     'Normal',
     'Espessura valvar próxima do normal (4–5 mm)',
-    'Grande espessamento nas margens do folheto',
+    'Espessamento das margens dos folhetos (5–8 mm)',
     'Espessamento de todo o folheto (5–8 mm)',
     'Grande espessamento de todo o folheto (>8–10 mm)',
   ],
@@ -42,6 +42,11 @@ export const WK_DESC = {
     'Extensa calcificação em todo o folheto',
   ],
 } as const;
+
+/** Wilkins clássico pontua 1–4 por categoria (total 4–16). 0 = não avaliado (spec B29/V8). */
+function wilkinsCompleto(mob: number, esp: number, sub: number, cal: number): boolean {
+  return [mob, esp, sub, cal].every((v) => Number.isInteger(v) && v >= 1 && v <= 4);
+}
 
 /**
  * Payload da sentinela __WILKINS__
@@ -71,6 +76,9 @@ export function jWilkins(
   cal: number
 ): string {
   if (!ativo) return '';
+  // Categoria não pontuada (0) = não avaliada: não existe "TOTAL 0 pts" no
+  // escore de Wilkins. Sem o bloco — o motor emite WILKINS_INCOMPLETO (B29/V8).
+  if (!wilkinsCompleto(mob, esp, sub, cal)) return '';
 
   const sc = mob + esp + sub + cal;
 
@@ -80,7 +88,7 @@ export function jWilkins(
   } else if (sc >= 8) {
     concFrase = `Escore de Wilkins & Block de ${sc} pontos. Paciente no limite para valvuloplastia mitral percutânea.`;
   } else {
-    concFrase = `Escore de Wilkins & Block de ${sc} pontos. Paciente favorável para valvuloplastia mitral percutânea (escore ≤ 8).`;
+    concFrase = `Escore de Wilkins & Block de ${sc} pontos. Paciente favorável para valvuloplastia mitral percutânea (escore < 8).`;
   }
 
   const payload: WilkinsPayload = { mob, esp, sub, cal, sc, concFrase };
@@ -98,5 +106,6 @@ export function calcWilkinsScore(
   cal: number
 ): number | null {
   if (!ativo) return null;
+  if (!wilkinsCompleto(mob, esp, sub, cal)) return null;
   return mob + esp + sub + cal;
 }

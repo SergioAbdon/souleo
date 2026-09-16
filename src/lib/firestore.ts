@@ -5,8 +5,9 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { db } from './firebase';
-import { dataLocalHoje } from './utils';
+import { dataLocalHoje, dataLocalBRT } from './utils';
 import { gerarAccessionNumber } from './gerarAccessionNumber';
+import { ordenarPorChegada } from './worklist-ordem';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc,
   query, where, orderBy, limit, onSnapshot, serverTimestamp,
@@ -303,6 +304,10 @@ export async function saveExame(wsId: string, dados: Record<string, unknown>, me
       // na mesma data. Se sim, regenera com offset incremental até 5 tentativas.
       // Cobre o caso de cliente rodar batch fora do gerarAccessionNumber()
       // (ex: ACC vindo de outra origem) ou contador in-memory zerado por reload.
+      // ponytail: check-then-write nao-transacional — janela residual so no
+      // cadastro MANUAL simultaneo em 2 maquinas no MESMO centesimo (hhmmsscc
+      // + contador de sessao). Import em lote reserva accIndex no servidor
+      // (feegow-admin). Trocar por transacao se algum dia colidir de novo.
       if (dados.acc && dados.dataExame) {
         let acc = dados.acc as string;
         const dataExame = dados.dataExame as string;
@@ -321,27 +326,17 @@ export async function saveExame(wsId: string, dados: Record<string, unknown>, me
         dados.acc = acc;
       }
       const ref = doc(collection(db, 'workspaces', wsId, 'exames'));
+      // medicoUid vazio = exame sem autor (recepcao cadastra; o medico assume
+      // no primeiro salvarLaudo — e o que a regra de update espera).
       await setDoc(ref, {
         id: ref.id, ...dados,
-        status: (dados.status as string) || 'rascunho', versao: 1, medicoUid,
+        status: (dados.status as string) || 'rascunho', versao: 1,
+        ...(medicoUid ? { medicoUid } : {}),
         criadoEm: now()
       });
       return ref.id;
     }
   } catch (e) { console.error('saveExame:', e); return null; }
-}
-
-export async function emitExame(wsId: string, exameId: string, dadosFinais: Record<string, unknown>, medicoUid: string) {
-  try {
-    await updateDoc(doc(db, 'workspaces', wsId, 'exames', exameId), {
-      ...dadosFinais,
-      status: 'emitido',
-      emitidoEm: now(),
-      medicoUid,
-      atualizadoEm: now()
-    });
-    return true;
-  } catch (e) { console.error('emitExame:', e); return false; }
 }
 
 // ══ WORKLIST LISTENER (real-time) ════════════════════════════════
@@ -355,7 +350,13 @@ export function listenWorklist(wsId: string, callback: (items: Record<string, un
       orderBy('horarioChegada', 'asc')
     ),
     snap => {
-      const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Ordem de CHEGADA real (item 2, 31/08/2026): o orderBy acima e so o
+      // indice/fallback — `horarioChegada` de exame Feegow e o slot AGENDADO.
+      // SENTINELA (Ruflo): isto so funciona porque a query NAO pagina (lista o
+      // dia inteiro). Se algum dia entrar limit()/cursor aqui, o corte tem que
+      // ser por chegouEm/criadoEm — cortar pelo orderBy de horarioChegada
+      // derrubaria os pacientes errados e reintroduziria o bug da fila.
+      const items = ordenarPorChegada(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       callback(items);
     },
     err => console.error('listenWorklist:', err)
@@ -364,9 +365,7 @@ export function listenWorklist(wsId: string, callback: (items: Record<string, un
 
 // Tab passiva — exames que viraram 'nao-realizado' (auto-cleanup à meia-noite)
 export function listenNaoRealizados(wsId: string, callback: (items: Record<string, unknown>[]) => void, dias: number = 30): Unsubscribe {
-  const d = new Date();
-  d.setDate(d.getDate() - dias);
-  const dataLimite = d.toISOString().slice(0, 10);
+  const dataLimite = dataLocalBRT(new Date(Date.now() - dias * 86400000));
   return onSnapshot(
     query(
       collection(db, 'workspaces', wsId, 'exames'),
@@ -394,8 +393,9 @@ export type FiltrosHistorico = {
 
 export type HistoricoResult = {
   items: Record<string, unknown>[];
-  lastDoc: unknown; // DocumentSnapshot — ultimo doc pra proxima pagina
+  lastDoc: DocumentSnapshot | null;
   hasMore: boolean;
+  erro?: boolean;   // true = consulta falhou (indice/permissao/rede) — NAO e "sem laudos" (C11)
 };
 
 export async function getHistorico(wsId: string, filtros?: FiltrosHistorico): Promise<HistoricoResult> {
@@ -435,10 +435,10 @@ export async function getHistorico(wsId: string, filtros?: FiltrosHistorico): Pr
 
     return {
       items: docs.map(d => Object.assign({ id: d.id }, d.data())),
-      lastDoc,
+      lastDoc: lastDoc as DocumentSnapshot | null,
       hasMore,
     };
-  } catch (e) { console.error('getHistorico:', e); return { items: [], lastDoc: null, hasMore: false }; }
+  } catch (e) { console.error('getHistorico:', e); return { items: [], lastDoc: null, hasMore: false, erro: true }; }
 }
 
 // ══ HONORÁRIOS (valores por convênio por workspace) ═════════════
@@ -448,22 +448,40 @@ export type HonorariosConfig = {
   valorUnico: number | null;
 };
 
-export async function getHonorarios(wsId: string): Promise<HonorariosConfig> {
+export async function getHonorarios(wsId: string): Promise<HonorariosConfig | null> {
   try {
     const snap = await getDoc(doc(db, 'workspaces', wsId, 'config', 'honorarios'));
     if (snap.exists()) return snap.data() as HonorariosConfig;
-  } catch (e) { console.error('getHonorarios:', e); }
-  return { convenios: {}, valorUnico: null };
+    return { convenios: {}, valorUnico: null };
+  } catch (e) { console.error('getHonorarios:', e); return null; }
 }
 
 export async function saveHonorarios(wsId: string, config: HonorariosConfig) {
   try {
-    await setDoc(doc(db, 'workspaces', wsId, 'config', 'honorarios'), config);
+    // Backstop do C9 (Ruflo A3): a regra valida so `valorUnico` — os valores
+    // DENTRO do mapa `convenios` nao sao validaveis por rule. O clamp da UI
+    // vive nos handlers do Extrato; aqui e a ultima linha antes do banco, pra
+    // nenhum chamador futuro persistir valor negativo/nao-numerico.
+    const soPositivo = (v: unknown) =>
+      typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0;
+    await setDoc(doc(db, 'workspaces', wsId, 'config', 'honorarios'), {
+      convenios: Object.fromEntries(
+        Object.entries(config.convenios).map(([k, v]) => [k, soPositivo(v)])),
+      valorUnico: config.valorUnico === null ? null : soPositivo(config.valorUnico),
+    });
     return true;
   } catch (e) { console.error('saveHonorarios:', e); return false; }
 }
 
 // ══ BILLING DO EXTRATO (1 grátis/mês/local) ════════════════════
+
+// Mês de referência do contador de extratos ("AAAA-MM", fuso local).
+// Dono único (P4): Extrato.tsx e checkExtratoLimit calculavam cada um o seu —
+// página aberta na virada do mês checava o limite num mês e incrementava no outro (C5).
+export function anoMesAtual(): string {
+  const agora = new Date();
+  return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}`;
+}
 
 export type ExtratoContador = {
   emitidos: number;
@@ -480,13 +498,15 @@ export async function getExtratoContador(wsId: string, anoMes: string): Promise<
 
 export async function incrementarExtrato(wsId: string, anoMes: string) {
   try {
-    const ref = doc(db, 'workspaces', wsId, 'extratos', anoMes);
-    const snap = await getDoc(ref);
-    if (snap.exists()) {
-      await updateDoc(ref, { emitidos: increment(1), ultimoEm: now() });
-    } else {
-      await setDoc(ref, { emitidos: 1, ultimoEm: now() });
-    }
+    // Atômico (C15): setDoc+merge com increment cria em 1 ou soma 1 na mesma
+    // escrita — o get+set anterior perdia contagem quando 2 cliques corriam
+    // na criação do doc do mês.
+    // ACOPLADO à regra (Ruflo A1): firestore.rules /extratos/ só aceita
+    // exatamente esta forma — hasOnly(['emitidos','ultimoEm']), pós-imagem
+    // == anterior+1 (ou 1 na criação), ultimoEm timestamp. Mudou a escrita
+    // aqui? A regra e tests/rules acompanham no MESMO commit.
+    await setDoc(doc(db, 'workspaces', wsId, 'extratos', anoMes),
+      { emitidos: increment(1), ultimoEm: now() }, { merge: true });
     return true;
   } catch (e) { console.error('incrementarExtrato:', e); return false; }
 }

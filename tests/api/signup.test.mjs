@@ -5,7 +5,31 @@ import assert from 'node:assert/strict';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import { executarSignup } from '../../src/lib/signup-server.ts';
+import { executarSignup, executarSignupPJ } from '../../src/lib/signup-server.ts';
+// Tripwire de drift: signup-server.ts duplica TIPOS_LAUDO_PADRAO inline (sem
+// import relativo, ver comentario no topo do arquivo). Este teste importa os
+// dois e compara campo a campo — se um espelho desatualizar, quebra aqui.
+import { TIPOS_LAUDO_PADRAO } from '../../src/lib/tipos-laudo.ts';
+
+// JSON.stringify com chaves ordenadas — comparacao nao pode depender da ordem
+// de insercao do map do Firestore (nao garantida ao voltar de doc.data()).
+const canon = (o) => JSON.stringify(o, Object.keys(o).sort());
+
+async function assertCatalogoSemeado(db, wsId) {
+  const tipos = await db.collection(`workspaces/${wsId}/tiposLaudo`).get();
+  assert.equal(tipos.size, 8, 'signup semeia catalogo padrao');
+  assert.equal(tipos.docs.find(d => d.id === 'eco_tt').data().modalidade, 'motor');
+  assert.equal(tipos.docs.find(d => d.id === 'ecg').data().modalidade, 'pdf');
+  // Tripwire: cada doc semeado bate campo a campo com TIPOS_LAUDO_PADRAO
+  // (ignora criadoEm, que e FieldValue.serverTimestamp() e nao existe no fonte).
+  for (const esperado of TIPOS_LAUDO_PADRAO) {
+    const doc = tipos.docs.find(d => d.id === esperado.id);
+    assert.ok(doc, `tipo ${esperado.id} semeado`);
+    const { criadoEm, ...semeado } = doc.data();
+    assert.equal(canon(semeado), canon(esperado),
+      `tipo ${esperado.id} identico ao espelho src/lib/tipos-laudo.ts`);
+  }
+}
 
 let db, authAdmin;
 
@@ -52,6 +76,8 @@ describe('executarSignup', () => {
       'workspaceId NAO pode ir junto — duas assinaturas casariam na busca antiga');
     assert.equal(sub.data().planoId, 'trial');
     assert.equal(sub.data().franquiaUsada, 0);
+
+    await assertCatalogoSemeado(db, r.wsId);
   });
 
   test('ja cadastrado: recusa e NAO apaga o Auth user', async () => {
@@ -77,5 +103,71 @@ describe('executarSignup', () => {
     const r = await executarSignup(db, authAdmin, uid, { ...DADOS, crm: '', email: 'semcrm@exemplo.com' });
     assert.equal(r.ok, false);
     assert.equal(r.motivo, 'dados_invalidos');
+  });
+
+  test('perfil medico nasce com crmVerificacao nao_verificado', async () => {
+    const { uid } = await authAdmin.createUser({ email: 'crm@exemplo.com', password: 'x'.repeat(8) });
+    const r = await executarSignup(db, authAdmin, uid, { ...DADOS, email: 'crm@exemplo.com' });
+    assert.equal(r.ok, true);
+    const prof = (await db.doc(`profissionais/${uid}`).get()).data();
+    assert.equal(prof.crmVerificacao.status, 'nao_verificado');
+    assert.equal(prof.crmVerificacao.fonte, 'nenhum');
+  });
+});
+
+describe('executarSignupPJ', () => {
+  const PJ = {
+    nome: 'Gestor Clinica', email: 'pj@exemplo.com', tipoPerfil: 'assistente',
+    cnpj: '12345678000199', razaoSocial: 'Clinica Exemplo Ltda', nomeLocal: 'Unidade Centro',
+  };
+  test('caminho feliz: empresa + conta PJ + local + vinculo dono + assinatura', async () => {
+    const { uid } = await authAdmin.createUser({ email: PJ.email, password: 'x'.repeat(8) });
+    const r = await executarSignupPJ(db, authAdmin, uid, PJ);
+    assert.equal(r.ok, true);
+    const conta = (await db.doc(`contas/${r.contaId}`).get()).data();
+    assert.equal(conta.tipo, 'PJ');
+    assert.equal(conta.empresaId, r.empresaId);
+    assert.equal(conta.ownerUid, uid);
+    const emp = (await db.doc(`empresas/${r.empresaId}`).get()).data();
+    assert.equal(emp.cnpj, '12345678000199');
+    const ws = (await db.doc(`workspaces/${r.wsId}`).get()).data();
+    assert.equal(ws.contaId, r.contaId);
+    assert.equal(ws.nomeClinica, 'Unidade Centro');
+    const vinc = (await db.doc(`vinculos/${r.contaId}_${uid}`).get()).data();
+    assert.equal(vinc.papel, 'dono');
+    const sub = (await db.doc(`subscriptions/${r.contaId}`).get()).data();
+    assert.equal(sub.tipoPlano, 'PJ');
+    assert.equal('workspaceId' in sub, false);
+
+    await assertCatalogoSemeado(db, r.wsId);
+  });
+  test('gestor nao-medico NAO precisa de CRM', async () => {
+    const { uid } = await authAdmin.createUser({ email: 'pj2@exemplo.com', password: 'x'.repeat(8) });
+    const r = await executarSignupPJ(db, authAdmin, uid, { ...PJ, email: 'pj2@exemplo.com', cnpj: '99888777000166' });
+    assert.equal(r.ok, true);
+  });
+  test('dono que se declara medico SEM CRM e recusado (rollback)', async () => {
+    const { uid } = await authAdmin.createUser({ email: 'pj3@exemplo.com', password: 'x'.repeat(8) });
+    const r = await executarSignupPJ(db, authAdmin, uid, { ...PJ, email: 'pj3@exemplo.com', cnpj: '11222333000144', tipoPerfil: 'medico', crm: '', ufCrm: '' });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'dados_invalidos');
+    await assert.rejects(authAdmin.getUser(uid));
+  });
+  test('ja cadastrado (PJ): recusa e NAO apaga o Auth user, mesmo com dados invalidos', async () => {
+    const { uid } = await authAdmin.createUser({ email: 'pjexiste@exemplo.com', password: 'x'.repeat(8) });
+    await db.doc(`profissionais/${uid}`).set({ uid, nome: 'Ja Existo' });
+    const r = await executarSignupPJ(db, authAdmin, uid, { ...PJ, email: 'pjexiste@exemplo.com', cnpj: '' });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'ja_cadastrado');
+    await assert.doesNotReject(authAdmin.getUser(uid), 'usuario ja cadastrado jamais e apagado');
+  });
+  test('CNPJ duplicado e recusado', async () => {
+    const { uid: u1 } = await authAdmin.createUser({ email: 'pjdup1@exemplo.com', password: 'x'.repeat(8) });
+    await executarSignupPJ(db, authAdmin, u1, { ...PJ, email: 'pjdup1@exemplo.com', cnpj: '55666777000188' });
+    const { uid: u2 } = await authAdmin.createUser({ email: 'pjdup2@exemplo.com', password: 'x'.repeat(8) });
+    const r = await executarSignupPJ(db, authAdmin, u2, { ...PJ, email: 'pjdup2@exemplo.com', cnpj: '55666777000188' });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'cnpj_duplicado');
+    await assert.rejects(authAdmin.getUser(u2), undefined, 'Auth user do 2o cadastro apagado');
   });
 });

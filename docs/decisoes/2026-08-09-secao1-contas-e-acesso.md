@@ -433,6 +433,115 @@ CRM) — verificação de identidade médica é produto, pendência do Plano 2B.
 - Fallbacks legados (assinatura por `workspaceId`, `ownerUid` em `workspaces`) morrem no **Plano 3**, com critério verificável: `npm run secao1:inventario` mostra **zero workspaces sem `contaId` e zero vínculos sem `papel`**.
 - Código morto listado pelo Ponytail, remoção no **Plano 3**: `createProfile`, `createWorkspace`, `createMembership`, `emitExame`, `createSubscription`, `consumirEmissao`, `convites`.
 
+## 8.4 Plano 2B-A — dor diária (10/08/2026)
+
+Primeiro bloco do 2B: seletor de local, papéis na tela, aviso "conta sem local",
+`/api/corrigir-laudo` autenticada. Executado com o pipeline padrão (brainstorm →
+plano → subagentes → tríade). Spec em `docs/superpowers/specs/2026-08-10-secao1-plano2b-a-dor-diaria.md`.
+
+| Entrega | O que |
+|---|---|
+| Fluxo de entrada | 0 locais → tela "conta sem local" (fim da fila-vazia-silenciosa do incidente 10/08); 1 → entra direto; 2+ → "qual local hoje?" (contexto de sessão, sem localStorage) |
+| Seletor único | No topo, só com 2+ locais; `AuthContext` é a fonte única (`localAtivo`/`selecionarLocal`). Histórico e Extrato largaram o `wsIdSel` próprio |
+| Papéis na tela | `src/lib/permissoes.ts` (matriz §4 em código puro, testável). Esconde o que o papel não pode. Gate de editar laudo virou **perfil médico + autoria** — corrigiu o bug do dono-médico (botão "Editar" sumido) |
+| `/api/corrigir-laudo` | Última rota aberta fechada: `requireUid` + `resolverPapel` (401/403); `medicoUid` deixou de vir do corpo; **médico só corrige os seus**, dono qualquer, só laudo emitido (`podeCorrigir` em `exame-admin.ts`) |
+
+**Tríade (Codex/Ruflo/Ponytail) — corrigido na mesma leva:** corrida de troca de
+conta entre abas (guarda de geração `genRef` no `AuthContext`: callback obsoleto
+não reescreve user, não solta o loading, não aplica contexto antigo); corrida de
+troca de local (guarda de geração em Histórico/Extrato; Extrato só gera/cobra com
+`carregadoWsId === wsIdSel` — não cobra o local errado).
+
+**DECISÃO do Dr. Sérgio (10/08) — ato médico = CRM:** *"editar e liberar laudo é
+ato médico; quem tem CRM pode, quem não tem, não — e a distinção nasce no cadastro."*
+Consequências, a cravar no **Plano 2B-B** (onde surge o dono não-médico, com o
+cadastro PJ):
+- **Cadastro** captura e valida CRM; `tipoPerfil='medico'` passa a significar CRM real (hoje é autodeclarado).
+- **Banco** (`firestore.rules`, `exames update`): hoje o braço do dono
+  (`ehDonoDoLocal && intacto('medicoUid')`) deixa um dono **não-médico** editar
+  conteúdo clínico de laudo alheio — contra a matriz §4. **Must-fix no 2B-B**, com
+  regra + teste + tríade próprios. Exposição hoje é **zero** (o único dono é o Dr.
+  Sérgio, que é médico); a UI já trava certo (`podeEditarLaudo` = médico+autoria).
+
+**Pendências aceitas do 2B-A, com destino:**
+- Regra do banco "conteúdo clínico = só médico (CRM)" + validação de CRM no cadastro → **Plano 2B-B** (decisão do Sérgio acima).
+- Unificar a matriz de "quem edita laudo", hoje em 3 lugares (`permissoes.ts` por perfil, `exame-admin.ts` por papel, `/api/emitir` por perfil) num ponto de verdade → **Plano 2B-B**.
+- Wrapper único de rota autenticada (`requireUid`+`resolverPapel` repete em 4 rotas) → **Plano 2B-B**.
+- TOCTOU do `/api/corrigir-laudo` (update fora de transação) + `handleConsultar`/`carregarMais` obsoletos não resetam loading + validação de tipo/tamanho do corpo → estreitos, **Plano 3**.
+- `AuthContext` não reage a mudança de vínculo em runtime (convite/PJ só aparecem ao relogar) → **Plano 2B-B**.
+
+## 8.5 Plano 2B-B1 — PJ + trava do CRM (10-11/08/2026)
+
+Primeiro bloco do 2B-B: cadastro PJ e a trava do CRM (a decisão de §8.4 no ar).
+Spec em `docs/superpowers/specs/2026-08-10-secao1-plano2b-b1-pj-e-crm-design.md`.
+
+| Entrega | O que |
+|---|---|
+| **Trava do CRM (banco)** | `exames update`: editar conteúdo/reabrir laudo exige `ehMedicoDeVerdade` (perfil médico) + autoria. Dono não-médico só administra a **fila não-emitida**, e — decisão do Sérgio — **só campos administrativos** (whitelist `camposAdministrativos()`); conteúdo clínico (conclusões/medidas/achados) é só de médico, **até em rascunho**. Idem no `create`. Correção administrativa de emitido é da `/api/corrigir-laudo` |
+| **`ehMedicoDeVerdade`** | médico = `tipoPerfil` ausente **ou** `'medico'` (qualquer outro valor não é médico); alinhado com `permissoes.ts` e `/api/emitir` |
+| **Cadastro PJ** | `/api/signup` roteia PF/PJ por `tipoConta`; `executarSignupPJ` cria empresa+conta PJ+local+vínculo dono+assinatura, atômico, CNPJ único (query na transação), rollback do Auth; `ja_cadastrado` antes de `dados_invalidos` |
+| **Verificação de CRM plugável** | `crmVerificacao` no perfil via provedor injetado (no-op agora); **imutável** no self-update (só servidor/superadmin seta) e **não nasce 'verificado'** no create — o selo não é forjável. Pesquisa das fontes (CFM SOAP ~R$948/ano com carta de finalidade; Consultar.IO ~R$0,20/consulta) resumida no spec §7 |
+| **Selo interno** | `SeloCrm` lê `crmVerificacao`; rótulo honesto (só diz "verificado" quando é); **nunca entra no laudo/PDF** (grep prova) |
+| **Cancelar laudo** | Botão no Histórico → `/api/exame` (`acao:'cancelar'`); gate `podeCancelarLaudo` (dono ou médico autor); some quando já cancelado |
+
+**Tríade (Codex/Ruflo/Ponytail) + 3 rodadas adversariais do Codex — fechado na leva:**
+selo forjável por self-update E por create (crmVerificacao imutável/não-nasce-verificado);
+`ehMedicoDeVerdade` frouxo (valor esquisito virava médico); conteúdo clínico gravável
+por não-médico em rascunho (whitelist fail-closed no create+update); conteúdo clínico no
+create por médico-de-perfil com papel recepção (exige `ehMedicoDeVerdade && ehMedicoNoLocal`).
+Suítes: unit 22/22, api 39/39, rules 96/96.
+
+**DECISÃO do Dr. Sérgio (10/08):** verificação real de CRM = **Consultar.IO/CFM** (a forte),
+mas **plugável** — a trava (exigir+guardar CRM, banco travado) sobe agora; o provedor real
+liga depois sem mexer em cadastro nem regra. E: **só médico escreve conteúdo do laudo, até
+em rascunho** (não a equipe).
+
+**Pendências do 2B-B1, com destino:**
+- Ligar o provedor real de verificação de CRM (Consultar.IO/CFM) → follow-up quando o Sérgio contratar. **Ao ligar:** falha do provedor deve degradar para `nao_verificado` (não abortar o cadastro — hoje o `catch` apaga o Auth) — achado Ruflo.
+- Convite (recepção/médico entra em conta existente) = rota própria `/api/convite`, **não** crescer `/api/signup` → **Plano 2B-B2**. Ao criar recepção, setar `tipoPerfil:'assistente'` (hoje recepção com `tipoPerfil` ausente contaria como médico na trava do create).
+- Unificar a matriz "quem mexe no laudo": `exame-admin.ts` (cancelar/apagar/transferir) ainda gateia por **papel** só, sem `tipoPerfil` — um `papel:'medico'` com `tipoPerfil:'assistente'` cancelaria/transferiria → **Plano 2B-B2**.
+- CNPJ: unicidade sob corrida (dois cadastros simultâneos do mesmo CNPJ) + dígitos verificadores; e-mail do corpo não conferido contra o Auth (vale PF e PJ) → **follow-up de segurança**.
+- Extrair passos repetidos do signup (perfil/vínculo/assinatura) + `planoPorId` (dedup `planoTrial`/`planoTrialPJ`) + apagar `createEmpresa`/`getEmpresa`/`getEmpresaByCNPJ` mortos → **Plano 3**.
+
+## 8.6 Plano 2B-B2 — convite + gestão de membros (SEÇÃO 1 FECHADA, 12/08/2026)
+
+Último bloco da Seção 1: dar equipe a uma clínica. Spec em
+`docs/superpowers/specs/2026-08-11-secao1-plano2b-b2-convite-design.md`.
+
+| Entrega | O que |
+|---|---|
+| **Convite por link** | Dono gera link (papel médico/recepção + locais) → uso único, expira em 7 dias. `convites` é coleção 100% servidor (`if false`). papel/locais vêm sempre do doc do convite, nunca do corpo |
+| **Aceite** | Novo ou existente. `aceitarConvite` cria perfil (se novo) + vínculo numa transação, perfil lido DENTRO da tx (guard `perfil_incompativel` atômico). Recepção nasce `assistente`; médico exige CRM |
+| **E-mail verificado (decisão Sérgio)** | Acesso à clínica (o vínculo) só após verificar e-mail — a rota de aceite recusa 403 se `emailVerified` falso. O **cadastro** cria só o PERFIL (com CRM, via `preCadastrarConvite`); o vínculo/acesso espera a verificação |
+| **Gestão de membros** | Aba "Membros" do dono: lista, convida, revoga (vínculo → `inativo`), cancela pendente (transacional). Editar papel/locais via rota (`editarMembro` recusa promover assistente→médico); UI inline de edição é follow-up |
+| **C7** | `cancelarExame`/`transferirExame` exigem `ehMedicoDeVerdade` (tipoPerfil) no braço do médico; transferir valida o ALVO também. `resolverPapel` valida `wsId` (idValido) |
+
+**Tríade + verificação adversarial do Codex (4 rodadas) — fechado na leva:** aceite
+sem convite/atômico e uso único sob corrida (perfil na tx); promover assistente→médico
+pelo PATCH; `cancelarConvite` corrida apaga auditoria (transacional); transferir para
+"médico falso"; `idValido` faltando em `/info`/`alvoUid`/`wsId`/`novoMedicoUid`; e-mail
+do corpo em vez do Auth; pré-cadastro sem checar expiração. Suítes: unit 22, api 77, rules 99.
+
+**Item aceito como negligível:** a expiração é reavaliada dentro da transação contra o
+`agora` do início da requisição (não do commit) — janela de milissegundos num token de
+7 dias; não vale contorcer a testabilidade.
+
+---
+
+### ✅ SEÇÃO 1 CONCLUÍDA (12/08/2026)
+
+Cadastro, contas e acesso, de ponta a ponta: fechadura publicada (2A) → dor diária
+(2B-A: seletor de local, papéis na tela, corrigir-laudo autenticada) → PJ + trava do
+CRM (2B-B1: ato médico = CRM, até em rascunho) → convite + membros (2B-B2). Pipeline
+padrão (brainstorm→plano→subagentes→tríade) em todos.
+
+**Follow-ups que sobrevivem à Seção 1:**
+- Ligar o provedor real de verificação de CRM (Consultar.IO/CFM). Ao ligar: falha do provedor degrada para `nao_verificado`, não aborta o cadastro.
+- UI inline de editar papel/locais de membro (rota `PATCH /api/membro` já existe/testada).
+- Reforço de segurança do cadastro PJ: unicidade de CNPJ sob corrida + dígitos verificadores; e-mail do corpo vs Auth no signup PF/PJ (já feito no convite).
+- **Fase 6** (segredos + Wader): Claude da clínica.
+- **Plano 3 (limpeza):** apagar código morto confirmado (`createProfile`/`createWorkspace`/`createMembership`/`emitExame`/`createSubscription`/`consumirEmissao`/`acceptInvite`/`rejectInvite`/`getPendingInvites`/`deactivateMembership`/`getProfileByCPF`/`createEmpresa`/`getEmpresa`/`getEmpresaByCNPJ`); fallbacks legados (assinatura por `workspaceId`, `ownerUid`); dedup do signup (`planoPorId`, esqueleto perfil/vínculo); extrair `resolverPapel`/`ehMedicoDeVerdade` para módulo próprio (hoje em `exame-admin.ts`) + helper `requireDono`; 1 teste que cruza o predicado "é médico" (TS) contra o emulador de regras.
+
 ## 9. Fora de escopo (Seção 1 não resolve)
 
 - Gateway de pagamento real (Stripe/Asaas).

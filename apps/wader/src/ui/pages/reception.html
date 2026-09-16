@@ -248,7 +248,7 @@
 
     <script>
       const $ = (id) => document.getElementById(id);
-      const hoje = () => new Date().toISOString().slice(0, 10);
+      const hoje = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Belem' });
       const formataCpf = (v) => {
         const d = v.replace(/\D/g, '').slice(0, 11);
         return d

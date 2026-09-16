@@ -6,6 +6,8 @@
 import { useEffect, useState } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, Timestamp } from 'firebase/firestore';
+import { acharSub } from '@/lib/billing';
+import { vigente } from '@/lib/ciclo';
 
 type WsData = { id: string; nomeClinica?: string; tipo?: string; ownerUid?: string; empresaId?: string; [k: string]: unknown };
 type SubData = { id: string; workspaceId?: string; tipo?: string; franquiaMensal?: number; franquiaUsada?: number; creditosExtras?: number; cicloFim?: Timestamp; [k: string]: unknown };
@@ -46,7 +48,7 @@ export default function ClientesPage() {
 
   const f = busca.toLowerCase();
   const rows = wsList.map(ws => {
-    const sub = subsList.find(s => s.workspaceId === ws.id);
+    const sub = acharSub(ws, subsList);
     const owner = profsList.find(p => p.uid === ws.ownerUid || p.id === ws.ownerUid);
     const emp = ws.empresaId ? empList.find(e => e.id === ws.empresaId) : null;
     return { ws, sub, owner, emp };
@@ -82,7 +84,7 @@ export default function ClientesPage() {
             <tbody>
               {rows.map(({ ws, sub, owner }) => {
                 const fim = sub?.cicloFim?.toDate ? sub.cicloFim.toDate() : null;
-                const ok = fim && Date.now() <= fim.getTime();
+                const ok = sub ? vigente(sub, new Date()) : false;
                 const stTxt = ok ? (sub?.tipo === 'trial' ? 'Trial' : 'Ativo') : 'Expirado';
                 const stCor = ok ? (sub?.tipo === 'trial' ? 'amarelo' : 'verde') : 'vermelho';
                 const uso = sub ? `${sub.franquiaUsada || 0}/${sub.franquiaMensal || 0}` : '\u2014';

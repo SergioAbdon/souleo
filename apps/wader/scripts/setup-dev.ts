@@ -3,7 +3,12 @@
  *
  * O que faz:
  *   1. Inicializa Firebase Admin com a SA configurada
- *   2. Garante que o workspace `wader-dev` exista com `feegowProcMap` válido
+ *   2. Garante que o workspace `wader-dev` exista com `integracoes/feegow`
+ *      (procMap) e `integracoes/orthanc` + `privado/orthanc` válidos —
+ *      campos canônicos pós Sub-plano 5 (Task 4/7): NÃO semeia mais
+ *      `feegowProcMap`/`ortancUrl`/`ortancUser`/`ortancPass` no documento do
+ *      workspace — esses campos são lidos como "não configurado" hoje
+ *      (getProcedimentos cai no default, getOrthancConnection devolve null).
  *   3. Limpa exames antigos da coleção GLOBAL `exames/` (schema desalinhado da F2 v1)
  *   4. Reporta estado final
  *
@@ -22,6 +27,12 @@ const FEEGOW_PROC_MAP_DEFAULT: Record<string, string> = {
   '999': 'eco_stress',
 };
 
+const ORTHANC_TESTE = {
+  url: 'http://localhost:8042',
+  user: 'wader-test',
+  pass: 'wader-test-pass-2026',
+};
+
 async function main() {
   console.log('═══════════════════════════════════════════════');
   console.log('  Wader · Setup de ambiente DEV');
@@ -34,7 +45,7 @@ async function main() {
   console.log(`✓ Firebase inicializado (projectId: ${config.firebase.projectId})`);
   console.log(`✓ Workspace alvo: ${TARGET_WS_ID}\n`);
 
-  // 1) Workspace de teste
+  // 1) Workspace de teste + integracoes/feegow + integracoes/orthanc + privado/orthanc
   await garantirWorkspaceDev(db);
 
   // 2) Limpar exames antigos da coleção global (F2 v1)
@@ -52,39 +63,50 @@ async function garantirWorkspaceDev(db: FirebaseFirestore.Firestore) {
   const ref = db.collection('workspaces').doc(TARGET_WS_ID);
   const snap = await ref.get();
 
-  if (snap.exists) {
-    const data = snap.data() ?? {};
-    const procMap = data.feegowProcMap ?? {};
-    const tem = Object.keys(procMap).length > 0;
-    if (tem) {
-      console.log(`  ✓ Workspace existe e já tem feegowProcMap (${Object.keys(procMap).length} entradas).`);
-      return;
-    }
-    console.log(`  ⚠ Workspace existe mas sem feegowProcMap, atualizando...`);
-    await ref.update({
-      feegowProcMap: FEEGOW_PROC_MAP_DEFAULT,
+  if (!snap.exists) {
+    console.log(`  ▸ Workspace não existe — criando...`);
+    await ref.set({
+      id: TARGET_WS_ID,
+      nomeClinica: 'Wader Dev (Ambiente de Testes)',
+      slogan: 'Ambiente isolado pra desenvolvimento',
+      // Espelho que SidebarLaudo.tsx le pra mostrar "Importar DICOM" — NAO e
+      // campo legado, e o que salvarIntegracao grava junto com
+      // integracoes/orthanc.ativo (ver src/lib/integracoes-admin.ts).
+      ortancAtivo: true,
+      criadoEm: FieldValue.serverTimestamp(),
       atualizadoEm: FieldValue.serverTimestamp(),
     });
-    console.log(`  ✓ feegowProcMap adicionado.`);
-    return;
+    console.log(`  ✓ Workspace criado.`);
+  } else {
+    console.log(`  ✓ Workspace já existe.`);
   }
 
-  console.log(`  ▸ Workspace não existe — criando com defaults...`);
-  await ref.set({
-    id: TARGET_WS_ID,
-    nomeClinica: 'Wader Dev (Ambiente de Testes)',
-    slogan: 'Ambiente isolado pra desenvolvimento',
-    feegowProcMap: FEEGOW_PROC_MAP_DEFAULT,
-    feegowAtivo: false,
-    // Orthanc de teste (fictício — só pra exercitar leitura do Firestore)
-    ortancAtivo: true,
-    ortancUrl: 'http://localhost:8042',
-    ortancUser: 'wader-test',
-    ortancPass: 'wader-test-pass-2026',
-    criadoEm: FieldValue.serverTimestamp(),
-    atualizadoEm: FieldValue.serverTimestamp(),
-  });
-  console.log(`  ✓ Workspace criado: nomeClinica="Wader Dev" (com Orthanc fictício de teste)`);
+  // integracoes/feegow.procMap — fonte UNICA (Task 4/7 item A), sem
+  // fallback pro campo antigo workspaces/{id}.feegowProcMap.
+  const feegowRef = db.doc(`workspaces/${TARGET_WS_ID}/integracoes/feegow`);
+  const feegowSnap = await feegowRef.get();
+  const procMapAtual = (feegowSnap.data()?.procMap as Record<string, string> | undefined) ?? {};
+  if (Object.keys(procMapAtual).length > 0) {
+    console.log(`  ✓ integracoes/feegow.procMap já existe (${Object.keys(procMapAtual).length} entradas).`);
+  } else {
+    await feegowRef.set({ tipo: 'feegow', procMap: FEEGOW_PROC_MAP_DEFAULT }, { merge: true });
+    console.log(`  ✓ integracoes/feegow.procMap semeado (fictício).`);
+  }
+
+  // integracoes/orthanc.url/ativo + privado/orthanc.user/pass — mesmos
+  // nomes canônicos que workspace-repo.ts (Wader) e a rota /api/orthanc
+  // (LEO web) já leem.
+  const orthancPubRef = db.doc(`workspaces/${TARGET_WS_ID}/integracoes/orthanc`);
+  const orthancPubSnap = await orthancPubRef.get();
+  if (orthancPubSnap.exists && orthancPubSnap.data()?.url) {
+    console.log(`  ✓ integracoes/orthanc já configurado.`);
+  } else {
+    await orthancPubRef.set({ tipo: 'orthanc', url: ORTHANC_TESTE.url, ativo: true }, { merge: true });
+    await db.doc(`workspaces/${TARGET_WS_ID}/privado/orthanc`).set(
+      { user: ORTHANC_TESTE.user, pass: ORTHANC_TESTE.pass }, { merge: true },
+    );
+    console.log(`  ✓ integracoes/orthanc + privado/orthanc semeados (Orthanc fictício de teste).`);
+  }
 }
 
 async function limparExamesGlobaisAntigos(db: FirebaseFirestore.Firestore) {
@@ -105,9 +127,14 @@ async function reportarEstado(db: FirebaseFirestore.Firestore) {
   console.log(`\n▸ Estado final:`);
   const wsSnap = await db.collection('workspaces').doc(TARGET_WS_ID).get();
   const wsData = wsSnap.data() ?? {};
-  const procMap = wsData.feegowProcMap ?? {};
   console.log(`  workspace.nomeClinica = "${wsData.nomeClinica}"`);
-  console.log(`  workspace.feegowProcMap = ${JSON.stringify(procMap)}`);
+  console.log(`  workspace.ortancAtivo (espelho) = ${wsData.ortancAtivo}`);
+
+  const feegowSnap = await db.doc(`workspaces/${TARGET_WS_ID}/integracoes/feegow`).get();
+  console.log(`  integracoes/feegow.procMap = ${JSON.stringify(feegowSnap.data()?.procMap ?? {})}`);
+
+  const orthancPubSnap = await db.doc(`workspaces/${TARGET_WS_ID}/integracoes/orthanc`).get();
+  console.log(`  integracoes/orthanc = ${JSON.stringify(orthancPubSnap.data() ?? {})}`);
 
   const examesSnap = await db
     .collection('workspaces')

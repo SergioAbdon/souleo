@@ -105,7 +105,7 @@ export const casosValvopatias: CasoTeste[] = [
   },
   {
     id: 'V06',
-    descricao: 'Esclerose aórtica (gradMax 20 — não emite conclusão)',
+    descricao: 'Esclerose aórtica (gradMax 20 — achado com frase, sem conclusão)',
     inputs: (() => {
       const m = pacienteSaudavelM();
       m.estenoses.gradMaxAo = 20;
@@ -115,6 +115,8 @@ export const casosValvopatias: CasoTeste[] = [
       derivados: { estenAoGrau: 'esclerose' },
       achados: [
         'Gradiente transvalvar aórtico máximo de 20 mmHg.',
+        // F1-T7/B27: a esclerose ganhou frase no achado (antes era calculada e jogada fora)
+        'Esclerose valvar aórtica, sem estenose significativa.',
       ],
       // Esclerose NÃO emite conclusão (decisão preservada)
       conclusoesNaoPresentes: ['Estenose Aórtica'],

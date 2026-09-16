@@ -10,7 +10,7 @@ import { collection, getDocs, doc, updateDoc, Timestamp } from 'firebase/firesto
 import { ajustarCreditos, getConfigPlanos, type PlanoConfig } from '@/lib/billing';
 import { useDirexAuth } from '@/contexts/DirexAuthContext';
 
-type WsData = { id: string; nomeClinica?: string; ownerUid?: string; [k: string]: unknown };
+type WsData = { id: string; nomeClinica?: string; ownerUid?: string; contaId?: string; [k: string]: unknown };
 type SubData = { id: string; workspaceId?: string; planoId?: string; tipo?: string; tipoPlano?: string; franquiaMensal?: number; franquiaUsada?: number; creditosExtras?: number; maxLocais?: number; localAdicional?: number; extratosFranquia?: number; extratoValor?: number; excedente?: number; maxUsuarios?: number; usuarioAdicional?: number; cicloFim?: Timestamp; [k: string]: unknown };
 type ProfData = { id: string; uid?: string; nome?: string; [k: string]: unknown };
 
@@ -141,9 +141,17 @@ export default function LicencasPage() {
     setSaving(false);
   }
 
+  // E11 achado extra (ADR 2026-08-30, §1a): assinatura de conta criada pelo
+  // cadastro novo mora em `subscriptions/{contaId}` (doc id = contaId), SEM
+  // `workspaceId` — o join antigo por workspaceId nunca achava essa linha
+  // ("Expira —", botao Editar sumido). Chave canonica primeiro
+  // (id do doc bate com o contaId do workspace), fallback legado por
+  // workspaceId pra conta que nao migrou (mesma ordem de resolverAssinatura
+  // em billing-admin.ts).
   const rows = wsList.map(ws => ({
     ws,
-    sub: subsList.find(s => s.workspaceId === ws.id),
+    sub: (ws.contaId && subsList.find(s => s.id === ws.contaId))
+      || subsList.find(s => s.workspaceId === ws.id),
     owner: profsList.find(p => p.uid === ws.ownerUid || p.id === ws.ownerUid),
   }));
 

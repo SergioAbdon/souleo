@@ -9,7 +9,8 @@
     "start": "tsx src/index.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "reprocessar-legado": "tsx scripts/reprocessar-legado.ts"
   },
   "dependencies": {
     "@fastify/static": "^7.0.4",

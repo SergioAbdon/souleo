@@ -15,7 +15,6 @@ Agente local DICOM do LEO. Programa Windows que roda na clínica como serviço, 
 - ✅ 3 telas HTML placeholder: `/` (recepção), `/admin`, `/wizard`
 - ✅ Endpoints `/health` e `/version`
 - ✅ Graceful shutdown (SIGINT/SIGTERM)
-- ✅ Placeholder de Windows Service (implementação real em fase futura)
 
 ## O que NÃO está pronto
 
@@ -84,8 +83,6 @@ apps/wader/
 │   ├── ui/
 │   │   ├── server.ts              ← Fastify (localhost:8043)
 │   │   └── pages/                 ← HTML estático das 3 telas
-│   ├── service/
-│   │   └── windows-service.ts     ← controle de Windows Service (placeholder)
 │   ├── workers/                   ← workers de sync e ingestão (F2+)
 │   ├── adapters/                  ← Firebase, Orthanc, filesystem (F2+)
 │   └── types/                     ← tipos compartilhados

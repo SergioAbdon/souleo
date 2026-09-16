@@ -3,7 +3,8 @@
 // SOULEO · Popup Salvar/Emitir + Modo Emitido + Exportações
 // ══════════════════════════════════════════════════════════════════
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { abrirPdfUrl } from '@/lib/pdfUtils';
 
 type Props = {
   open: boolean;
@@ -21,17 +22,33 @@ type Props = {
    * esconde o checkbox (não há o que incluir).
    */
   totalImagensSelecionadas?: number;
+  /**
+   * Tríade onda-4 (Ruflo item 6): última escolha do médico pro toggle
+   * "incluir imagens" (`imagensIncluidasNoPdf` na página, persistida em
+   * X2/Task 17). Sem isso o popup nascia com o checkbox sempre marcado, TODA
+   * vez que reabria — mesmo com o médico tendo desmarcado antes.
+   */
+  incluirImagensInicial?: boolean;
 };
 
-export function PopupSalvarEmitir({ open, onClose, onRascunho, onEmitir, totalImagensSelecionadas = 0 }: Props) {
-  // Toggle do checkbox — marcado por default quando há imagens
-  const [incluirImagens, setIncluirImagens] = useState(true);
-
-  // Reset quando o popup abre
-  if (open && totalImagensSelecionadas === 0 && incluirImagens) {
-    // (sem imagens: força false pra não passar true por engano)
-    setIncluirImagens(false);
-  }
+export function PopupSalvarEmitir({ open, onClose, onRascunho, onEmitir, totalImagensSelecionadas = 0, incluirImagensInicial }: Props) {
+  // Toggle do checkbox — marcado por default quando há imagens; lembra a
+  // última escolha do médico. `useState(incluirImagensInicial)` só lê a prop
+  // na 1ª montagem — o componente NÃO desmonta com `open=false` (o pai
+  // renderiza `<PopupSalvarEmitir open={...}/>` sempre; `if (!open) return
+  // null` abaixo só pula o JSX, a mesma instância/state continua viva).
+  // Achado Codex (fix pós-tríade onda-4): sem re-sincronizar, o checkbox
+  // ficava no valor da 1ª abertura mesmo depois do onSnapshot trazer a
+  // escolha persistida, ou o médico navegar pra outro exame na mesma
+  // instância da página.
+  const [incluirImagens, setIncluirImagens] = useState(incluirImagensInicial ?? true);
+  useEffect(() => {
+    if (open) setIncluirImagens(incluirImagensInicial ?? true);
+  }, [open, incluirImagensInicial]);
+  // S5-T12: valor derivado (sem setState-no-render) — sem imagens pra
+  // selecionar, o efetivo é sempre false, mesmo que `incluirImagens` (o
+  // toggle memorizado) ainda esteja true de uma sessão anterior.
+  const incluirEfetivo = totalImagensSelecionadas > 0 && incluirImagens;
 
   if (!open) return null;
   return (
@@ -66,13 +83,13 @@ export function PopupSalvarEmitir({ open, onClose, onRascunho, onEmitir, totalIm
               <div className="text-[11px] text-[#6B7280] mt-0.5">Salva e continua editando</div>
             </div>
           </button>
-          <button onClick={() => onEmitir(incluirImagens)}
+          <button onClick={() => onEmitir(incluirEfetivo)}
             className="flex items-center gap-3.5 p-3.5 rounded-[10px] border-[1.5px] border-[#059669] bg-white cursor-pointer text-left hover:border-[#059669] hover:bg-[#059669]/[.06] transition">
             <span className="text-[22px]">✅</span>
             <div>
               <div className="text-[13px] font-bold text-[#059669]">Emitir Laudo</div>
               <div className="text-[11px] text-[#6B7280] mt-0.5">
-                {totalImagensSelecionadas > 0 && incluirImagens
+                {incluirEfetivo
                   ? `Finaliza, assina e inclui ${totalImagensSelecionadas} imagens`
                   : 'Finaliza e assina o laudo'}
               </div>
@@ -95,10 +112,19 @@ type ModoEmitidoProps = {
   onCopiarFormatado: () => void;
   onCopiarTexto: () => void;
   onBaixarWord?: () => void;
+  /**
+   * URL do PDF ASSINADO (Storage) desta emissão. Quando presente, o botão
+   * primário "🖨️ PDF" abre ELE (mesmo documento que o paciente recebeu) em
+   * vez de gerar um PDF novo com a config/imagens atuais do local — Task 17
+   * (X4). Sem `pdfUrl` (falha de geração ou laudo legado), o primário cai
+   * de volta pro `onImprimir` de sempre.
+   */
+  pdfUrl?: string;
 };
 
-export function ModoEmitido({ onFinalizar, onEditar, onImprimir, onCopiarFormatado, onCopiarTexto, onBaixarWord }: ModoEmitidoProps) {
+export function ModoEmitido({ onFinalizar, onEditar, onImprimir, onCopiarFormatado, onCopiarTexto, onBaixarWord, pdfUrl }: ModoEmitidoProps) {
   const [prontuarioOpen, setProntuarioOpen] = useState(false);
+  const abrirAssinado = pdfUrl ? () => abrirPdfUrl(pdfUrl) : onImprimir;
 
   return (
     <div className="px-4 py-2">
@@ -109,10 +135,22 @@ export function ModoEmitido({ onFinalizar, onEditar, onImprimir, onCopiarFormata
 
       {/* Botões em grid compacto */}
       <div className="grid grid-cols-3 gap-1.5 mb-2">
-        <BtnMini onClick={onImprimir}>🖨️ PDF</BtnMini>
+        <BtnMini onClick={abrirAssinado}>🖨️ PDF</BtnMini>
         <BtnMini onClick={() => setProntuarioOpen(!prontuarioOpen)}>📋 Copiar</BtnMini>
         <BtnMini onClick={onEditar} cor="amber">✏️ Editar</BtnMini>
       </div>
+
+      {/* Ação secundária: regerar com dados/config ATUAIS do local (pode
+          divergir do assinado se a clínica mudou config, ou o médico
+          reeditou as imagens selecionadas depois de emitir). Só aparece
+          quando há um assinado pra distinguir do primário — sem `pdfUrl` o
+          primário já É esta mesma ação. */}
+      {pdfUrl && (
+        <button onClick={onImprimir}
+          className="block w-full mb-2 py-1 bg-transparent border-none text-[9.5px] text-[#9CA3AF] hover:text-[#6B7280] cursor-pointer underline decoration-dotted underline-offset-2">
+          Gerar novamente (dados atuais do local)
+        </button>
+      )}
 
       {/* Submenu copiar */}
       {prontuarioOpen && (

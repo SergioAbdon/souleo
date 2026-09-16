@@ -116,7 +116,7 @@ export function calcFS(ddve: number | null, dsve: number | null): number | null 
  * @returns Massa do VE em gramas (truncada 1 casa) ou null
  *
  * @example
- * calcMassaVE(50, 10, 9) // 169.3
+ * calcMassaVE(50, 10, 9) // 169.9
  */
 export function calcMassaVE(
   ddve: number | null,
@@ -129,7 +129,8 @@ export function calcMassaVE(
   const total = ddve + siv + pp;
   const volMiocardio = Math.pow(total, 3) - Math.pow(ddve, 3);
   // Aplica fórmula Devereux + conversão mm³ → cm³ (/1000) → g
-  const massa = (volMiocardio * 1.04 * 0.8 + 0.6) / 1000;
+  // B24 (F1): o termo aditivo 0,6 é em GRAMAS — entra DEPOIS da divisão por 1000.
+  const massa = (volMiocardio * 1.04 * 0.8) / 1000 + 0.6;
   return truncar(massa, 1);
 }
 
@@ -139,9 +140,9 @@ export function calcMassaVE(
  *
  * Fórmula: IMVE = Massa / ASC
  *
- * Cutoffs:
- * - Homem: ≤102 g/m² normal
- * - Mulher: ≤88 g/m² normal
+ * Cutoffs (ASE 2015 Lang, Tabela 4 — limite superior do normal):
+ * - Homem: ≤115 g/m² normal
+ * - Mulher: ≤95 g/m² normal
  *
  * @param massa Massa do VE em gramas
  * @param asc ASC em m²

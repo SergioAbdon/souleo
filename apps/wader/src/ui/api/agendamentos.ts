@@ -4,6 +4,7 @@ import { PacientesRepo } from '../../adapters/pacientes-repo';
 import { CreateExamePayload, TIPOS_EXAME_LABEL, TipoExame } from '../../types/exame';
 import { createLogger } from '../../logger';
 import { WaderConfig } from '../../config/types';
+import { hojeClinica } from '../../lib/clinica-tempo';
 
 const log = createLogger({ module: 'api-agendamentos' });
 
@@ -41,7 +42,7 @@ export function registerAgendamentosRoutes(app: FastifyInstance, config: WaderCo
   });
 
   app.get<{ Querystring: { data?: string } }>('/api/agendamentos', async (req, reply) => {
-    const data = req.query.data ?? hojeIso();
+    const data = req.query.data ?? hojeClinica();
     if (!isIsoDate(data)) {
       return reply.status(400).send({ ok: false, error: 'invalid_date', message: 'data deve ser YYYY-MM-DD' });
     }
@@ -109,10 +110,6 @@ function isIsoDate(s: string): boolean {
 
 function isHHMM(s: string): boolean {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
-}
-
-function hojeIso(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 function isValidCpf(cpf: string): boolean {

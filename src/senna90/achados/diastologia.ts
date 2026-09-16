@@ -9,7 +9,7 @@
 // ══════════════════════════════════════════════════════════════════
 
 import type { ResultadoJ21, MedidasEcoTT, CalculosDerivados } from '../types';
-import { calcularJ21 as calcularJ21Logic } from '../calculos/diastologia';
+import { calcularJ21 as calcularJ21Logic, SEM_GRADUACAO } from '../calculos/diastologia';
 
 interface DadosDiast {
   ritmo: string;
@@ -70,15 +70,14 @@ export function j21FA_achado(d: DadosDiast): string {
  */
 export function j22(d: DadosDiast): string {
   if (!d.b19 && !d.b20 && !d.b21 && !d.b22 && !d.b24) return '';
-  const E = d.b19 ?? '';
-  const EA = d.b20 ?? '';
-  const ep = d.b21 ?? '';
-  const Eei = d.b22 ?? '';
-  const vi = d.b24 ?? '';
-  const base = `Velocidade da Onda E= ${E} cm/s; Relação E/A= ${EA}; Velocidade e' septal= ${ep} cm/s; Relação E/e'= ${Eei}; volume index do átrio esquerdo = ${vi} ml/m²`;
-  return d.b23
-    ? base + `; Velocidade do Refluxo Tricuspídeo= ${d.b23} m/s.`
-    : base + '.';
+  const partes: string[] = [];
+  if (d.b19) partes.push(`Velocidade da Onda E= ${d.b19} cm/s`);
+  if (d.b20) partes.push(`Relação E/A= ${d.b20}`);
+  if (d.b21) partes.push(`Velocidade e' septal= ${d.b21} cm/s`);
+  if (d.b22) partes.push(`Relação E/e'= ${d.b22}`);
+  if (d.b24) partes.push(`volume index do átrio esquerdo = ${d.b24} ml/m²`);
+  if (d.b23) partes.push(`Velocidade do Refluxo Tricuspídeo= ${d.b23} m/s`);
+  return partes.length ? partes.join('; ') + '.' : '';
 }
 
 /**
@@ -113,6 +112,7 @@ export function j43(d: DadosDiast): string {
   // Sinusal
   if (x === 'Índices diastólicos do ventrículo esquerdo preservados') return '';
   if (x === 'Função Diastólica do ventrículo esquerdo Indeterminada') return 'Função diastólica do ventrículo esquerdo Indeterminada.';
+  if (x === SEM_GRADUACAO) return 'Disfunção diastólica do ventrículo esquerdo de grau não determinado.';
   if (typeof x === 'string') {
     if (x.includes('Grau III')) return 'Disfunção diastólica de grau III do ventrículo esquerdo (padrão restritivo).';
     if (x.includes('Grau II')) return 'Disfunção diastólica de grau II do ventrículo esquerdo (padrão pseudo-normal).';

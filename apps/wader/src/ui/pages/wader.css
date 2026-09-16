@@ -1,0 +1,98 @@
+/*
+ * Estilo compartilhado das telas do Wader (admin + conferência).
+ *
+ * Servido pelo fastifyStatic já registrado em ui/server.ts (root = pages/,
+ * prefix = /static/), então a página linka `/static/wader.css`.
+ *
+ * Só mora aqui o que era IDÊNTICO nas duas telas — o que difere (largura do
+ * main, tamanho dos botões, pre.error) continua no <style> de cada página,
+ * pra extração não mudar pixel nenhum.
+ */
+
+:root {
+  --bg: #f8fafc;
+  --fg: #0f172a;
+  --muted: #64748b;
+  --accent: #1e3a5f;
+  --border: #e2e8f0;
+  --success: #16a34a;
+  --warn: #f59e0b;
+  --danger: #dc2626;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+header {
+  padding: 1rem 2rem;
+  background: white;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+header h1 { font-size: 1.1rem; margin: 0; font-weight: 600; }
+header nav a {
+  color: var(--muted);
+  text-decoration: none;
+  margin-left: 1rem;
+  font-size: 0.9rem;
+}
+header nav a:hover { color: var(--accent); }
+
+/* `max-width` fica em cada página (admin 1100px, conferência 1280px). */
+main {
+  padding: 2rem;
+  margin: 0 auto;
+  display: grid;
+  gap: 1.25rem;
+}
+
+.card {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.5rem;
+}
+/* `margin` do h2 e da subtitle ficam em cada página. */
+.card h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.card .subtitle { font-size: 0.8rem; color: var(--muted); }
+
+.pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.pill.green { background: #dcfce7; color: #14532d; }
+.pill.yellow { background: #fef3c7; color: #92400e; }
+.pill.red { background: #fee2e2; color: #7f1d1d; }
+.pill.gray { background: #e2e8f0; color: #475569; }
+
+/* `padding`, `font-size` e `margin-right` do button ficam em cada página. */
+button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+}
+button:hover { opacity: 0.9; }
+button.secondary { background: white; color: var(--accent); border: 1px solid var(--border); }
+button.danger { background: var(--danger); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }

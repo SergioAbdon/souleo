@@ -76,7 +76,7 @@ function arredonda(v: number, casas: number): number {
  * Exames antigos vêm cm / m·s; novos mm / cm·s. Sem unidade (schema
  * antigo) → assume já correto (não converte). Razões/índices: nunca.
  */
-function converter(value: number, unitRaw: string, alvo: 'mm' | 'cm/s' | ''): number {
+export function converter(value: number, unitRaw: string, alvo: 'mm' | 'cm/s' | ''): number {
   const u = (unitRaw || '').toLowerCase().trim();
   if (alvo === 'mm') {
     if (u === 'cm') return value * 10;
@@ -109,6 +109,20 @@ export function isSchemaNovo(
 }
 
 /**
+ * Detecta o schema ANTIGO (`Record<string, number>` — só código → valor cru,
+ * sem unidade/contexto). Usado pra decidir se mostra o botão de reprocesso
+ * (Task 12): exame com schema antigo nunca importa nada (ver `normalizarParaImport`).
+ */
+export function isSchemaAntigo(
+  medidas: Record<string, MedidaSr | number> | undefined,
+): medidas is Record<string, number> {
+  if (!medidas) return false;
+  const firstKey = Object.keys(medidas)[0];
+  if (!firstKey) return false;
+  return typeof medidas[firstKey] === 'number';
+}
+
+/**
  * Item normalizado pra apresentação no modal de import. Independe do
  * schema (novo/antigo) — o `normalizarParaImport` faz a tradução.
  */
@@ -125,55 +139,52 @@ export interface InputImport {
   unit: string;
 }
 
+/** Formato de um perfil de mapeamento (mesma forma de `SR_TO_MOTOR`). */
+export type MapaSr = Record<
+  string,
+  { campo: string; nomePt: string; casas: number; alvo: 'mm' | 'cm/s' | '' }
+>;
+
 /**
- * Converte `exame.medidasDicom` (schema novo OU antigo) numa lista plana
- * de inputs prontos pro modal de import + motor.
+ * Converte `exame.medidasDicom` (schema novo) numa lista plana de inputs
+ * prontos pro modal de import + motor, usando `mapa` (default `SR_TO_MOTOR`)
+ * pra traduzir chave contextualizada (`LA_M-02550`) → campo do motor.
  *
- * - Schema novo: usa chave contextualizada (`LA_M-02550`) — match direto na whitelist.
- * - Schema antigo: keys são códigos puros (`M-02550`). Tenta inferir o grupo
- *   procurando `*_<código>` em SR_TO_MOTOR — se ambíguo, pula.
+ * Schema ANTIGO (`Record<string, number>` — código puro, sem unidade) SEMPRE
+ * devolve `[]`: sem unidade não dá pra saber se o SR mandou cm ou mm, e
+ * inferir por sufixo já causou import de valor 10× errado (ver Task 10 /
+ * achados 1-2). Reprocessar exame antigo é o único caminho seguro (Task 12).
  *
- * Códigos fora da whitelist (calculados, GE proprietários sem mapeamento)
- * são silenciosamente ignorados — motor recalcula tudo.
+ * Item com unidade ausente (`unit === ''`) e `alvo !== ''` (não é razão/índice)
+ * também é descartado — sem saber a unidade não dá pra converter com segurança
+ * (achado 17). Códigos fora da whitelist (calculados, GE proprietários sem
+ * mapeamento) são silenciosamente ignorados — motor recalcula tudo.
+ *
+ * Nenhuma validação de faixa/min/max aqui — julgamento clínico é do médico
+ * no modal de import (decisão 19b).
  */
 export function normalizarParaImport(
   medidasDicom: Record<string, MedidaSr | number> | undefined,
+  mapa: MapaSr = SR_TO_MOTOR,
 ): InputImport[] {
   if (!medidasDicom) return [];
-  const novo = isSchemaNovo(medidasDicom);
+  if (!isSchemaNovo(medidasDicom)) return [];
 
+  const m = medidasDicom;
   const result: InputImport[] = [];
 
-  if (novo) {
-    const m = medidasDicom as Record<string, MedidaSr>;
-    for (const key of Object.keys(SR_TO_MOTOR)) {
-      const dado = m[key];
-      if (!dado) continue;
-      const map = SR_TO_MOTOR[key];
-      result.push({
-        key,
-        campo: map.campo,
-        nomePt: map.nomePt,
-        valor: arredonda(converter(dado.value, dado.unit, map.alvo), map.casas),
-        unit: map.alvo || dado.unit || '',
-      });
-    }
-  } else {
-    // Schema antigo (Record<string, number>) — tenta inferir o grupo
-    // procurando alguma chave em SR_TO_MOTOR que termine com o código.
-    const m = medidasDicom as Record<string, number>;
-    for (const codePuro of Object.keys(m)) {
-      const valor = m[codePuro];
-      if (typeof valor !== 'number' || Number.isNaN(valor)) continue;
-      // Procura matches em SR_TO_MOTOR cujo sufixo bate (`*_M-02550`)
-      const matches = Object.keys(SR_TO_MOTOR).filter((k) => k.endsWith('_' + codePuro));
-      if (matches.length === 1) {
-        const key = matches[0];
-        const map = SR_TO_MOTOR[key];
-        result.push({ key, campo: map.campo, nomePt: map.nomePt, valor: arredonda(converter(valor, '', map.alvo), map.casas), unit: map.alvo || '' });
-      }
-      // Se 0 ou >1 matches, pula (ambíguo ou desconhecido)
-    }
+  for (const key of Object.keys(mapa)) {
+    const dado = m[key];
+    if (!dado) continue;
+    const map = mapa[key];
+    if (map.alvo !== '' && !dado.unit) continue; // unidade desconhecida não importa
+    result.push({
+      key,
+      campo: map.campo,
+      nomePt: map.nomePt,
+      valor: arredonda(converter(dado.value, dado.unit, map.alvo), map.casas),
+      unit: map.alvo || dado.unit || '',
+    });
   }
 
   return result;

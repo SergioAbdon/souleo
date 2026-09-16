@@ -6,11 +6,18 @@
 // Billing: 1 extrato grátis/mês/local
 // ══════════════════════════════════════════════════════════════════
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { DocumentSnapshot } from 'firebase/firestore';
 import { useAuth } from '@/contexts/AuthContext';
-import { getHistorico, getHonorarios, saveHonorarios, getExtratoContador, incrementarExtrato, logAction } from '@/lib/firestore';
+import { getHistorico, getHonorarios, saveHonorarios, getExtratoContador, incrementarExtrato, logAction, anoMesAtual } from '@/lib/firestore';
 import { checkExtratoLimit } from '@/lib/billing';
 import type { HonorariosConfig } from '@/lib/firestore';
+import { podeVerFinanceiro } from '@/lib/permissoes';
+// Mesmo escape same-origin do X11/X12 — este HTML vira document.write (about:blank
+// herda a origem do app) e paciente/convênio/local são graváveis pela recepção.
+import { escaparHtml } from '@/lib/html-escape';
+import { fmtDataExame, fmtDataHora } from '@/lib/fmt-data';
+import { useTiposLaudo } from '@/hooks/useTiposLaudo';
 
 type ExameItem = Record<string, unknown> & {
   id: string; pacienteNome?: string; tipoExame?: string;
@@ -18,17 +25,11 @@ type ExameItem = Record<string, unknown> & {
   emitidoEm?: { toDate?: () => Date };
 };
 
-const TIPOS_EXAME: Record<string, string> = {
-  'eco_tt': 'Eco TT',
-  'doppler_carotidas': 'Carótidas',
-  'eco_te': 'Eco TE',
-  'eco_stress': 'Eco Stress',
-};
-
 export default function Extrato() {
-  const { workspace, contextos, user } = useAuth();
+  const { workspace, papel, user } = useAuth();
 
-  const [wsIdSel, setWsIdSel] = useState(workspace?.id || '');
+  const wsIdSel = workspace?.id || '';
+  const { tiposMap } = useTiposLaudo(wsIdSel || undefined);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [exames, setExames] = useState<ExameItem[]>([]);
@@ -39,45 +40,97 @@ export default function Extrato() {
   const [editandoValores, setEditandoValores] = useState(false);
   const [salvandoValores, setSalvandoValores] = useState(false);
   const [extratoInfo, setExtratoInfo] = useState({ emitidos: 0, mes: '' });
+  const [extratoFranquia, setExtratoFranquia] = useState<number | null>(null);
   const [gerado, setGerado] = useState(false);
-
-  // Sync wsIdSel
-  useEffect(() => {
-    if (workspace?.id && !wsIdSel) setWsIdSel(workspace.id);
-  }, [workspace?.id, wsIdSel]);
+  const [gerandoExtrato, setGerandoExtrato] = useState(false);
+  // Anti-corrida: troca de local dispara nova carga; a resposta lenta do local
+  // anterior nao pode sobrescrever honorarios/contador — o contador stale
+  // chegaria a gerar/logar cobranca pro local errado. (Exames: consultaGenRef.)
+  const genRef = useRef(0);
+  // Corrida da CONSULTA (handleConsultar × troca de filtros): domínio separado
+  // do genRef de honorários — na troca de local os dois effects rodam no mesmo
+  // commit e um ref único fazia o reset invalidar a resposta de honorários.
+  const consultaGenRef = useRef(0);
+  // De qual local sao os `exames` exibidos. Na janela de troca, wsIdSel ja e o
+  // B mas os exames ainda sao do A; so gera extrato quando batem.
+  const carregadoWsId = useRef('');
 
   // Carregar honorários quando muda workspace
   useEffect(() => {
     if (!wsIdSel) return;
+    const meuGen = ++genRef.current;
+    // Franquia do local anterior não pode ficar na tela durante a troca, nem
+    // sobreviver a uma falha do check (triade onda3) — null é o "não sei ainda".
+    setExtratoFranquia(null);
     getHonorarios(wsIdSel).then(h => {
-      setHonorarios(h);
-      setUsarValorUnico(h.valorUnico !== null);
-      setValorUnicoInput(h.valorUnico !== null ? String(h.valorUnico) : '');
+      if (meuGen !== genRef.current) return;
+      if (!h) { alert('Não foi possível carregar os valores de honorários — os totais podem sair zerados.'); }
+      const cfg = h || { convenios: {}, valorUnico: null };
+      setHonorarios(cfg);
+      setUsarValorUnico(cfg.valorUnico !== null);
+      setValorUnicoInput(cfg.valorUnico !== null ? String(cfg.valorUnico) : '');
     });
-    const agora = new Date();
-    const anoMes = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}`;
+    checkExtratoLimit(wsIdSel).then(l => {
+      if (meuGen !== genRef.current) return;
+      if (l.pode) setExtratoFranquia(l.franquia);
+    });
+    const anoMes = anoMesAtual();
     setExtratoInfo(prev => ({ ...prev, mes: anoMes }));
     getExtratoContador(wsIdSel, anoMes).then(c => {
+      if (meuGen !== genRef.current) return;
       setExtratoInfo({ emitidos: c.emitidos, mes: anoMes });
     });
   }, [wsIdSel]);
 
-  // Buscar exames — só quando clica "Consultar"
+  // Buscar exames — só quando clica "Consultar". Percorre TODAS as páginas
+  // (C1: teto fixo de 500 truncava período movimentado e o extrato saía com
+  // total errado). meuGen = ++consultaGenRef (C3): consulta nova ou troca de
+  // datas invalida a resposta lenta da anterior.
   async function handleConsultar() {
     if (!wsIdSel || !dateFrom || !dateTo) return;
+    const meuGen = ++consultaGenRef.current;
     setLoading(true);
     setGerado(false);
-    const result = await getHistorico(wsIdSel, { dateFrom, dateTo, limitN: 500 });
-    setExames(result.items as ExameItem[]);
+    const todos: ExameItem[] = [];
+    let cursor: DocumentSnapshot | null = null;
+    // ponytail: teto de 40 paginas (20.000 laudos) — acima disso é uso fora da
+    // curva; se o teto for atingido com dados ainda por vir, ABORTA com aviso
+    // em vez de publicar um extrato truncado como se fosse o período inteiro.
+    let completo = false;
+    for (let pag = 0; pag < 40; pag++) {
+      const result = await getHistorico(wsIdSel, { dateFrom, dateTo, limitN: 500, cursor });
+      if (meuGen !== consultaGenRef.current) return;
+      if (result.erro) {
+        setLoading(false);
+        alert('Não foi possível consultar os exames. Tente novamente.');
+        return;
+      }
+      todos.push(...(result.items as ExameItem[]));
+      cursor = result.lastDoc;
+      if (!result.hasMore) { completo = true; break; }
+    }
+    if (!completo) {
+      setLoading(false);
+      alert('Período com laudos demais para um único extrato — divida em períodos menores.');
+      return;
+    }
+    setExames(todos);
+    carregadoWsId.current = wsIdSel;
     setLoading(false);
     setGerado(true);
   }
 
-  // Resetar quando muda filtros
-  useEffect(() => { setGerado(false); setExames([]); }, [wsIdSel, dateFrom, dateTo]);
+  // Resetar quando muda filtros — e invalidar consulta em voo (C3): sem o ++,
+  // a resposta lenta do período antigo preenchia a tela e o extrato saía
+  // rotulado com as datas novas. setLoading(false) aqui: o runner invalidado
+  // sai no guard sem tocar em estado, então o dono do reset é este effect.
+  // consultaGenRef (nao genRef): esse effect roda no mesmo commit do effect de
+  // honorários na troca de local — um ref compartilhado invalidava a resposta
+  // de honorários que acabou de capturar seu proprio meuGen.
+  useEffect(() => { consultaGenRef.current++; setLoading(false); setGerado(false); setExames([]); }, [wsIdSel, dateFrom, dateTo]);
 
   // Nome do workspace selecionado
-  const wsNome = contextos.find(c => c.workspace.id === wsIdSel)?.workspace.nomeClinica || 'Consultório';
+  const wsNome = workspace?.nomeClinica || 'Consultório';
 
   // Agrupar por convênio
   const resumo = exames.reduce<Record<string, number>>((acc, ex) => {
@@ -86,10 +139,14 @@ export default function Extrato() {
     return acc;
   }, {});
 
-  // Obter valor de um convênio
+  // Obter valor de um convênio. Defensivo (triade onda2): a regra valida a
+  // FORMA do doc mas não os valores dentro do mapa — valor não-numérico ou
+  // negativo vira 0 em vez de quebrar toFixed na tela/HTML.
   function getValor(conv: string): number {
-    if (usarValorUnico && honorarios.valorUnico !== null) return honorarios.valorUnico;
-    return honorarios.convenios[conv] || 0;
+    const v = usarValorUnico && honorarios.valorUnico !== null
+      ? honorarios.valorUnico
+      : honorarios.convenios[conv];
+    return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0;
   }
 
   // Total geral
@@ -97,7 +154,7 @@ export default function Extrato() {
 
   // Atualizar valor de convênio local
   function setValorConvenio(conv: string, valor: string) {
-    const num = parseFloat(valor) || 0;
+    const num = Math.max(0, parseFloat(valor) || 0);
     setHonorarios(prev => ({
       ...prev,
       convenios: { ...prev.convenios, [conv]: num }
@@ -110,12 +167,13 @@ export default function Extrato() {
     setSalvandoValores(true);
     const config: HonorariosConfig = {
       convenios: honorarios.convenios,
-      valorUnico: usarValorUnico ? (parseFloat(valorUnicoInput) || 0) : null,
+      valorUnico: usarValorUnico ? Math.max(0, parseFloat(valorUnicoInput) || 0) : null,
     };
-    await saveHonorarios(wsIdSel, config);
+    const ok = await saveHonorarios(wsIdSel, config);
+    setSalvandoValores(false);
+    if (!ok) { alert('Não foi possível salvar os valores. Tente novamente.'); return; }
     setHonorarios(config);
     setEditandoValores(false);
-    setSalvandoValores(false);
   }
 
   // Toggle valor único
@@ -123,45 +181,80 @@ export default function Extrato() {
     const novo = !usarValorUnico;
     setUsarValorUnico(novo);
     if (novo) {
-      const val = parseFloat(valorUnicoInput) || 0;
+      const val = Math.max(0, parseFloat(valorUnicoInput) || 0);
       setHonorarios(prev => ({ ...prev, valorUnico: val }));
     } else {
       setHonorarios(prev => ({ ...prev, valorUnico: null }));
     }
   }
 
-  // Gerar extrato (imprimir)
+  // Gerar extrato (imprimir). Ordem importa: window.open ANTES de qualquer
+  // await (C10 — popup fora do gesto do clique era bloqueado e a contagem já
+  // tinha acontecido); trava de duplo-clique (C4); erro do checkExtratoLimit
+  // aborta em vez de contar às cegas (C14).
   async function handleGerarExtrato() {
-    if (!wsIdSel || !user?.uid) return;
-
-    // Billing check — verifica limite do plano
-    const limiteExtrato = await checkExtratoLimit(wsIdSel);
-    if (!limiteExtrato.gratis) {
-      const msg = limiteExtrato.franquia === -1
-        ? 'Extrato ilimitado no seu plano.'
-        : `Voce ja usou ${limiteExtrato.usados} de ${limiteExtrato.franquia} extrato(s) gratis neste mes.\nO proximo custara R$ ${limiteExtrato.custo.toFixed(2)}.\n\nDeseja continuar?`;
-      if (limiteExtrato.custo > 0 && !confirm(msg)) return;
+    if (!wsIdSel || !user?.uid || gerandoExtrato) return;
+    // Nao cobrar/logar o local B com os exames ainda do A (janela de troca).
+    if (carregadoWsId.current !== wsIdSel) {
+      alert('Aguarde os dados do local carregarem.');
+      return;
     }
-
-    await incrementarExtrato(wsIdSel, extratoInfo.mes);
-    await logAction('extrato_emitido', { wsId: wsIdSel, periodo: `${dateFrom} a ${dateTo}`, totalExames: exames.length, totalValor: totalGeral }, user.uid);
-    setExtratoInfo(prev => ({ ...prev, emitidos: prev.emitidos + 1 }));
-
-    // Gerar HTML para impressão
-    const html = gerarHtmlExtrato();
     const win = window.open('', '_blank');
-    if (win) { win.document.write(html); win.document.close(); }
+    if (!win) {
+      alert('O navegador bloqueou a janela do extrato. Habilite popups para este site e tente de novo.');
+      return;
+    }
+    setGerandoExtrato(true);
+    // Mes calculado UMA vez: viaja do check ao incremento (achado triade —
+    // clique na virada do mes verificava um mes e incrementava o seguinte).
+    const anoMes = anoMesAtual();
+    try {
+      const limiteExtrato = await checkExtratoLimit(wsIdSel, anoMes);
+      if (!limiteExtrato.pode) {
+        win.close();
+        alert('Não foi possível verificar seu plano. Tente novamente.');
+        return;
+      }
+      if (!limiteExtrato.gratis && limiteExtrato.custo > 0) {
+        const msg = `Voce ja usou ${limiteExtrato.usados} de ${limiteExtrato.franquia} extrato(s) gratis neste mes.\nO proximo custara R$ ${limiteExtrato.custo.toFixed(2)}.\n\nDeseja continuar?`;
+        if (!confirm(msg)) { win.close(); return; }
+      }
+      // Fail-CLOSED (triade onda2, Codex): regra monotonica nova pode negar o
+      // incremento (doc legado malformado) — gerar sem contar seria subcontagem
+      // eterna e silenciosa. Aborta e aponta o caminho.
+      const contou = await incrementarExtrato(wsIdSel, anoMes);
+      if (!contou) {
+        win.close();
+        alert('Não foi possível registrar o extrato no contador do mês. Tente novamente; se persistir, contate o suporte.');
+        return;
+      }
+      await logAction('extrato_emitido', { wsId: wsIdSel, periodo: `${dateFrom} a ${dateTo}`, totalExames: exames.length, totalValor: totalGeral }, user.uid);
+      setExtratoInfo(prev => prev.mes === anoMes
+        ? { mes: anoMes, emitidos: prev.emitidos + 1 }
+        : { mes: anoMes, emitidos: 1 });
+      win.document.write(gerarHtmlExtrato());
+      win.document.close();
+    } finally {
+      setGerandoExtrato(false);
+    }
   }
 
+  // Tríade S7 onda-3 (Codex-2 Important): as datas entravam CRUAS —
+  // dataExame é campo administrativo (recepção grava, exame não-emitido) e
+  // fmtDataExame devolve o valor BRUTO sem formatar quando não bate o formato
+  // AAAA-MM-DD esperado (`p.length === 3`), então um payload em dataExame
+  // chegava intacto no document.write. Regra: todo `${...}` de dado
+  // dinâmico passa por escaparHtml, sem exceção "esse aqui é só uma data".
   function gerarHtmlExtrato(): string {
+    const wsNomeEsc = escaparHtml(wsNome);
     const linhas = exames.map(ex => {
       const conv = (ex.convenio as string) || 'SEM CONVÊNIO';
       return `<tr>
-        <td>${fmtDate(ex.dataExame)}</td>
-        <td>${fmtEmitido(ex)}</td>
-        <td>${ex.pacienteNome || '—'}</td>
-        <td>${TIPOS_EXAME[ex.tipoExame as string] || ex.tipoExame || '—'}</td>
-        <td>${conv}</td>
+        <td>${escaparHtml(fmtDataExame(ex.dataExame))}</td>
+        <td>${escaparHtml(fmtDataHora(ex.emitidoEm))}</td>
+        <td>${escaparHtml(ex.pacienteNome || '—')}</td>
+        <td>${escaparHtml(tiposMap[ex.tipoExame as string]?.nome || ex.tipoExame || '—')}</td>
+        <td>${escaparHtml(conv)}</td>
       </tr>`;
     }).join('');
 
@@ -169,14 +262,14 @@ export default function Extrato() {
       const val = getValor(conv);
       return `<tr>
         <td>${qtd}</td>
-        <td>${conv}</td>
+        <td>${escaparHtml(conv)}</td>
         <td>R$ ${val.toFixed(2)}</td>
         <td><strong>R$ ${(qtd * val).toFixed(2)}</strong></td>
       </tr>`;
     }).join('');
 
     return `<!DOCTYPE html><html><head><meta charset="utf-8">
-    <title>Extrato - ${wsNome}</title>
+    <title>Extrato - ${wsNomeEsc}</title>
     <style>
       body { font-family: 'IBM Plex Sans', Arial, sans-serif; padding: 30px; color: #1E3A5F; }
       h1 { font-size: 18px; margin-bottom: 5px; }
@@ -188,8 +281,8 @@ export default function Extrato() {
       .total { font-size: 16px; font-weight: bold; text-align: right; margin-top: 10px; }
       @media print { body { padding: 10px; } }
     </style></head><body>
-    <h1>Extrato de Honorários — ${wsNome}</h1>
-    <h2>Período: ${fmtDate(dateFrom)} a ${fmtDate(dateTo)}</h2>
+    <h1>Extrato de Honorários — ${wsNomeEsc}</h1>
+    <h2>Período: ${escaparHtml(fmtDataExame(dateFrom))} a ${escaparHtml(fmtDataExame(dateTo))}</h2>
     <table><thead><tr><th>Data Exame</th><th>Emitido em</th><th>Paciente</th><th>Tipo</th><th>Convênio</th></tr></thead>
     <tbody>${linhas}</tbody></table>
     <h2>Resumo por Convênio</h2>
@@ -200,38 +293,16 @@ export default function Extrato() {
     </body></html>`;
   }
 
-  // Formatação
-  function fmtDate(d: string | undefined): string {
-    if (!d) return '—';
-    const p = d.split('-');
-    return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : d;
-  }
-
-  function fmtEmitido(ex: ExameItem): string {
-    try {
-      const dt = ex.emitidoEm?.toDate?.();
-      if (dt) return dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    } catch { /* */ }
-    return '—';
+  if (!podeVerFinanceiro(papel)) {
+    return (
+      <div className="text-center text-gray-400 py-12 text-sm">
+        O extrato financeiro é restrito a médicos e ao responsável pela conta.
+      </div>
+    );
   }
 
   return (
     <div>
-      {/* Seletor de workspace */}
-      {contextos.length > 1 && (
-        <div className="mb-3">
-          <label className="block text-[10px] font-semibold text-gray-400 uppercase mb-1">Local de trabalho</label>
-          <select value={wsIdSel} onChange={e => setWsIdSel(e.target.value)}
-            className="border rounded-lg px-3 py-2 text-sm font-semibold text-[#1E3A5F] focus:outline-none focus:border-[#1E3A5F] w-full">
-            {contextos.map(ctx => (
-              <option key={ctx.workspace.id} value={ctx.workspace.id}>
-                {ctx.workspace.nomeClinica || 'Consultório'}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
       {/* Filtros de período */}
       <div className="flex items-center gap-2 mb-4">
         <label className="text-xs text-gray-500">De</label>
@@ -248,9 +319,11 @@ export default function Extrato() {
 
       {/* Info billing do extrato */}
       <div className="text-xs text-gray-400 mb-3">
-        {extratoInfo.emitidos === 0
-          ? `Nenhum extrato emitido em ${wsNome} neste mês (1 grátis)`
-          : `${extratoInfo.emitidos} extrato(s) emitido(s) em ${wsNome} neste mês${extratoInfo.emitidos >= 1 ? ' — próximo será cobrado' : ''}`}
+        {extratoFranquia === -1
+          ? `${extratoInfo.emitidos} extrato(s) emitido(s) em ${wsNome} neste mês — ilimitados no seu plano`
+          : extratoInfo.emitidos === 0
+            ? `Nenhum extrato emitido em ${wsNome} neste mês${extratoFranquia !== null ? ` (${extratoFranquia} grátis)` : ''}`
+            : `${extratoInfo.emitidos} extrato(s) emitido(s) em ${wsNome} neste mês${extratoFranquia !== null && extratoInfo.emitidos >= extratoFranquia ? ' — próximo será cobrado' : ''}`}
       </div>
 
       {/* Conteúdo */}
@@ -286,10 +359,10 @@ export default function Extrato() {
               <tbody>
                 {exames.map(ex => (
                   <tr key={ex.id} className="border-b hover:bg-gray-50 transition">
-                    <td className="py-2.5 px-3 text-gray-500 text-xs font-mono">{fmtDate(ex.dataExame)}</td>
-                    <td className="py-2.5 px-3 text-gray-400 text-xs">{fmtEmitido(ex)}</td>
+                    <td className="py-2.5 px-3 text-gray-500 text-xs font-mono">{fmtDataExame(ex.dataExame)}</td>
+                    <td className="py-2.5 px-3 text-gray-400 text-xs">{fmtDataHora(ex.emitidoEm)}</td>
                     <td className="py-2.5 px-3 font-semibold text-[#1E3A5F] text-xs">{ex.pacienteNome || '—'}</td>
-                    <td className="py-2.5 px-3 text-gray-500 text-xs">{TIPOS_EXAME[ex.tipoExame as string] || ex.tipoExame}</td>
+                    <td className="py-2.5 px-3 text-gray-500 text-xs">{tiposMap[ex.tipoExame as string]?.nome || ex.tipoExame || '—'}</td>
                     <td className="py-2.5 px-3 text-gray-500 text-xs">{ex.convenio || '—'}</td>
                   </tr>
                 ))}
@@ -321,10 +394,10 @@ export default function Extrato() {
                 {usarValorUnico && (
                   <div className="mt-2 flex items-center gap-2">
                     <span className="text-xs text-gray-500">R$</span>
-                    <input type="number" step="0.01" value={valorUnicoInput}
+                    <input type="number" step="0.01" min="0" value={valorUnicoInput}
                       onChange={e => {
                         setValorUnicoInput(e.target.value);
-                        setHonorarios(prev => ({ ...prev, valorUnico: parseFloat(e.target.value) || 0 }));
+                        setHonorarios(prev => ({ ...prev, valorUnico: Math.max(0, parseFloat(e.target.value) || 0) }));
                       }}
                       className="border rounded px-2 py-1 text-sm w-24 focus:outline-none focus:border-[#1E3A5F]" />
                   </div>
@@ -352,7 +425,7 @@ export default function Extrato() {
                         {editandoValores && !usarValorUnico ? (
                           <div className="flex items-center gap-1">
                             <span className="text-xs text-gray-400">R$</span>
-                            <input type="number" step="0.01"
+                            <input type="number" step="0.01" min="0"
                               value={honorarios.convenios[conv] || ''}
                               onChange={e => setValorConvenio(conv, e.target.value)}
                               className="border rounded px-2 py-0.5 text-sm w-20 focus:outline-none focus:border-[#1E3A5F]" />
@@ -387,9 +460,9 @@ export default function Extrato() {
 
           {/* Botão gerar extrato */}
           <div className="flex justify-center">
-            <button onClick={handleGerarExtrato}
-              className="bg-[#1E3A5F] text-white px-8 py-3 rounded-lg font-semibold hover:bg-[#2563EB] transition flex items-center gap-2">
-              🖨️ Gerar Extrato
+            <button onClick={handleGerarExtrato} disabled={gerandoExtrato}
+              className="bg-[#1E3A5F] text-white px-8 py-3 rounded-lg font-semibold hover:bg-[#2563EB] transition flex items-center gap-2 disabled:opacity-50">
+              {gerandoExtrato ? 'Gerando...' : '🖨️ Gerar Extrato'}
             </button>
           </div>
         </>

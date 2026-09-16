@@ -10,6 +10,8 @@ import {
   collection, getDocs, query, orderBy, limit, where, Timestamp
 } from 'firebase/firestore';
 import Link from 'next/link';
+import { acharSub } from '@/lib/billing';
+import { vigente } from '@/lib/ciclo';
 
 // ── Tipos ──
 type WsData = { id: string; tipo?: string; nomeClinica?: string; ownerUid?: string; [k: string]: unknown };
@@ -83,7 +85,8 @@ export default function DashboardPage() {
       setLaudosMes(consumoSnap.size);
       setLogs(logsList);
 
-      const ativas = subsList.filter(s => diffDias(s.cicloFim) > 0).length;
+      const agoraDate = new Date();
+      const ativas = subsList.filter(s => vigente(s, agoraDate)).length;
       setSubsAtivas(ativas);
       setSubsExpiradas(subsList.length - ativas);
 
@@ -112,7 +115,7 @@ export default function DashboardPage() {
         const d = diffDias(s.cicloFim);
         return s.tipo === 'trial' && d > 0 && d <= 7;
       }).forEach(s => {
-        const ws = wsList.find(w => w.id === s.workspaceId);
+        const ws = wsList.find(w => acharSub(w, [s]) === s);
         const dias = Math.ceil(diffDias(s.cicloFim));
         alertList.push({
           nivel: 'amarelo',
@@ -122,9 +125,11 @@ export default function DashboardPage() {
         });
       });
 
-      // Inadimplentes
-      subsList.filter(s => diffDias(s.cicloFim) < 0).forEach(s => {
-        const ws = wsList.find(w => w.id === s.workspaceId);
+      // Inadimplentes — tem cicloFim e NAO esta vigente (ciclo.ts): vencida
+      // sozinha nao basta mais, senao conta paga que gira sozinha vira
+      // alerta vermelho falso todo mes.
+      subsList.filter(s => s.cicloFim && !vigente(s, agoraDate)).forEach(s => {
+        const ws = wsList.find(w => acharSub(w, [s]) === s);
         const diasAtras = Math.abs(Math.ceil(diffDias(s.cicloFim)));
         alertList.push({
           nivel: 'vermelho',
@@ -141,7 +146,7 @@ export default function DashboardPage() {
         const total = s.franquiaMensal || 1;
         return d > 0 && usado / total >= 0.8;
       }).forEach(s => {
-        const ws = wsList.find(w => w.id === s.workspaceId);
+        const ws = wsList.find(w => acharSub(w, [s]) === s);
         alertList.push({
           nivel: 'amarelo',
           texto: `${ws?.nomeClinica || s.workspaceId} \u2014 ${s.franquiaUsada}/${s.franquiaMensal} laudos usados`,

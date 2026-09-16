@@ -37,6 +37,17 @@ export default function LoginPage() {
   const [pfEsp, setPfEsp] = useState('Cardiologia e Ecocardiografia');
   const [pfTipo, setPfTipo] = useState<'medico' | 'assistente'>('medico');
 
+  // Campos cadastro PJ
+  const [pjCnpj, setPjCnpj] = useState('');
+  const [pjRazao, setPjRazao] = useState('');
+  const [pjLocal, setPjLocal] = useState('');
+  const [pjNome, setPjNome] = useState('');
+  const [pjEmail, setPjEmail] = useState('');
+  const [pjSenha, setPjSenha] = useState('');
+  const [pjEhMedico, setPjEhMedico] = useState(false);
+  const [pjCrm, setPjCrm] = useState('');
+  const [pjUf, setPjUf] = useState('');
+
   // ── Login ──
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -161,6 +172,50 @@ export default function LoginPage() {
       } else {
         setErro('Erro ao cadastrar: ' + (err as Error).message);
       }
+    }
+    setLoading(false);
+  }
+
+  // ── Cadastro PJ ──
+  // Mesmo padrão do handleCadastroPF: cliente cria o Auth user, servidor
+  // cria os documentos (empresa + local + perfil) em /api/signup.
+  async function handleCadastroPJ(e: React.FormEvent) {
+    e.preventDefault();
+    setErro(''); setSucesso(''); setLoading(true);
+    try {
+      const cnpjLimpo = pjCnpj.replace(/\D/g, '');
+      if (!pjNome || !pjEmail || !pjSenha || !pjRazao) { setErro('Preencha nome, email, senha e razão social.'); setLoading(false); return; }
+      if (cnpjLimpo.length !== 14) { setErro('CNPJ inválido.'); setLoading(false); return; }
+      if (pjEhMedico && (!pjCrm || !pjUf)) { setErro('CRM e UF são obrigatórios para médicos.'); setLoading(false); return; }
+      if (pjSenha.length < 6) { setErro('Senha deve ter ao menos 6 caracteres.'); setLoading(false); return; }
+
+      const cred = await createUserWithEmailAndPassword(auth, pjEmail, pjSenha);
+      const idToken = await cred.user.getIdToken();
+      const res = await fetch('/api/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          tipoConta: 'PJ', nome: pjNome, email: pjEmail,
+          tipoPerfil: pjEhMedico ? 'medico' : 'assistente',
+          crm: pjCrm, ufCrm: pjUf.toUpperCase(),
+          cnpj: cnpjLimpo, razaoSocial: pjRazao, nomeLocal: pjLocal,
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        await auth.signOut().catch(() => {});
+        setErro(data.motivo === 'cnpj_duplicado' ? 'Este CNPJ já está cadastrado.'
+          : data.motivo === 'dados_invalidos' ? 'Dados incompletos. Confira CNPJ, razão social e CRM/UF.'
+          : 'Erro ao criar a conta. Tente novamente.');
+        setLoading(false); return;
+      }
+      await sendEmailVerification(cred.user);
+      await auth.signOut();
+      setSucesso('Conta da clínica criada! Verifique seu email para ativar.');
+      setTab('login');
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code || '';
+      setErro(code === 'auth/email-already-in-use' ? 'Este email já está cadastrado.' : 'Erro ao cadastrar: ' + (err as Error).message);
     }
     setLoading(false);
   }
@@ -293,11 +348,60 @@ export default function LoginPage() {
 
             {/* ── TAB CADASTRO PJ ── */}
             {tab === 'cadastroPJ' && (
-              <div className="text-center py-8 text-gray-400">
-                <p className="text-lg">🏢</p>
-                <p className="text-sm mt-2">Cadastro PJ será implementado na próxima fase.</p>
-                <p className="text-xs mt-1">Por enquanto, use o cadastro PF.</p>
-              </div>
+              <form onSubmit={handleCadastroPJ} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">CNPJ</label>
+                  <input type="text" value={pjCnpj} onChange={e => setPjCnpj(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" placeholder="00.000.000/0000-00" required />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Razão social</label>
+                  <input type="text" value={pjRazao} onChange={e => setPjRazao(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" required />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Nome do primeiro local</label>
+                  <input type="text" value={pjLocal} onChange={e => setPjLocal(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" placeholder="Unidade Centro" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Seu nome</label>
+                  <input type="text" value={pjNome} onChange={e => setPjNome(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" required />
+                </div>
+                <label className="flex items-center gap-2 text-sm text-gray-600">
+                  <input type="checkbox" checked={pjEhMedico} onChange={e => setPjEhMedico(e.target.checked)} />
+                  Sou médico (vou assinar laudos)
+                </label>
+                {pjEhMedico && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">CRM</label>
+                      <input type="text" value={pjCrm} onChange={e => setPjCrm(e.target.value)}
+                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">UF</label>
+                      <input type="text" value={pjUf} onChange={e => setPjUf(e.target.value.toUpperCase())}
+                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" maxLength={2} placeholder="PA" />
+                    </div>
+                  </div>
+                )}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Email</label>
+                  <input type="email" value={pjEmail} onChange={e => setPjEmail(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" required />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Senha</label>
+                  <input type="password" value={pjSenha} onChange={e => setPjSenha(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" placeholder="Mínimo 6 caracteres" required />
+                </div>
+                <button type="submit" disabled={loading}
+                  className="w-full bg-[#1E3A5F] text-white py-3 rounded-lg font-semibold text-sm hover:bg-[#2563EB] transition disabled:opacity-50">
+                  {loading ? 'Cadastrando...' : 'Criar conta da clínica'}
+                </button>
+              </form>
             )}
           </div>
         </div>

@@ -1,0 +1,185 @@
+'use client';
+// ══════════════════════════════════════════════════════════════════
+// LEO · AnexarPdfModal — modalidade 'pdf' (ECG/MAPA/Holter/Ergométrico)
+//
+// Anexa o PDF do aparelho como laudo. Passa pelo MESMO /api/emitir do
+// motor de laudo texto/estruturado — decisao 15/08/2026: anexo CONSOME
+// franquia (transacao unica de billing/ledger/log no servidor).
+// Gate de UI: só entra aqui quem já é assinaComoAutor no Worklist (a
+// rota também recusa não-médico com 403 nao_medico, defesa em profundidade).
+// ══════════════════════════════════════════════════════════════════
+
+import { useState, useRef } from 'react';
+import { auth } from '@/lib/firebase';
+
+const LIMITE_BYTES = 3 * 1024 * 1024; // 3MB — limite client honesto (Vercel ~4,5MB, base64 +33%)
+
+const MENSAGENS_ERRO: Record<string, string> = {
+  pdf_grande: 'PDF acima de 3MB — exporte com qualidade menor no software do aparelho.',
+  nao_e_pdf: 'Arquivo não é um PDF válido.',
+  sem_saldo: 'Franquia do mês esgotada. Adquira créditos extras.',
+  expirado: 'Seu plano expirou. Renove para continuar emitindo laudos.',
+  nao_medico: 'Anexar o PDF é ato do médico.',
+  sem_plano: 'Nenhum plano ativo encontrado.',
+  exame_de_outro_medico: 'Este exame já tem outro médico como autor.',
+  sem_permissao: 'Sem permissão para emitir neste local.',
+  cancelado: 'Este exame foi cancelado. Anexar de novo exige recriar o exame.',
+};
+
+// X21: `tipoExame` aqui é o ID do catálogo (vai em `dadosFinais` pro
+// /api/emitir tal como está — nunca o nome de exibição, que corrompia o
+// campo no doc). `tipoNome` é só pra exibição na UI deste modal.
+// jaEmitido (X22+E18, Ruflo-2): mora AQUI dentro, não como prop paralela —
+// o call site (Worklist) já sabe reconstruir a identidade inteira do exame
+// num objeto só; um boolean derivado à parte do MESMO exame divergia dele
+// em cenário de reabertura (status volta a 'andamento' mas `emitidoEm`
+// continua no doc — E22). A cobrança em si é derivada no servidor; isto é
+// só o aviso na tela.
+type ExameRef = {
+  id: string; pacienteNome?: string; tipoExame?: string; tipoNome?: string; convenio?: string;
+  jaEmitido?: boolean;
+};
+
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  exame: ExameRef | null;
+  wsId: string;
+  medicoUid: string;
+};
+
+export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid }: Props) {
+  const [arquivo, setArquivo] = useState<File | null>(null);
+  const [erro, setErro] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  // S7-T0.3 (E1): chave da TENTATIVA de anexo, presa ao exame (o modal fica
+  // montado na Agenda e troca de exame). Sobrevive ao erro — reenviar depois
+  // de um timeout não debita a franquia de novo; zera no sucesso.
+  const emissaoKeyRef = useRef<{ id: string; key: string } | null>(null);
+
+  if (!open || !exame) return null;
+
+  const jaEmitido = !!exame.jaEmitido;
+
+  // Ponytail-12: `||` em vez do par `??` repetido no JSX — tipoNome/tipoExame
+  // sao string opcional, entao string vazia cai no mesmo default de "sem
+  // tipo" que null/undefined.
+  const rotulo = exame.tipoNome || exame.tipoExame;
+
+  function onSelecionar(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0] || null;
+    setErro('');
+    if (f && f.size > LIMITE_BYTES) {
+      setErro(MENSAGENS_ERRO.pdf_grande);
+      setArquivo(null);
+      return;
+    }
+    setArquivo(f);
+  }
+
+  async function enviar() {
+    if (!arquivo || !exame) return;
+    // O modal já É a confirmação do caminho feliz (nenhuma outra tela
+    // confirma franquia no primeiro anexo) — o confirm() só entra quando é
+    // de fato uma REEMISSÃO, avisando o custo extra explicitamente.
+    if (jaEmitido && !confirm('Este exame JÁ FOI EMITIDO — reanexar consome UMA NOVA franquia. Continuar?')) return;
+    setEnviando(true);
+    setErro('');
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(((reader.result as string) || '').split(',')[1] || '');
+        reader.onerror = () => reject(new Error('erro_leitura'));
+        reader.readAsDataURL(arquivo);
+      });
+
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/emitir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token || ''}` },
+        body: JSON.stringify({
+          wsId,
+          exameId: exame.id,
+          medicoUid,
+          dadosFinais: {
+            pacienteNome: exame.pacienteNome ?? '',
+            tipoExame: exame.tipoExame ?? '',
+            convenio: exame.convenio ?? '',
+          },
+          // `nomeArq` sai daqui (S5-T14, I3): o servidor deriva o nome do
+          // objeto no Storage a partir do tipo + nome do paciente.
+          pdfBase64: base64,
+          emissaoKey: (emissaoKeyRef.current?.id === exame.id
+            ? emissaoKeyRef.current
+            : (emissaoKeyRef.current = { id: exame.id, key: crypto.randomUUID() })).key,
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setErro(MENSAGENS_ERRO[data.motivo as string] || 'Erro ao anexar o PDF. Tente novamente.');
+        return;
+      }
+      if (data.pdfErro) {
+        alert('Laudo emitido, mas o PDF falhou ao salvar — anexe novamente.');
+      } else {
+        alert('PDF anexado — laudo emitido (1 franquia consumida)');
+      }
+      emissaoKeyRef.current = null;   // S7-T0.3: próximo anexo é intenção nova (cobra)
+      setArquivo(null);
+      onClose();
+    } catch {
+      setErro('Erro de conexão. Verifique a internet e tente novamente.');
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-p1 text-white px-5 py-3 rounded-t-xl">
+          <h2 className="font-bold text-sm">📎 Anexar PDF do laudo</h2>
+        </div>
+        <div className="p-5 space-y-3">
+          <p className="text-sm text-gray-600">
+            {exame.pacienteNome || 'Paciente'}
+            {rotulo ? ` · ${rotulo}` : ''}
+          </p>
+
+          {erro && <div className="bg-red-50 text-red-700 text-sm p-2 rounded">{erro}</div>}
+
+          {jaEmitido && (
+            <div className="bg-amber-50 text-amber-800 text-sm p-2 rounded">
+              Este exame JÁ FOI EMITIDO — reanexar consome UMA NOVA franquia.
+            </div>
+          )}
+
+          <input
+            type="file"
+            accept="application/pdf"
+            onChange={onSelecionar}
+            className="w-full text-sm border rounded-lg px-3 py-2"
+          />
+          {arquivo && (
+            <p className="text-xs text-gray-500">
+              {arquivo.name} · {(arquivo.size / 1024 / 1024).toFixed(2)}MB
+            </p>
+          )}
+          <p className="text-xs text-gray-400">Anexar consome 1 franquia do mês, como emitir um laudo.</p>
+        </div>
+        <div className="px-5 py-3 border-t flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-1.5 text-sm rounded-lg text-gray-600 hover:bg-gray-100">
+            Cancelar
+          </button>
+          <button
+            onClick={enviar}
+            disabled={!arquivo || enviando}
+            className="px-4 py-1.5 text-sm rounded-lg bg-p1 text-white font-semibold disabled:opacity-50"
+          >
+            {enviando ? 'Enviando…' : jaEmitido ? 'Reanexar (consome 1 franquia)' : 'Emitir laudo'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

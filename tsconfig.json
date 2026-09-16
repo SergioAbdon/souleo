@@ -10,6 +10,12 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
+    // Permite import relativo com extensao .ts explicita (ex: './dicom-sr-mapping.ts')
+    // — necessario pra um lib reusar outro lib E continuar rodavel direto por
+    // `node --test` (Node 24 nativo NAO resolve import sem extensao nem alias
+    // '@/', so path relativo com extensao). noEmit:true ja presente = seguro
+    // (S4-T13).
+    "allowImportingTsExtensions": true,
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,

@@ -43,7 +43,9 @@ export function jEspessuraMiocardica(massa: number | null, sexo: Sexo): string {
 
 /**
  * j10 — Padrão geométrico do VE (4 quadrantes ER × IMVE)
- * Cutoffs IMVE: M=102, F=88
+ * Cutoffs IMVE (V2 — ASE 2015 Lang, Tabela 4): M=115, F=95.
+ * Antes eram 102/88 (média + 1 DP), que divergiam do limite usado pela
+ * diastologia; unificado no limite superior do normal.
  */
 export function jPadraoGeometrico(
   er: number | null,
@@ -51,7 +53,7 @@ export function jPadraoGeometrico(
   sexo: Sexo
 ): string {
   if (er === null || imVE === null || !sexo) return '';
-  const lim = sexo === 'M' ? 102 : 88;
+  const lim = sexo === 'M' ? 115 : 95;
 
   if (er > 0.42 && imVE <= lim)
     return 'Índice de massa preservado e espessura relativa aumentada compatível com remodelamento concêntrico do ventrículo esquerdo.';

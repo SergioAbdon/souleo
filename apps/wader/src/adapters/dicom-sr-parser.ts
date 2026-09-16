@@ -4,6 +4,35 @@ import { createLogger } from '../logger';
 const log = createLogger({ module: 'dicom-sr-parser' });
 
 /**
+ * Carimbo de versão do parser, gravado em `medidasDicomMeta.parserVersao`.
+ * Sobe quando a lógica de extração/desempate muda — permite auditar em
+ * produção quais exames foram processados por qual versão da heurística.
+ */
+export const PARSER_VERSAO = 'sr-2026-08-21';
+
+/**
+ * Códigos LOINC/proprietários conhecidos que o Wader já mapeia pro motor
+ * LEO (ver `dicom-sr-mapping.ts` no web). Se um desses cair em `general_*`
+ * (não achou grupo/estrutura), é sinal de regressão — os rótulos do
+ * aparelho podem ter mudado (ex: firmware novo do Vivid) e o `detectarGrupo`
+ * não está mais reconhecendo os siblings. Alarme, não descarte.
+ */
+export const CODIGOS_CONHECIDOS = [
+  '18015-8',
+  'M-02550',
+  '29436-3',
+  '18154-5',
+  '18152-9',
+  '29438-9',
+  '18012-5',
+  '18037-2',
+  '18038-0',
+  '59133-9',
+  '59111-5',
+  'GEU-106-0033',
+];
+
+/**
  * Uma medida extraída do DICOM SR, com contexto suficiente pra mapear pro
  * motor LEO sem ambiguidade.
  *
@@ -56,6 +85,8 @@ export interface SrParseResult {
   srInstanceId: string | null;
   totalMedidas: number;
   metodoFallback: 'content-sequence' | 'tags-diretas' | 'sem-sr';
+  /** Versão do parser que gerou este resultado. Ver `PARSER_VERSAO`. */
+  parserVersao: string;
 }
 
 /**
@@ -75,14 +106,14 @@ export async function extrairMedidasDoEstudo(opts: {
   const series: OrthancSeries[] = await client.getStudySeries(orthancStudyId);
   if (!series.length) {
     log.warn({ orthancStudyId }, 'Estudo sem séries — não dá pra extrair SR');
-    return { medidas: {}, srInstanceId: null, totalMedidas: 0, metodoFallback: 'sem-sr' };
+    return { medidas: {}, srInstanceId: null, totalMedidas: 0, metodoFallback: 'sem-sr', parserVersao: PARSER_VERSAO };
   }
 
   // 2) Procurar série SR (Structured Report)
   const serieSr = series.find((s) => s.MainDicomTags?.Modality === 'SR');
   if (!serieSr || !serieSr.Instances?.length) {
     log.info({ orthancStudyId, totalSeries: series.length }, 'Estudo sem série SR (normal pra US vascular básico)');
-    return { medidas: {}, srInstanceId: null, totalMedidas: 0, metodoFallback: 'sem-sr' };
+    return { medidas: {}, srInstanceId: null, totalMedidas: 0, metodoFallback: 'sem-sr', parserVersao: PARSER_VERSAO };
   }
 
   // 3) Pega a primeira instance da série SR (em geral é 1 só)
@@ -94,7 +125,7 @@ export async function extrairMedidasDoEstudo(opts: {
     tags = await client.getInstanceSimplifiedTags(srInstanceId);
   } catch (err) {
     log.error({ err, srInstanceId }, 'Falha ao baixar tags do SR');
-    return { medidas: {}, srInstanceId, totalMedidas: 0, metodoFallback: 'sem-sr' };
+    return { medidas: {}, srInstanceId, totalMedidas: 0, metodoFallback: 'sem-sr', parserVersao: PARSER_VERSAO };
   }
 
   // 5) Parser recursivo do ContentSequence — versão com contexto de grupo
@@ -114,11 +145,27 @@ export async function extrairMedidasDoEstudo(opts: {
     'SR processado',
   );
 
+  // 7) Alarme de regressão: um código CONHECIDO caindo em general_* é sinal
+  // de que o detectarGrupo parou de reconhecer os siblings (rótulos do
+  // aparelho mudaram?). Repasse continua total — só avisa, nunca descarta.
+  for (const key of Object.keys(medidas)) {
+    if (key.startsWith('general_')) {
+      const code = key.slice('general_'.length);
+      if (CODIGOS_CONHECIDOS.includes(code)) {
+        log.warn(
+          { key, meaning: medidas[key].meaning },
+          '⚠️ Medida CONHECIDA caiu em general — rótulos do aparelho mudaram? (perfil pode precisar de ajuste)',
+        );
+      }
+    }
+  }
+
   return {
     medidas,
     srInstanceId,
     totalMedidas: Object.keys(medidas).length,
     metodoFallback,
+    parserVersao: PARSER_VERSAO,
   };
 }
 
@@ -131,8 +178,13 @@ export async function extrairMedidasDoEstudo(opts: {
  *
  * Funciona porque o Vivid agrupa todas as medidas relacionadas à mesma
  * estrutura num único Measurement Group (vi isso confirmado no SR Edwaldo).
+ *
+ * Desempate honesto (achado 16-Wader/19a): em caso de EMPATE de votos entre
+ * duas ou mais estruturas, retorna 'general' — nunca chuta uma estrutura
+ * anatômica ao acaso. Rotular errado (ex: medida de AO virar LV) é pior que
+ * não rotular (general ainda é repassado, só sem contexto de grupo).
  */
-function detectarGrupo(siblings: unknown[]): GrupoSr {
+export function detectarGrupo(siblings: unknown[]): GrupoSr {
   if (!Array.isArray(siblings)) return 'general';
   let votos: Record<GrupoSr, number> = { LA: 0, LV: 0, AO: 0, MV: 0, RA: 0, RV: 0, TV: 0, PV: 0, general: 0 };
   for (const item of siblings.slice(0, 40)) {
@@ -149,13 +201,22 @@ function detectarGrupo(siblings: unknown[]): GrupoSr {
     else if (m.includes('tricuspid')) votos.TV++;
     else if (m.includes('pulmonary') || m.includes('pulmonic')) votos.PV++;
   }
-  // Vencedor por maioria simples
+  // Vencedor por maioria simples — mas empate vira 'general' (desempate
+  // honesto, nunca chuta estrutura anatômica).
   let max = 0;
   let grupo: GrupoSr = 'general';
+  let empate = false;
   for (const g of Object.keys(votos) as GrupoSr[]) {
-    if (votos[g] > max) { max = votos[g]; grupo = g; }
+    if (g === 'general') continue;
+    if (votos[g] > max) {
+      max = votos[g];
+      grupo = g;
+      empate = false;
+    } else if (votos[g] === max && max > 0) {
+      empate = true;
+    }
   }
-  return grupo;
+  return empate ? 'general' : grupo;
 }
 
 /**

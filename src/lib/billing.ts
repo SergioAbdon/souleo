@@ -7,8 +7,10 @@
 import { db } from './firebase';
 import {
   collection, doc, getDoc, setDoc, getDocs, updateDoc, addDoc,
-  query, where, limit, increment, serverTimestamp, Timestamp
+  query, where, limit, serverTimestamp, Timestamp
 } from 'firebase/firestore';
+import { previaEmissao, SubCiclo } from './ciclo';
+import { anoMesAtual } from './firestore';
 
 // ══ TIPOS ════════════════════════════════════════════════════════
 
@@ -40,14 +42,6 @@ export type CheckResult = {
   tipo?: 'franquia' | 'creditos';
   motivo?: 'sem_plano' | 'expirado' | 'sem_saldo' | 'erro';
   sub?: Record<string, unknown>;
-};
-
-export type DadosConsumo = {
-  pacienteNome: string;
-  tipoExame: string;
-  convenio: string;
-  tipo: 'franquia' | 'credito';
-  reemissao: boolean;
 };
 
 export type DadosPagamento = {
@@ -102,6 +96,19 @@ export async function saveConfigPlanos(config: ConfigPlanos, adminUid: string) {
 export async function getPlanoById(planoId: string): Promise<PlanoConfig | null> {
   const config = await getConfigPlanos();
   return config.planos.find(p => p.id === planoId) || null;
+}
+
+// Ruflo-2 (S7-triade-2b): join CANONICO workspace -> subscription. Os
+// paineis batch do Direx (buscam TODAS as subs de uma vez, sem get() por
+// contaId) faziam so `sub.workspaceId === ws.id` — o fallback LEGADO —
+// e ficavam mudos pra conta do cadastro novo (subscriptions/{contaId}, sem
+// `workspaceId`, mesmo motivo do resolverAssinatura server-side). Mesma
+// ordem de fallback (contaId primeiro, workspaceId depois): zero mudanca
+// pra conta legada.
+export function acharSub<T extends { id: string; workspaceId?: string }>(
+  ws: { id: string; contaId?: string }, subs: T[]
+): T | undefined {
+  return (ws.contaId && subs.find(s => s.id === ws.contaId)) || subs.find(s => s.workspaceId === ws.id);
 }
 
 // ══ SUBSCRIPTION ════════════════════════════════════════════════
@@ -183,73 +190,27 @@ export async function checkEmissao(wsId: string): Promise<CheckResult> {
     const sub = await getSubscription(wsId);
     if (!sub) return { pode: false, motivo: 'sem_plano' };
 
-    const agora = new Date();
-    const cicloFim = (sub.cicloFim as Timestamp)?.toDate?.()
-      || new Date(sub.cicloFim as string);
-
-    const franquiaUsada = (sub.franquiaUsada as number) || 0;
-    const franquiaMensal = (sub.franquiaMensal as number) || 0;
-    const creditosExtras = (sub.creditosExtras as number) || 0;
-
-    if (agora > cicloFim && creditosExtras <= 0) {
-      return { pode: false, motivo: 'expirado', sub };
-    }
-    if (franquiaUsada < franquiaMensal && agora <= cicloFim) {
-      return { pode: true, tipo: 'franquia', sub };
-    }
-    if (creditosExtras > 0) {
-      return { pode: true, tipo: 'creditos', sub };
-    }
-    return { pode: false, motivo: 'sem_saldo', sub };
-  } catch (e) { console.error('checkEmissao:', e); return { pode: false, motivo: 'erro' }; }
-}
-
-export async function consumirEmissao(wsId: string, tipo: 'franquia' | 'creditos') {
-  try {
-    const sub = await getSubscription(wsId);
-    if (!sub) return false;
-    if (tipo === 'franquia') {
-      await updateDoc(doc(db, 'subscriptions', sub.id as string), {
-        franquiaUsada: increment(1)
-      });
-    } else {
-      await updateDoc(doc(db, 'subscriptions', sub.id as string), {
-        creditosExtras: increment(-1)
-      });
-    }
-    return true;
-  } catch (e) { console.error('consumirEmissao:', e); return false; }
-}
-
-// ══ CHECK WORKSPACE LIMIT (locais de trabalho) ══════════════════
-
-export type CheckWorkspaceResult = {
-  pode: boolean;
-  atual: number;
-  max: number;
-  custoAdicional: number;
-};
-
-export async function checkWorkspaceLimit(uid: string, wsId: string): Promise<CheckWorkspaceResult> {
-  try {
-    const sub = await getSubscription(wsId);
-    if (!sub) return { pode: false, atual: 0, max: 0, custoAdicional: 0 };
-
-    // Contar vinculos ativos do usuario
-    const vincSnap = await getDocs(
-      query(collection(db, 'vinculos'), where('medicoUid', '==', uid), where('status', '==', 'ativo'))
+    // E11 opcao D (ADR 2026-08-30): o SERVIDOR gira o ciclo dentro da
+    // transacao de emitirComCobranca (src/lib/emitir-admin.ts) quando acha a
+    // assinatura elegivel — isto aqui e SO a previa do cliente (nao escreve
+    // nada). A cadeia inteira de bracos (giro → expirado E13 → franquia →
+    // creditos) vive em `previaEmissao` (ciclo.ts, pura, unit-testada) — a
+    // MESMA que o servidor percorre; antes era o mesmo predicado escrito 2x
+    // em texto e o E13 quase criou uma 3a copia.
+    const r = previaEmissao(
+      {
+        cicloFim: sub.cicloFim as SubCiclo['cicloFim'],
+        franquiaMensal: (sub.franquiaMensal as number) || 0,
+        franquiaUsada: (sub.franquiaUsada as number) || 0,
+        creditosExtras: (sub.creditosExtras as number) || 0,
+        tipo: sub.tipo as string,
+      },
+      new Date(),
     );
-    const atual = vincSnap.size;
-    const max = (sub.maxLocais as number) || 1;
-    const custoAdicional = (sub.localAdicional as number) || 0;
-
-    return {
-      pode: atual < max, // pode adicionar se ainda nao atingiu o limite
-      atual,
-      max,
-      custoAdicional,
-    };
-  } catch (e) { console.error('checkWorkspaceLimit:', e); return { pode: false, atual: 0, max: 0, custoAdicional: 0 }; }
+    return r.pode
+      ? { pode: true, tipo: r.tipo, sub }
+      : { pode: false, motivo: r.motivo, sub };
+  } catch (e) { console.error('checkEmissao:', e); return { pode: false, motivo: 'erro' }; }
 }
 
 // ══ CHECK EXTRATO LIMIT (extratos financeiros) ══════════════════
@@ -262,7 +223,7 @@ export type CheckExtratoResult = {
   franquia: number; // -1 = ilimitado
 };
 
-export async function checkExtratoLimit(wsId: string): Promise<CheckExtratoResult> {
+export async function checkExtratoLimit(wsId: string, anoMes?: string): Promise<CheckExtratoResult> {
   try {
     const sub = await getSubscription(wsId);
     if (!sub) return { pode: false, gratis: false, custo: 0, usados: 0, franquia: 0 };
@@ -275,10 +236,10 @@ export async function checkExtratoLimit(wsId: string): Promise<CheckExtratoResul
       return { pode: true, gratis: true, custo: 0, usados: 0, franquia: -1 };
     }
 
-    // Buscar contador do mes atual
-    const agora = new Date();
-    const anoMes = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}`;
-    const snap = await getDoc(doc(db, 'workspaces', wsId, 'extratos', anoMes));
+    // Mes vem do chamador quando a MESMA operacao vai incrementar depois
+    // (check e incremento no mesmo mes).
+    const mes = anoMes || anoMesAtual();
+    const snap = await getDoc(doc(db, 'workspaces', wsId, 'extratos', mes));
     const usados = snap.exists() ? (snap.data().emitidos || 0) : 0;
 
     if (usados < franquia) {
@@ -287,26 +248,6 @@ export async function checkExtratoLimit(wsId: string): Promise<CheckExtratoResul
     // Pode gerar, mas cobra
     return { pode: true, gratis: false, custo, usados, franquia };
   } catch (e) { console.error('checkExtratoLimit:', e); return { pode: false, gratis: false, custo: 0, usados: 0, franquia: 0 }; }
-}
-
-// ══ CONSUMO (registro detalhado de cada emissao) ════════════════
-
-export async function registrarConsumo(
-  wsId: string, exameId: string, medicoUid: string, dados: DadosConsumo
-) {
-  try {
-    await addDoc(collection(db, 'consumo'), {
-      workspaceId: wsId,
-      exameId,
-      medicoUid,
-      pacienteNome: dados.pacienteNome || '',
-      tipoExame: dados.tipoExame || '',
-      convenio: dados.convenio || '',
-      tipo: dados.tipo,
-      reemissao: dados.reemissao || false,
-      emitidoEm: serverTimestamp()
-    });
-  } catch { /* consumo nao pode quebrar emissao */ }
 }
 
 // ══ PAGAMENTOS ══════════════════════════════════════════════════

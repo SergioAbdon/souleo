@@ -2,8 +2,34 @@
 import { test, before, beforeEach, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeApp, getApps } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { resolverPapel, apagarExame, cancelarExame, transferirExame } from '../../src/lib/exame-admin.ts';
+import { refEmissaoPrivada } from '../../src/lib/emitir-admin.ts';
+
+// E6/FIX1: simula outra emissao commitando ENTRE a leitura de fora (carregar)
+// e a transacao unica devolucao+CAS de cancelarExame/transferirExame (desde
+// o FIX1 da revisao, devolucao e CAS sao UMA SO transacao — so ha 1 chamada
+// a runTransaction no braco emitido). Intercepta essa unica chamada e, ANTES
+// de deixar rodar de verdade, escreve no exame — exatamente o que uma 2a
+// requisicao concorrente (uma emissao) teria feito no meio da corrida. O
+// primeiro `t.get` de dentro da transacao ja enxerga o estado pos-corrida
+// (consistente com o snapshot do Firestore), enquanto a comparacao do CAS
+// segue usando o `exame` capturado ANTES (fora da transacao) — é essa
+// diferenca que o CAS tem que pegar.
+function dbComEmissaoNoMeio(dbReal, exameRef, novosCampos) {
+  return new Proxy(dbReal, {
+    get(target, prop) {
+      if (prop === 'runTransaction') {
+        return async (fn) => {
+          await exameRef.update(novosCampos);
+          return target.runTransaction(fn);
+        };
+      }
+      const v = target[prop];
+      return typeof v === 'function' ? v.bind(target) : v;
+    },
+  });
+}
 
 let db;
 const CONTA = 'contaT', WS = 'wsT';
@@ -13,6 +39,15 @@ const DONO = 'uidDono', MED = 'uidMed', MED2 = 'uidMed2', RITA = 'uidRita';
 let pdfsApagados;
 const apagarPdf = async (url) => { pdfsApagados.push(url); };
 
+// Spy do apagador de imagens (D5b/achado 20): registra wsId/exameId, nao toca Storage.
+let imagensApagadas;
+const apagarImagens = async (wsId, exameId) => { imagensApagadas.push({ wsId, exameId }); };
+
+// Spy do apagador de snapshot (P5/Task 14, LGPD): registra wsId/exameId, nao toca Storage.
+let snapshotsApagados;
+const apagarSnapshot = async (wsId, exameId) => { snapshotsApagados.push({ wsId, exameId }); };
+const apagarSnapshotFalha = async () => { throw new Error('storage fora do ar'); };
+
 before(async () => {
   if (!getApps().length) initializeApp({ projectId: 'leo-testes' });
   db = getFirestore();
@@ -21,10 +56,15 @@ before(async () => {
   for (const [uid, papel] of [[DONO, 'dono'], [MED, 'medico'], [MED2, 'medico'], [RITA, 'recepcao']]) {
     await db.doc(`vinculos/${CONTA}_${uid}`).set({ contaId: CONTA, medicoUid: uid, papel, locais: [], status: 'ativo' });
   }
+  // Vinculo papel:'medico' mas perfil assistente — nao deveria cancelar (C7).
+  await db.doc(`vinculos/${CONTA}_uidFalsoMed`).set({ contaId: CONTA, medicoUid: 'uidFalsoMed', papel: 'medico', locais: [], status: 'ativo' });
+  await db.doc('profissionais/uidFalsoMed').set({ uid: 'uidFalsoMed', nome: 'Falso', tipoPerfil: 'assistente' });
 });
 
 beforeEach(async () => {
   pdfsApagados = [];
+  imagensApagadas = [];
+  snapshotsApagados = [];
   await db.doc(`subscriptions/${CONTA}`).set({ contaId: CONTA, franquiaMensal: 600, franquiaUsada: 10, creditosExtras: 3 });
 });
 
@@ -57,6 +97,9 @@ describe('resolverPapel', () => {
     });
     assert.equal(await resolverPapel(db, WS, 'uidPreso'), null);
   });
+  test('wsId com barra (remonta path do Admin SDK) → null, sem excecao', async () => {
+    assert.equal(await resolverPapel(db, 'a/b', DONO), null);
+  });
 });
 
 describe('apagar', () => {
@@ -88,6 +131,52 @@ describe('apagar', () => {
     const canc = await db.collection('consumo').where('exameId', '==', 'em1').where('tipo', '==', 'cancelamento').get();
     assert.equal(canc.size, 1, 'devolucao registrada em consumo, append-only');
   });
+  test('apaga a reserva accIndex/{acc} junto — nao deixa reserva orfa (achado 8)', async () => {
+    await db.doc(`workspaces/${WS}/exames/filaAcc`).set({ pacienteNome: 'F', medicoUid: MED, status: 'aguardando', acc: 'EX01010000000001' });
+    await db.doc(`workspaces/${WS}/accIndex/EX01010000000001`).set({ exameId: 'filaAcc' });
+    const r = await apagarExame(db, { wsId: WS, exameId: 'filaAcc', uid: MED, subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, true);
+    assert.equal((await db.doc(`workspaces/${WS}/accIndex/EX01010000000001`).get()).exists, false, 'reserva de ACC some junto com o exame');
+  });
+  test('apaga a gaveta privada de idempotencia junto — nao deixa satelite orfao (Ruflo M3)', async () => {
+    await db.doc(`workspaces/${WS}/exames/filaPriv`).set({ pacienteNome: 'F', medicoUid: MED, status: 'aguardando' });
+    await refEmissaoPrivada(db, WS, 'filaPriv').set({ emissaoKey: 'x', pdfPendente: false });
+    const r = await apagarExame(db, { wsId: WS, exameId: 'filaPriv', uid: MED, subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, true);
+    assert.equal((await refEmissaoPrivada(db, WS, 'filaPriv').get()).exists, false, 'gaveta privada some junto com o exame');
+  });
+  test('exame sem acc: apaga normalmente, sem tentar tocar accIndex', async () => {
+    await db.doc(`workspaces/${WS}/exames/filaSemAcc`).set({ pacienteNome: 'F', medicoUid: MED, status: 'aguardando' });
+    const r = await apagarExame(db, { wsId: WS, exameId: 'filaSemAcc', uid: MED, subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, true);
+  });
+  // D5b/achado 20: exclusao de exame passa a apagar as imagens no Storage
+  // tambem. apagarImagens e opcional (skip silencioso, todos os outros
+  // testes acima ja provam isso indiretamente); aqui confere que, quando
+  // injetado, e chamado com o wsId/exameId certos.
+  test('apagar chama apagarImagens(wsId, exameId) quando injetado (achado 20)', async () => {
+    await db.doc(`workspaces/${WS}/exames/filaImg`).set({ pacienteNome: 'F', medicoUid: MED, status: 'aguardando' });
+    const r = await apagarExame(db, { wsId: WS, exameId: 'filaImg', uid: MED, subRef: subRef(), apagarPdf, apagarImagens });
+    assert.equal(r.ok, true);
+    assert.deepEqual(imagensApagadas, [{ wsId: WS, exameId: 'filaImg' }]);
+  });
+  // P5/Task 14 (LGPD): exclusao de exame passa a apagar o snapshot clinico
+  // (laudos-html/) tambem. apagarSnapshot e opcional, mesmo padrao de
+  // apagarImagens acima.
+  test('apagar chama apagarSnapshot(wsId, exameId) quando injetado (P5)', async () => {
+    await db.doc(`workspaces/${WS}/exames/filaSnap`).set({ pacienteNome: 'F', medicoUid: MED, status: 'aguardando' });
+    const r = await apagarExame(db, { wsId: WS, exameId: 'filaSnap', uid: MED, subRef: subRef(), apagarPdf, apagarSnapshot });
+    assert.equal(r.ok, true);
+    assert.deepEqual(snapshotsApagados, [{ wsId: WS, exameId: 'filaSnap' }]);
+  });
+  test('falha do apagarSnapshot nao bloqueia a exclusao (mesmo padrao do apagarImagens)', async () => {
+    await db.doc(`workspaces/${WS}/exames/filaSnapFalha`).set({ pacienteNome: 'F', medicoUid: MED, status: 'aguardando' });
+    const r = await apagarExame(db, {
+      wsId: WS, exameId: 'filaSnapFalha', uid: MED, subRef: subRef(), apagarPdf, apagarSnapshot: apagarSnapshotFalha,
+    });
+    assert.equal(r.ok, true);
+    assert.equal((await db.doc(`workspaces/${WS}/exames/filaSnapFalha`).get()).exists, false);
+  });
 });
 
 describe('cancelar', () => {
@@ -117,6 +206,13 @@ describe('cancelar', () => {
     assert.equal(r2.motivo, 'nao_emitido');
     assert.equal((await subRef().get()).data().franquiaUsada, 9, 'so 1 devolucao');
   });
+  test('papel medico mas tipoPerfil assistente NAO cancela (C7)', async () => {
+    await seedEmitido('emC7');
+    await db.doc(`workspaces/${WS}/exames/emC7`).update({ medicoUid: 'uidFalsoMed' });
+    const r = await cancelarExame(db, { wsId: WS, exameId: 'emC7', uid: 'uidFalsoMed', motivo: 'x', subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'sem_permissao');
+  });
   test('devolucao de credito volta como credito', async () => {
     await db.doc(`workspaces/${WS}/exames/em5`).set({ pacienteNome: 'P', medicoUid: MED, status: 'emitido' });
     await db.collection('consumo').add({ workspaceId: WS, exameId: 'em5', tipo: 'credito' });
@@ -124,6 +220,79 @@ describe('cancelar', () => {
     const sub = (await subRef().get()).data();
     assert.equal(sub.creditosExtras, 4, 'credito devolvido');
     assert.equal(sub.franquiaUsada, 10, 'franquia intacta');
+  });
+
+  // Achado 8: sair da fila (FEEGOW, ainda nao emitido) tambem usa cancelar —
+  // doc fica (nao apaga), sem consumo/pdf pra devolver (nunca emitiu).
+  test('aguardando: dono cancela sem devolver consumo nem mexer em pdf; doc fica', async () => {
+    await db.doc(`workspaces/${WS}/exames/fg1`).set({ pacienteNome: 'F', origem: 'FEEGOW', status: 'aguardando' });
+    const r = await cancelarExame(db, { wsId: WS, exameId: 'fg1', uid: DONO, subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, true);
+    const ex = (await db.doc(`workspaces/${WS}/exames/fg1`).get()).data();
+    assert.equal(ex.status, 'cancelado');
+    assert.equal((await subRef().get()).data().franquiaUsada, 10, 'nao mexeu no consumo (nunca emitiu)');
+    assert.equal(pdfsApagados.length, 0);
+  });
+  test('aguardando: medico que alcanca (sem autor travado) cancela; recepcao nao', async () => {
+    await db.doc(`workspaces/${WS}/exames/fg2`).set({ pacienteNome: 'F', origem: 'FEEGOW', status: 'aguardando' });
+    const neg = await cancelarExame(db, { wsId: WS, exameId: 'fg2', uid: RITA, subRef: subRef(), apagarPdf });
+    assert.equal(neg.ok, false);
+    assert.equal(neg.motivo, 'sem_permissao');
+    const r = await cancelarExame(db, { wsId: WS, exameId: 'fg2', uid: MED, subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, true);
+  });
+  test('aguardando: medico NAO cancela exame de outro medico (autor travado)', async () => {
+    await db.doc(`workspaces/${WS}/exames/fg3`).set({ pacienteNome: 'F', origem: 'FEEGOW', status: 'aguardando', medicoUid: MED2 });
+    const neg = await cancelarExame(db, { wsId: WS, exameId: 'fg3', uid: MED, subRef: subRef(), apagarPdf });
+    assert.equal(neg.ok, false);
+    assert.equal(neg.motivo, 'sem_permissao');
+  });
+  test('rascunho tambem entra no braco aberto (mesmo grupo de acao da tela)', async () => {
+    await db.doc(`workspaces/${WS}/exames/fg4`).set({ pacienteNome: 'F', origem: 'FEEGOW', status: 'rascunho' });
+    const r = await cancelarExame(db, { wsId: WS, exameId: 'fg4', uid: DONO, subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, true);
+  });
+  test('cancelado nao cancela de novo (nem aberto nem emitido)', async () => {
+    await db.doc(`workspaces/${WS}/exames/fg5`).set({ pacienteNome: 'F', origem: 'FEEGOW', status: 'cancelado' });
+    const r = await cancelarExame(db, { wsId: WS, exameId: 'fg5', uid: DONO, subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'nao_emitido');
+  });
+
+  test('E6/CAS: aborta se uma emissao commitou no meio — doc fica emitido, pdf novo intacto', async () => {
+    await seedEmitido('cas1');
+    const exameRef = db.doc(`workspaces/${WS}/exames/cas1`);
+    await exameRef.update({ emitidoEm: FieldValue.serverTimestamp() });
+    const dbRace = dbComEmissaoNoMeio(db, exameRef, {
+      status: 'emitido',
+      emitidoEm: Timestamp.fromMillis(Date.now() + 60000),   // garante diferenca do lido
+      pdfUrl: 'https://storage.googleapis.com/bucket-t/laudos/wsT/laudo_novo.pdf',
+    });
+    const r = await cancelarExame(dbRace, { wsId: WS, exameId: 'cas1', uid: DONO, motivo: 'x', subRef: subRef(), apagarPdf });
+    assert.deepEqual(r, { ok: false, motivo: 'conflito_emissao' });
+    const ex = (await exameRef.get()).data();
+    assert.equal(ex.status, 'emitido', 'nao virou cancelado');
+    assert.equal(ex.pdfUrl, 'https://storage.googleapis.com/bucket-t/laudos/wsT/laudo_novo.pdf', 'pdf da emissao nova NAO foi apagado');
+    assert.equal(pdfsApagados.length, 0, 'apagarPdf nao foi chamado');
+    // FIX 1: devolucao e CAS na mesma transacao — no conflito, NADA e
+    // devolvido (senao a emissao vencedora ficaria com laudo de graca).
+    assert.equal((await subRef().get()).data().franquiaUsada, 10, 'nao devolveu a franquia da emissao vencedora');
+  });
+
+  // FIX 3 (revisao E6): o braco feliz de mesmaEmissao (Timestamp real,
+  // .isEqual verdadeiro) nao tinha teste proprio — so o undefined/undefined
+  // (seedEmitido sem emitidoEm) e o mismatch (teste acima). Sem isto, um
+  // duck-type quebrado em isEqual devolveria conflito em TODO cancelamento
+  // real (emitidoEm sempre setado em producao via serverTimestamp).
+  test('mesmaEmissao com Timestamp real igual: CAS aplica normalmente (devolve consumo, cancela, apaga pdf)', async () => {
+    await seedEmitido('casOk1');
+    await db.doc(`workspaces/${WS}/exames/casOk1`).update({ emitidoEm: FieldValue.serverTimestamp() });
+    const r = await cancelarExame(db, { wsId: WS, exameId: 'casOk1', uid: DONO, motivo: 'x', subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, true);
+    const ex = (await db.doc(`workspaces/${WS}/exames/casOk1`).get()).data();
+    assert.equal(ex.status, 'cancelado');
+    assert.equal((await subRef().get()).data().franquiaUsada, 9, 'devolucao aplicada com emitidoEm real (isEqual funcionando)');
+    assert.equal(pdfsApagados.length, 1);
   });
 });
 
@@ -144,11 +313,48 @@ describe('transferir', () => {
     assert.equal(r.ok, true);
     assert.equal((await subRef().get()).data().franquiaUsada, 10);
   });
+  test('papel medico mas tipoPerfil assistente NAO transfere (C7)', async () => {
+    await db.doc(`workspaces/${WS}/exames/trC7`).set({ pacienteNome: 'P', medicoUid: 'uidFalsoMed', status: 'aguardando' });
+    const r = await transferirExame(db, { wsId: WS, exameId: 'trC7', uid: 'uidFalsoMed', novoMedicoUid: MED2, subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'sem_permissao');
+  });
+  test('alvo papel:medico mas perfil assistente NAO recebe (D)', async () => {
+    await db.doc(`workspaces/${WS}/exames/trD`).set({ pacienteNome: 'P', medicoUid: MED, status: 'aguardando' });
+    const r = await transferirExame(db, { wsId: WS, exameId: 'trD', uid: DONO, novoMedicoUid: 'uidFalsoMed', subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'alvo_invalido');
+    assert.equal((await db.doc(`workspaces/${WS}/exames/trD`).get()).data().medicoUid, MED, 'alvo nao herdou');
+  });
   test('alvo precisa ser medico/dono da conta', async () => {
     await db.doc(`workspaces/${WS}/exames/tr3`).set({ pacienteNome: 'P', medicoUid: MED, status: 'aguardando' });
     const r = await transferirExame(db, { wsId: WS, exameId: 'tr3', uid: DONO, novoMedicoUid: RITA, subRef: subRef(), apagarPdf });
     assert.equal(r.ok, false);
     assert.equal(r.motivo, 'alvo_invalido');
+  });
+  test('novoMedicoUid com barra (remonta path do Admin SDK) → alvo_invalido, sem excecao', async () => {
+    await db.doc(`workspaces/${WS}/exames/trBarra`).set({ pacienteNome: 'P', medicoUid: MED, status: 'aguardando' });
+    const r = await transferirExame(db, { wsId: WS, exameId: 'trBarra', uid: DONO, novoMedicoUid: 'a/b', subRef: subRef(), apagarPdf });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'alvo_invalido');
+  });
+
+  test('E6/CAS: aborta se uma emissao commitou no meio — nao transfere, pdf novo intacto', async () => {
+    await seedEmitido('cast1');
+    const exameRef = db.doc(`workspaces/${WS}/exames/cast1`);
+    await exameRef.update({ emitidoEm: FieldValue.serverTimestamp() });
+    const dbRace = dbComEmissaoNoMeio(db, exameRef, {
+      status: 'emitido',
+      emitidoEm: Timestamp.fromMillis(Date.now() + 60000),
+      pdfUrl: 'https://storage.googleapis.com/bucket-t/laudos/wsT/laudo_novo_t.pdf',
+    });
+    const r = await transferirExame(dbRace, { wsId: WS, exameId: 'cast1', uid: DONO, novoMedicoUid: MED2, subRef: subRef(), apagarPdf });
+    assert.deepEqual(r, { ok: false, motivo: 'conflito_emissao' });
+    const ex = (await exameRef.get()).data();
+    assert.equal(ex.medicoUid, MED, 'nao transferiu');
+    assert.equal(ex.pdfUrl, 'https://storage.googleapis.com/bucket-t/laudos/wsT/laudo_novo_t.pdf');
+    assert.equal(pdfsApagados.length, 0);
+    assert.equal((await subRef().get()).data().franquiaUsada, 10, 'nao devolveu a franquia da emissao vencedora');
   });
 });
 
