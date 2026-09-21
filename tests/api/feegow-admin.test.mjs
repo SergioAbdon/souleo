@@ -3,7 +3,7 @@ import { test, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
-import { gravarImportacao, resolverTokenFeegow, gateAcessoWs, decidirGetFeegow, cpfValido, montarCandidatos, normalizarNascimento, reconciliarCancelados, marcarAtendido } from '../../src/lib/feegow-admin.ts';
+import { gravarImportacao, resolverTokenFeegow, gateAcessoWs, decidirGetFeegow, cpfValido, montarCandidatos, classificarProcedimentoPorNome, normalizarNascimento, reconciliarCancelados, marcarAtendido } from '../../src/lib/feegow-admin.ts';
 
 let db;
 const WS = 'wsFeegow';
@@ -345,7 +345,7 @@ function pacienteFeegow(extra = {}) {
 // `chamadas` (opcional) recebe cada URL completa chamada — usado pra prender
 // a query string de verdade (achado 2 da revisao: o roteamento por includes()
 // ignorava a query, entao um &status_id=4 de volta na URL passaria em silencio).
-function fetchStubFeegow({ agendamentos = [], pacientesPorId = {}, convenios = [], chamadas } = {}) {
+function fetchStubFeegow({ agendamentos = [], pacientesPorId = {}, convenios = [], procedimentos = [], chamadas } = {}) {
   return async (url) => {
     const u = String(url);
     chamadas?.push(u);
@@ -354,6 +354,9 @@ function fetchStubFeegow({ agendamentos = [], pacientesPorId = {}, convenios = [
     }
     if (u.includes('/insurance/list')) {
       return { ok: true, status: 200, json: async () => ({ content: convenios }) };
+    }
+    if (u.includes('/procedures/list')) {
+      return { ok: true, status: 200, json: async () => ({ content: procedimentos }) };
     }
     if (u.includes('/patient/search')) {
       const m = u.match(/paciente_id=(\d+)/);
@@ -529,6 +532,62 @@ describe('montarCandidatos (achados 3, 4, 13, 20 — particiona no laco, sem fil
     });
     assert.equal(r.candidatos[0].dataExame, '2026-08-12');
   });
+
+  // Rede de seguranca por NOME: o Feegow cria proc_id novo de eco sem parar
+  // (369/377/379/380...) e cada um sumia do import ate ser posto no procMap.
+  test('procId FORA do procMap mas nome e eco -> importa como eco_tt (name-matching)', async () => {
+    const r = await montarCandidatos({
+      token: 'tok', wsId: WS, hoje: '2026-08-12',
+      procMap: { 6: 'eco_tt' }, profMap: {},
+      fetchImpl: fetchStubFeegow({
+        agendamentos: [agendamentoFeegow(500, { paciente_id: 700, procedimento_id: 379 })],
+        pacientesPorId: { 700: pacienteFeegow({ nome: 'Valdeci' }) },
+        procedimentos: [{ procedimento_id: 379, nome: 'Exame - Ecocardiograma Transtorácico' }],
+      }),
+    });
+    assert.equal(r.candidatos.length, 1);
+    assert.equal(r.candidatos[0].tipoExame, 'eco_tt');
+    assert.deepEqual(r.ignorados, []);
+  });
+
+  test('procId FORA do procMap e nome NAO e exame do LEO (consulta) -> continua ignorado', async () => {
+    const r = await montarCandidatos({
+      token: 'tok', wsId: WS, hoje: '2026-08-12',
+      procMap: { 6: 'eco_tt' }, profMap: {},
+      fetchImpl: fetchStubFeegow({
+        agendamentos: [agendamentoFeegow(501, { paciente_id: 701, procedimento_id: 373 })],
+        pacientesPorId: { 701: pacienteFeegow({ nome: 'Consulta' }) },
+        procedimentos: [{ procedimento_id: 373, nome: 'Consulta - Cardiologista' }],
+      }),
+    });
+    assert.equal(r.candidatos.length, 0);
+    assert.deepEqual(r.ignorados, [{ procedimentoId: 373, qtd: 1 }]);
+  });
+
+  test('procMap por ID tem PRECEDENCIA sobre o nome (override do dono)', async () => {
+    const r = await montarCandidatos({
+      token: 'tok', wsId: WS, hoje: '2026-08-12',
+      procMap: { 379: 'doppler_carotidas' }, profMap: {}, // dono forcou 379 = carotidas
+      fetchImpl: fetchStubFeegow({
+        agendamentos: [agendamentoFeegow(502, { paciente_id: 702, procedimento_id: 379 })],
+        pacientesPorId: { 702: pacienteFeegow({ nome: 'X' }) },
+        procedimentos: [{ procedimento_id: 379, nome: 'Exame - Ecocardiograma Transtorácico' }],
+      }),
+    });
+    assert.equal(r.candidatos[0].tipoExame, 'doppler_carotidas');
+  });
+});
+
+describe('classificarProcedimentoPorNome (name-matching — rede de seguranca contra codigo novo do Feegow)', () => {
+  test('Ecocardiograma Transtoracico -> eco_tt', () => assert.equal(classificarProcedimentoPorNome('Exame - Ecocardiograma Transtorácico'), 'eco_tt'));
+  test('Ecocardiograma com Strain -> eco_tt', () => assert.equal(classificarProcedimentoPorNome('Exame - Ecocardiograma com Strain'), 'eco_tt'));
+  test('Ecodoppler de carotidas -> doppler_carotidas', () => assert.equal(classificarProcedimentoPorNome('Exame - US Ecodoppler de carótidas'), 'doppler_carotidas'));
+  test('vasos cervicais -> doppler_carotidas', () => assert.equal(classificarProcedimentoPorNome('Exame - Doppler colorido de vasos cervicais arteriais bilateral (carótidas e vertebrais)'), 'doppler_carotidas'));
+  test('Ecodopplercardiograma com estresse -> eco_stress (estresse antes de eco)', () => assert.equal(classificarProcedimentoPorNome('Exame - Ecodopplercardiograma com estresse farmacológico'), 'eco_stress'));
+  test('ECG NAO e eco (eletrocardiograma != ecocardiograma)', () => assert.equal(classificarProcedimentoPorNome('Exame - Eletrocardiograma/ECG'), null));
+  test('Teste Ergometrico -> null', () => assert.equal(classificarProcedimentoPorNome('Exame - Teste Ergométrico convencional'), null));
+  test('Consulta (sem "exame") -> null', () => assert.equal(classificarProcedimentoPorNome('Consulta - Cardiologista'), null));
+  test('vazio/undefined -> null', () => { assert.equal(classificarProcedimentoPorNome(''), null); assert.equal(classificarProcedimentoPorNome(undefined), null); });
 });
 
 // Task 4 (D3, achado 7a): reconciliacao na importacao — quem o Feegow ja deu

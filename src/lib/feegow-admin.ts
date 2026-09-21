@@ -226,6 +226,26 @@ const normalizarData = normalizarNascimento;
  * candidato — eram calculados e jogados fora (Candidato nao declara esses
  * campos; gravarImportacao grava o proprio `origem` fixo).
  */
+/**
+ * Classifica um procedimento do Feegow em tipo de exame do LEO PELO NOME.
+ * Rede de seguranca pro procMap por ID: o Feegow cria um procedimento_id novo
+ * de "Ecocardiograma Transtoracico" por convenio/agendamento (369, 377, 379,
+ * 380...), e cada codigo novo sumia do import ate ser adicionado na mao no
+ * procMap. Casar por nome resolve de vez. O procMap por ID continua tendo
+ * PRECEDENCIA (permite override/controle explicito por parte do dono).
+ * Retorna null pra nao-exames (consultas, ECG, ergometria) e exames fora do LEO.
+ * Ordem importa: 'estresse' antes de 'ecocardiograma' (Ecodopplercardiograma com
+ * estresse -> eco_stress). Normaliza acento pra pegar "carotidas"/"carotidas".
+ */
+export function classificarProcedimentoPorNome(nome: string): string | null {
+  const n = (nome || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  if (!n.includes('exame')) return null;
+  if (n.includes('carotida') || n.includes('vasos cervicais')) return 'doppler_carotidas';
+  if (n.includes('estresse') || n.includes('stress')) return 'eco_stress';
+  if (n.includes('ecocardiograma') || n.includes('strain')) return 'eco_tt';
+  return null;
+}
+
 export async function montarCandidatos(args: {
   token: string; hoje: string;
   procMap: Record<string, string>; profMap: Record<number, string>;
@@ -247,6 +267,15 @@ export async function montarCandidatos(args: {
     convMap[c.convenio_id] = c.nome;
   }
 
+  // Nome de cada procedimento — pra classificar por nome quando o ID nao esta
+  // no procMap (rede de seguranca contra os codigos de eco que o Feegow cria
+  // sem parar). Uma chamada, igual ao insurance/list acima.
+  const procRes = await feegowFetch('/procedures/list', token, fetchImpl);
+  const procNome: Record<number, string> = {};
+  for (const p of procRes?.content || []) {
+    procNome[Number(p.procedimento_id)] = p.nome;
+  }
+
   const candidatos: Candidato[] = [];
   const falhas: string[] = [];
   const cancelados: string[] = [];
@@ -266,7 +295,11 @@ export async function montarCandidatos(args: {
     if (dataAg && dataAg !== hoje) continue;
 
     const procId = Number(ag.procedimento_id ?? 0); // achado 5: ausente vira 0, nunca NaN em ignorados
-    if (!procMap[procId]) {
+    // procMap por ID tem PRECEDENCIA (override explicito do dono); se o ID nao
+    // esta mapeado, tenta classificar pelo NOME do procedimento (rede de
+    // seguranca contra codigo novo de eco criado pelo Feegow).
+    const tipoExame = procMap[procId] || classificarProcedimentoPorNome(procNome[procId] || '');
+    if (!tipoExame) {
       ignoradosMap.set(procId, (ignoradosMap.get(procId) || 0) + 1);
       continue;
     }
@@ -285,7 +318,7 @@ export async function montarCandidatos(args: {
         cpf: (pac.documentos?.cpf || '').replace(/\D/g, ''),
         telefone: typeof pac.telefones?.[0] === 'string' ? pac.telefones[0] : '', // achado 16-baixo
         convenio: convMap[ag.convenio_id] || '',
-        tipoExame: procMap[procId],
+        tipoExame,
         medicoExecutor: profMap[ag.profissional_id] || '',
         horarioChegada: ag.horario ? ag.horario.slice(0, 5) : '',
         dataExame: hoje, // sempre valido — gravarImportacao (Task 1) descarta sem isso
