@@ -77,7 +77,12 @@ Get-CimInstance Win32_Process -Filter "Name='node.exe'" -EA SilentlyContinue |
   Where-Object { $_.CommandLine -like '*tsx*src*index*' } |
   ForEach-Object { Write-Host "   matando PID $($_.ProcessId)" ; Stop-Process -Id $_.ProcessId -Force -EA SilentlyContinue }
 Start-Sleep -Seconds 2
-Start-Process -FilePath 'cmd.exe' -ArgumentList '/c','cd /d C:\Wader && npm start' -WindowStyle Minimized
+# Saida SEMPRE redirecionada pro log (07/10/2026): com stdout no console, um clique
+# dentro da janela do cmd (modo selecao) bloqueia o write do node e o Wader
+# congela inteiro — Windows registrou AppHang (cmd.exe/node.exe) as 16:08 e o
+# processo morreu; 2 estudos ficaram sem ingest ate o restart. Redirecionado,
+# nao ha console pra travar e a queda deixa rastro no arquivo.
+Start-Process -FilePath 'cmd.exe' -ArgumentList '/c','cd /d C:\Wader && npm start >> wader-run.log 2>&1' -WindowStyle Minimized
 
 # 6. Marcador de versao
 Push-Location $repo
