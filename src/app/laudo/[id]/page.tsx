@@ -1313,6 +1313,10 @@ function LaudoPageInner() {
    */
   function handleImportarDicom() {
     if (!workspace?.id) return;
+    // Spec 2026-10-11-imagens-e-sr: laudo emitido não importa — o botão já
+    // vem disabled, mas a guarda de verdade é esta (Codex: a importação
+    // escreve nos inputs por código, a trava CSS/disabled não a alcança).
+    if (emitido) return;
     // Schema antigo abre o modal MESMO com 0 importáveis — é lá que fica o
     // botão de pedir reprocesso ao Wader (S4-T12). Sem esta exceção o alerta
     // abaixo era o fim da linha pros exames legados.
@@ -1379,6 +1383,7 @@ function LaudoPageInner() {
    */
   function handleConfirmarImportSr(selecionados: InputImport[]) {
     if (selecionados.length === 0) return;
+    if (emitido) { setSrImportOpen(false); return; } // mesma guarda — modal aberto e laudo reemitido no meio
     let preenchidos = 0;
     // Medidas que o médico marcou mas não têm input no DOM (S4-T15 fix D4):
     // mapeamento aponta pra um campo que não existe nesta tela. Antes só ia
@@ -2230,9 +2235,12 @@ function LaudoPageInner() {
         exameId={exameId}
         pacienteNome={exame?.pacienteNome as string | undefined}
         tipoExame={exame?.tipoExame as string | undefined}
-        permitirSelecao
+        // Emitido = só leitura (decisão Sergio 11/10): o PDF assinado é o
+        // documento; trocar a seleção aqui gravaria outra verdade no banco.
+        // Editar → novo laudo → nova seleção.
+        permitirSelecao={!emitido}
         selecionadas={imagensSelecionadasPdf}
-        onToggleSelecao={handleToggleSelecaoImagem}
+        onToggleSelecao={emitido ? undefined : handleToggleSelecaoImagem}
       />
       {/* CSS global */}
       <style jsx global>{`
@@ -2327,7 +2335,6 @@ function LaudoPageInner() {
            trava isso comparando as duas, não repetir um id só de um lado. */
         .laudo-locked #laudo-sidebar input:not(#convenio):not(#solicitante):not(#nome):not(#dtnasc):not(#dtexame),.laudo-locked #laudo-sidebar select:not(#convenio):not(#solicitante):not(#nome):not(#dtnasc):not(#dtexame),.laudo-locked #laudo-sidebar textarea:not(#convenio):not(#solicitante):not(#nome):not(#dtnasc):not(#dtexame){pointer-events:none;opacity:.6;background:#f1f5f9;}
         .laudo-locked #laudo-sidebar .section-btn{pointer-events:none;opacity:.5;}
-        .laudo-locked #modo-edicao{display:none;}
       `}</style>
     </div>
   );
