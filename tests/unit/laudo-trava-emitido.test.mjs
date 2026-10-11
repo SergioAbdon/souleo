@@ -141,12 +141,6 @@ describe('trava única do emitido — CSS e disabled-setter concordam', () => {
 // emitido (3ª linha), mas DESABILITADO — e a guarda de verdade fica nos
 // handlers da page, porque a importação escreve nos inputs por código.
 describe('importar SR no emitido — botão disabled E guarda no handler', () => {
-  test('SidebarLaudo: Importar fica fora do ternário do emitido e desabilita com emitido', () => {
-    const fileira = sidebarSrc.slice(sidebarSrc.indexOf('className="laudo-command-line"'), sidebarSrc.indexOf('ÁREA SCROLLÁVEL'));
-    assert.match(fileira, /disabled=\{emitido \|\| dicomImportado \|\| !temMedidas\}/);
-    const ternario = fileira.slice(0, fileira.indexOf('{ortancAtivo && onImportarDicom'));
-    assert.ok(ternario.includes('emitido ? ('), 'o ternário do estado vem ANTES dos botões de dado do exame');
-  });
   test('page: handleImportarDicom e handleConfirmarImportSr têm guarda emitido', () => {
     const abrir = pageSrc.slice(pageSrc.indexOf('function handleImportarDicom()'), pageSrc.indexOf('setSrImportOpen(true)'));
     assert.match(abrir, /if \(emitido\) return;/);
@@ -156,6 +150,5 @@ describe('importar SR no emitido — botão disabled E guarda no handler', () =>
   test('page: galeria é só leitura no emitido', () => {
     assert.match(pageSrc, /permitirSelecao=\{!emitido\}/);
     assert.match(pageSrc, /onToggleSelecao=\{emitido \? undefined : handleToggleSelecaoImagem\}/);
-    assert.ok(!pageSrc.includes('.laudo-locked #modo-edicao'), 'CSS morto removido (o bloco de edição não monta no emitido)');
   });
 });

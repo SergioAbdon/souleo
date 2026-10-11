@@ -1,7 +1,5 @@
-// Páginas de imagem DICOM do PDF (8 por A4) — uma fonte pros dois laudos
-// (ECO e texto), spec 2026-10-11-imagens-e-sr-em-todo-laudo. `renderPaginas`
-// morava em DicomGallery.tsx (que a re-exporta); veio pra cá, sem React, pra
-// o laudo de texto e os testes unitários usarem sem carregar o componente.
+// Páginas de imagem DICOM do PDF (8 por A4) — uma fonte pros dois laudos (ECO e
+// texto) e pra galeria, sem React (spec 2026-10-11-imagens-e-sr-em-todo-laudo).
 import { escaparHtml, corSegura } from './html-escape';
 
 const POR_PAGINA = 8;

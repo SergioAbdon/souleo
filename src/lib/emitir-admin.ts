@@ -46,7 +46,7 @@ import { podeGirar, proximoCicloFim, vigente } from './ciclo';
 // tests/api/emitir-idempotencia.test.mjs continuam importando daqui, sem
 // mudar chamador nenhum.
 import { emissaoKeyValida } from './pdf-path';
-import { sanearSelecaoImagens } from './imagens-selecao';
+import { sanearSelecaoImagens } from './emissao-guarda';
 export { emissaoKeyValida };
 
 // Gaveta server-only do estado de idempotencia (mesmo formato do shadow:
@@ -385,7 +385,7 @@ export async function emitirComCobranca(db: Firestore, p: {
     const dadosFinaisPermitidos: Record<string, unknown> = Object.fromEntries(
       Object.entries(p.dadosFinais).filter(([k]) => CAMPOS_DADOS_FINAIS.has(k)),
     );
-    // Seleção de imagens: só o que pertence a ESTE exame (imagens-selecao.ts).
+    // Seleção de imagens: só o que pertence a ESTE exame (emissao-guarda.ts).
     if ('imagensSelecionadasPdf' in dadosFinaisPermitidos) {
       const limpa = sanearSelecaoImagens(dadosFinaisPermitidos.imagensSelecionadasPdf, exame.imagensDicom);
       if (limpa === null) delete dadosFinaisPermitidos.imagensSelecionadasPdf;

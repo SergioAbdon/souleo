@@ -17,7 +17,8 @@ import { dataLocalHoje } from '@/lib/utils';
 // gerarESalvarPdf legado removido — emissao + PDF agora sao server-side em /api/emitir
 import SidebarLaudo from '@/components/laudo/SidebarLaudo';
 import SheetA4 from '@/components/laudo/SheetA4';
-import DicomGallery, { buscarUrlsAssinadas, renderPaginasPdf } from '@/components/laudo/DicomGallery';
+import DicomGallery, { buscarUrlsAssinadas } from '@/components/laudo/DicomGallery';
+import { renderPaginasPdf } from '@/lib/pdf-imagens';
 import DicomSrImport from '@/components/laudo/DicomSrImport';
 import { normalizarParaImport, prefixoArquivoPorTipo, isSchemaAntigo, InputImport, MedidaSr, MapaSr, SR_TO_MOTOR } from '@/lib/dicom-sr-mapping';
 import { carregarPerfilAparelho } from '@/lib/perfil-aparelho';
@@ -1812,25 +1813,10 @@ function LaudoPageInner() {
     const outSolic = document.getElementById('out-solicitante')?.textContent || '—';
     const outDtex = document.getElementById('out-dtexame')?.textContent || '—';
 
-    // Seção de imagens DICOM no PDF (decisão 14/05/2026, fix 15/05/2026):
-    //  - Página(s) nova(s) após Conclusão (page-break-before: always)
-    //  - Layout 2 colunas × 4 linhas = 8 imagens por A4
-    //  - SEMPRE 8 slots — última pg pode ter slots vazios (decisão 15/05)
-    //  - Fix CSS: `minmax(0, 1fr)` + `min-height: 0` força 4 linhas mesmo
-    //    se imagem (aspect 4:3) tentar empurrar pra mais (bug 14/05 saía 6/pg)
-    //  - Pulado se imagensIncluidasNoPdf=false (toggle no PopupSalvarEmitir)
-    // S5-T13: as páginas em si (grid 2×4, padding de slots vazios) vêm de
-    // `renderPaginas()` (DicomGallery.tsx) — mesma função que o botão
-    // "Imprimir Seleção" da galeria usa. Reconciliação da deriva S4: essa
-    // função usava classes/wording levemente diferentes (`.dicom-pg`/<h2>/
-    // "Imagens —") da cópia que já vivia na galeria (`.pagina`/<h1>/
-    // "Imagens DICOM —"); a versão da galeria é o padrão-ouro (ver relatório
-    // da task). O CSS aqui só re-branda com a cor da clínica (p1) e usa
-    // page-break-before (a folha do laudo já terminou antes desta seção).
     // Páginas de imagem (CSS + grade 8/A4) — mesma função do laudo de texto.
     const imagensPdfHtml = incluirImagens
       ? renderPaginasPdf(imagensSelecionadasPdf, outNome, (exame?.tipoExame as string | undefined) || '', p1)
-        : '';
+      : '';
 
     // S5-T10 (D6): a folha A4 é UMA só — `montarPdfMoldura` monta
     // cabeçalho/identificação/rodapé pro motor e pro laudo-texto. Aqui só
@@ -2228,9 +2214,7 @@ function LaudoPageInner() {
         exameId={exameId}
         pacienteNome={exame?.pacienteNome as string | undefined}
         tipoExame={exame?.tipoExame as string | undefined}
-        // Emitido = só leitura (decisão Sergio 11/10): o PDF assinado é o
-        // documento; trocar a seleção aqui gravaria outra verdade no banco.
-        // Editar → novo laudo → nova seleção.
+        // Emitido = só leitura (Sergio 11/10): o PDF assinado é o documento; Editar → novo laudo → nova seleção.
         permitirSelecao={!emitido}
         selecionadas={imagensSelecionadasPdf}
         onToggleSelecao={emitido ? undefined : handleToggleSelecaoImagem}

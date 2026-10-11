@@ -92,6 +92,8 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
   // vivo do lock (handleDesbloquear zera, handleEmitir levanta) — derivar
   // outro estado daqui era duplicar o dono.
   const motorBloqueado = !!readOnlyMotor;
+  const temMedidas = (totalMedidasDicom ?? 0) > 0;
+  const temImagens = (totalImagensDicom ?? 0) > 0;
 
   // S5-T6: trava única do emitido. Um campo por vez, sem branch separado pra
   // bloquear/desbloquear — `el.disabled = motorBloqueado` é sempre o valor
@@ -220,15 +222,10 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
             </button>
           </div>
         )}
-        {/* Bloco de DADOS DO EXAME (spec 2026-10-11-imagens-e-sr-em-todo-laudo):
-            Importar medidas e Imagens existem em rascunho E emitido — são dado
-            do exame, não ação de edição. No emitido caem na 3ª linha, abaixo do
-            Finalizar (opção A do Sergio). Importar fica DESABILITADO no emitido:
-            a importação escreve nos inputs por código e passaria por cima da
-            trava visual — o handler na page tem a guarda de verdade. */}
-        {ortancAtivo && onImportarDicom && (() => {
-          const temMedidas = (totalMedidasDicom ?? 0) > 0;
-          return (
+        {/* DADOS DO EXAME (spec 2026-10-11-imagens-e-sr): Importar e Imagens existem em
+            rascunho E emitido (3ª linha, opção A). Importar desabilitado no emitido —
+            a guarda real é o handler da page. */}
+        {ortancAtivo && onImportarDicom && (
             <button
               onClick={onImportarDicom}
               disabled={emitido || dicomImportado || !temMedidas}
@@ -251,13 +248,8 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
               <EditorIcon name="download" />
               {dicomImportado ? 'Importado' : temMedidas ? `Importar medidas (${totalMedidasDicom})` : 'Importar medidas'}
             </button>
-          );
-        })()}
-        {/* Imagens (N) — abre <DicomGallery />. No emitido a galeria é só
-            leitura (a page decide via permitirSelecao). */}
-        {onAbrirGaleria && (() => {
-          const temImagens = (totalImagensDicom ?? 0) > 0;
-          return (
+        )}
+        {onAbrirGaleria && (
             <button
               onClick={onAbrirGaleria}
               disabled={!temImagens}
@@ -270,8 +262,7 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
               <EditorIcon name="image" />
               {temImagens ? `Imagens (${totalImagensDicom})` : 'Imagens'}
             </button>
-          );
-        })()}
+        )}
       </div>
 
       {/* ═══ ÁREA SCROLLÁVEL ═══ */}

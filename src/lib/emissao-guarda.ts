@@ -49,3 +49,21 @@ export function precisaConfirmarEmissao(
   }
   return null;
 }
+
+/**
+ * Saneamento da seleção de imagens do PDF no SERVIDOR (spec 2026-10-11-imagens-
+ * e-sr): só URL de `exame.imagensDicom`, sem duplicata, na ordem do médico.
+ * `null` quando `selecao` não é lista (chamador remove o campo em vez de gravar lixo).
+ */
+export function sanearSelecaoImagens(selecao: unknown, imagensDicom: unknown): string[] | null {
+  if (!Array.isArray(selecao)) return null;
+  const canonicas = new Set(Array.isArray(imagensDicom) ? imagensDicom.filter((u): u is string => typeof u === 'string') : []);
+  const vistas = new Set<string>();
+  const limpa: string[] = [];
+  for (const u of selecao) {
+    if (typeof u !== 'string' || !canonicas.has(u) || vistas.has(u)) continue;
+    vistas.add(u);
+    limpa.push(u);
+  }
+  return limpa;
+}

@@ -72,11 +72,6 @@ export async function buscarUrlsAssinadas(
   }
 }
 
-// renderPaginas/renderPaginasPdf vivem em src/lib/pdf-imagens.ts (sem React):
-// o laudo de texto e os testes unitários usam de lá; aqui só o re-export
-// pro chamador histórico (laudo/[id]/page.tsx).
-export { renderPaginas, renderPaginasPdf } from '@/lib/pdf-imagens';
-
 type Props = {
   /** URLs canônicas das imagens no Storage. Vazio/undefined = modal não renderiza. */
   imagens: string[];
