@@ -54,8 +54,29 @@ arquivos tocados sem achado novo (aviso `idMudou` pré-existente). Emissão real
 | **Ruflo** | APPROVED | Matriz comando × estado × tipo seguida; Importar estruturalmente motor-only (só `SidebarLaudo`), nenhum `if (tipo…)` vazou pra componente compartilhado. Contrato "seleção só vale dentro da emissão" expresso nos 4 pontos que precisam ser separados (rules, emitir-admin, imagens-selecao, UI), com a mesma frase-ponte. Moldura intocada (diff vazio em `pdf-moldura.ts`). Info aplicada: ECO importa `renderPaginasPdf` direto de `@/lib/pdf-imagens`, re-export do `DicomGallery` apagado. Warning registrado: a 3ª cópia da lógica de seleção (texto, `getExame` foto única) já diverge do ECO (`onSnapshot` + poda) — a **próxima tela com imagens não copia nenhum dos dois: extrai o hook** (gatilho no ledger `ponytail:`). |
 | **Ponytail** | CHANGES REQUESTED → cortes aplicados | Nada estrutural. `sanearSelecaoImagens` absorvida por `emissao-guarda.ts` (−1 arquivo fonte, −1 de teste); re-export do `DicomGallery` morto; IIFEs dos botões viraram consts; cast de `imagensDicom` derivado uma vez; `setPopupOpen(false)` passou pra depois das guardas (mesmo fix F4 do ECO — cancelar o confirm mantém o popup); ~40 linhas de comentário histórico cortadas; 2 pins redundantes com o visual removidos; comentário órfão do CSS em `EditorLaudo.tsx` corrigido. Mantidos por decisão: `pdf-imagens.ts` (o hook de teste só resolve `.ts`), cópia do toggle no texto (hook com 1,5 consumidor é pior), teste de `corSegura` no `renderPaginasPdf` (1 assert, pin barato). |
 
+## Replay amarrado ao conteúdo — decisão do Sergio no mesmo dia ("vamos ajustar logo agora")
+
+Sergio escolheu a opção 2: o reenvio da mesma tentativa (`emissaoKey`) com conteúdo diferente é
+**recusado**, obrigando Editar → reemitir. Desenho passado pela tríade antes de editar:
+
+- **Codex:** hash só do `pdfHtml` não basta — o PDF anexado (`pdfBase64`) usa a mesma trava; recusar
+  também com PDF já salvo (devolver o antigo mentiria "emiti o novo"); não zerar `emissaoKeyRef` no
+  cliente (zerar viraria reemissão cobrada); HTML do PDF é determinístico (sem timestamp volátil);
+  requisição sem conteúdo cobrava e deixava `pdfPendente` pra sempre.
+- **Ruflo:** dono do hash é a rota (única que tem o conteúdo), gaveta privada guarda e compara (mesmo
+  padrão da `emissaoKey`); os mapas de motivo (status da rota + 3 clientes) não são exaustivos — listar
+  como tarefa; sem limpeza de hash (a gaveta já é sobrescrita/apagada junto).
+- **Ponytail:** snapshot do HTML não substitui o hash (só existe depois do PDF, não no modo de falha
+  real); hash precisa entrar na MESMA transação da gaveta (fora dela reabre o C4); 2–4 testes; sem
+  componente novo de mensagem.
+
+Implementado em `fix(emissao)` deste branch: `conteudoHash = sha256(pdfHtml ?? pdfBase64)` na rota →
+`transaction.set` da gaveta → replay com hash diferente devolve `conteudo_divergente` (409) sem cobrar
+nem escrever; sem conteúdo → 400 `sem_conteudo`; gaveta legada sem hash segue o C1. Mensagem nos 3
+clientes; o laudo de texto recarrega (carrega o exame uma vez). Testes (h)–(h4) no
+`emitir-idempotencia` (api 311/311). O comentário "C1 — risco aceito" fica como história no código.
+
 ## Pendente
 
 - Aval do Sergio para merge na master, push e deploy.
-- Decisão leve: amarrar `emissaoKey` ao conteúdo (hash) do `pdfHtml` no replay com PDF pendente.
 - 1º laudo de texto emitido com imagens na clínica confirma o PDF com dados reais.
