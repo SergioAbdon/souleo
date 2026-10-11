@@ -66,6 +66,11 @@ describe('temImagemNaoAssinada — só a canônica NUA conta como não assinada'
     assert.equal(temImagemNaoAssinada('<p>sem imagem</p>', b), false);
     assert.equal(temImagemNaoAssinada('<img src="https://storage.googleapis.com/outro/dicom/x.jpg">', b), false);
   });
+  test('Codex: assinatura VAZIA ou incompleta não conta (v2 exige GoogleAccessId+Expires+Signature; v4 exige X-Goog-Signature)', () => {
+    assert.equal(temImagemNaoAssinada(`<img src="${canon}?GoogleAccessId=x">`, b), true);
+    assert.equal(temImagemNaoAssinada(`<img src="${canon}?GoogleAccessId=x&Expires=1&Signature=">`, b), true);
+    assert.equal(temImagemNaoAssinada(`<img src="${canon}?X-Goog-Signature=">`, b), true);
+  });
   test('Codex: query SEM assinatura (?alt=media) e host em caixa alta NÃO são assinadas → aborta', () => {
     assert.equal(temImagemNaoAssinada(`<img src="${canon}?alt=media">`, b), true);
     assert.equal(temImagemNaoAssinada(`<img src="${canon.replace('https://storage', 'HTTPS://STORAGE')}">`, b), true);

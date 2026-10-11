@@ -71,7 +71,9 @@ export function temImagemNaoAssinada(html: string, bucketName: string): boolean 
     let j = fim;
     while (j < baixo.length && !DELIMITADORES_URL.has(baixo[j])) j++;
     const resto = baixo.slice(fim, j);
-    if (!/\?.*(googleaccessid=|x-goog-signature=)/.test(resto)) return true;
+    const v2 = /\?.*googleaccessid=[^&]+.*&expires=[^&]+.*&signature=[^&]+/.test(resto);
+    const v4 = /\?.*x-goog-signature=[0-9a-f]+/.test(resto);
+    if (!v2 && !v4) return true;
     i = baixo.indexOf(prefixo, j);
   }
   return false;
@@ -139,7 +141,21 @@ export async function gerarESalvarPdf(
       // que é o que o PDF precisa —, sem os 500ms de silêncio de rede nem
       // ficar refém de uma conexão pendurada. As fontes (embutidas, sem rede)
       // continuam esperadas explicitamente logo abaixo.
+      // Codex 11/10: uma assinada que volte 403/404 (ou rede) saía como imagem em
+      // branco no PDF publicado. Só as imagens DICOM do bucket contam — um <img>
+      // externo colado no texto já é bloqueado pelo allowlist e segue como antes.
+      const prefixoDicom = `https://storage.googleapis.com/${bucket.name}/dicom`;
+      const imagensFalhadas: string[] = [];
+      page.on('response', (r) => {
+        if (r.url().startsWith(prefixoDicom) && r.status() >= 400) imagensFalhadas.push(`${r.status()} ${r.url().split('?')[0].slice(-40)}`);
+      });
+      page.on('requestfailed', (r) => {
+        if (r.url().startsWith(prefixoDicom)) imagensFalhadas.push(`falha ${r.url().split('?')[0].slice(-40)}`);
+      });
       await page.setContent(htmlComFontes, { waitUntil: 'load', timeout: 30000 });
+      if (imagensFalhadas.length > 0) {
+        throw new Error(`imagem DICOM não carregou no render (${imagensFalhadas.slice(0, 3).join('; ')}) — PDF abortado`);
+      }
       let teto: NodeJS.Timeout | undefined;
       await Promise.race([
         page.evaluateHandle('document.fonts.ready'),

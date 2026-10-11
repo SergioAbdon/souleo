@@ -32,7 +32,9 @@ Chrome), sem gravar nada:
 
 Codex (verificação adversarial, 3ac7cab): qualquer `?` passava como assinatura (`?alt=media` daria 403 e imagem em branco) e host em caixa alta escapava; log podia guardar token assinado. Atendido em bd8a8ba: assinada = query com `GoogleAccessId=` ou `X-Goog-Signature=`, varredura em minúsculas, query strings trocadas por `?…` no log; +2 testes.
 
-Verificação: `tsc` limpo · unit 788/788 · visual carótidas 3/3 · reprodução local do fg-69204 com o
+Codex rodada 2: assinatura precisa ter valor (v2 = GoogleAccessId + Expires + Signature; v4 = X-Goog-Signature), e uma imagem DICOM que o Chrome não consiga carregar (403/404/rede) agora aborta o PDF em vez de sair em branco; console.error também sem query. unit 789/789.
+
+Verificação: `tsc` limpo · unit 789/789 · visual carótidas 3/3 · reprodução local do fg-69204 com o
 guard novo: não aborta, PDF de 3,8 MB em 6 s.
 
 ## Pendente
