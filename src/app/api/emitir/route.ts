@@ -120,7 +120,9 @@ export async function POST(req: NextRequest) {
     }
     // Hash do conteudo desta tentativa — a gaveta privada guarda o da
     // vencedora e o replay com outro conteudo e recusado (emitir-admin.ts).
-    const conteudoHash = createHash('sha256').update(pdfHtml ?? pdfBase64 ?? '').digest('hex');
+    // Codex 11/10: hasheia o ramo que a rota PUBLICA — com os dois presentes
+    // o PDF sai do pdfBase64 (abaixo), entao o hash e dele, nao do HTML.
+    const conteudoHash = createHash('sha256').update(pdfBase64 ?? pdfHtml ?? '').digest('hex');
 
     // Autorizacao: papel de medico/dono NESTE local (mesmo criterio da regra
     // `ehMedicoNoLocal`), e o laudo sai assinado por quem esta logado.

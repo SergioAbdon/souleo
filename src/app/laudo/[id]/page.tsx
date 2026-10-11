@@ -1686,6 +1686,7 @@ function LaudoPageInner() {
     if (!confirm('Ao editar e reemitir, será consumido 1 crédito da sua franquia.\n\nDeseja desbloquear para edição?')) return;
     setEmitido(false);
     setReedicaoAtiva(true); // marca: emitido reaberto — handleVoltar avisa se não reemitir
+    emissaoKeyRef.current = null; // reedição = intenção nova (cobra); a key antiga, se ficou, só renderia 409
     toast('Laudo desbloqueado para edição');
   }
 

@@ -117,6 +117,7 @@ export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid }
       });
       const data = await res.json();
       if (!data.ok) {
+        if (data.motivo === 'conteudo_divergente') emissaoKeyRef.current = null; // já emitido: próximo anexo é reemissão
         setErro(MENSAGENS_ERRO[data.motivo as string] || 'Erro ao anexar o PDF. Tente novamente.');
         return;
       }
