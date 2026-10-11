@@ -1,7 +1,6 @@
 # Imagens e SR em todo laudo — ECO emitido e laudo de texto (11/10/2026)
 
-**Status:** implementado no branch `claude/imagens-e-sr-em-todo-laudo` (6f187b8 fase 1, c9bb0a5 fase 2
-+ ajustes da tríade). Merge/push/deploy dependem do aval do Sergio.
+**Status:** NO AR em produção desde 11/10/2026 — merge a63f3fa na master com aval do Sergio ("conseguimos colocar online"); Vercel serviu o código novo em ~30 s (sonda no chunk do ECO); **regra do Firestore publicada** (`firebase deploy --only firestore:rules`, compilou e foi liberada) no mesmo ato.
 **Spec aprovada:** `docs/superpowers/specs/2026-10-11-imagens-e-sr-em-todo-laudo-design.md`.
 **Antecedente:** `2026-10-11-coluna-laudo-unificada.md` (no ar desde 11/10).
 
@@ -88,5 +87,4 @@ rota publicava o HTML — agora o hash usa o MESMO predicado truthy do ramo de p
 
 ## Pendente
 
-- Aval do Sergio para merge na master, push e deploy.
 - 1º laudo de texto emitido com imagens na clínica confirma o PDF com dados reais.
