@@ -30,3 +30,41 @@ body {
   color: var(--color-ink);
   font-family: var(--font-sans);
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   LEO · Casca das telas de laudo (spec 2026-10-11-coluna-laudo-unificada).
+   Coluna de 390px (cabeçalho navy + comandos + conteúdo) e folha à direita.
+   Vale pra ECO, laudo de texto e qualquer laudo futuro. A folha A4 e o
+   PDF têm estilo próprio e não leem daqui.
+   ══════════════════════════════════════════════════════════════════ */
+.laudo-workspace{height:100dvh;display:grid;grid-template-columns:390px minmax(0,1fr);overflow:hidden;background:#F1F5F9;font-family:var(--font-sans);}
+.laudo-coluna{display:flex;flex-direction:column;min-height:0;background:#EAF1FA;border-right:1px solid #D6E2F1;}
+.laudo-cabecalho{flex-shrink:0;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;background:#1E3A5F;color:#fff;padding:14px 20px;}
+.laudo-cabecalho h1{font-size:15px;font-weight:500;line-height:1.3;overflow-wrap:anywhere;}
+.laudo-cabecalho p{color:#B5D4F4;font-size:11px;margin-top:4px;overflow-wrap:anywhere;}
+.laudo-cabecalho-voltar{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;border:1px solid rgba(255,255,255,.35);border-radius:8px;background:transparent;color:#fff;padding:6px 10px;font-size:12px;font-weight:500;white-space:nowrap;cursor:pointer;}
+.laudo-cabecalho-voltar:hover{background:rgba(255,255,255,.12);}
+.laudo-command-line{flex-shrink:0;display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:#fff;border-bottom:1px solid #D6E2F1;padding:12px 20px 14px;}
+.laudo-command-secondary{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid #D6E2F1;border-radius:8px;background:#fff;color:#1E3A5F;padding:10px 12px;font-size:12px;font-weight:500;white-space:nowrap;cursor:pointer;}
+.laudo-command-secondary:not(:disabled):hover{background:#EAF1FA;}
+.laudo-command-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid #1E3A5F;border-radius:8px;background:#1E3A5F;color:#fff;padding:10px 14px;font-size:12px;font-weight:500;white-space:nowrap;cursor:pointer;}
+.laudo-command-primary:not(:disabled):hover{background:#17304F;}
+.laudo-command-ajustavel{flex:1 1 auto;padding-left:10px;padding-right:10px;}
+.laudo-command-line button:disabled{opacity:.5;cursor:default;}
+.laudo-command-line button:focus-visible,.laudo-fields button:focus-visible,.laudo-cabecalho-voltar:focus-visible{outline:2px solid #fff;outline-offset:2px;}
+.laudo-command-line button:focus-visible,.laudo-fields button:focus-visible{outline-color:#2563EB;}
+.laudo-emitido-selo{display:inline-flex;align-items:center;justify-content:center;gap:5px;border-radius:999px;background:#DCFCE7;color:#166534;padding:8px 12px;font-size:12px;font-weight:500;white-space:nowrap;}
+.laudo-fields{flex:1;min-height:0;overflow-y:auto;padding:14px 14px 40px;scrollbar-color:#B8C9DF #EAF1FA;}
+.laudo-nota{font-size:11px;line-height:1.4;color:#1E3A5F;background:#F1F5F9;border-left:2px solid #1E3A5F;padding:6px 8px;}
+.laudo-folha{min-width:0;overflow:auto;background:#F1F5F9;padding:24px;scrollbar-color:#B8C9DF #F1F5F9;}
+.laudo-folha #laudo-sheet{box-shadow:0 8px 28px rgba(30,58,95,.10);outline:1px solid #E2E8F0;}
+.laudo-folha-legenda{margin-bottom:12px;text-align:center;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#6B7280;}
+@media(max-width:900px){
+  .laudo-workspace{height:auto;min-height:100dvh;grid-template-columns:minmax(0,1fr);overflow:visible;}
+  .laudo-coluna{border-right:0;}
+  .laudo-fields{overflow:visible;}
+  .laudo-folha{padding:12px;}
+  .laudo-cabecalho{padding:12px 16px;}
+  .laudo-command-line{padding:10px 16px 12px;}
+}
+@media(pointer:coarse){.laudo-command-line button{min-height:44px;min-width:44px;}}

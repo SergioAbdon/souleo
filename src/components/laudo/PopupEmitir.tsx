@@ -4,6 +4,7 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { useState, useEffect } from 'react';
+import EditorIcon from './EditorIcon';
 import { abrirPdfUrl } from '@/lib/pdfUtils';
 
 type Props = {
@@ -126,19 +127,17 @@ export function ModoEmitido({ onFinalizar, onEditar, onImprimir, onCopiarFormata
   const [prontuarioOpen, setProntuarioOpen] = useState(false);
   const abrirAssinado = pdfUrl ? () => abrirPdfUrl(pdfUrl) : onImprimir;
 
+  // Spec 2026-10-11-coluna-laudo-unificada: duas linhas dentro da coluna de
+  // 390px — selo + PDF + Copiar + Editar, e Finalizar na largura inteira.
+  // Renderiza dentro da .laudo-command-line (flex-wrap), por isso "contents".
   return (
-    <div className="px-4 py-2">
-      {/* Badge compacto */}
-      <div className="bg-[#059669] text-white text-center py-1 rounded text-[10px] font-bold tracking-wide mb-2">
-        🔒 Emitido
-      </div>
-
-      {/* Botões em grid compacto */}
-      <div className="grid grid-cols-3 gap-1.5 mb-2">
-        <BtnMini onClick={abrirAssinado}>🖨️ PDF</BtnMini>
-        <BtnMini onClick={() => setProntuarioOpen(!prontuarioOpen)}>📋 Copiar</BtnMini>
-        <BtnMini onClick={onEditar} cor="amber">✏️ Editar</BtnMini>
-      </div>
+    <div className="contents">
+      <span className="laudo-emitido-selo"><EditorIcon name="lock" /> Emitido</span>
+      <button onClick={abrirAssinado} className="laudo-command-secondary laudo-command-ajustavel"><EditorIcon name="file" /> PDF</button>
+      <button onClick={() => setProntuarioOpen(!prontuarioOpen)} aria-expanded={prontuarioOpen}
+        className="laudo-command-secondary laudo-command-ajustavel"><EditorIcon name="copy" /> Copiar</button>
+      <button onClick={onEditar} className="laudo-command-secondary laudo-command-ajustavel"><EditorIcon name="edit" /> Editar</button>
+      <button onClick={onFinalizar} className="laudo-command-primary w-full"><EditorIcon name="check" /> Finalizar</button>
 
       {/* Ação secundária: regerar com dados/config ATUAIS do local (pode
           divergir do assinado se a clínica mudou config, ou o médico
@@ -147,48 +146,30 @@ export function ModoEmitido({ onFinalizar, onEditar, onImprimir, onCopiarFormata
           primário já É esta mesma ação. */}
       {pdfUrl && (
         <button onClick={onImprimir}
-          className="block w-full mb-2 py-1 bg-transparent border-none text-[9.5px] text-[#9CA3AF] hover:text-[#6B7280] cursor-pointer underline decoration-dotted underline-offset-2">
+          className="w-full bg-transparent border-none text-[11px] text-[#526277] hover:text-[#1E3A5F] cursor-pointer underline decoration-dotted underline-offset-2">
           Gerar novamente (dados atuais do local)
         </button>
       )}
 
       {/* Submenu copiar */}
       {prontuarioOpen && (
-        <div className="mb-2 bg-gray-50 border border-[#E5E7EB] rounded overflow-hidden text-[10px]">
+        <div className="w-full overflow-hidden rounded-lg border border-[#D6E2F1] bg-white text-[12px] text-[#1E3A5F]">
           <button onClick={() => { onCopiarFormatado(); setProntuarioOpen(false); }}
-            className="w-full px-3 py-1.5 text-left hover:bg-white transition border-b border-[#E5E7EB] text-[#333] cursor-pointer">
-            📄 Formatado <span className="text-[#999]">· Tasy, MV, Word</span>
+            className="w-full px-3 py-2 text-left hover:bg-[#F1F5F9] transition border-b border-[#D6E2F1] cursor-pointer">
+            Formatado <span className="text-[#526277]">· Tasy, MV, Word</span>
           </button>
           <button onClick={() => { onCopiarTexto(); setProntuarioOpen(false); }}
-            className="w-full px-3 py-1.5 text-left hover:bg-white transition border-b border-[#E5E7EB] text-[#333] cursor-pointer">
-            📋 Texto simples <span className="text-[#999]">· Hapvida</span>
+            className="w-full px-3 py-2 text-left hover:bg-[#F1F5F9] transition border-b border-[#D6E2F1] cursor-pointer">
+            Texto simples <span className="text-[#526277]">· Hapvida</span>
           </button>
           {onBaixarWord && (
             <button onClick={() => { onBaixarWord(); setProntuarioOpen(false); }}
-              className="w-full px-3 py-1.5 text-left hover:bg-white transition text-[#333] cursor-pointer">
-              📄 Word (.docx)
+              className="w-full px-3 py-2 text-left hover:bg-[#F1F5F9] transition cursor-pointer">
+              Word (.docx)
             </button>
           )}
         </div>
       )}
-
-      <button onClick={onFinalizar}
-        className="w-full py-1.5 rounded text-[10px] font-semibold text-[#059669] border border-[#059669] bg-white hover:bg-[#059669]/5 transition cursor-pointer">
-        ✅ Finalizar
-      </button>
     </div>
-  );
-}
-
-function BtnMini({ onClick, cor, children }: { onClick: () => void; cor?: 'navy' | 'amber'; children: React.ReactNode }) {
-  const cores = {
-    navy: 'border-[#E5E7EB] text-[#1E3A5F] hover:bg-gray-50',
-    amber: 'border-[#D97706] text-[#D97706] hover:bg-[#D97706]/5',
-  };
-  return (
-    <button onClick={onClick}
-      className={`py-1.5 px-2 rounded border bg-white cursor-pointer text-center text-[10px] font-semibold transition ${cores[cor || 'navy']}`}>
-      {children}
-    </button>
   );
 }

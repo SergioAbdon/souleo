@@ -8,6 +8,7 @@
 import { useState, useEffect, ReactNode } from 'react';
 import { auth } from '@/lib/firebase';
 import EditorIcon from './EditorIcon';
+import CabecalhoLaudo from './CabecalhoLaudo';
 import type { AlertaUI } from '@/senna90/types';
 // F3-T6: o campo condicional PSMAP era revelado por `motorCall('refluxoPulmonar')`
 // — função do motor legado, invisível pro regex do Contrato da Ponte (ponto cego).
@@ -199,27 +200,15 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
     }
   }
   return (
-    <div id="laudo-sidebar" className="contents">
+    <div id="laudo-sidebar" className="laudo-coluna">
 
-      {/* ═══ HEADER ═══ */}
-      <div className="laudo-workspace-header bg-white px-6 pt-5 pb-3">
-        <div className="flex items-center justify-between mb-0.5">
-          <h1 className="text-[#1E3A5F] text-xl font-medium tracking-tight">
-            Laudo ECO · <span id="hdr-clinica">{clinicaNome}</span>
-          </h1>
-        </div>
-        <p id="hdr-subtitulo" className="text-[#526277] text-xs mt-1">{medicoInfo}</p>
-      </div>
-
-      {/* ═══ BOTÕES FIXOS NO TOPO ═══ */}
-      <div className="laudo-command-line flex flex-wrap items-center gap-2 border-b border-[#D6E2F1] bg-white px-6 pb-4">
-        <button onClick={onVoltar} className="laudo-command-secondary">
-          <EditorIcon name="back" /> Voltar
-        </button>
+      {/* ═══ CABEÇALHO (navy) + COMANDOS — spec 2026-10-11-coluna-laudo-unificada ═══ */}
+      <CabecalhoLaudo titulo="Laudo ECO" clinicaNome={clinicaNome} medicoInfo={medicoInfo} onVoltar={onVoltar} />
+      <div className="laudo-command-line">
         {emitido ? (
           modoEmitido
         ) : (
-          <div id="modo-edicao" className="flex flex-1 flex-wrap items-center gap-2">
+          <div id="modo-edicao" className="contents">
             {ortancAtivo && onImportarDicom && (() => {
               // Botão habilita quando Wader já populou `medidasDicom` (totalMedidasDicom > 0).
               // Quando ainda não há medidas, mostramos o botão cinza/desabilitado
@@ -272,8 +261,7 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
                 </button>
               );
             })()}
-            <button onClick={onSalvarEmitir}
-              className="laudo-command-primary sm:ml-auto inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium text-white text-xs cursor-pointer hover:bg-blue-700 transition border border-[#2563EB] bg-[#2563EB]">
+            <button onClick={onSalvarEmitir} className="laudo-command-primary">
               <EditorIcon name="save" /> Salvar / Emitir
             </button>
             <button onClick={onLimpar} title="Limpar campos" aria-label="Limpar campos"
@@ -288,7 +276,7 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
       {/* Atalhos de teclado (spec layout 03/05): ENTER→próximo campo,
           SHIFT+ENTER→campo anterior, ESC→limpa o campo atual. TAB/SHIFT+TAB
           já são nativos do browser. Ver navTeclado() no fim do arquivo. */}
-      <div className="laudo-fields min-h-0 overflow-y-auto bg-[#EAF1FA] border-r border-[#D6E2F1] px-3.5 pt-4 pb-10" onKeyDown={navTeclado}>
+      <div className="laudo-fields" onKeyDown={navTeclado}>
 
       {/* ═══ ALERTAS DO MOTOR (F3 Task 2) ═══
           Os alertas estruturados chegavam pela
@@ -309,60 +297,51 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
       {/* ═══ IDENTIFICAÇÃO ═══ */}
       <Sec id="sec-id" title="Identificação" defaultOpen single>
         {exameAcc && (
-          <div className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-[#F1F5F9] p-3">
-            <div className="text-[11px] text-[#526277] font-medium">
-              ACC
-            </div>
+          <div className="laudo-nota mb-2 flex items-center justify-between gap-3">
+            <span className="font-medium">ACC</span>
             <button
               type="button"
               onClick={() => { navigator.clipboard.writeText(exameAcc); }}
               title="Clique para copiar"
-              className="min-w-0 break-all font-mono text-[13px] font-medium text-[#1E3A5F] hover:bg-blue-100 px-1.5 py-0.5 rounded transition cursor-pointer text-right"
+              className="min-w-0 break-all font-mono text-[12px] font-medium hover:bg-[#D6E2F1] px-1.5 py-0.5 rounded transition cursor-pointer text-right"
             >
               {exameAcc}
             </button>
           </div>
         )}
         {idBloqueado && exameOrigem === 'FEEGOW' && (
-          <div className="mb-2 rounded-lg border border-purple-300 bg-purple-50 p-2.5">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-purple-600 text-sm">🔗</span>
-              <span className="text-[10.5px] text-purple-700 font-semibold flex-1">Veio do Feegow — laudo emitido</span>
-            </div>
-            <p className="text-[9.5px] text-purple-600">🔒 <b>Nome e datas</b> travados (segurança). <b>Convênio e médico solicitante:</b> corrija aqui e clique &quot;Salvar correção&quot; — <b>sem custo</b>. Editar no Feegow <b>não</b> atualiza este exame.</p>
+          <div className="laudo-nota mb-2">
+            <p className="flex items-center gap-1.5 font-medium"><EditorIcon name="link" /> Veio do Feegow · laudo emitido</p>
+            <p className="mt-1 text-[#526277]">Nome e datas travados. Convênio e médico solicitante: corrija aqui e clique em &quot;Salvar correção&quot;, sem custo. Editar no Feegow não atualiza este exame.</p>
           </div>
         )}
         {idBloqueado && exameOrigem !== 'FEEGOW' && (
-          <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-amber-600 text-sm">🔒</span>
-              <span className="text-[10.5px] text-amber-700 font-semibold flex-1">Laudo já emitido</span>
-            </div>
-            <p className="text-[9.5px] text-amber-600 mb-2">🔒 <b>Nome e datas:</b> desbloqueie p/ corrigir (consome 1 crédito). <b>Convênio e médico solicitante:</b> corrija aqui e &quot;Salvar correção&quot; — <b>sem custo</b>.</p>
-            <button onClick={handleDesbloquearId} disabled={feegowLoading}
-              className="w-full py-1.5 rounded-md bg-amber-500 text-white text-[10.5px] font-semibold hover:bg-amber-600 transition disabled:opacity-50">
-              {feegowLoading ? '⏳ Consultando Feegow...' : '🔓 Desbloquear nome/datas (1 crédito)'}
+          <div className="laudo-nota mb-2 border-l-[#D97706] text-[#92400E]">
+            <p className="flex items-center gap-1.5 font-medium"><EditorIcon name="lock" /> Laudo já emitido</p>
+            <p className="mt-1">Nome e datas: desbloqueie para corrigir (consome 1 crédito). Convênio e médico solicitante: corrija aqui e clique em &quot;Salvar correção&quot;, sem custo.</p>
+            <button type="button" onClick={handleDesbloquearId} disabled={feegowLoading}
+              className="laudo-command-secondary mt-2 w-full border-[#FCD34D] text-[#92400E] disabled:opacity-50">
+              {feegowLoading ? 'Consultando Feegow…' : 'Desbloquear nome e datas (1 crédito)'}
             </button>
           </div>
         )}
-        <F label={idBloqueado ? '🔒 Nome completo' : 'Nome completo'}><input type="text" id="nome" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
+        <F label="Nome completo"><input type="text" id="nome" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
         <div className="grid grid-cols-2 gap-x-3 gap-y-[7px] mt-[7px]">
-          <F label={idBloqueado ? '🔒 Data de nascimento' : 'Data de nascimento'}><input type="date" id="dtnasc" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
+          <F label="Data de nascimento"><input type="date" id="dtnasc" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
           {/* nº6: SEM defaultValue — com o default fixo em "hoje" o campo
               nascia preenchido e `preencherExame()` (que só escreve campo
               VAZIO) nunca sobrescrevia com a data real do exame salvo.
               Vazio no mount → preencherExame cai em exame.dataExame, com
               fallback pra dataLocalHoje() só quando o exame não tem data. */}
-          <F label={idBloqueado ? '🔒 Data do exame' : 'Data do exame'}><input type="date" id="dtexame" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
+          <F label="Data do exame"><input type="date" id="dtexame" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
         </div>
         {/* E (17/05): convênio + solicitante editáveis MESMO em emitido,
             sem crédito. Identidade (nome/datas acima) segue travada. */}
         <F label="Convênio"><input type="text" id="convenio" className="sf" /></F>
         <F label="Médico solicitante"><input type="text" id="solicitante" className="sf" /></F>
         {readOnlyIdentificacao && onCorrigirAdmin && (
-          <button type="button" onClick={onCorrigirAdmin}
-            className="w-full mt-2 py-1.5 rounded-md bg-emerald-600 text-white text-[10.5px] font-semibold hover:bg-emerald-700 transition">
-            💾 Salvar correção (convênio/solicitante) — sem custo
+          <button type="button" onClick={onCorrigirAdmin} className="laudo-command-secondary mt-2 w-full">
+            <EditorIcon name="save" /> Salvar correção (convênio e solicitante), sem custo
           </button>
         )}
       </Sec>
