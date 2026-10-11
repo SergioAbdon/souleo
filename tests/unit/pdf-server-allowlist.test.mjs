@@ -11,7 +11,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { urlPermitidaNoRender } from '../../src/lib/pdf-server.ts';
+import { urlPermitidaNoRender, temImagemNaoAssinada } from '../../src/lib/pdf-server.ts';
 
 describe('urlPermitidaNoRender', () => {
   test('allowlist do render: so data: e bucket — fontes saem (P8 follow-up, embutidas)', () => {
@@ -47,5 +47,26 @@ describe('renderizar: interceptação vem antes do setContent', () => {
 
   test('JS da página desligado', () => {
     assert.ok(src.includes('setJavaScriptEnabled(false)'));
+  });
+});
+
+// Achado 11/10 (carótidas fg-69204): a URL assinada começa com o MESMO prefixo
+// da canônica — o guard por `includes(prefixo)` abortava todo PDF com imagem.
+describe('temImagemNaoAssinada — só a canônica NUA conta como não assinada', () => {
+  const b = 'meu-bucket';
+  const canon = 'https://storage.googleapis.com/meu-bucket/dicom/ws/ex/1.jpg';
+  const assinada = canon + '?GoogleAccessId=sa%40p.iam.gserviceaccount.com&Expires=1&Signature=abc%3D';
+  test('HTML só com URLs assinadas → false (PDF segue)', () => {
+    assert.equal(temImagemNaoAssinada(`<img src="${assinada}" /><img src='${assinada}'/>`, b), false);
+  });
+  test('uma canônica nua sobrando → true (aborta)', () => {
+    assert.equal(temImagemNaoAssinada(`<img src="${assinada}" /><img src="${canon}" />`, b), true);
+  });
+  test('sem imagem do bucket → false; outro bucket não conta', () => {
+    assert.equal(temImagemNaoAssinada('<p>sem imagem</p>', b), false);
+    assert.equal(temImagemNaoAssinada('<img src="https://storage.googleapis.com/outro/dicom/x.jpg">', b), false);
+  });
+  test('assinatura v4 (?X-Goog-…) também é assinada', () => {
+    assert.equal(temImagemNaoAssinada(`<img src="${canon}?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Signature=a">`, b), false);
   });
 });

@@ -266,6 +266,9 @@ export async function POST(req: NextRequest) {
         } catch (e) {
           pdfErro = 'erro_pdf';   // P10: detalhe (bucket/path) so no log do servidor
           console.error('PDF anexo save error:', e);
+        // Achado 11/10: o detalhe do erro so existia no console da Vercel (sem
+        // acesso daqui) — grava tambem na colecao logs (Admin SDK, nunca vai ao cliente).
+        try { await dbAdmin.collection('logs').add({ tipo: 'pdf_erro', origem: 'anexo', wsId, exameId, emissaoKey, medicoUid, erro: String(e).slice(0, 500), ts: FieldValue.serverTimestamp() }); } catch { /* log nao pode quebrar emissao */ }
           // P4/E4: a emissao JA cobrou. Sem HTML aqui (e anexo pronto) — nao ha
           // o que congelar em snapshot, so a marca no doc pra tela deixar de
           // mentir que o laudo emitido tem PDF. Round 3 (Codex Important,
@@ -318,6 +321,9 @@ export async function POST(req: NextRequest) {
       } catch (e) {
         pdfErro = 'erro_pdf';   // P10: detalhe so no log do servidor
         console.error('PDF gen error:', e);
+        // Achado 11/10: o detalhe do erro so existia no console da Vercel (sem
+        // acesso daqui) — grava tambem na colecao logs (Admin SDK, nunca vai ao cliente).
+        try { await dbAdmin.collection('logs').add({ tipo: 'pdf_erro', origem: 'html', wsId, exameId, emissaoKey, medicoUid, erro: String(e).slice(0, 500), ts: FieldValue.serverTimestamp() }); } catch { /* log nao pode quebrar emissao */ }
         // P4/E4: a emissao JA cobrou. Congela o snapshot (sem ele a correcao
         // administrativa deste exame morre pra sempre) e deixa marca no doc —
         // a tela passa a ver o laudo emitido-sem-PDF em vez de ninguem saber.

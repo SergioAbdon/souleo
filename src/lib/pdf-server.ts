@@ -49,6 +49,29 @@ export function urlPermitidaNoRender(url: string, bucketName: string): boolean {
 // moldura, novo ou legado); se um pdfHtml malformado não tiver `</head>`, o
 // replace vira no-op e o PDF sai em fallback — mesmo comportamento seguro de
 // antes (CDN fora do ar), nunca uma falha dura.
+/**
+ * Alguma imagem DICOM do bucket ficou SEM assinatura no HTML? Só conta a URL
+ * canônica "nua" (sem query). A assinada (`getSignedUrl`) começa com o MESMO
+ * prefixo `https://storage.googleapis.com/<bucket>/dicom/…` e segue com
+ * `?GoogleAccessId=…` — o guard antigo (`includes(prefixo)`) a confundia com
+ * canônica e abortava TODO PDF com imagem (achado 11/10, carótidas fg-69204:
+ * 10/10 assinadas e mesmo assim "imagem não assinada — PDF abortado").
+ */
+const DELIMITADORES_URL = new Set(['"', "'", ' ', String.fromCharCode(10), String.fromCharCode(13), String.fromCharCode(9), '<', '>']);
+export function temImagemNaoAssinada(html: string, bucketName: string): boolean {
+  const prefixo = `https://storage.googleapis.com/${bucketName}/dicom`;
+  let i = html.indexOf(prefixo);
+  while (i !== -1) {
+    const fim = i + prefixo.length;
+    // avança até o fim da URL (delimitador de atributo/espaço) e vê se ela tem query
+    let j = fim;
+    while (j < html.length && !DELIMITADORES_URL.has(html[j])) j++;
+    if (!html.slice(fim, j).includes('?')) return true;
+    i = html.indexOf(prefixo, j);
+  }
+  return false;
+}
+
 export function injetarFontes(html: string): string {
   return html.includes('</head>') ? html.replace('</head>', `<style>${CSS_FONTES}</style></head>`) : html;
 }
@@ -83,7 +106,7 @@ export async function gerarESalvarPdf(
   // cobre as duas formas.
   // P4/E4: a esta altura a emissão JÁ foi cobrada — o texto antigo ("emissão
   // abortada") mentia dizendo que nada tinha acontecido.
-  if (htmlAssinado.includes(`https://storage.googleapis.com/${bucket.name}/dicom`)) {
+  if (temImagemNaoAssinada(htmlAssinado, bucket.name)) {
     throw new Error('imagem não assinada — PDF abortado');
   }
   // Fontes embutidas (ver injetarFontes acima) — depois da assinatura de
