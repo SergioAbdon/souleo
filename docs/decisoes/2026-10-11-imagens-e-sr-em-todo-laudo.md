@@ -82,6 +82,9 @@ hashear o HTML deixava trocar o PDF por fora da trava); `handleDesbloquear` do E
 `emissaoKeyRef` (reedição = intenção nova; sem isso um 409 virava 409 pra sempre); o modal de PDF
 anexado zera a key ao receber `conteudo_divergente`; pin de fonte da rota em
 `tests/unit/emitir-rota-conteudo-pin` (qual conteúdo é hasheado, guard antes de cobrar, 409 no mapa).
+Rodada 2 do Codex (dbfbc20): `pdfBase64 ?? pdfHtml` deixava `pdfBase64: ''` entrar no hash enquanto a
+rota publicava o HTML — agora o hash usa o MESMO predicado truthy do ramo de publicação, e o pin proíbe
+`??` ali. **Veredito final do Codex: APPROVED** ("refutado, sem achado restante").
 
 ## Pendente
 
