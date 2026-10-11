@@ -107,4 +107,6 @@ valia pro estado emitido inteiro, e eu tinha deixado o `ModoEmitido` de fora por
 
 ## Pendente
 
+- ~~1º laudo de texto emitido com imagens~~ FEITO 11/10 20:05 UTC: fg-69146, 14 imagens, PDF 6,1 MB.
+- fg-69204 (Marcia) ainda tem o pdfErro e o PDF antigo da tentativa de 18:08: reemitir.
 - 1º laudo de texto emitido com imagens na clínica confirma o PDF com dados reais.

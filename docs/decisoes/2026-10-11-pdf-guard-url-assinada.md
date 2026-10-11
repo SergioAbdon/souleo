@@ -1,6 +1,6 @@
 # PDF abortava em toda emissão com imagem — guard de URL assinada (11/10/2026)
 
-**Status:** correção no branch `claude/pdf-guard-url-assinada`, aguardando aval do Sergio para publicar.
+**Status:** NO AR (merge 6703a22, aval do Sergio). **Confirmado com dado real** em 11/10 às 20:05 UTC: carótidas fg-69146 (14 imagens) emitido pelo Sergio, PDF de 6,1 MB publicado, sem pdfErro; zero registros `pdf_erro` desde o deploy.
 **Gatilho:** Sergio emitiu o laudo de carótidas fg-69204 em produção e recebeu "Laudo emitido com
 sucesso! (Aviso: o PDF falhou ao gerar — reemita ou contate o suporte.)".
 
@@ -41,7 +41,6 @@ guard novo: não aborta, PDF de 3,8 MB em 6 s.
 
 ## Pendente
 
-- Aval para publicar.
 - Causa das falhas de PDF **sem imagem** (desde 31/08): precisa do log da Vercel (`npx vercel login`
   nesta máquina, ou copiar a linha "PDF gen error" do painel). Com o log novo em `logs`, a próxima
   emissão que falhar já diz o motivo.
