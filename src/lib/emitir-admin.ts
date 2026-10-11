@@ -46,6 +46,7 @@ import { podeGirar, proximoCicloFim, vigente } from './ciclo';
 // tests/api/emitir-idempotencia.test.mjs continuam importando daqui, sem
 // mudar chamador nenhum.
 import { emissaoKeyValida } from './pdf-path';
+import { sanearSelecaoImagens } from './imagens-selecao';
 export { emissaoKeyValida };
 
 // Gaveta server-only do estado de idempotencia (mesmo formato do shadow:
@@ -148,6 +149,9 @@ const CAMPOS_DADOS_FINAIS = new Set([
   // com a emissao pra sobreviver a reabertura do laudo (antes so vivia em
   // memoria, resetava pro default a cada F5/reload).
   'incluirImagensNoPdf',
+  // Spec 2026-10-11-imagens-e-sr: a lista de imagens do PDF viaja junto com a
+  // emissao (ECO e texto) e e saneada contra exame.imagensDicom logo abaixo.
+  'imagensSelecionadasPdf',
   // `cfgSnapshot` SAIU (tríade onda-4, Ponytail item 7): nunca foi lido nem
   // mandado por nenhum dos 3 clientes (Task 17/X3 já tinha matado o campo em
   // types.ts) — a whitelist ainda aceitava um campo morto.
@@ -378,9 +382,15 @@ export async function emitirComCobranca(db: Firestore, p: {
     // identificacaoAlterada (M3) — qualquer chave fora de CAMPOS_DADOS_FINAIS
     // e descartada, entao os dois carimbos de auditoria (e pdfUrl, status,
     // emitidoEm, acc, cpf, medicoUid...) somem daqui junto, de graca.
-    const dadosFinaisPermitidos = Object.fromEntries(
+    const dadosFinaisPermitidos: Record<string, unknown> = Object.fromEntries(
       Object.entries(p.dadosFinais).filter(([k]) => CAMPOS_DADOS_FINAIS.has(k)),
     );
+    // Seleção de imagens: só o que pertence a ESTE exame (imagens-selecao.ts).
+    if ('imagensSelecionadasPdf' in dadosFinaisPermitidos) {
+      const limpa = sanearSelecaoImagens(dadosFinaisPermitidos.imagensSelecionadasPdf, exame.imagensDicom);
+      if (limpa === null) delete dadosFinaisPermitidos.imagensSelecionadasPdf;
+      else dadosFinaisPermitidos.imagensSelecionadasPdf = limpa;
+    }
 
     // Caneta do autor (D2): laudo com autor definido so o proprio emite —
     // igual a regra publicada ("autor ou sem autor"). Sem autor pode assumir.

@@ -24,6 +24,7 @@ import { useEffect, useState } from 'react';
 import { auth } from '@/lib/firebase';
 // Mesmo escape da moldura do PDF — estas páginas viram HTML do laudo assinado.
 import { escaparHtml } from '@/lib/html-escape';
+import { renderPaginas } from '@/lib/pdf-imagens';
 
 // Cache do mapa {url canônica → url assinada} por exame. As assinadas valem
 // 1h (imagens-dicom-admin.ts); expiramos com folga em 45min pra galeria
@@ -71,54 +72,10 @@ export async function buscarUrlsAssinadas(
   }
 }
 
-/**
- * Quebra um array de URLs em páginas de 8 (2 cols × 4 lin) e gera HTML.
- * Usado pelo `imprimirSelecao()` no Gallery e pelo `gerarPdfHtml()` no
- * page.tsx — exportada pra reuso.
- *
- * SEMPRE 8 slots por página: se N não for múltiplo de 8, última página
- * fica com slots vazios (invisíveis no print). Decisão 15/05/2026 (Sergio):
- * "PAGINAS SEMPRE SEJAM MULTIPLOS DE 8".
- *
- * FIX 15/05/2026: usa `minmax(0, 1fr)` em vez de `1fr` puro nas linhas do
- * grid. Sem o `minmax(0, ...)`, o conteúdo da imagem (com aspect ratio 4:3
- * grande) pode forçar a linha a esticar além do 1/4 da página, fazendo
- * Chrome reposicionar pra 3 linhas/A4 (bug que aconteceu antes — saía 6
- * imgs em vez de 8). `min-height: 0` no slot reforça.
- */
-export function renderPaginas(urls: string[], pacienteNome?: string, tipoExame?: string): string {
-  if (urls.length === 0) return '';
-  const POR_PAGINA = 8;
-  const paginas: string[][] = [];
-  for (let i = 0; i < urls.length; i += POR_PAGINA) {
-    const pg = urls.slice(i, i + POR_PAGINA);
-    // Pad com strings vazias pra ter SEMPRE 8 slots (decisão 15/05/2026)
-    while (pg.length < POR_PAGINA) pg.push('');
-    paginas.push(pg);
-  }
-  // Escapado (fix2 do I4): estas páginas entram no PDF (`htmlPosTabela`) e são
-  // renderizadas pelo Chrome do servidor, numa página com as signed URLs das
-  // imagens do paciente. `pacienteNome`/`tipoExame` são graváveis pela
-  // recepção (whitelist administrativa) e aqui NÃO passam por toUpperCase —
-  // um `<img src=x onerror=…>` rodava inteiro.
-  const cabec = escaparHtml([pacienteNome, tipoExame].filter(Boolean).join(' · '));
-  return paginas
-    .map(
-      (pgUrls, pgIdx) => `<div class="pagina">
-${cabec ? `<h1>📸 Imagens DICOM — ${cabec} (página ${pgIdx + 1} de ${paginas.length})</h1>` : ''}
-<div class="grid">
-${pgUrls
-  .map((url, i) => {
-    if (!url) return '<div class="slot slot-vazio"></div>'; // slot vazio invisível
-    const num = pgIdx * POR_PAGINA + i + 1;
-    return `<div class="slot"><img src="${url}" alt="Imagem ${num}" /><span class="num">${num}</span></div>`;
-  })
-  .join('\n')}
-</div>
-</div>`,
-    )
-    .join('\n');
-}
+// renderPaginas/renderPaginasPdf vivem em src/lib/pdf-imagens.ts (sem React):
+// o laudo de texto e os testes unitários usam de lá; aqui só o re-export
+// pro chamador histórico (laudo/[id]/page.tsx).
+export { renderPaginas, renderPaginasPdf } from '@/lib/pdf-imagens';
 
 type Props = {
   /** URLs canônicas das imagens no Storage. Vazio/undefined = modal não renderiza. */

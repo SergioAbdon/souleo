@@ -17,7 +17,7 @@ import { dataLocalHoje } from '@/lib/utils';
 // gerarESalvarPdf legado removido — emissao + PDF agora sao server-side em /api/emitir
 import SidebarLaudo from '@/components/laudo/SidebarLaudo';
 import SheetA4 from '@/components/laudo/SheetA4';
-import DicomGallery, { buscarUrlsAssinadas, renderPaginas } from '@/components/laudo/DicomGallery';
+import DicomGallery, { buscarUrlsAssinadas, renderPaginasPdf } from '@/components/laudo/DicomGallery';
 import DicomSrImport from '@/components/laudo/DicomSrImport';
 import { normalizarParaImport, prefixoArquivoPorTipo, isSchemaAntigo, InputImport, MedidaSr, MapaSr, SR_TO_MOTOR } from '@/lib/dicom-sr-mapping';
 import { carregarPerfilAparelho } from '@/lib/perfil-aparelho';
@@ -1547,6 +1547,9 @@ function LaudoPageInner() {
       // X2 (Task 17): persiste a escolha do toggle "incluir imagens" — sem
       // isso o state resetava pro default (true) a cada reload/reabertura.
       incluirImagensNoPdf: incluirImagens,
+      // Codex 11/10: a seleção viaja JUNTO com PDF, snapshot e cobrança (antes
+      // dependia do autosave da galeria — que no emitido a regra agora nega).
+      imagensSelecionadasPdf,
       // nº5: pacienteNome NÃO reentra aqui — `...identificacao` (acima) já
       // traz o nome atual do DOM. A linha antiga sobrescrevia com
       // `exame.pacienteNome` (valor STALE do servidor) sempre que existia,
@@ -1824,20 +1827,10 @@ function LaudoPageInner() {
     // "Imagens DICOM —"); a versão da galeria é o padrão-ouro (ver relatório
     // da task). O CSS aqui só re-branda com a cor da clínica (p1) e usa
     // page-break-before (a folha do laudo já terminou antes desta seção).
-    let imagensPdfHtml = '';
-    if (incluirImagens && imagensSelecionadasPdf.length > 0) {
-      const tipoLabel = (exame?.tipoExame as string | undefined) || '';
-      const pgsHtml = renderPaginas(imagensSelecionadasPdf, outNome, tipoLabel);
-      imagensPdfHtml = `<style>
-.pagina{page-break-before:always;display:flex;flex-direction:column;height:calc(100vh - 16mm);padding:8mm;font-family:"IBM Plex Sans",sans-serif;}
-.pagina h1{font-size:11pt;font-weight:700;color:${p1};margin-bottom:3mm;padding-bottom:2mm;border-bottom:1.5px solid ${p1};flex-shrink:0;}
-.grid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(4, minmax(0, 1fr));gap:3mm;min-height:0;}
-.slot{background:#000;border-radius:2px;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;min-height:0;}
-.slot-vazio{background:transparent;}
-.slot img{max-width:100%;max-height:100%;width:auto;height:auto;display:block;object-fit:contain;}
-.slot .num{position:absolute;bottom:2mm;right:2mm;background:rgba(0,0,0,.7);color:#fff;font-size:7.5pt;font-weight:600;padding:1mm 2mm;border-radius:2px;}
-</style>${pgsHtml}`;
-    }
+    // Páginas de imagem (CSS + grade 8/A4) — mesma função do laudo de texto.
+    const imagensPdfHtml = incluirImagens
+      ? renderPaginasPdf(imagensSelecionadasPdf, outNome, (exame?.tipoExame as string | undefined) || '', p1)
+        : '';
 
     // S5-T10 (D6): a folha A4 é UMA só — `montarPdfMoldura` monta
     // cabeçalho/identificação/rodapé pro motor e pro laudo-texto. Aqui só

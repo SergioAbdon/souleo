@@ -594,6 +594,17 @@ describe('12. trava do CRM (ato medico) — Plano 2B-B1', () => {
   test('medico autor edita o conteudo do proprio laudo emitido (status intacto)', async () => {
     await assertSucceeds(updateDoc(doc(como(DR_C), `workspaces/${LOCAL_C}/exames`, 'exCemitido'), { conclusoes: 'ok' }));
   });
+  // Spec 2026-10-11-imagens-e-sr: no emitido a galeria e so leitura; a lista
+  // de imagens do PDF so muda pelo servidor, dentro da reemissao. Payload
+  // identico ao autosave da galeria (saveExame: campo + atualizadoEm).
+  test('medico autor NAO troca imagensSelecionadasPdf do proprio laudo emitido', async () => {
+    await assertFails(updateDoc(doc(como(DR_C), `workspaces/${LOCAL_C}/exames`, 'exCemitido'),
+      { imagensSelecionadasPdf: ['ws/ex/a.jpg'], atualizadoEm: new Date() }));
+  });
+  test('medico autor troca imagensSelecionadasPdf em rascunho (autosave da galeria)', async () => {
+    await assertSucceeds(updateDoc(doc(como(DR_A), `workspaces/${LOCAL_A1}/exames`, 'exComAutor'),
+      { imagensSelecionadasPdf: ['ws/ex/a.jpg'], atualizadoEm: new Date() }));
+  });
   test('medico autor NAO reabre o proprio laudo emitido (E22)', async () => {
     await assertFails(updateDoc(doc(como(DR_C), `workspaces/${LOCAL_C}/exames`, 'exCemitido'), { conclusoes: 'ok', status: 'andamento' }));
   });

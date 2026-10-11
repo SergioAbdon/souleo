@@ -20,6 +20,10 @@ import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
 import MolduraA4 from '@/components/laudo/MolduraA4';
 import EditorIcon from '@/components/laudo/EditorIcon';
 import CabecalhoLaudo from '@/components/laudo/CabecalhoLaudo';
+import DicomGallery from '@/components/laudo/DicomGallery';
+import { renderPaginasPdf } from '@/lib/pdf-imagens';
+import { PopupSalvarEmitir } from '@/components/laudo/PopupEmitir';
+import { precisaConfirmarEmissao, SEM_SELECAO_PREFIXO } from '@/lib/emissao-guarda';
 import { gerarPdfHtmlTexto } from '@/lib/pdf-texto';
 import { corSegura } from '@/lib/html-escape';
 import { idadeLabel, fmtData, fmtCep, fmtTel } from '@/lib/paciente-fmt';
@@ -32,6 +36,14 @@ export default function LaudoTextoPage() {
   const [tipo, setTipo] = useState<TipoLaudo | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [emitindo, setEmitindo] = useState(false);
+  // Imagens DICOM (spec 2026-10-11-imagens-e-sr): mesmo padrão de emissão do
+  // ECO — galeria com seleção no rascunho (só leitura no emitido), popup com
+  // "Incluir imagens DICOM", páginas no PDF, seleção persistida no exame.
+  // ponytail: estado inline (3ª cópia vira hook quando o ECO migrar pra ele).
+  const [galeriaOpen, setGaleriaOpen] = useState(false);
+  const [popupOpen, setPopupOpen] = useState(false);
+  const [imagensSelecionadasPdf, setImagensSelecionadasPdf] = useState<string[]>([]);
+  const [incluirImagensNoPdf, setIncluirImagensNoPdf] = useState(true);
   const editorRef = useRef<EditorLaudoRef>(null);
   const pendingHtml = useRef<string | null>(null);
   // S7-T0.3 (E1): mesma trava do laudo do motor — chave por TENTATIVA de
@@ -100,6 +112,14 @@ export default function LaudoTextoPage() {
     (async () => {
       const ex = await getExame(workspace.id, exameId) as Record<string, unknown> | null;
       setExame(ex);
+      // Seleção inicial = a gravada (filtrada pelas imagens que existem) ou as
+      // primeiras 8, como no ECO. ponytail: getExame é foto única — imagem que
+      // o Wader grava com a tela aberta só aparece após recarregar; onSnapshot
+      // quando o médico sentir falta.
+      const todas = (ex?.imagensDicom as string[] | undefined) || [];
+      const salvas = ex?.imagensSelecionadasPdf;
+      setImagensSelecionadasPdf(Array.isArray(salvas) ? (salvas as string[]).filter((u) => todas.includes(u)) : todas.slice(0, 8));
+      setIncluirImagensNoPdf((ex?.incluirImagensNoPdf as boolean | undefined) ?? true);
       const tipoId = (ex?.tipoExame as string) || '';
       let t: TipoLaudo | null = null;
       try {
@@ -187,16 +207,41 @@ export default function LaudoTextoPage() {
     toast(ok ? 'Rascunho salvo' : 'Erro ao salvar rascunho');
   }
 
-  async function handleEmitir() {
+  // Toggle de uma imagem pro PDF — autosave como no ECO (ordem = ordem do clique).
+  // No emitido a galeria nem oferece o toggle (permitirSelecao=false) e a regra
+  // do Firestore nega a gravação; a guarda aqui é o cinto.
+  async function handleToggleSelecaoImagem(url: string) {
+    if (!workspace?.id || !user?.uid || docFechado) return;
+    const nova = imagensSelecionadasPdf.includes(url)
+      ? imagensSelecionadasPdf.filter((u) => u !== url)
+      : [...imagensSelecionadasPdf, url];
+    setImagensSelecionadasPdf(nova);
+    try {
+      await saveExame(workspace.id, { id: exameId, imagensSelecionadasPdf: nova }, user.uid);
+    } catch (e) {
+      console.warn('Falha ao salvar seleção de imagens:', e);
+    }
+  }
+
+  async function handleEmitir(incluirImagens: boolean) {
     if (!workspace?.id || !user?.uid || !exame) return;
+    setPopupOpen(false);
     const jaEmitido = (exame.status as string) === 'emitido';
-    const msg = jaEmitido
-      ? 'Reemitir o laudo? Uma NOVA franquia será consumida (1 laudo).'
-      : 'Emitir o laudo? A emissão consome 1 laudo da franquia.';
-    if (!confirm(msg)) return;
+    if (jaEmitido && !confirm('Reemitir o laudo? Uma NOVA franquia será consumida (1 laudo).')) return;
+    // Mesma guarda clínica do ECO: imagens que não chegaram / nada selecionado.
+    const pendenciaDicom = precisaConfirmarEmissao(exame, imagensSelecionadasPdf);
+    if (pendenciaDicom && !confirm(
+      pendenciaDicom.startsWith(SEM_SELECAO_PREFIXO)
+        ? `${pendenciaDicom}. Emitir mesmo assim?`
+        : `Imagens do exame ainda não chegaram ou falharam (${pendenciaDicom}). Emitir mesmo assim?`
+    )) return;
+    setIncluirImagensNoPdf(incluirImagens);
     setEmitindo(true);
 
     const laudoTextoHtml = editorRef.current?.getHTML() || '';
+    const paginasImagens = incluirImagens
+      ? renderPaginasPdf(imagensSelecionadasPdf, (exame.pacienteNome as string) || '', (exame.tipoExame as string) || '', p1)
+      : '';
 
     const pdfHtml = gerarPdfHtmlTexto({
       p1,
@@ -214,6 +259,7 @@ export default function LaudoTextoPage() {
         dataExame: (exame.dataExame as string) || '',
       },
       htmlCorpo: laudoTextoHtml,
+      htmlPosTabela: paginasImagens,
       assinatura: {
         nome: (profile?.nome as string) || '',
         especialidade: (profile?.especialidade as string) || '',
@@ -238,6 +284,8 @@ export default function LaudoTextoPage() {
             pacienteNome: (exame.pacienteNome as string) || '',
             tipoExame: (exame.tipoExame as string) || '',
             convenio: (exame.convenio as string) || '',
+            incluirImagensNoPdf: incluirImagens,
+            imagensSelecionadasPdf,
             // `reemissao` não vai mais no corpo — o servidor deriva sozinho
             // (exameSnap × dadosFinais na transação); mandar o flag daqui só
             // reabriria o canal que o achado E3 fechou do lado do cliente.
@@ -289,12 +337,22 @@ export default function LaudoTextoPage() {
       <div className="laudo-coluna">
         <CabecalhoLaudo titulo={tipo?.nome || (exame?.tipoExame as string) || 'Laudo'} clinicaNome={clinicaNome} medicoInfo={medicoInfo} onVoltar={() => router.push('/agenda')} />
         <div className="laudo-command-line">
+          {(() => {
+            const total = ((exame?.imagensDicom as string[] | undefined) || []).length;
+            return (
+              <button onClick={() => setGaleriaOpen(true)} disabled={total === 0}
+                title={total > 0 ? `Ver ${total} imagens DICOM do exame` : 'Sem imagens DICOM ainda — aguarde Wader processar'}
+                className={`laudo-command-secondary ${total > 0 ? '' : 'bg-gray-200 text-gray-500'}`}>
+                <EditorIcon name="image" /> {total > 0 ? `Imagens (${total})` : 'Imagens'}
+              </button>
+            );
+          })()}
           <button onClick={handleSalvarRascunho} disabled={salvando || emitindo || docFechado}
             title={docFechado ? 'Laudo emitido — para alterar, use "Reemitir"' : undefined}
             className="laudo-command-secondary">
             <EditorIcon name="save" /> {salvando ? 'Salvando…' : 'Salvar rascunho'}
           </button>
-          <button onClick={handleEmitir} disabled={salvando || emitindo} className="laudo-command-primary">
+          <button onClick={() => setPopupOpen(true)} disabled={salvando || emitindo} className="laudo-command-primary">
             <EditorIcon name="check" /> {emitindo ? 'Emitindo…' : (exame?.status === 'emitido' ? 'Reemitir (consome 1 franquia)' : 'Emitir laudo')}
           </button>
         </div>
@@ -349,6 +407,26 @@ export default function LaudoTextoPage() {
             onDirty={() => { dirtyRef.current = true; }} />
         </MolduraA4>
       </div>
+      <PopupSalvarEmitir
+        open={popupOpen}
+        onClose={() => setPopupOpen(false)}
+        onRascunho={() => { setPopupOpen(false); handleSalvarRascunho(); }}
+        onEmitir={handleEmitir}
+        totalImagensSelecionadas={imagensSelecionadasPdf.length}
+        incluirImagensInicial={incluirImagensNoPdf}
+      />
+      <DicomGallery
+        open={galeriaOpen}
+        onClose={() => setGaleriaOpen(false)}
+        imagens={(exame?.imagensDicom as string[] | undefined) || []}
+        wsId={workspace?.id}
+        exameId={exameId}
+        pacienteNome={exame?.pacienteNome as string | undefined}
+        tipoExame={exame?.tipoExame as string | undefined}
+        permitirSelecao={!docFechado}
+        selecionadas={imagensSelecionadasPdf}
+        onToggleSelecao={docFechado ? undefined : handleToggleSelecaoImagem}
+      />
       <style jsx global>{`
         .laudo-texto-workspace .tiptap h2{font-size:10.5pt;font-weight:600;color:${p1};margin:2mm 0 1.5mm;}
         .laudo-texto-workspace .tiptap h3{font-size:9.5pt;font-weight:600;color:${p1};margin:2.5mm 0 1mm;}
