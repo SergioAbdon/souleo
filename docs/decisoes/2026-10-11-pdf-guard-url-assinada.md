@@ -34,6 +34,8 @@ Codex (verificação adversarial, 3ac7cab): qualquer `?` passava como assinatura
 
 Codex rodada 2: assinatura precisa ter valor (v2 = GoogleAccessId + Expires + Signature; v4 = X-Goog-Signature), e uma imagem DICOM que o Chrome não consiga carregar (403/404/rede) agora aborta o PDF em vez de sair em branco; console.error também sem query. unit 789/789.
 
+Codex rodada 3: imagem que responde 200 mas vem vazia (naturalWidth 0) também aborta — `page.evaluate` funciona com o JS da página desligado (conferido com o exame real: 8/8 carregadas, 1016 px).
+
 Verificação: `tsc` limpo · unit 789/789 · visual carótidas 3/3 · reprodução local do fg-69204 com o
 guard novo: não aborta, PDF de 3,8 MB em 6 s.
 
