@@ -311,8 +311,12 @@ export default function LaudoTextoPage() {
         exame_de_outro_medico: 'Este laudo é de outro médico. Peça a transferência ao responsável.',
         nao_encontrado: 'Exame não encontrado. Recarregue a lista.',
         cancelado: 'Este laudo foi cancelado. Emitir de novo exige recriar o exame.',
+        conteudo_divergente: 'Este laudo já foi emitido com o conteúdo anterior. Para alterar, use Editar e reemita.',
       };
       alert(msgs[resultado.motivo || ''] || 'Erro ao emitir. Tente novamente.');
+      // Esta tela carrega o exame uma vez (getExame): recarrega pra mostrar
+      // o laudo como emitido, com Reemitir — senão o próximo clique repete o 409.
+      if (resultado.motivo === 'conteudo_divergente') window.location.reload();
       return;
     }
 

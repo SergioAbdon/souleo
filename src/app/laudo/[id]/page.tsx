@@ -1634,6 +1634,7 @@ function LaudoPageInner() {
         exame_de_outro_medico: 'Este laudo e de outro medico. Peca a transferencia ao responsavel.',
         nao_encontrado: 'Exame nao encontrado. Recarregue a lista.',
         cancelado: 'Este laudo foi cancelado. Emitir de novo exige recriar o exame.',
+        conteudo_divergente: 'Este laudo já foi emitido com o conteúdo anterior. Para alterar, use Editar e reemita.',
         erro: 'Erro ao emitir. Tente novamente.',
       };
       toast(msgs[resultado.motivo || 'erro'] || 'Erro ao emitir.');

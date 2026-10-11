@@ -84,6 +84,8 @@ export function refEmissaoPrivada(db: Firestore, wsId: string, exameId: string) 
 export type GavetaEmissao = {
   emissaoKey?: string;
   pdfPendente?: boolean;
+  /** sha256 do conteúdo (pdfHtml ou pdfBase64) da tentativa VENCEDORA — ver replay abaixo. */
+  conteudoHash?: string;
   snapshotSufixado?: boolean;
   identidade?: Record<string, string>;
 };
@@ -97,7 +99,8 @@ export async function lerGavetaEmissao(db: Firestore, wsId: string, exameId: str
 }
 
 export type MotivoEmissao =
-  | 'sem_plano' | 'nao_encontrado' | 'exame_de_outro_medico' | 'expirado' | 'sem_saldo' | 'cancelado';
+  | 'sem_plano' | 'nao_encontrado' | 'exame_de_outro_medico' | 'expirado' | 'sem_saldo' | 'cancelado'
+  | 'conteudo_divergente';
 
 export type ResultadoEmissao =
   // `pdfPendente`: o PDF assinado desta emissao ainda NAO esta salvo. Numa
@@ -290,6 +293,14 @@ export async function emitirComCobranca(db: Firestore, p: {
   uid: string;
   medicoUid: string;
   dadosFinais: Record<string, unknown>;
+  /**
+   * sha256 do conteúdo que vira PDF (pdfHtml ou pdfBase64), calculado na rota.
+   * Decisão Sergio 11/10 (fecha o "C1 risco aceito" de 30/08): o replay da
+   * MESMA emissaoKey só vale pro MESMO conteúdo — conteúdo diferente é
+   * recusado ('conteudo_divergente'), e alterar passa por Editar → reemitir.
+   * Opcional só pela gaveta legada (emissões anteriores sem hash).
+   */
+  conteudoHash?: string;
   // Campos derivados no servidor que entram na MESMA escrita (carimbo do motor).
   // server-derived only — NAO passa pela whitelist CAMPOS_DADOS_FINAIS (hoje so carimboMotor).
   extras?: Record<string, unknown>;
@@ -417,6 +428,14 @@ export async function emitirComCobranca(db: Firestore, p: {
     // do servidor. Um cliente adulterado que plante campos no proprio exame
     // nao consegue forjar `pdfPendente` e ganhar regeracao de graca.
     if (exame.status === 'emitido' && privSnap.data()?.emissaoKey === key) {
+      // Mesma key, outro conteúdo = NÃO é a mesma tentativa (Sergio 11/10).
+      // Vale com PDF pendente (senão o retry regeraria um PDF que o registro
+      // não descreve) E com PDF salvo (devolver o antigo mentiria "emiti o
+      // novo"). Gaveta sem hash = emissão anterior a esta regra: segue o C1.
+      const hashGaveta = privSnap.data()?.conteudoHash as string | undefined;
+      if (p.conteudoHash && hashGaveta && hashGaveta !== p.conteudoHash) {
+        return { ok: false, motivo: 'conteudo_divergente' };
+      }
       return {
         ok: true, tipo: null, replay: true,
         // C1: PDF pendente => a rota REGERA a partir do pdfHtml desta
@@ -506,6 +525,7 @@ export async function emitirComCobranca(db: Firestore, p: {
     transaction.set(privRef, {
       emissaoKey: key,
       pdfPendente: true,
+      ...(p.conteudoHash ? { conteudoHash: p.conteudoHash } : {}),
       identidade: identidadeAssinada,
       atualizadoEm: FieldValue.serverTimestamp(),
     });

@@ -24,6 +24,7 @@ const MENSAGENS_ERRO: Record<string, string> = {
   exame_de_outro_medico: 'Este exame já tem outro médico como autor.',
   sem_permissao: 'Sem permissão para emitir neste local.',
   cancelado: 'Este exame foi cancelado. Anexar de novo exige recriar o exame.',
+  conteudo_divergente: 'Este exame já foi emitido com outro PDF. Para trocar, reemita pelo laudo.',
 };
 
 // X21: `tipoExame` aqui é o ID do catálogo (vai em `dadosFinais` pro
