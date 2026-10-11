@@ -66,6 +66,10 @@ describe('temImagemNaoAssinada — só a canônica NUA conta como não assinada'
     assert.equal(temImagemNaoAssinada('<p>sem imagem</p>', b), false);
     assert.equal(temImagemNaoAssinada('<img src="https://storage.googleapis.com/outro/dicom/x.jpg">', b), false);
   });
+  test('Codex: query SEM assinatura (?alt=media) e host em caixa alta NÃO são assinadas → aborta', () => {
+    assert.equal(temImagemNaoAssinada(`<img src="${canon}?alt=media">`, b), true);
+    assert.equal(temImagemNaoAssinada(`<img src="${canon.replace('https://storage', 'HTTPS://STORAGE')}">`, b), true);
+  });
   test('assinatura v4 (?X-Goog-…) também é assinada', () => {
     assert.equal(temImagemNaoAssinada(`<img src="${canon}?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Signature=a">`, b), false);
   });

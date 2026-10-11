@@ -59,15 +59,20 @@ export function urlPermitidaNoRender(url: string, bucketName: string): boolean {
  */
 const DELIMITADORES_URL = new Set(['"', "'", ' ', String.fromCharCode(10), String.fromCharCode(13), String.fromCharCode(9), '<', '>']);
 export function temImagemNaoAssinada(html: string, bucketName: string): boolean {
-  const prefixo = `https://storage.googleapis.com/${bucketName}/dicom`;
-  let i = html.indexOf(prefixo);
+  // Codex 11/10: "tem query" não basta (`?alt=media` não é assinatura → 403 e
+  // imagem em branco); assinada é só a que carrega a assinatura (v2 ou v4).
+  // Prefixo comparado em minúsculas: host/esquema em caixa alta chegaria ao
+  // Chrome igual e também sairia 403.
+  const prefixo = `https://storage.googleapis.com/${bucketName}/dicom`.toLowerCase();
+  const baixo = html.toLowerCase();
+  let i = baixo.indexOf(prefixo);
   while (i !== -1) {
     const fim = i + prefixo.length;
-    // avança até o fim da URL (delimitador de atributo/espaço) e vê se ela tem query
     let j = fim;
-    while (j < html.length && !DELIMITADORES_URL.has(html[j])) j++;
-    if (!html.slice(fim, j).includes('?')) return true;
-    i = html.indexOf(prefixo, j);
+    while (j < baixo.length && !DELIMITADORES_URL.has(baixo[j])) j++;
+    const resto = baixo.slice(fim, j);
+    if (!/\?.*(googleaccessid=|x-goog-signature=)/.test(resto)) return true;
+    i = baixo.indexOf(prefixo, j);
   }
   return false;
 }
