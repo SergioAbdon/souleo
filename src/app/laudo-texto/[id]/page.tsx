@@ -19,6 +19,7 @@ import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
 import MolduraA4 from '@/components/laudo/MolduraA4';
 import EditorIcon from '@/components/laudo/EditorIcon';
+import CabecalhoLaudo from '@/components/laudo/CabecalhoLaudo';
 import { gerarPdfHtmlTexto } from '@/lib/pdf-texto';
 import { corSegura } from '@/lib/html-escape';
 import { idadeLabel, fmtData, fmtCep, fmtTel } from '@/lib/paciente-fmt';
@@ -53,6 +54,9 @@ export default function LaudoTextoPage() {
   const especialidade = ((profile?.especialidade as string) || '').replace(/\\/g, ' e ').replace(/\//g, ' e ');
   const sigTexto = profile
     ? `${profile.nome || ''}\n${especialidade}\nCRM/${profile.ufCrm || ''} ${profile.crm || ''}`
+    : '';
+  const medicoInfo = profile
+    ? `${profile.nome || ''} · CRM/${profile.ufCrm || ''} ${profile.crm || ''}`
     : '';
   // Idade NA DATA DO EXAME (paridade com o motor) — ver paciente-fmt.
   const idade = idadeLabel(exame?.pacienteDtnasc as string | undefined, exame?.dataExame as string | undefined);
@@ -281,32 +285,43 @@ export default function LaudoTextoPage() {
   }
 
   return (
-    <div className="laudo-texto-workspace h-dvh flex flex-col overflow-hidden bg-surface">
-      {/* Topo fino — mesmo padrão da mobile-bar do shell */}
-      <div className="z-40 shrink-0 bg-card border-b border-sidebar-border px-4 py-4 sm:px-6 flex flex-wrap items-center gap-3">
-        <button onClick={() => router.push('/agenda')} aria-label="Voltar para a agenda"
-          className="inline-flex items-center gap-2 text-p1 text-xs shrink-0 rounded-lg border border-sidebar-border px-3 py-2.5 hover:bg-sidebar focus-visible:outline-2 focus-visible:outline-p2 cursor-pointer"><EditorIcon name="back" /> Voltar</button>
-        <div className="flex-1 min-w-[160px]">
-          <div className="font-semibold text-p1 text-base break-words">{(exame?.pacienteNome as string) || 'Carregando…'}</div>
-          <div className="text-xs text-sidebar-ink mt-1 break-words">
-            {tipo?.nome || (exame?.tipoExame as string) || ''}
-            {exame?.acc ? ` · ACC ${exame.acc as string}` : ''}
+    <div className="laudo-workspace laudo-texto-workspace">
+      <div className="laudo-coluna">
+        <CabecalhoLaudo titulo={tipo?.nome || (exame?.tipoExame as string) || 'Laudo'} clinicaNome={clinicaNome} medicoInfo={medicoInfo} onVoltar={() => router.push('/agenda')} />
+        <div className="laudo-command-line">
+          <button onClick={handleSalvarRascunho} disabled={salvando || emitindo || docFechado}
+            title={docFechado ? 'Laudo emitido — para alterar, use "Reemitir"' : undefined}
+            className="laudo-command-secondary">
+            <EditorIcon name="save" /> {salvando ? 'Salvando…' : 'Salvar rascunho'}
+          </button>
+          <button onClick={handleEmitir} disabled={salvando || emitindo} className="laudo-command-primary">
+            <EditorIcon name="check" /> {emitindo ? 'Emitindo…' : (exame?.status === 'emitido' ? 'Reemitir (consome 1 franquia)' : 'Emitir laudo')}
+          </button>
+        </div>
+        <div className="laudo-fields">
+          <div className="laudo-cartao">
+            <div className="laudo-cartao-titulo"><EditorIcon name="sec-id" /> Identificação</div>
+            <div className="grid gap-3 px-3.5 pb-5 text-[13px] text-[#1E3A5F]">
+              {exame?.acc ? (
+                <div className="laudo-nota flex items-center justify-between gap-3"><span className="font-medium">ACC</span><span className="min-w-0 break-all text-right font-mono text-[12px]">{exame.acc as string}</span></div>
+              ) : null}
+              <Dado label="Nome completo">{(exame?.pacienteNome as string) || 'Carregando…'}</Dado>
+              <div className="grid grid-cols-2 gap-3">
+                <Dado label="Idade">{idade || '—'}</Dado>
+                <Dado label="Data de nascimento">{fmtData(exame?.pacienteDtnasc as string | undefined) || '—'}</Dado>
+              </div>
+              <Dado label="Convênio">{(exame?.convenio as string) || '—'}</Dado>
+              <Dado label="Médico solicitante">{(exame?.solicitante as string) || '—'}</Dado>
+              <Dado label="Data do exame">{fmtData(exame?.dataExame as string | undefined) || '—'}</Dado>
+            </div>
           </div>
         </div>
-        <button onClick={handleSalvarRascunho} disabled={salvando || emitindo || docFechado}
-          title={docFechado ? 'Laudo emitido — para alterar, use "Reemitir"' : undefined}
-          className="inline-flex items-center gap-2 shrink-0 px-3 py-2.5 rounded-lg border border-sidebar-border bg-card text-p1 text-xs font-medium hover:bg-sidebar focus-visible:outline-2 focus-visible:outline-p2 disabled:opacity-50 cursor-pointer">
-          <EditorIcon name="save" /> {salvando ? 'Salvando…' : 'Salvar rascunho'}
-        </button>
-        <button onClick={handleEmitir} disabled={salvando || emitindo}
-          className="shrink-0 px-4 py-2.5 rounded-lg bg-p2 text-white text-xs font-medium hover:bg-p2-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-p2 disabled:opacity-50 cursor-pointer">
-          {emitindo ? 'Emitindo…' : (exame?.status === 'emitido' ? 'Reemitir (consome 1 franquia)' : 'Emitir laudo')}
-        </button>
       </div>
 
       {/* Editor dentro da MESMA folha A4 do motor (S5-T10/D6): o médico
           escreve já vendo a moldura que vai sair no PDF. */}
-      <div className="min-h-0 flex-1 overflow-auto bg-surface p-3 sm:p-6 lg:p-8 [scrollbar-color:#B8C9DF_#F1F5F9] [&>#laudo-sheet]:shadow-[0_8px_28px_rgba(30,58,95,.10)] [&>#laudo-sheet]:outline [&>#laudo-sheet]:outline-1 [&>#laudo-sheet]:outline-borda">
+      <div className="laudo-folha">
+        <p className="laudo-folha-legenda">Pré-visualização — edite os textos diretamente no laudo</p>
         <MolduraA4
           p1={p1}
           clinicaNome={clinicaNome}
@@ -341,6 +356,17 @@ export default function LaudoTextoPage() {
         .laudo-texto-workspace .tiptap ul{list-style:disc;padding-left:5mm;margin-bottom:2px;}
         .laudo-texto-workspace .tiptap ol{list-style:decimal;padding-left:5mm;margin-bottom:2px;}
       `}</style>
+    </div>
+  );
+}
+
+// Linha do cartão de identificação (só leitura — os dados vêm do exame e já
+// aparecem na moldura; aqui é a cópia que dá conteúdo à coluna).
+function Dado({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-[11px] font-medium text-[#526277]">{label}</span>
+      <span className="break-words">{children}</span>
     </div>
   );
 }

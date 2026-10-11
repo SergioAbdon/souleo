@@ -20,6 +20,12 @@ const shapes: Record<string, ReactNode> = {
   undo: <path d="M3 4v6h6M3 10c5-8 18-5 18 3 0 5-5 8-10 6" />,
   redo: <path d="M21 4v6h-6m6 0C16 2 3 5 3 13c0 5 5 8 10 6" />,
   library: <><path d="M4 3v18M8 3v18M12 3v18m4-18 5 18" /></>,
+  link: <><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" /></>,
+  lock: <><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></>,
+  file: <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8M8 17h8" /></>,
+  copy: <><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></>,
+  edit: <><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></>,
+  check: <><circle cx="12" cy="12" r="9" /><path d="m8 12 3 3 5-6" /></>,
 };
 
 export default function EditorIcon({ name, className = '' }: { name: string; className?: string }) {

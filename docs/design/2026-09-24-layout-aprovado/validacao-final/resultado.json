@@ -1,7 +1,7 @@
 {
-  "date": "2026-10-09T03:15:14.455Z",
+  "date": "2026-10-11T14:29:24.701Z",
   "checks": [
-    "eco: sections mounted, collapse preserves value, emitted lock and unlock",
+    "eco: sections mounted, collapse preserves value, real ModoEmitido (Copiar submenu, Editar unlocks)",
     "eco 1440: no page overflow",
     "eco 390: no page overflow",
     "carotidas: real page, populated A4 and editor",
