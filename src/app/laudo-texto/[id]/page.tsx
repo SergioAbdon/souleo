@@ -26,6 +26,8 @@ import { PopupSalvarEmitir, ModoEmitido } from '@/components/laudo/PopupEmitir';
 import { precisaConfirmarEmissao, SEM_SELECAO_PREFIXO } from '@/lib/emissao-guarda';
 import { gerarPdfHtmlTexto } from '@/lib/pdf-texto';
 import { corSegura, escaparHtml } from '@/lib/html-escape';
+import { imprimirHtmlEmJanela } from '@/lib/pdfUtils';
+import { copiarHtml, copiarTextoSimples } from '@/lib/clipboard';
 import { idadeLabel, fmtData, fmtCep, fmtTel } from '@/lib/paciente-fmt';
 
 export default function LaudoTextoPage() {
@@ -83,10 +85,10 @@ export default function LaudoTextoPage() {
   // de qualquer jeito; sem isso aqui o médico só descobria pelo erro cru do
   // servidor em vez de uma mensagem honesta na hora do clique).
   const docFechado = ['emitido', 'cancelado'].includes((exame?.status as string) || '');
-  // Mesmo padrão do ECO (Sergio 11/10): emitido mostra o bloco do emitido
-  // (selo + PDF + Copiar + Editar + Finalizar); Editar destrava a tela
-  // (reedição) e o Reemitir fecha de novo.
-  const [reedicao, setReedicao] = useState(false);
+  // Ciclo do emitido igual ao ECO: fechado → Editar (reedição) → Reemitir.
+  // Guardado POR exame: navegar A→B sem desmontar não herda a reedição de A (sem setState em effect).
+  const [reedicaoDe, setReedicaoDe] = useState<string | null>(null);
+  const reedicao = reedicaoDe === exameId;
   const emitidoFechado = (exame?.status as string) === 'emitido' && !reedicao;
   const imagensDicom = (exame?.imagensDicom as string[] | undefined) || [];
   const clinicaEnd = fmtCep((workspace?.endereco as string) || '');
@@ -162,14 +164,14 @@ export default function LaudoTextoPage() {
   // perder ao sair.
   useEffect(() => {
     function handleBeforeUnload(e: BeforeUnloadEvent) {
-      if (dirtyRef.current && !docFechado) {
+      if (dirtyRef.current && (!docFechado || reedicao)) {
         e.preventDefault();
         e.returnValue = '';
       }
     }
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [docFechado]);
+  }, [docFechado, reedicao]);
 
   function toast(msg: string) {
     const el = document.createElement('div');
@@ -218,7 +220,7 @@ export default function LaudoTextoPage() {
       ? imagensSelecionadasPdf.filter((u) => u !== url)
       : [...imagensSelecionadasPdf, url];
     setImagensSelecionadasPdf(nova);
-    if (docFechado) return; // emitido: só local até reemitir
+    if (docFechado) { dirtyRef.current = true; return; } // reedição: só local até reemitir (e conta como alteração)
     try {
       await saveExame(workspace.id, { id: exameId, imagensSelecionadasPdf: nova }, user.uid);
     } catch (e) {
@@ -259,59 +261,48 @@ export default function LaudoTextoPage() {
   }
 
   // ── Bloco do emitido (ModoEmitido) — mesmos atos do ECO ──
+  function handleVoltar() {
+    if (reedicao && dirtyRef.current) {
+      const ok = confirm(
+        '⚠️ Você desbloqueou um laudo já emitido e editou, mas NÃO reemitiu.\n\n' +
+        'As alterações serão PERDIDAS — o laudo emitido original continua valendo.\n\n' +
+        'Para salvar as mudanças, cancele e clique em "Reemitir" (consome 1 crédito).\n\n' +
+        'Sair mesmo assim e descartar a edição?'
+      );
+      if (!ok) return;
+      dirtyRef.current = false;
+    }
+    router.push('/agenda');
+  }
   function handleFinalizar() {
     toast('Atendimento finalizado');
     router.push('/dashboard');
   }
   function handleEditar() {
     if (!confirm('Ao editar e reemitir, será consumido 1 crédito da sua franquia.\n\nDeseja desbloquear para edição?')) return;
-    setReedicao(true);
-    emissaoKeyRef.current = null; // reedição = intenção nova (cobra)
+    setReedicaoDe(exameId);
     toast('Laudo desbloqueado para edição');
   }
   /** "Gerar novamente" / PDF sem assinado: imprime o HTML atual com as imagens assinadas. */
-  async function handleImprimir() {
-    const win = window.open('', '_blank', 'width=900,height=700');
-    if (!win) return;
-    let html = montarPdfHtml(incluirImagensNoPdf);
-    if (workspace?.id && incluirImagensNoPdf && imagensSelecionadasPdf.length > 0) {
-      const assinadas = await buscarUrlsAssinadas(workspace.id, exameId, imagensSelecionadasPdf);
-      if (assinadas) for (const [canonica, assinada] of Object.entries(assinadas)) html = html.split(canonica).join(assinada);
-    }
-    try {
-      win.document.write(html);
-      win.document.close();
-    } catch {
-      alert('A janela de impressão foi fechada. Clique em PDF de novo.');
-    }
+  function handleImprimir() {
+    return imprimirHtmlEmJanela(() => montarPdfHtml(incluirImagensNoPdf), async (html) => {
+      if (workspace?.id && incluirImagensNoPdf && imagensSelecionadasPdf.length > 0) {
+        const assinadas = await buscarUrlsAssinadas(workspace.id, exameId, imagensSelecionadasPdf);
+        if (assinadas) for (const [canonica, assinada] of Object.entries(assinadas)) html = html.replaceAll(canonica, assinada);
+      }
+      return html;
+    });
   }
   function handleCopiarFormatado() {
-    const temp = document.createElement('div');
-    temp.style.cssText = 'font-family:IBM Plex Sans,Arial,sans-serif;font-size:8.5pt;color:#1a1a1a;';
-    temp.innerHTML = `
+    const copiou = copiarHtml(`
       <div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;">${escaparHtml(tituloExame)}</div>
       <div style="border:1px solid #ddd;border-top:none;padding:4px 8px;">${editorRef.current?.getHTML() || ''}</div>
-    `;
-    document.body.appendChild(temp);
-    const range = document.createRange();
-    range.selectNodeContents(temp);
-    const sel = window.getSelection();
-    sel?.removeAllRanges();
-    sel?.addRange(range);
-    const copiou = document.execCommand('copy');
-    sel?.removeAllRanges();
-    temp.remove();
+    `, 'font-family:IBM Plex Sans,Arial,sans-serif;font-size:8.5pt;color:#1a1a1a;');
     toast(copiou ? 'Copiado — cole com Ctrl+V no Word, Tasy ou MV' : 'Falha ao copiar — selecione e copie manualmente');
   }
   function handleCopiarTexto() {
-    const temp = document.createElement('div');
-    temp.innerHTML = editorRef.current?.getHTML() || '';
-    const texto = `${tituloExame}\n\n${temp.innerText.trim()}`;
-    navigator.clipboard.writeText(texto).then(() => {
-      toast('Copiado texto simples — cole no prontuário');
-    }).catch(() => {
-      toast('Falha ao copiar — selecione e copie manualmente');
-    });
+    copiarTextoSimples(`${tituloExame}\n\n${editorRef.current?.getText().trim() || ''}`)
+      .then((ok) => toast(ok ? 'Copiado texto simples — cole no prontuário' : 'Falha ao copiar — selecione e copie manualmente'));
   }
 
   async function handleEmitir(incluirImagens: boolean) {
@@ -402,7 +393,7 @@ export default function LaudoTextoPage() {
   return (
     <div className="laudo-workspace laudo-texto-workspace">
       <div className="laudo-coluna">
-        <CabecalhoLaudo titulo={tipo?.nome || (exame?.tipoExame as string) || 'Laudo'} clinicaNome={clinicaNome} medicoInfo={medicoInfo} onVoltar={() => router.push('/agenda')} />
+        <CabecalhoLaudo titulo={tipo?.nome || (exame?.tipoExame as string) || 'Laudo'} clinicaNome={clinicaNome} medicoInfo={medicoInfo} onVoltar={handleVoltar} />
         <div className="laudo-command-line">
           {emitidoFechado ? (
             <ModoEmitido
@@ -500,7 +491,7 @@ export default function LaudoTextoPage() {
         tipoExame={exame?.tipoExame as string | undefined}
         permitirSelecao={!emitidoFechado}
         selecionadas={imagensSelecionadasPdf}
-        onToggleSelecao={emitidoFechado ? undefined : handleToggleSelecaoImagem}
+        onToggleSelecao={handleToggleSelecaoImagem}
       />
       <style jsx global>{`
         .laudo-texto-workspace .tiptap h2{font-size:10.5pt;font-weight:600;color:${p1};margin:2mm 0 1.5mm;}

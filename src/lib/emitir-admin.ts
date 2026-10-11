@@ -500,6 +500,11 @@ export async function emitirComCobranca(db: Firestore, p: {
       ...dadosFinaisPermitidos,
       ...(p.extras || {}),
       status: 'emitido',
+      // Codex 11/10: o PDF da emissao ANTERIOR nao pode posar de atual — se o
+      // novo falhar, o botao PDF cai no "gerar do HTML atual" em vez de abrir
+      // o assinado velho. publicarPdfSeAindaDono grava o novo logo em seguida.
+      pdfUrl: FieldValue.delete(),
+      pdfErro: FieldValue.delete(),
       emitidoEm: FieldValue.serverTimestamp(),
       medicoUid: p.medicoUid,
       atualizadoEm: FieldValue.serverTimestamp(),
