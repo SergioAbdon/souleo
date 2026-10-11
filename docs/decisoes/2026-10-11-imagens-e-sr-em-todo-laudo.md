@@ -76,6 +76,13 @@ nem escrever; sem conteúdo → 400 `sem_conteudo`; gaveta legada sem hash segue
 clientes; o laudo de texto recarrega (carrega o exame uma vez). Testes (h)–(h4) no
 `emitir-idempotencia` (api 311/311). O comentário "C1 — risco aceito" fica como história no código.
 
+Verificação adversarial do Codex sobre o diff (c10f7d1) → 3 achados, atendidos em 2819924: hash do
+ramo que a rota **publica** (`pdfBase64 ?? pdfHtml` — com os dois presentes o PDF sai do base64;
+hashear o HTML deixava trocar o PDF por fora da trava); `handleDesbloquear` do ECO zera a
+`emissaoKeyRef` (reedição = intenção nova; sem isso um 409 virava 409 pra sempre); o modal de PDF
+anexado zera a key ao receber `conteudo_divergente`; pin de fonte da rota em
+`tests/unit/emitir-rota-conteudo-pin` (qual conteúdo é hasheado, guard antes de cobrar, 409 no mapa).
+
 ## Pendente
 
 - Aval do Sergio para merge na master, push e deploy.

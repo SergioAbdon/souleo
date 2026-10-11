@@ -10,7 +10,10 @@ const rota = fs.readFileSync(path.resolve(import.meta.dirname, '..', '..', 'src'
 
 describe('/api/emitir — hash do conteúdo que vira PDF (replay só vale pro MESMO conteúdo)', () => {
   test('hasheia o ramo publicado: pdfBase64 tem prioridade sobre pdfHtml (mesma ordem dos ramos de publicação)', () => {
-    assert.match(rota, /createHash\('sha256'\)\.update\(pdfBase64 \?\? pdfHtml \?\? ''\)\.digest\('hex'\)/);
+    // Truthiness, NÃO `??`: `pdfBase64: ''` publica o pdfHtml (`if (pdfAnexadoBuf)` usa
+    // truthiness) — o hash tem que seguir o MESMO predicado do ramo de publicação (Codex 11/10).
+    assert.match(rota, /createHash\('sha256'\)\.update\(pdfBase64 \? pdfBase64 : \(pdfHtml \?\? ''\)\)\.digest\('hex'\)/);
+    assert.ok(!/update\(pdfBase64 \?\? pdfHtml/.test(rota), 'nunca `??` aqui: string vazia passaria pelo hash e não pela publicação');
     assert.ok(rota.indexOf('if (pdfAnexadoBuf) {') < rota.indexOf('} else if (pdfHtml) {'), 'rota publica o anexo antes do HTML');
   });
   test('sem pdfHtml nem pdfBase64 → 400 sem_conteudo ANTES da transação', () => {
