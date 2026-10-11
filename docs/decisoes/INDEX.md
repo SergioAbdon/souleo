@@ -35,6 +35,7 @@ Ordem cronológica. Ler o(s) recente(s) antes de mexer na área relacionada.
 | 2026-09-21 | [Import Feegow casa por NOME](2026-09-21-feegow-import-name-matching.md) 🔧 branch `feat/wader-console` commit `fa29db2`, NÃO testado na clínica — notebook: test:api + tríade + merge/deploy | Feegow / import / worklist |
 | 2026-10-11 | [Publicação do layout aprovado](2026-10-11-publicacao-layout-aprovado.md) ✅ redesenho visual em produção (8ac762c→db1a88d), 771 testes, 26 verificações visuais | Design / deploy |
 | 2026-10-11 | [Coluna do laudo unificada](2026-10-11-coluna-laudo-unificada.md) 🎨 geometria antiga (390px, cabeçalho navy) + pele minimalista em ECO e laudo de texto; emitido em 2 linhas; tríade Codex/Ruflo/Ponytail — ✅ NO AR 11/10 (merge 21ee2ce, aval Sergio) | Design / laudo / editor |
+| 2026-10-11 | [Imagens e SR em todo laudo](2026-10-11-imagens-e-sr-em-todo-laudo.md) 🖼️ ECO emitido mostra Imagens + Importar (3ª linha, galeria só leitura); laudo de texto emite igual ao ECO (galeria, seleção, popup, imagens no PDF); saneamento no servidor + regra; tríade pré-merge — branch claude/imagens-e-sr-em-todo-laudo, aguarda aval | Laudo / imagens / emissão / regras |
 
 
 ## Validação local — 09/10/2026

@@ -25,6 +25,8 @@ export type ArgsPdfTexto = {
     dataExame?: string;
   };
   htmlCorpo: string;
+  /** Páginas soltas depois da folha (imagens DICOM) — ver renderPaginasPdf. */
+  htmlPosTabela?: string;
   assinatura: {
     nome: string;
     especialidade?: string;
@@ -78,6 +80,7 @@ export function gerarPdfHtmlTexto(args: ArgsPdfTexto): string {
     ],
     cssExtra: cssCorpo,
     corpoHtml: `<div class="corpo">${htmlCorpo}</div>`,
+    htmlPosTabela: args.htmlPosTabela || '',
     cfg: {
       p1,
       clinicaNome,

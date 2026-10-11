@@ -427,7 +427,7 @@ describe('montarPdfMoldura — campos e âncoras', () => {
     // DicomGallery.tsx é componente React (não sobe no node --test): asserção
     // fonte-lendo, mesma técnica de contrato-ponte-ids/laudo-trava-emitido.
     const src = fs.readFileSync(
-      path.join(import.meta.dirname, '..', '..', 'src', 'components', 'laudo', 'DicomGallery.tsx'), 'utf8',
+      path.join(import.meta.dirname, '..', '..', 'src', 'lib', 'pdf-imagens.ts'), 'utf8',
     );
     assert.match(src, /const cabec = escaparHtml\(\[pacienteNome, tipoExame\]/,
       'o <h1> das páginas de imagem entra no PDF assinado — nome/tipo têm que estar escapados');

@@ -46,6 +46,7 @@ import { podeGirar, proximoCicloFim, vigente } from './ciclo';
 // tests/api/emitir-idempotencia.test.mjs continuam importando daqui, sem
 // mudar chamador nenhum.
 import { emissaoKeyValida } from './pdf-path';
+import { sanearSelecaoImagens } from './emissao-guarda';
 export { emissaoKeyValida };
 
 // Gaveta server-only do estado de idempotencia (mesmo formato do shadow:
@@ -83,6 +84,8 @@ export function refEmissaoPrivada(db: Firestore, wsId: string, exameId: string) 
 export type GavetaEmissao = {
   emissaoKey?: string;
   pdfPendente?: boolean;
+  /** sha256 do conteúdo (pdfHtml ou pdfBase64) da tentativa VENCEDORA — ver replay abaixo. */
+  conteudoHash?: string;
   snapshotSufixado?: boolean;
   identidade?: Record<string, string>;
 };
@@ -96,7 +99,8 @@ export async function lerGavetaEmissao(db: Firestore, wsId: string, exameId: str
 }
 
 export type MotivoEmissao =
-  | 'sem_plano' | 'nao_encontrado' | 'exame_de_outro_medico' | 'expirado' | 'sem_saldo' | 'cancelado';
+  | 'sem_plano' | 'nao_encontrado' | 'exame_de_outro_medico' | 'expirado' | 'sem_saldo' | 'cancelado'
+  | 'conteudo_divergente';
 
 export type ResultadoEmissao =
   // `pdfPendente`: o PDF assinado desta emissao ainda NAO esta salvo. Numa
@@ -148,6 +152,9 @@ const CAMPOS_DADOS_FINAIS = new Set([
   // com a emissao pra sobreviver a reabertura do laudo (antes so vivia em
   // memoria, resetava pro default a cada F5/reload).
   'incluirImagensNoPdf',
+  // Spec 2026-10-11-imagens-e-sr: a lista de imagens do PDF viaja junto com a
+  // emissao (ECO e texto) e e saneada contra exame.imagensDicom logo abaixo.
+  'imagensSelecionadasPdf',
   // `cfgSnapshot` SAIU (tríade onda-4, Ponytail item 7): nunca foi lido nem
   // mandado por nenhum dos 3 clientes (Task 17/X3 já tinha matado o campo em
   // types.ts) — a whitelist ainda aceitava um campo morto.
@@ -286,6 +293,14 @@ export async function emitirComCobranca(db: Firestore, p: {
   uid: string;
   medicoUid: string;
   dadosFinais: Record<string, unknown>;
+  /**
+   * sha256 do conteúdo que vira PDF (pdfHtml ou pdfBase64), calculado na rota.
+   * Decisão Sergio 11/10 (fecha o "C1 risco aceito" de 30/08): o replay da
+   * MESMA emissaoKey só vale pro MESMO conteúdo — conteúdo diferente é
+   * recusado ('conteudo_divergente'), e alterar passa por Editar → reemitir.
+   * Opcional só pela gaveta legada (emissões anteriores sem hash).
+   */
+  conteudoHash?: string;
   // Campos derivados no servidor que entram na MESMA escrita (carimbo do motor).
   // server-derived only — NAO passa pela whitelist CAMPOS_DADOS_FINAIS (hoje so carimboMotor).
   extras?: Record<string, unknown>;
@@ -378,9 +393,15 @@ export async function emitirComCobranca(db: Firestore, p: {
     // identificacaoAlterada (M3) — qualquer chave fora de CAMPOS_DADOS_FINAIS
     // e descartada, entao os dois carimbos de auditoria (e pdfUrl, status,
     // emitidoEm, acc, cpf, medicoUid...) somem daqui junto, de graca.
-    const dadosFinaisPermitidos = Object.fromEntries(
+    const dadosFinaisPermitidos: Record<string, unknown> = Object.fromEntries(
       Object.entries(p.dadosFinais).filter(([k]) => CAMPOS_DADOS_FINAIS.has(k)),
     );
+    // Seleção de imagens: só o que pertence a ESTE exame (emissao-guarda.ts).
+    if ('imagensSelecionadasPdf' in dadosFinaisPermitidos) {
+      const limpa = sanearSelecaoImagens(dadosFinaisPermitidos.imagensSelecionadasPdf, exame.imagensDicom);
+      if (limpa === null) delete dadosFinaisPermitidos.imagensSelecionadasPdf;
+      else dadosFinaisPermitidos.imagensSelecionadasPdf = limpa;
+    }
 
     // Caneta do autor (D2): laudo com autor definido so o proprio emite —
     // igual a regra publicada ("autor ou sem autor"). Sem autor pode assumir.
@@ -407,6 +428,14 @@ export async function emitirComCobranca(db: Firestore, p: {
     // do servidor. Um cliente adulterado que plante campos no proprio exame
     // nao consegue forjar `pdfPendente` e ganhar regeracao de graca.
     if (exame.status === 'emitido' && privSnap.data()?.emissaoKey === key) {
+      // Mesma key, outro conteúdo = NÃO é a mesma tentativa (Sergio 11/10).
+      // Vale com PDF pendente (senão o retry regeraria um PDF que o registro
+      // não descreve) E com PDF salvo (devolver o antigo mentiria "emiti o
+      // novo"). Gaveta sem hash = emissão anterior a esta regra: segue o C1.
+      const hashGaveta = privSnap.data()?.conteudoHash as string | undefined;
+      if (p.conteudoHash && hashGaveta && hashGaveta !== p.conteudoHash) {
+        return { ok: false, motivo: 'conteudo_divergente' };
+      }
       return {
         ok: true, tipo: null, replay: true,
         // C1: PDF pendente => a rota REGERA a partir do pdfHtml desta
@@ -496,6 +525,7 @@ export async function emitirComCobranca(db: Firestore, p: {
     transaction.set(privRef, {
       emissaoKey: key,
       pdfPendente: true,
+      ...(p.conteudoHash ? { conteudoHash: p.conteudoHash } : {}),
       identidade: identidadeAssinada,
       atualizadoEm: FieldValue.serverTimestamp(),
     });

@@ -92,6 +92,8 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
   // vivo do lock (handleDesbloquear zera, handleEmitir levanta) — derivar
   // outro estado daqui era duplicar o dono.
   const motorBloqueado = !!readOnlyMotor;
+  const temMedidas = (totalMedidasDicom ?? 0) > 0;
+  const temImagens = (totalImagensDicom ?? 0) > 0;
 
   // S5-T6: trava única do emitido. Um campo por vez, sem branch separado pra
   // bloquear/desbloquear — `el.disabled = motorBloqueado` é sempre o valor
@@ -205,62 +207,12 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
       {/* ═══ CABEÇALHO (navy) + COMANDOS — spec 2026-10-11-coluna-laudo-unificada ═══ */}
       <CabecalhoLaudo titulo="Laudo ECO" clinicaNome={clinicaNome} medicoInfo={medicoInfo} onVoltar={onVoltar} />
       <div className="laudo-command-line">
+        {/* Bloco de ESTADO: rascunho = Salvar/Emitir + Limpar; emitido = ModoEmitido
+            (selo + PDF/Copiar/Editar + Finalizar). */}
         {emitido ? (
           modoEmitido
         ) : (
           <div id="modo-edicao" className="contents">
-            {ortancAtivo && onImportarDicom && (() => {
-              // Botão habilita quando Wader já populou `medidasDicom` (totalMedidasDicom > 0).
-              // Quando ainda não há medidas, mostramos o botão cinza/desabilitado
-              // com tooltip explicando — assim o médico sabe que a feature existe.
-              const temMedidas = (totalMedidasDicom ?? 0) > 0;
-              return (
-                <button
-                  onClick={onImportarDicom}
-                  disabled={dicomImportado || !temMedidas}
-                  title={
-                    dicomImportado
-                      ? 'Medidas já importadas'
-                      : temMedidas
-                        ? `Importar ${totalMedidasDicom} medidas do Vivid (DICOM SR) — abre modal pra validar antes`
-                        : 'Sem medidas DICOM ainda — aguarde Wader processar o exame'
-                  }
-                  className={`laudo-command-secondary ${
-                    dicomImportado
-                      ? 'bg-green-100 text-green-700'
-                      : temMedidas
-                        ? ''
-                        : 'bg-gray-200 text-gray-500'
-                  }`}>
-                  <EditorIcon name="download" />
-                  {dicomImportado ? 'Importado' : temMedidas ? `Importar medidas (${totalMedidasDicom})` : 'Importar medidas'}
-                </button>
-              );
-            })()}
-            {/* Botão "🖼️ Imagens (N)" — abre <DicomGallery /> com previews JPG.
-                Adicionado em 14/05/2026 (antes médico via só a contagem no
-                Worklist sem como abrir as imagens dentro do laudo). */}
-            {onAbrirGaleria && (() => {
-              const temImagens = (totalImagensDicom ?? 0) > 0;
-              return (
-                <button
-                  onClick={onAbrirGaleria}
-                  disabled={!temImagens}
-                  title={
-                    temImagens
-                      ? `Ver ${totalImagensDicom} imagens DICOM do exame`
-                      : 'Sem imagens DICOM ainda — aguarde Wader processar'
-                  }
-                  className={`laudo-command-secondary ${
-                    temImagens
-                      ? ''
-                      : 'bg-gray-200 text-gray-500'
-                  }`}>
-                  <EditorIcon name="image" />
-                  {temImagens ? `Imagens (${totalImagensDicom})` : 'Imagens'}
-                </button>
-              );
-            })()}
             <button onClick={onSalvarEmitir} className="laudo-command-primary">
               <EditorIcon name="save" /> Salvar / Emitir
             </button>
@@ -269,6 +221,47 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
               <EditorIcon name="trash" />
             </button>
           </div>
+        )}
+        {/* DADOS DO EXAME (spec 2026-10-11-imagens-e-sr): Importar e Imagens existem em
+            rascunho E emitido (3ª linha, opção A). Importar desabilitado no emitido —
+            a guarda real é o handler da page. */}
+        {ortancAtivo && onImportarDicom && (
+            <button
+              onClick={onImportarDicom}
+              disabled={emitido || dicomImportado || !temMedidas}
+              title={
+                emitido
+                  ? 'Laudo emitido — clique em Editar para importar e reemitir'
+                  : dicomImportado
+                    ? 'Medidas já importadas'
+                    : temMedidas
+                      ? `Importar ${totalMedidasDicom} medidas do Vivid (DICOM SR) — abre modal pra validar antes`
+                      : 'Sem medidas DICOM ainda — aguarde Wader processar o exame'
+              }
+              className={`laudo-command-secondary ${
+                dicomImportado
+                  ? 'bg-green-100 text-green-700'
+                  : temMedidas
+                    ? ''
+                    : 'bg-gray-200 text-gray-500'
+              }`}>
+              <EditorIcon name="download" />
+              {dicomImportado ? 'Importado' : temMedidas ? `Importar medidas (${totalMedidasDicom})` : 'Importar medidas'}
+            </button>
+        )}
+        {onAbrirGaleria && (
+            <button
+              onClick={onAbrirGaleria}
+              disabled={!temImagens}
+              title={
+                temImagens
+                  ? `Ver ${totalImagensDicom} imagens DICOM do exame`
+                  : 'Sem imagens DICOM ainda — aguarde Wader processar'
+              }
+              className={`laudo-command-secondary ${temImagens ? '' : 'bg-gray-200 text-gray-500'}`}>
+              <EditorIcon name="image" />
+              {temImagens ? `Imagens (${totalImagensDicom})` : 'Imagens'}
+            </button>
         )}
       </div>
 

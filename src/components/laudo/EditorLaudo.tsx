@@ -31,8 +31,8 @@ function Toolbar({ editor, onAddFrase, editable }: { editor: Editor | null; onAd
   // gesto nativo do usuário no DOM). Sem isto, Negrito/Lista/Desfazer/Banco de
   // Frases reescreveriam um laudo assinado mesmo com o editor "read-only" —
   // mesmo furo que os botões do Wilkins/diastólica tinham na sidebar (T4).
-  // Esconder a barra inteira segue o mesmo padrão de `#modo-edicao` (CSS
-  // .laudo-locked em page.tsx): a UI de edição some, não fica cinza clicável.
+  // Esconder a barra inteira segue o padrão do bloco de edição da SidebarLaudo:
+  // no emitido ele não monta — a UI de edição some, não fica cinza clicável.
   if (!editable) return null;
 
   const btn = (active: boolean) =>

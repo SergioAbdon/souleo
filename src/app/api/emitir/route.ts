@@ -5,6 +5,7 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { NextRequest, NextResponse } from 'next/server';
+import { createHash } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { gerarESalvarPdf } from '@/lib/pdf-server';
 import { salvarPdfBuffer, salvarSnapshotHtml, apagarPdfObjeto } from '@/lib/pdf-storage';
@@ -111,6 +112,18 @@ export async function POST(req: NextRequest) {
       pdfAnexadoBuf = validacao.buf;
     }
 
+    // Sem conteudo nao ha o que emitir (Codex 11/10): uma requisicao valida
+    // sem pdfHtml nem pdfBase64 cobrava e deixava `pdfPendente: true` pra
+    // sempre. Os 3 clientes sempre mandam um dos dois.
+    if (!pdfHtml && !pdfBase64) {
+      return NextResponse.json({ ok: false, motivo: 'sem_conteudo' }, { status: 400 });
+    }
+    // Hash do conteudo desta tentativa — a gaveta privada guarda o da
+    // vencedora e o replay com outro conteudo e recusado (emitir-admin.ts).
+    // Codex 11/10: hasheia o ramo que a rota PUBLICA — com os dois presentes
+    // o PDF sai do pdfBase64 (abaixo), entao o hash e dele, nao do HTML.
+    const conteudoHash = createHash('sha256').update(pdfBase64 ? pdfBase64 : (pdfHtml ?? '')).digest('hex'); // truthiness = mesmo predicado do ramo de publicação
+
     // Autorizacao: papel de medico/dono NESTE local (mesmo criterio da regra
     // `ehMedicoNoLocal`), e o laudo sai assinado por quem esta logado.
     const [papel, perfil] = await Promise.all([
@@ -136,7 +149,7 @@ export async function POST(req: NextRequest) {
     // sem teste de servidor (E9) — extraido pra ganhar bateria, e la mora a
     // trava anti-cobranca-dupla da `emissaoKey` (E1).
     const resultado = await emitirComCobranca(dbAdmin, {
-      wsId, exameId, uid, medicoUid, dadosFinais, extras: carimboMotor, emissaoKey,
+      wsId, exameId, uid, medicoUid, dadosFinais, extras: carimboMotor, emissaoKey, conteudoHash,
     });
 
     if (!resultado.ok) {
@@ -145,7 +158,7 @@ export async function POST(req: NextRequest) {
       // certo" pra qualquer proxy/monitoramento que olhasse so o codigo.
       // 402 (Payment Required) e o status honesto pra recusa de cobranca.
       const status: Record<string, number> = {
-        nao_encontrado: 404, exame_de_outro_medico: 403, cancelado: 409,
+        nao_encontrado: 404, exame_de_outro_medico: 403, cancelado: 409, conteudo_divergente: 409,
         sem_plano: 402, sem_saldo: 402, expirado: 402,
       };
       return NextResponse.json(resultado, { status: status[resultado.motivo] ?? 200 });

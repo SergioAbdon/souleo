@@ -69,10 +69,11 @@ async function seedExameEmitidoSemGaveta() {
   return id;
 }
 
-const emitir = (exameId, emissaoKey, extra = {}) => emitirComCobranca(db, {
+const emitir = (exameId, emissaoKey, extra = {}, conteudoHash) => emitirComCobranca(db, {
   wsId: WS, exameId, uid: MED, medicoUid: MED,
   dadosFinais: { pacienteNome: 'Paciente E', tipoExame: 'ECOTT', convenio: 'PART', ...extra },
   emissaoKey,
+  ...(conteudoHash ? { conteudoHash } : {}),
 });
 
 const usada = async () => ((await db.doc(`subscriptions/${CONTA}`).get()).data().franquiaUsada) || 0;
@@ -139,6 +140,51 @@ describe('E1 — replay da MESMA tentativa nao cobra de novo', () => {
     assert.equal(depois.emitidoEm.toMillis(), antes.emitidoEm.toMillis(), 'emitidoEm remexido');
   });
 
+  // Decisao Sergio 11/10 (fecha o C1): mesma key + conteudo diferente NAO e a
+  // mesma tentativa. O hash e do pdfHtml/pdfBase64 (calculado na rota).
+  test('(h) PDF pendente + MESMO conteudo: replay regenera como antes, sem cobrar', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A, {}, 'hash-1');
+    const r = await emitir(id, KEY_A, {}, 'hash-1');
+    assert.equal(r.ok, true);
+    assert.equal(r.replay, true);
+    assert.equal(r.pdfPendente, true);
+    assert.equal(await usada(), 1);
+    assert.equal((await privDoc(id)).conteudoHash, 'hash-1', 'hash da vencedora na gaveta');
+  });
+  test('(h2) PDF pendente + conteudo DIFERENTE: recusa, sem cobrar, sem escrever', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A, {}, 'hash-1');
+    const antes = await exameDoc(id);
+    const r = await emitir(id, KEY_A, { convenio: 'OUTRO' }, 'hash-2');
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'conteudo_divergente');
+    assert.equal(await usada(), 1, 'recusa cobrou');
+    assert.equal(await consumos(id), 1);
+    const depois = await exameDoc(id);
+    assert.equal(depois.convenio, 'PART');
+    assert.equal(depois.emitidoEm.toMillis(), antes.emitidoEm.toMillis());
+    assert.equal((await privDoc(id)).conteudoHash, 'hash-1', 'gaveta intocada');
+  });
+  test('(h3) PDF ja salvo + conteudo DIFERENTE: tambem recusa (devolver o antigo mentiria "emiti o novo")', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A, {}, 'hash-1');
+    await pdfSalvo(id);
+    const r = await emitir(id, KEY_A, {}, 'hash-2');
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'conteudo_divergente');
+    assert.equal(await usada(), 1);
+  });
+  test('(h4) reemissao deliberada (outra key) com outro conteudo: cobra e troca o hash da gaveta', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A, {}, 'hash-1');
+    await pdfSalvo(id);
+    const r = await emitir(id, KEY_B, {}, 'hash-2');
+    assert.equal(r.ok, true);
+    assert.equal(r.replay, false);
+    assert.equal(await usada(), 2);
+    assert.equal((await privDoc(id)).conteudoHash, 'hash-2');
+  });
   test('replay NAO reescreve o laudo assinado (dadosFinais do retry sao ignorados)', async () => {
     const id = await seedExame();
     await emitir(id, KEY_A);
