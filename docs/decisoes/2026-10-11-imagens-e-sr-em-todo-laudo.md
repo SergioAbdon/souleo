@@ -85,6 +85,26 @@ Rodada 2 do Codex (dbfbc20): `pdfBase64 ?? pdfHtml` deixava `pdfBase64: ''` entr
 rota publicava o HTML — agora o hash usa o MESMO predicado truthy do ramo de publicação, e o pin proíbe
 `??` ali. **Veredito final do Codex: APPROVED** ("refutado, sem achado restante").
 
+## Bloco do emitido no laudo de texto — correção de escopo (mesmo dia, à noite)
+
+Sergio, ao abrir o laudo de carótidas emitido: "você não fez os ajustes do sidebar... por que insiste em
+não fazer?". Ele tinha razão: "o eco de carótidas deve seguir o mesmo padrão de emissão do ecocardio"
+valia pro estado emitido inteiro, e eu tinha deixado o `ModoEmitido` de fora por interpretação estreita
+(Ruflo o listara como "não pedido"). Implementado com a tríade (branch `claude/texto-modo-emitido`):
+
+- Emitido fechado: selo + PDF + Copiar + Editar + Finalizar (mesmo `ModoEmitido` do ECO) + Imagens;
+  editor read-only; galeria só leitura. Editar → reedição (confirm de crédito): Salvar rascunho travado +
+  Reemitir, galeria volta a selecionar (lista local, vale na reemissão), editor editável.
+- **Codex** (CHANGES REQUESTED → atendido → APPROVED): reedição sem reemitir avisa (aba e Voltar); nova
+  emissão apaga `pdfUrl`/`pdfErro` da anterior — um PDF velho não posa de atual se o novo falhar
+  (teste h5, api 312/312). Ressalva não bloqueante: exame cancelado segue com UX incoerente, pré-existente.
+- **Ruflo** (APPROVED): miolo idêntico das duas telas virou `src/lib/clipboard.ts` (copiarHtml,
+  copiarTextoSimples com fallback) e `imprimirHtmlEmJanela` em `pdfUtils` (janela antes do await);
+  reedição guardada por exame; hook do ciclo do emitido fica pra 3ª tela.
+- **Ponytail** (APPROVED): texto simples via `editor.getText` (innerText fora do DOM achatava parágrafos),
+  `replaceAll`, ref morta e prop redundante cortadas.
+- Visual: carótidas `?closed=1` → 5 botões do emitido, editor travado, Editar → Reemitir.
+
 ## Pendente
 
 - 1º laudo de texto emitido com imagens na clínica confirma o PDF com dados reais.
