@@ -175,6 +175,17 @@ describe('E1 — replay da MESMA tentativa nao cobra de novo', () => {
     assert.equal(r.motivo, 'conteudo_divergente');
     assert.equal(await usada(), 1);
   });
+  test('(h5) reemissao apaga pdfUrl/pdfErro da emissao anterior (PDF velho nao posa de atual)', async () => {
+    const id = await seedExame();
+    await emitir(id, KEY_A, {}, 'hash-1');
+    await pdfSalvo(id);
+    await db.doc(`workspaces/${WS}/exames/${id}`).update({ pdfUrl: 'https://x/antigo.pdf', pdfErro: 'erro_pdf' });
+    const r = await emitir(id, KEY_B, {}, 'hash-2');
+    assert.equal(r.ok, true);
+    const depois = await exameDoc(id);
+    assert.equal(depois.pdfUrl, undefined, 'pdfUrl antigo sobreviveu a reemissao');
+    assert.equal(depois.pdfErro, undefined, 'pdfErro antigo sobreviveu a reemissao');
+  });
   test('(h4) reemissao deliberada (outra key) com outro conteudo: cobra e troca o hash da gaveta', async () => {
     const id = await seedExame();
     await emitir(id, KEY_A, {}, 'hash-1');

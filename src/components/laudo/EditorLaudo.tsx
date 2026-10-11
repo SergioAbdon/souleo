@@ -64,6 +64,8 @@ function Toolbar({ editor, onAddFrase, editable }: { editor: Editor | null; onAd
 // ── Ref exposto ──
 export type EditorLaudoRef = {
   getHTML: () => string;
+  /** Texto simples com quebra por bloco (prontuário) — sem div fantasma. */
+  getText: () => string;
   getAchadosHTML: () => string;
   getConclusoesHTML: () => string;
   getAchadosLines: () => string[];
@@ -131,6 +133,7 @@ const EditorLaudo = forwardRef<EditorLaudoRef, Props>(({ placeholder, onAddFrase
 
   useImperativeHandle(ref, () => ({
     getHTML: () => editor?.getHTML() || '',
+    getText: () => editor?.getText({ blockSeparator: '\n' }) || '',
 
     // X1: corte ÚNICO com laudo-linhas.ts (mesmo critério do merge por linha
     // e do Word/texto) — o walker de DOM que havia aqui cortava no primeiro

@@ -29,7 +29,8 @@ import BancoFrases from '@/components/laudo/BancoFrases';
 import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
 import { gerarDocx } from '@/lib/exportDocx';
-import { abrirPdfUrl } from '@/lib/pdfUtils';
+import { abrirPdfUrl, imprimirHtmlEmJanela } from '@/lib/pdfUtils';
+import { copiarHtml, copiarTextoSimples } from '@/lib/clipboard';
 import { nomeArquivoLaudo } from '@/lib/pdf-path';
 import { PopupSalvarEmitir, ModoEmitido } from '@/components/laudo/PopupEmitir';
 // Shadow Mode (Fase 5): roda Senna90 server-side em paralelo invisível
@@ -1871,26 +1872,13 @@ function LaudoPageInner() {
     // ModoEmitido em PopupEmitir.tsx). O botão que abre o PDF assinado usa
     // `abrirPdfUrl` direto e nunca chama `handleImprimir`.
     if (!tabelaProntaOuAvisa('imprimir', false)) return;
-    const win = window.open('', '_blank', 'width=900,height=700');
-    if (!win) return;
-    let html = gerarPdfHtml();
-    if (workspace?.id && imagensIncluidasNoPdf && imagensSelecionadasPdf.length > 0) {
-      const assinadas = await buscarUrlsAssinadas(workspace.id, exameId, imagensSelecionadasPdf);
-      if (assinadas) {
-        for (const [canonica, assinada] of Object.entries(assinadas)) {
-          html = html.split(canonica).join(assinada);
-        }
+    await imprimirHtmlEmJanela(() => gerarPdfHtml(), async (html) => {
+      if (workspace?.id && imagensIncluidasNoPdf && imagensSelecionadasPdf.length > 0) {
+        const assinadas = await buscarUrlsAssinadas(workspace.id, exameId, imagensSelecionadasPdf);
+        if (assinadas) for (const [canonica, assinada] of Object.entries(assinadas)) html = html.replaceAll(canonica, assinada);
       }
-    }
-    // O popup pode ter sido fechado pelo usuário durante o await das URLs
-    // assinadas (S4-T15 fix D5) — escrever num `document` morto lança e
-    // derrubava o handler inteiro, sem aviso nenhum na tela.
-    try {
-      win.document.write(html);
-      win.document.close();
-    } catch {
-      alert('A janela de impressão foi fechada. Clique em Imprimir de novo.');
-    }
+      return html;
+    });
   }
 
   // ── Copiar para Prontuário ──
@@ -1908,26 +1896,14 @@ function LaudoPageInner() {
       ? `<div style="font-size:8.5pt;line-height:1.6;">${concHTMLContent}</div>`
       : coletarConclusoes().map((t, i) => `<div style="font-size:8.5pt;line-height:1.6;"><strong>${i + 1}</strong> ${t}</div>`).join('');
 
-    const temp = document.createElement('div');
-    temp.style.cssText = 'font-family:IBM Plex Sans,Arial,sans-serif;font-size:8.5pt;color:#1a1a1a;';
-    temp.innerHTML = `
+    const copiou = copiarHtml(`
       <div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;">MEDIDAS E PARÂMETROS</div>
       <div style="border:1px solid #ddd;border-top:none;padding:0;">${paramsHTML}</div>
       <div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;margin-top:4px;">COMENTÁRIOS</div>
       <div style="border:1px solid #ddd;border-top:none;padding:4px 8px;">${achadosHTML}</div>
       <div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;margin-top:4px;">CONCLUSÃO</div>
       <div style="border:1px solid #ddd;border-top:none;padding:4px 8px;">${concHTML}</div>
-    `;
-
-    document.body.appendChild(temp);
-    const range = document.createRange();
-    range.selectNodeContents(temp);
-    const sel = window.getSelection();
-    sel?.removeAllRanges();
-    sel?.addRange(range);
-    const copiou = document.execCommand('copy');
-    sel?.removeAllRanges();
-    temp.remove();
+    `, 'font-family:IBM Plex Sans,Arial,sans-serif;font-size:8.5pt;color:#1a1a1a;');
     toast(copiou ? 'Copiado — cole com Ctrl+V no Word, Tasy ou MV' : 'Falha ao copiar — selecione e copie manualmente');
   }
 
@@ -1942,17 +1918,7 @@ function LaudoPageInner() {
 
     const texto = `MEDIDAS E PARÂMETROS\n${'─'.repeat(80)}\n${params}${'─'.repeat(80)}\n${rodapeFontes()}\n\nCOMENTÁRIOS\n${achados}\n\nCONCLUSÃO\n${conclusoes}`;
 
-    navigator.clipboard.writeText(texto).then(() => {
-      toast('Copiado texto simples — cole no prontuário');
-    }).catch(() => {
-      const ta = document.createElement('textarea');
-      ta.value = texto;
-      document.body.appendChild(ta);
-      ta.select();
-      const copiou = document.execCommand('copy');
-      ta.remove();
-      toast(copiou ? 'Copiado texto simples' : 'Falha ao copiar — selecione e copie manualmente');
-    });
+    copiarTextoSimples(texto).then((ok) => toast(ok ? 'Copiado texto simples — cole no prontuário' : 'Falha ao copiar — selecione e copie manualmente'));
   }
 
   async function handleBaixarWord() {
