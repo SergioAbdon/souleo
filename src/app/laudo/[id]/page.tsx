@@ -2108,7 +2108,7 @@ function LaudoPageInner() {
   }
 
   return (
-    <div className={`laudo-workspace font-[family-name:var(--font-ibm-plex)] ${emitido ? 'laudo-locked' : ''}`}>
+    <div className={`laudo-workspace ${emitido ? 'laudo-locked' : ''}`}>
       {/* v3: alerta se motor falhou */}
       {motorErro && (
         <div className="fixed top-0 left-0 right-0 z-[9999] bg-red-600 text-white text-center py-2 text-sm font-semibold">

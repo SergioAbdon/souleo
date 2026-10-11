@@ -229,9 +229,9 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
                     dicomImportado
                       ? 'bg-green-100 text-green-700'
                       : temMedidas
-                        ? 'text-[#1E3A5F]'
+                        ? ''
                         : 'bg-gray-200 text-gray-500'
-                  } disabled:opacity-50`}>
+                  }`}>
                   <EditorIcon name="download" />
                   {dicomImportado ? 'Importado' : temMedidas ? `Importar medidas (${totalMedidasDicom})` : 'Importar medidas'}
                 </button>
@@ -253,9 +253,9 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
                   }
                   className={`laudo-command-secondary ${
                     temImagens
-                      ? 'text-[#1E3A5F]'
+                      ? ''
                       : 'bg-gray-200 text-gray-500'
-                  } disabled:opacity-50`}>
+                  }`}>
                   <EditorIcon name="image" />
                   {temImagens ? `Imagens (${totalImagensDicom})` : 'Imagens'}
                 </button>

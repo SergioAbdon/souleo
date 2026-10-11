@@ -286,8 +286,6 @@ export default function LaudoTextoPage() {
 
   return (
     <div className="laudo-workspace laudo-texto-workspace">
-      {/* Coluna igual à do ECO (spec 2026-10-11-coluna-laudo-unificada):
-          cabeçalho navy + comandos + cartão de identificação só de leitura. */}
       <div className="laudo-coluna">
         <CabecalhoLaudo titulo={tipo?.nome || (exame?.tipoExame as string) || 'Laudo'} clinicaNome={clinicaNome} medicoInfo={medicoInfo} onVoltar={() => router.push('/agenda')} />
         <div className="laudo-command-line">

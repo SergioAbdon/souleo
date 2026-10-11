@@ -16,8 +16,8 @@ export default function CabecalhoLaudo({ titulo, clinicaNome, medicoInfo, onVolt
   return (
     <div className="laudo-cabecalho">
       <div className="min-w-0">
-        <h1>{titulo} · <span id="hdr-clinica">{clinicaNome}</span></h1>
-        <p id="hdr-subtitulo">{medicoInfo}</p>
+        <h1>{titulo} · {clinicaNome}</h1>
+        <p>{medicoInfo}</p>
       </div>
       <button type="button" onClick={onVoltar} aria-label="Voltar para a agenda" className="laudo-cabecalho-voltar">
         <EditorIcon name="back" /> Voltar
