@@ -156,6 +156,16 @@ export async function gerarESalvarPdf(
       if (imagensFalhadas.length > 0) {
         throw new Error(`imagem DICOM não carregou no render (${imagensFalhadas.slice(0, 3).join('; ')}) — PDF abortado`);
       }
+      // Codex 11/10 (rodada 3): 200 com conteúdo corrompido não dispara nada acima —
+      // o <img> fica com naturalWidth 0 e o PDF sairia em branco. `evaluate` funciona
+      // com o JS da página desligado (conferido localmente com o exame real).
+      const imagensVazias = await page.evaluate(
+        (pref: string) => Array.from(document.images).filter((i) => i.src.startsWith(pref) && !(i.complete && i.naturalWidth > 0)).length,
+        prefixoDicom,
+      );
+      if (imagensVazias > 0) {
+        throw new Error(`imagem DICOM vazia no render (${imagensVazias}) — PDF abortado`);
+      }
       let teto: NodeJS.Timeout | undefined;
       await Promise.race([
         page.evaluateHandle('document.fonts.ready'),
