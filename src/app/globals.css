@@ -49,7 +49,7 @@ body {
 .laudo-command-secondary:not(:disabled):hover{background:#EAF1FA;}
 .laudo-command-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid #1E3A5F;border-radius:8px;background:#1E3A5F;color:#fff;padding:10px 14px;font-size:12px;font-weight:500;white-space:nowrap;cursor:pointer;}
 .laudo-command-primary:not(:disabled):hover{background:#17304F;}
-.laudo-command-ajustavel{flex:1 1 auto;padding-left:10px;padding-right:10px;}
+.laudo-command-ajustavel{flex:1 1 0;min-width:0;padding-left:10px;padding-right:10px;}
 .laudo-command-line button:disabled{opacity:.5;cursor:default;}
 .laudo-command-line button:focus-visible,.laudo-fields button:focus-visible,.laudo-cabecalho-voltar:focus-visible{outline:2px solid #fff;outline-offset:2px;}
 .laudo-command-line button:focus-visible,.laudo-fields button:focus-visible{outline-color:#2563EB;}
