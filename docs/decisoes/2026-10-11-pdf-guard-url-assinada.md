@@ -30,7 +30,9 @@ Chrome), sem gravar nada:
 | `src/app/api/emitir/route.ts` | O detalhe do erro de PDF (HTML e anexo) passa a ir também para `logs{tipo:'pdf_erro', erro}` via Admin SDK — nunca ao cliente. Próxima falha fica legível daqui. |
 | `src/app/laudo-texto/[id]/page.tsx` | Seleção de imagens sempre possível. O laudo de texto não tem o passo "Editar": editar o texto e Reemitir **é** a reedição. A 1ª versão (hoje de manhã) aplicou a regra "emitido = só leitura" do ECO a uma tela sem Editar — e o médico não conseguia trocar as imagens da reemissão (achado do Sergio). No emitido a lista fica só na tela (a regra do Firestore nega o autosave) e vale na reemissão, em `dadosFinais`. |
 
-Verificação: `tsc` limpo · unit 787/787 · visual carótidas 3/3 · reprodução local do fg-69204 com o
+Codex (verificação adversarial, 3ac7cab): qualquer `?` passava como assinatura (`?alt=media` daria 403 e imagem em branco) e host em caixa alta escapava; log podia guardar token assinado. Atendido em bd8a8ba: assinada = query com `GoogleAccessId=` ou `X-Goog-Signature=`, varredura em minúsculas, query strings trocadas por `?…` no log; +2 testes.
+
+Verificação: `tsc` limpo · unit 788/788 · visual carótidas 3/3 · reprodução local do fg-69204 com o
 guard novo: não aborta, PDF de 3,8 MB em 6 s.
 
 ## Pendente
