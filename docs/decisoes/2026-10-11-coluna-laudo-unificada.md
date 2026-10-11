@@ -1,6 +1,6 @@
 # Coluna do laudo unificada — geometria antiga, pele minimalista (11/10/2026)
 
-**Status:** implementado no branch `claude/coluna-laudo-unificada` (commit a3251f1 + fixes da tríade). Merge/push/deploy dependem do aval do Sergio.
+**Status:** NO AR em produção desde 11/10/2026. Merge 21ee2ce na master com aval do Sergio ("vamos colocar online"); Vercel serviu o CSS novo em ~45 s, verificado por sonda no souleo.com.br.
 **Spec aprovada:** `docs/superpowers/specs/2026-10-11-coluna-laudo-unificada-design.md`.
 
 ## Contexto
@@ -62,4 +62,4 @@ créditos, rotas, handlers.
 
 ## Pendente
 
-Merge na master, push e deploy: só com aval do Sergio. Emissão real não exercitada nesta entrega.
+Emissão real não exercitada nesta entrega: o primeiro laudo emitido na clínica confirma o estado emitido com dados reais.

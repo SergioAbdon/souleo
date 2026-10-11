@@ -34,7 +34,7 @@ Ordem cronológica. Ler o(s) recente(s) antes de mexer na área relacionada.
 | 2026-09-08 | [Identidade, layout e ícones LEO](2026-09-08-identidade-layout-icones-leo.md) — redesenho local aplicado; typecheck, 771 testes e build aprovados; 26 verificações visuais aprovadas | Design / memória |
 | 2026-09-21 | [Import Feegow casa por NOME](2026-09-21-feegow-import-name-matching.md) 🔧 branch `feat/wader-console` commit `fa29db2`, NÃO testado na clínica — notebook: test:api + tríade + merge/deploy | Feegow / import / worklist |
 | 2026-10-11 | [Publicação do layout aprovado](2026-10-11-publicacao-layout-aprovado.md) ✅ redesenho visual em produção (8ac762c→db1a88d), 771 testes, 26 verificações visuais | Design / deploy |
-| 2026-10-11 | [Coluna do laudo unificada](2026-10-11-coluna-laudo-unificada.md) 🎨 geometria antiga (390px, cabeçalho navy) + pele minimalista em ECO e laudo de texto; emitido em 2 linhas; tríade Codex/Ruflo/Ponytail — branch claude/coluna-laudo-unificada, aguarda aval pra merge | Design / laudo / editor |
+| 2026-10-11 | [Coluna do laudo unificada](2026-10-11-coluna-laudo-unificada.md) 🎨 geometria antiga (390px, cabeçalho navy) + pele minimalista em ECO e laudo de texto; emitido em 2 linhas; tríade Codex/Ruflo/Ponytail — ✅ NO AR 11/10 (merge 21ee2ce, aval Sergio) | Design / laudo / editor |
 
 
 ## Validação local — 09/10/2026
