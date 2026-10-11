@@ -203,13 +203,19 @@ export default function LaudoTextoPage() {
     toast(ok ? 'Rascunho salvo' : 'Erro ao salvar rascunho');
   }
 
-  // Autosave da seleção como no ECO (ordem = ordem do clique); no emitido a regra nega e aqui é o cinto.
+  // Seleção como no ECO (ordem = ordem do clique). O laudo de texto NÃO tem o
+  // passo "Editar": editar o texto e Reemitir É a reedição. Então a seleção
+  // fica sempre possível (achado Sergio 11/10 — a 1ª versão travava a galeria
+  // no emitido e o médico não conseguia trocar as imagens da reemissão). No
+  // emitido a lista vive só na tela (a regra do Firestore nega o autosave) e
+  // ganha validade na reemissão, em dadosFinais — igual à reedição do ECO.
   async function handleToggleSelecaoImagem(url: string) {
-    if (!workspace?.id || !user?.uid || docFechado) return;
+    if (!workspace?.id || !user?.uid) return;
     const nova = imagensSelecionadasPdf.includes(url)
       ? imagensSelecionadasPdf.filter((u) => u !== url)
       : [...imagensSelecionadasPdf, url];
     setImagensSelecionadasPdf(nova);
+    if (docFechado) return; // emitido: só local até reemitir
     try {
       await saveExame(workspace.id, { id: exameId, imagensSelecionadasPdf: nova }, user.uid);
     } catch (e) {
@@ -416,9 +422,9 @@ export default function LaudoTextoPage() {
         exameId={exameId}
         pacienteNome={exame?.pacienteNome as string | undefined}
         tipoExame={exame?.tipoExame as string | undefined}
-        permitirSelecao={!docFechado}
+        permitirSelecao
         selecionadas={imagensSelecionadasPdf}
-        onToggleSelecao={docFechado ? undefined : handleToggleSelecaoImagem}
+        onToggleSelecao={handleToggleSelecaoImagem}
       />
       <style jsx global>{`
         .laudo-texto-workspace .tiptap h2{font-size:10.5pt;font-weight:600;color:${p1};margin:2mm 0 1.5mm;}
