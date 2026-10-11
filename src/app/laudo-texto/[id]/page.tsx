@@ -299,8 +299,8 @@ export default function LaudoTextoPage() {
           </button>
         </div>
         <div className="laudo-fields">
-          <div className="rounded-xl border border-[#D6E2F1] bg-white">
-            <div className="flex items-center gap-2.5 px-3.5 py-4 text-[13px] font-medium text-[#1E3A5F]"><EditorIcon name="sec-id" /> Identificação</div>
+          <div className="laudo-cartao">
+            <div className="laudo-cartao-titulo"><EditorIcon name="sec-id" /> Identificação</div>
             <div className="grid gap-3 px-3.5 pb-5 text-[13px] text-[#1E3A5F]">
               {exame?.acc ? (
                 <div className="laudo-nota flex items-center justify-between gap-3"><span className="font-medium">ACC</span><span className="min-w-0 break-all text-right font-mono text-[12px]">{exame.acc as string}</span></div>

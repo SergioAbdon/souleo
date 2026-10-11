@@ -636,9 +636,9 @@ function navTeclado(e: React.KeyboardEvent<HTMLDivElement>) {
 function Sec({ id, title, children, defaultOpen, collapsed, single }: { id: string; title: string; children: ReactNode; defaultOpen?: boolean; collapsed?: boolean; single?: boolean }) {
   const [open, setOpen] = useState(defaultOpen ?? !collapsed);
   return (
-    <div id={id} className="mb-3 overflow-hidden rounded-xl border border-[#D6E2F1] bg-white">
+    <div id={id} className="laudo-cartao mb-3">
       <button onClick={() => setOpen(!open)} aria-expanded={open}
-        className="section-btn w-full flex items-center gap-2.5 px-3.5 py-4 text-[13px] font-medium text-[#1E3A5F] cursor-pointer select-none hover:bg-[#F1F5F9] transition">
+        className="section-btn laudo-cartao-titulo w-full cursor-pointer select-none hover:bg-[#F1F5F9] transition">
         <EditorIcon name={id} />
         {title}
         <EditorIcon name="chevron" className={`ml-auto text-[#526277] transition-transform ${open ? '' : '-rotate-90'}`} />
