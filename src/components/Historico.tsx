@@ -5,6 +5,8 @@
 // Ações: Ver, Imprimir, Excluir (reabrir é na própria tela do laudo)
 // ══════════════════════════════════════════════════════════════════
 
+import ListIcon from '@/components/ListIcon';
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getHistorico, getExame, type HistoricoResult, type FiltrosHistorico } from '@/lib/firestore';
@@ -243,21 +245,21 @@ export default function Historico() {
   return (
     <div>
       {/* Filtros */}
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
+      <div className="flex flex-wrap items-center gap-3 mb-5 rounded-xl border border-slate-200 bg-white p-4">
         <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-          className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] w-36"
+          className="border border-borda rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] w-36"
           title="De" />
-        <span className="text-xs text-gray-400">até</span>
+        <span className="text-xs text-slate-500">até</span>
         <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-          className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] w-36"
+          className="border border-borda rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] w-36"
           title="Até" />
         <select value={convenioSel} onChange={e => setConvenioSel(e.target.value)}
-          className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] w-36">
+          className="border border-borda rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] w-44">
           <option value="">Todos convênios</option>
           {convOpcoes.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
         <input type="text" placeholder="Buscar nome..." value={busca} onChange={e => setBusca(e.target.value)}
-          className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] min-w-[150px]" />
+          className="flex-1 border border-borda rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] min-w-[150px]" />
         {(dateFrom || dateTo || convenioSel || busca) && (
           <button onClick={limparFiltros}
             className="text-xs text-[#2563EB] hover:underline whitespace-nowrap">Limpar</button>
@@ -266,19 +268,19 @@ export default function Historico() {
 
       {/* Tabela */}
       {loading ? (
-        <div className="text-center py-12 text-gray-300">
-          <span className="text-3xl animate-pulse">🫀</span>
+        <div className="text-center py-12 text-slate-500">
+          <span className="text-3xl animate-pulse"><ListIcon name="file" className="h-7 w-7" /></span>
           <p className="text-sm mt-2">Carregando histórico...</p>
         </div>
       ) : erroCarga ? (
-        <div className="text-center py-12 text-gray-300">
-          <p className="text-3xl mb-2">⚠️</p>
+        <div className="text-center py-12 text-slate-500">
+          <p className="text-3xl mb-2"><ListIcon name="alert" className="h-7 w-7" /></p>
           <p className="text-sm text-gray-500">Não foi possível carregar o histórico.</p>
           <button onClick={fetchData} className="mt-3 px-4 py-1.5 bg-[#1E3A5F] text-white text-xs rounded-lg hover:bg-[#2563EB] transition">Tentar novamente</button>
         </div>
       ) : filtrados.length === 0 ? (
-        <div className="text-center py-12 text-gray-300">
-          <p className="text-3xl mb-2">📁</p>
+        <div className="text-center py-12 text-slate-500">
+          <p className="text-3xl mb-2"><ListIcon name="file" className="h-7 w-7" /></p>
           <p className="text-sm">{busca ? `Nenhum resultado para "${busca}" nas páginas carregadas` : 'Nenhum laudo emitido'}</p>
           {busca && hasMore && (
             <button onClick={carregarMais} disabled={loadingMore}
@@ -288,39 +290,39 @@ export default function Historico() {
           )}
         </div>
       ) : (
-        <div className="bg-white rounded-lg overflow-hidden border border-gray-100">
-          <table className="w-full text-sm">
+        <div className="relative bg-white rounded-xl overflow-x-auto border border-slate-200">
+          <table className="w-full min-w-[820px] text-sm">
             <thead>
-              <tr className="border-b text-xs text-gray-400 uppercase bg-gray-50">
-                <th className="py-2 px-3 text-left w-24">Data</th>
-                <th className="py-2 px-3 text-left">Paciente</th>
-                <th className="py-2 px-3 text-left w-24">Tipo</th>
-                <th className="py-2 px-3 text-left w-28">Convênio</th>
-                <th className="py-2 px-3 text-left w-36">Emitido em</th>
-                <th className="py-2 px-3 text-right w-52">Ações</th>
+              <tr className="border-b text-xs text-slate-500 uppercase bg-gray-50">
+                <th className="py-3 px-4 text-left w-24">Data</th>
+                <th className="py-3 px-4 text-left">Paciente</th>
+                <th className="py-3 px-4 text-left w-24">Tipo</th>
+                <th className="py-3 px-4 text-left w-28">Convênio</th>
+                <th className="py-3 px-4 text-left w-36">Emitido em</th>
+                <th className="py-3 px-4 text-right w-52">Ações</th>
               </tr>
             </thead>
             <tbody>
               {filtrados.map(ex => (
                 <tr key={ex.id} className="border-b hover:bg-gray-50 transition">
-                  <td className="py-3 px-3 text-gray-500 text-xs font-mono">{fmtDataExame(ex.dataExame)}</td>
-                  <td className="py-3 px-3">
+                  <td className="py-5 px-4 text-gray-500 text-xs font-mono">{fmtDataExame(ex.dataExame)}</td>
+                  <td className="py-5 px-4">
                     <div className="font-semibold text-[#1E3A5F]">{ex.pacienteNome || '—'}</div>
                   </td>
-                  <td className="py-3 px-3 text-gray-500 text-xs">{tiposMap[ex.tipoExame as string]?.nome || ex.tipoExame || '—'}</td>
-                  <td className="py-3 px-3 text-gray-500 text-xs">{ex.convenio || '—'}</td>
-                  <td className="py-3 px-3 text-gray-400 text-xs">{fmtDataHora(ex.emitidoEm)}</td>
-                  <td className="py-3 px-3 text-right">
+                  <td className="py-5 px-4 text-gray-500 text-xs">{tiposMap[ex.tipoExame as string]?.nome || ex.tipoExame || '—'}</td>
+                  <td className="py-5 px-4 text-gray-500 text-xs">{ex.convenio || '—'}</td>
+                  <td className="py-5 px-4 text-slate-500 text-xs">{fmtDataHora(ex.emitidoEm)}</td>
+                  <td className="py-5 px-4 text-right">
                     <div className="flex items-center justify-end gap-1.5">
                       {/* X20: rota por modalidade (rotaDoLaudo) — antes ia sempre pro
                           motor de eco, mesmo com laudo de texto/pdf. */}
                       <button onClick={() => verLaudo(ex)}
-                        className="bg-green-100 text-green-700 px-2.5 py-1 rounded text-xs font-semibold hover:bg-green-200 transition">
-                        👁 Ver
+                        className="bg-green-100 text-green-700 px-3 py-2 rounded-lg text-xs font-semibold hover:bg-green-200 transition">
+                        <ListIcon name="eye" /> Ver
                       </button>
                       <button onClick={() => imprimirPdf(ex)}
-                        className="bg-gray-100 text-gray-600 px-2.5 py-1 rounded text-xs font-semibold hover:bg-gray-200 transition">
-                        🖨️
+                        className="bg-gray-100 text-gray-600 px-3 py-2 rounded-lg text-xs font-semibold hover:bg-gray-200 transition">
+                        <ListIcon name="print" /><span className="sr-only">Imprimir</span>
                       </button>
                       {/* Ruflo-2 (espelho do Worklist, Task 6/P4/E4): laudo
                           emitido com franquia ja cobrada e sem PDF (falha do
@@ -328,13 +330,13 @@ export default function Historico() {
                           medico-autor, que a rota tambem autoriza. */}
                       {(podeCorrigirAdministrativo(papel) || ex.medicoUid === user?.uid) && ex.pdfErro && !ex.pdfUrl && ex.status === 'emitido' && (
                         <button onClick={() => regerarPdf(ex)}
-                          className="bg-red-50 text-red-500 px-2.5 py-1 rounded text-xs font-semibold hover:bg-red-100 transition">
-                          {regerandoPdf === ex.id ? 'Regerando...' : '🔁 Regerar PDF'}
+                          className="bg-red-50 text-red-500 px-3 py-2 rounded-lg text-xs font-semibold hover:bg-red-100 transition">
+                          {regerandoPdf === ex.id ? 'Regerando...' : <><ListIcon name="refresh" /> Regerar PDF</>}
                         </button>
                       )}
                       <button onClick={() => abrirConfirmDelete(ex)}
-                        className="bg-red-50 text-red-500 px-2.5 py-1 rounded text-xs font-semibold hover:bg-red-100 transition">
-                        🗑
+                        className="bg-red-50 text-red-500 px-3 py-2 rounded-lg text-xs font-semibold hover:bg-red-100 transition">
+                        <ListIcon name="trash" /><span className="sr-only">Excluir laudo</span>
                       </button>
                       {podeCancelarLaudo(profile, ex, user?.uid || '', papel) && ex.status !== 'cancelado' && (
                         <button onClick={() => setCancelId(ex.id)}
@@ -346,7 +348,7 @@ export default function Historico() {
               ))}
             </tbody>
           </table>
-          <div className="text-center text-xs text-gray-400 py-2">
+          <div className="text-center text-xs text-slate-500 py-2">
             {filtrados.length} laudo{filtrados.length !== 1 ? 's' : ''} encontrado{filtrados.length !== 1 ? 's' : ''}
             {hasMore && (
               <button onClick={carregarMais} disabled={loadingMore}
@@ -373,7 +375,7 @@ export default function Historico() {
             </div>
             <div className="px-5 py-3 border-t flex justify-end gap-3">
               <button onClick={() => setDeleteId(null)}
-                className="px-4 py-2 text-sm text-gray-500 border rounded-lg hover:bg-gray-50">Cancelar</button>
+                className="px-4 py-2 text-sm text-gray-500 border border-borda rounded-lg hover:bg-gray-50">Cancelar</button>
               <button onClick={confirmarDelete}
                 className="px-6 py-2 text-sm bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition">
                 Excluir
@@ -390,9 +392,9 @@ export default function Historico() {
             <h3 className="font-bold text-[#1E3A5F]">Cancelar laudo</h3>
             <p className="text-sm text-gray-500 mt-1">O laudo deixa de ser servido, a franquia é devolvida e fica registrado. Informe o motivo:</p>
             <input type="text" value={cancelMotivo} onChange={e => setCancelMotivo(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2 text-sm mt-3 focus:outline-none focus:border-[#1E3A5F]" placeholder="Ex.: exame repetido" />
+              className="w-full border border-borda rounded-lg px-3 py-2 text-sm mt-3 focus:outline-none focus:border-[#1E3A5F]" placeholder="Ex.: exame repetido" />
             <div className="flex gap-2 mt-4">
-              <button onClick={() => setCancelId(null)} className="flex-1 border rounded-lg py-2 text-sm">Voltar</button>
+              <button onClick={() => setCancelId(null)} className="flex-1 border border-borda rounded-lg py-2 text-sm">Voltar</button>
               <button onClick={confirmarCancelamento} className="flex-1 bg-orange-600 text-white rounded-lg py-2 text-sm font-semibold">Cancelar laudo</button>
             </div>
           </div>

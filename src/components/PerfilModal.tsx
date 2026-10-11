@@ -83,29 +83,37 @@ export default function PerfilModal({ open, onClose }: Props) {
   const ehMedico = tipo === 'medico';
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-[#1E3A5F]/35 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-xl max-h-[calc(100dvh-2rem)] flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="bg-[#1E3A5F] text-white px-5 py-3 rounded-t-xl flex items-center justify-between">
-          <h2 className="font-bold text-sm">✏️ Editar Perfil</h2>
-          <button onClick={onClose} className="text-white/70 hover:text-white text-lg">&times;</button>
+        <div className="bg-[#EAF1FA] text-[#1E3A5F] px-6 py-5 rounded-t-xl border-b border-[#D6E2F1] flex items-center justify-between">
+          <h2 className="font-semibold text-lg">Editar perfil</h2>
+          <button onClick={onClose} aria-label="Fechar perfil" className="text-[#526277] hover:text-[#1E3A5F] text-2xl px-2">&times;</button>
         </div>
 
-        <div className="p-5 space-y-3 max-h-[75vh] overflow-y-auto">
+        <div className="p-6 space-y-5 min-h-0 overflow-y-auto">
           {erro && <div className="bg-red-50 text-red-700 text-sm p-2 rounded flex items-center gap-2"><span>⚠️</span>{erro}</div>}
 
           {/* Nome */}
+          <h3 className="text-sm font-semibold text-[#1E3A5F]">Dados pessoais</h3>
           <div>
-            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Nome completo *</label>
+            <label className="block text-sm font-medium text-[#526277] mb-2">Nome completo *</label>
             <input type="text" value={nome} onChange={e => setNome(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+              className="w-full min-w-0 border border-[#D5DFEB] rounded-lg px-3 py-2.5 text-sm text-[#1E3A5F] focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]" />
           </div>
 
+            <div>
+              <label className="block text-sm font-medium text-[#526277] mb-2">Telefone</label>
+              <input type="text" value={tel} onChange={e => setTel(e.target.value)} placeholder="(00) 00000-0000"
+                className="w-full min-w-0 border border-[#D5DFEB] rounded-lg px-3 py-2.5 text-sm text-[#1E3A5F] focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]" />
+            </div>
+
           {/* Tipo */}
+          <h3 className="text-sm font-semibold text-[#1E3A5F] border-t border-[#E2E8F0] pt-5">Identificação profissional</h3>
           <div>
-            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Tipo de profissional</label>
+            <label className="block text-sm font-medium text-[#526277] mb-2">Tipo de profissional</label>
             <select value={tipo} onChange={e => setTipo(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]">
+              className="w-full min-w-0 border border-[#D5DFEB] rounded-lg px-3 py-2.5 text-sm text-[#1E3A5F] focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]">
               <option value="medico">Médico</option>
               <option value="assistente">Assistente</option>
             </select>
@@ -115,47 +123,43 @@ export default function PerfilModal({ open, onClose }: Props) {
           {ehMedico && (
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">CRM *</label>
+                <label className="block text-sm font-medium text-[#526277] mb-2">CRM *</label>
                 <input type="text" value={crm} onChange={e => setCrm(e.target.value)}
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+                  className="w-full min-w-0 border border-[#D5DFEB] rounded-lg px-3 py-2.5 text-sm text-[#1E3A5F] focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]" />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">UF *</label>
+                <label className="block text-sm font-medium text-[#526277] mb-2">UF *</label>
                 <input type="text" value={uf} onChange={e => setUf(e.target.value.toUpperCase())} maxLength={2}
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" placeholder="PA" />
+                  className="w-full min-w-0 border border-[#D5DFEB] rounded-lg px-3 py-2.5 text-sm text-[#1E3A5F] focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]" placeholder="PA" />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">RQE</label>
+                <label className="block text-sm font-medium text-[#526277] mb-2">RQE</label>
                 <input type="text" value={rqe} onChange={e => setRqe(e.target.value)}
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+                  className="w-full min-w-0 border border-[#D5DFEB] rounded-lg px-3 py-2.5 text-sm text-[#1E3A5F] focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]" />
               </div>
             </div>
           )}
 
-          {/* Telefone + Especialidade */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Especialidade */}
+          <div className="grid gap-5">
+
             <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Telefone</label>
-              <input type="text" value={tel} onChange={e => setTel(e.target.value)} placeholder="(00) 00000-0000"
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Especialidade</label>
+              <label className="block text-sm font-medium text-[#526277] mb-2">Especialidade</label>
               <input type="text" value={titulo} onChange={e => setTitulo(e.target.value)}
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]"
+                className="w-full min-w-0 border border-[#D5DFEB] rounded-lg px-3 py-2.5 text-sm text-[#1E3A5F] focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]"
                 placeholder="Cardiologia e Ecocardiografia" />
             </div>
           </div>
 
           {/* Assinatura */}
           <div>
-            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Assinatura digital</label>
-            <div className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-[#1E3A5F] transition"
+            <label className="block text-sm font-medium text-[#526277] mb-2">Assinatura digital</label>
+            <div className="border border-dashed border-[#CFDAEA] rounded-lg p-6 text-center cursor-pointer hover:border-[#1E3A5F] transition"
               onClick={() => fileRef.current?.click()}>
               {sigB64 ? (
                 <img src={sigB64} alt="Assinatura" className="max-h-16 mx-auto" />
               ) : (
-                <p className="text-gray-400 text-sm">📝 Clique para upload (PNG, máx 2MB)</p>
+                <p className="text-[#526277] text-sm"> Clique para upload (PNG, máx 2MB)</p>
               )}
               <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleUploadSig} />
             </div>
@@ -166,10 +170,10 @@ export default function PerfilModal({ open, onClose }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t flex justify-end gap-3">
+        <div className="px-6 py-4 border-t border-[#E2E8F0] flex justify-end gap-3">
           <button onClick={onClose} className="px-4 py-2 text-sm text-gray-500 border rounded-lg hover:bg-gray-50">Cancelar</button>
           <button onClick={handleSalvar} disabled={loading}
-            className="px-6 py-2 text-sm bg-[#1E3A5F] text-white rounded-lg font-semibold hover:bg-[#2563EB] transition disabled:opacity-50">
+            className="px-6 py-2 text-sm bg-[#2563EB] text-white rounded-lg font-semibold hover:bg-[#1D4ED8] transition disabled:opacity-50">
             {loading ? 'Salvando...' : 'Salvar perfil'}
           </button>
         </div>

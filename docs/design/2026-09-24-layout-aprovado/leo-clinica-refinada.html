@@ -1,0 +1,264 @@
+<div id="leo-clinica-refinada" data-variant="d" aria-label="Paletas D e F da Agenda">
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+#leo-clinica-refinada {font-family:'IBM Plex Sans',Arial,sans-serif;color:#243449;font-size:14px;}
+#leo-clinica-refinada * {box-sizing:border-box;}
+#leo-clinica-refinada .choice {display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff;padding:12px;border-bottom:1px solid #e2e8f0;}
+#leo-clinica-refinada button {font:inherit;cursor:pointer;color:inherit;background:white;border:1px solid #e2e8f0;border-radius:7px;padding:8px 12px;min-height:36px;display:inline-flex;align-items:center;gap:8px;}
+#leo-clinica-refinada button:focus-visible,#leo-clinica-refinada input:focus-visible {outline:2px solid #2563eb;outline-offset:3px;}
+#leo-clinica-refinada .choice button[aria-pressed=true] {background:#eef2f8;color:#1e3a5f;border-color:#a5b9d7;}
+#leo-clinica-refinada .note {color:#64748b;font-size:12px;margin-left:auto;}
+#leo-clinica-refinada .shell {display:grid;grid-template-columns:180px minmax(0,1fr);background:#f1f5f9;border:1px solid #e2e8f0;min-height:630px;}
+#leo-clinica-refinada aside {background:#fff;border-right:1px solid #e2e8f0;padding:24px 12px;display:flex;flex-direction:column;gap:24px;}
+#leo-clinica-refinada .brand {width:98px;height:46px;margin-left:12px;}
+#leo-clinica-refinada .place {padding:0 12px;font-size:12px;color:#64748b;}
+#leo-clinica-refinada .place strong {display:block;color:#1e3a5f;font-size:14px;font-weight:500;margin-bottom:4px;}
+#leo-clinica-refinada nav {display:grid;gap:5px;}
+#leo-clinica-refinada .navitem {display:flex;align-items:center;gap:10px;padding:9px 12px;font-size:13px;color:#637083;border-radius:7px;}
+#leo-clinica-refinada .navitem.active {background:#eef2f8;color:#1e3a5f;font-weight:600;}
+#leo-clinica-refinada .account {margin-top:auto;border-top:1px solid #e2e8f0;padding:18px 10px 0;display:flex;gap:10px;align-items:center;font-size:12px;}
+#leo-clinica-refinada .avatar {border-radius:50%;background:#eef2f8;color:#1e3a5f;padding:9px;}
+#leo-clinica-refinada main {min-width:0;padding:0 24px 24px;}
+#leo-clinica-refinada .crumb {font-size:12px;color:#64748b;padding:17px 0;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:8px;}
+#leo-clinica-refinada .pagehead {display:flex;justify-content:space-between;align-items:center;gap:16px;padding:25px 0 22px;flex-wrap:wrap;}
+#leo-clinica-refinada h2 {font-size:25px;letter-spacing:-.8px;color:#1e3a5f;margin:0 0 4px;font-weight:600;}
+#leo-clinica-refinada .sub {font-size:13px;color:#64748b;}
+#leo-clinica-refinada button.primary {background:#2563eb;border-color:#2563eb;color:#fff;}
+#leo-clinica-refinada .head-actions {display:flex;gap:8px;flex-wrap:wrap;}
+#leo-clinica-refinada .workspace {background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;}
+#leo-clinica-refinada .filters {display:flex;gap:5px;padding:12px 14px;border-bottom:1px solid #e2e8f0;flex-wrap:wrap;}
+#leo-clinica-refinada .filters button {border:0;padding:6px 9px;font-size:12px;color:#64748b;}
+#leo-clinica-refinada .filters button[aria-pressed=true] {background:#eef2f8;color:#1e3a5f;font-weight:500;}
+#leo-clinica-refinada .count {font-size:11px;opacity:.7;}
+#leo-clinica-refinada .searchrow {display:flex;gap:10px;padding:12px 16px;align-items:center;border-bottom:1px solid #e2e8f0;}
+#leo-clinica-refinada input {border:0;outline:none;min-width:0;width:100%;font:inherit;font-size:13px;color:#243449;background:#fff;}
+#leo-clinica-refinada table {width:100%;border-collapse:collapse;text-align:left;font-size:13px;}
+#leo-clinica-refinada th {font-weight:400;font-size:11px;color:#64748b;background:#fafbfd;padding:10px 12px;}
+#leo-clinica-refinada td {border-top:1px solid #edf0f4;padding:8px 12px;height:46px;}
+#leo-clinica-refinada .roomy td {padding-top:19px;padding-bottom:19px;height:76px;}
+#leo-clinica-refinada .name {display:block;color:#1e3a5f;font-weight:500;}
+#leo-clinica-refinada .secondary {color:#64748b;font-size:11px;margin-top:3px;}
+#leo-clinica-refinada .time {font-variant-numeric:tabular-nums;color:#64748b;}
+#leo-clinica-refinada .pill {display:inline-flex;align-items:center;gap:5px;padding:3px 7px;border-radius:5px;font-size:11px;white-space:nowrap;}
+#leo-clinica-refinada .pill::before {content:'';width:5px;height:5px;border-radius:50%;background:currentColor;}
+#leo-clinica-refinada .waiting {background:#fef3c7;color:#92400e;}
+#leo-clinica-refinada .working {background:#dbeafe;color:#1e40af;}
+#leo-clinica-refinada .done {background:#d1fae5;color:#065f46;}
+#leo-clinica-refinada .action {border:0;background:transparent;padding:4px;color:#2563eb;font-size:12px;}
+#leo-clinica-refinada .foot {padding:13px 16px;color:#64748b;font-size:11px;border-top:1px solid #e2e8f0;}
+#leo-clinica-refinada .empty {text-align:center;color:#64748b;padding:30px;}
+#leo-clinica-refinada .sweep {animation:fin-sweep .681818181818s ease-in-out infinite;}
+@keyframes fin-sweep {0%,12%{transform:translateX(-30px)}68%,100%{transform:translateX(235px)}}
+@media(prefers-reduced-motion:reduce){#leo-clinica-refinada .sweep{animation:none;opacity:0}}
+@media(max-width:800px){#leo-clinica-refinada .shell{grid-template-columns:145px minmax(0,1fr)}#leo-clinica-refinada main{padding:0 14px 16px}#leo-clinica-refinada .optional{display:none}#leo-clinica-refinada td,#leo-clinica-refinada th{padding-left:8px;padding-right:8px}}
+@media(max-width:550px){#leo-clinica-refinada .shell{display:block}#leo-clinica-refinada aside{display:none}#leo-clinica-refinada .note{margin-left:0;width:100%}#leo-clinica-refinada .exam{display:none}#leo-clinica-refinada .pagehead{padding:18px 0}#leo-clinica-refinada .head-actions{gap:5px}#leo-clinica-refinada button{min-height:44px}#leo-clinica-refinada .filters{gap:0;padding:8px}#leo-clinica-refinada main{padding:0 10px 12px}#leo-clinica-refinada td{font-size:12px}}
+#leo-clinica-refinada .shell{grid-template-columns:184px minmax(0,1fr)}
+#leo-clinica-refinada .date{width:142px;flex:none;border-right:1px solid #e2e8f0;padding-right:10px}
+#leo-clinica-refinada .searchrow{padding:18px 16px}
+#leo-clinica-refinada .workspace{box-shadow:0 2px 8px rgba(30,58,95,.035)}
+#leo-clinica-refinada tbody tr:hover{background:#f8fafc}
+#leo-clinica-refinada .examline{display:flex;align-items:center;gap:6px}
+#leo-clinica-refinada .acc{font-family:monospace;font-size:11px;color:#64748b;margin-top:5px}
+#leo-clinica-refinada .wait{font-size:11px;color:#92400e;margin-top:5px}
+#leo-clinica-refinada .mobile-menu{display:none}
+#leo-clinica-refinada .roomy td{padding-top:20px;padding-bottom:20px}
+@media(max-width:700px){#leo-clinica-refinada .shell{display:block}#leo-clinica-refinada aside{display:none}#leo-clinica-refinada .mobile-menu{display:inline-flex}#leo-clinica-refinada .shell.menu-open aside{display:flex}#leo-clinica-refinada .exam{display:table-cell}#leo-clinica-refinada .searchrow{flex-wrap:wrap}#leo-clinica-refinada input[type=search]{flex:1}#leo-clinica-refinada table,#leo-clinica-refinada tbody{display:block}#leo-clinica-refinada thead{display:none}#leo-clinica-refinada tr{display:grid;grid-template-columns:1fr 1fr;padding:14px 4px;border-top:1px solid #e2e8f0}#leo-clinica-refinada .roomy td{display:block;height:auto;padding:6px 10px;border:0}#leo-clinica-refinada td.time{grid-column:1/-1}#leo-clinica-refinada td.optional{display:block}#leo-clinica-refinada td.exam{grid-column:1}#leo-clinica-refinada td:nth-child(2){grid-column:1/-1}#leo-clinica-refinada main{padding:0 12px 16px}}
+#leo-clinica-refinada .variant-picker{display:flex;gap:8px;flex-wrap:wrap;padding:12px 0}
+#leo-clinica-refinada .variant-picker button[aria-pressed=true]{background:#1e3a5f;color:white;border-color:#1e3a5f}
+#leo-clinica-refinada .variant-description{font-size:13px;color:#526277;margin:0 0 16px}
+#leo-clinica-refinada[data-variant=b] .shell{background:#fff}
+#leo-clinica-refinada[data-variant=b] .workspace{border:0;border-radius:0;box-shadow:none}
+#leo-clinica-refinada[data-variant=b] .filters{padding-left:0;padding-bottom:0;gap:12px}
+#leo-clinica-refinada[data-variant=b] .filters button{border-radius:0;padding:12px 4px;border-bottom:2px solid transparent}
+#leo-clinica-refinada[data-variant=b] .filters button[aria-pressed=true]{background:transparent;border-bottom-color:#2563eb;color:#1e3a5f}
+#leo-clinica-refinada[data-variant=b] .searchrow{padding:20px 0}
+#leo-clinica-refinada[data-variant=b] th{background:#fff}
+#leo-clinica-refinada[data-variant=b] .pagehead{padding-top:34px;padding-bottom:30px}
+#leo-clinica-refinada[data-variant=b] .roomy td{padding-top:23px;padding-bottom:23px}
+#leo-clinica-refinada[data-variant=f] .workspace{background:transparent;border:0;box-shadow:none;overflow:visible}
+#leo-clinica-refinada[data-variant=f] .filters{padding:0 0 16px;border:0}
+#leo-clinica-refinada[data-variant=f] .filters button{background:transparent}
+#leo-clinica-refinada[data-variant=f] .filters button[aria-pressed=true]{background:#1e3a5f;color:#fff}
+#leo-clinica-refinada[data-variant=f] .searchrow{background:#fff;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:16px}
+#leo-clinica-refinada[data-variant=f] table,#leo-clinica-refinada[data-variant=f] tbody{display:block}
+#leo-clinica-refinada[data-variant=f] thead{display:none}
+#leo-clinica-refinada[data-variant=f] tr{display:grid;grid-template-columns:minmax(180px,1.5fr) minmax(145px,1fr) minmax(130px,1fr) 90px;align-items:center;gap:4px 14px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:18px;margin-bottom:10px}
+#leo-clinica-refinada[data-variant=f] .roomy td{padding:0;height:auto;border:0}
+#leo-clinica-refinada[data-variant=f] td:nth-child(2){grid-column:1;grid-row:1}
+#leo-clinica-refinada[data-variant=f] td.time{grid-column:1;grid-row:2;font-size:11px}
+#leo-clinica-refinada[data-variant=f] td.time:before{content:'Chegada '}
+#leo-clinica-refinada[data-variant=f] td.exam{grid-column:2;grid-row:1}
+#leo-clinica-refinada[data-variant=f] td.optional{display:block;grid-column:2;grid-row:2;font-size:11px;color:#64748b}
+#leo-clinica-refinada[data-variant=f] td:nth-child(5){grid-column:3;grid-row:1/3}
+#leo-clinica-refinada[data-variant=f] td:last-child{grid-column:4;grid-row:1/3}
+#leo-clinica-refinada[data-variant=f] .name{font-size:15px}
+#leo-clinica-refinada[data-variant=f] .foot{border:0;padding-left:0}
+@media(max-width:950px){#leo-clinica-refinada[data-variant=f] tr{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}#leo-clinica-refinada[data-variant=f] td:nth-child(5){grid-column:1;grid-row:3}#leo-clinica-refinada[data-variant=f] td:last-child{grid-column:2;grid-row:3}#leo-clinica-refinada[data-variant=f] tr{gap:14px}}
+#leo-clinica-refinada[data-variant=d] aside{background:#eaf1fa;border-color:#d6e2f1}
+#leo-clinica-refinada[data-variant=d] .navitem{color:#445d7b}
+#leo-clinica-refinada[data-variant=d] .navitem.active{background:#fff;color:#1e3a5f;box-shadow:0 2px 6px rgba(30,58,95,.07)}
+#leo-clinica-refinada[data-variant=d] .place,#leo-clinica-refinada[data-variant=d] .account .secondary{color:#506580}
+#leo-clinica-refinada[data-variant=d] .account{border-color:#cfdced}
+#leo-clinica-refinada[data-variant=d] .avatar{background:#d6e4f6;color:#1e3a5f}
+#leo-clinica-refinada[data-variant=f] aside{background:#1e3a5f;border-color:#1e3a5f}
+#leo-clinica-refinada[data-variant=f] .navitem{color:#d5e1f0}
+#leo-clinica-refinada[data-variant=f] .navitem.active{background:#34577f;color:#fff}
+#leo-clinica-refinada[data-variant=f] .place,#leo-clinica-refinada[data-variant=f] .account .secondary{color:#c3d3e6}
+#leo-clinica-refinada[data-variant=f] .place strong,#leo-clinica-refinada[data-variant=f] .account{color:#fff}
+#leo-clinica-refinada[data-variant=f] .account{border-color:#46617f}
+#leo-clinica-refinada[data-variant=f] .avatar{background:#34577f;color:#fff}
+#leo-clinica-refinada[data-variant=f] .brand{background:#fff;border-radius:8px;padding:5px;width:108px;height:54px}
+#leo-clinica-refinada .patient-detail{background:white;border:1px solid #e2e8f0;border-radius:12px;margin-top:20px;padding:24px}
+#leo-clinica-refinada .patient-detail h3{color:#1e3a5f;font-size:20px;margin:0 0 8px}
+#leo-clinica-refinada .detailhead{display:flex;justify-content:space-between;align-items:center;gap:12px}
+#leo-clinica-refinada .history{display:flex;justify-content:space-between;align-items:center;gap:16px;border-top:1px solid #e2e8f0;padding:18px 0;flex-wrap:wrap}
+#leo-clinica-refinada .patient-detail h4{margin:28px 0 14px;font-size:14px;color:#1e3a5f}
+#leo-clinica-refinada tr.selected{background:#eef2f8}
+@media(max-width:700px){#leo-clinica-refinada td:nth-child(2){grid-column:auto}#leo-clinica-refinada .patient-detail{padding:16px}}
+#leo-clinica-refinada .report-filters{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:16px;border-bottom:1px solid #e2e8f0} #leo-clinica-refinada .report-filters label{display:flex;gap:10px;align-items:center;font-size:13px;flex-wrap:wrap} #leo-clinica-refinada select{font:inherit;color:#1e3a5f;border:1px solid #e2e8f0;border-radius:7px;background:white;padding:8px;max-width:100%} </style>
+
+<div class="shell roomy">
+<aside>
+<svg class="brand" viewBox="-10 0 500 230" role="img" aria-label="LEO">
+<defs><linearGradient id="fin-blue" x2="1" y2="1"><stop stop-color="#284f83"/><stop offset="1" stop-color="#2877ff"/></linearGradient><clipPath id="fin-trace"><path d="M17 153 H48 L68 113 L70 188 L87 159 H200" fill="none" stroke="white" stroke-width="3.5"/></clipPath></defs>
+<g fill="url(#fin-blue)"><path d="M55 10 H128 L91 151 H202 L201 155 H85 L74 171 L72 95 L46 149 H18 Z"/><path d="M16 158 H50 L64 135 L66 202 L86 164 H198 L188 214 H0 Z"/></g>
+<g fill="#1e3a5f" transform="translate(213 104) skewX(-12)"><path d="M0 0 H100 V23 H28 V43 H93 V65 H28 V87 H100 V110 H0 Z"/><path fifin-rule="evenodd" d="M150 0 H202 Q232 0 232 29 V81 Q232 110 202 110 H150 Q120 110 120 81 V29 Q120 0 150 0 Z M158 23 Q148 23 148 35 V75 Q148 87 158 87 H194 Q204 87 204 75 V35 Q204 23 194 23 Z"/></g><g clip-path="url(#fin-trace)"><rect class="sweep" width="28" height="220" fill="#77aaff"/></g></svg>
+<div class="place"><strong>Clínica demonstração</strong>Ambiente de prévia</div>
+<nav aria-label="Navegação ilustrativa"><div class="navitem"><i data-lucide="calendar-days" aria-hidden="true"></i>Agenda</div><div class="navitem"><i data-lucide="users" aria-hidden="true"></i>Pacientes</div><div class="navitem"><i data-lucide="file-text" aria-hidden="true"></i>Laudos</div><div class="navitem"><i data-lucide="chart-no-axes-combined" aria-hidden="true"></i>Financeiro</div><div class="navitem active"><i data-lucide="building-2" aria-hidden="true"></i>Clínica</div><div class="navitem"><i data-lucide="network" aria-hidden="true"></i>Integrações</div></nav>
+<div class="account"><span class="avatar">SM</span><span>Médico exemplo<br><span class="secondary">Minha conta</span></span></div>
+</aside>
+<main>
+<div class="crumb"><button class="mobile-menu" type="button" aria-label="Abrir menu" aria-expanded="false"><i data-lucide="menu" aria-hidden="true"></i></button><i data-lucide="calendar-days" aria-hidden="true"></i>Clínica demonstração / Clínica</div>
+<div class="pagehead"><div><h2>Clínica</h2><div class="sub">Dados do local e configurações da clínica</div></div><div class="head-actions"></div></div>
+<section class="workspace" aria-label="Configurações da clínica"><div class="clinic-tabs" role="tablist" aria-label="Seções da clínica"></div><div class="clinic-panel"></div></section><section class="patient-detail" hidden aria-label="Ficha do paciente"></section>
+<p class="sub" id="fin-feedback" role="status"></p>
+</main>
+</div>
+
+</div>
+
+
+
+
+
+<style>
+#leo-clinica-refinada .layout-choices{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
+#leo-clinica-refinada .layout-choices button[aria-pressed=true]{background:#1e3a5f;color:white}
+#leo-clinica-refinada .acc{font-family:monospace;font-size:11px;color:#64748b;margin-top:6px}
+#leo-clinica-refinada .secondary-actions{display:flex;gap:8px}
+#leo-clinica-refinada .name{padding:0;font-size:14px;color:#1e3a5f;text-align:left}
+#leo-clinica-refinada .report-filters .extra-filter{max-width:180px}
+#leo-clinica-refinada[data-layout=b] table,#leo-clinica-refinada[data-layout=b] tbody,#leo-clinica-refinada[data-layout=c] table,#leo-clinica-refinada[data-layout=c] tbody{display:block}
+#leo-clinica-refinada[data-layout=b] thead,#leo-clinica-refinada[data-layout=c] thead{display:none}
+#leo-clinica-refinada[data-layout=b] tr,#leo-clinica-refinada[data-layout=c] tr{display:grid;grid-template-columns:minmax(0,1fr) 160px 110px;gap:6px 20px;padding:22px;border-top:1px solid #e2e8f0;align-items:center}
+#leo-clinica-refinada[data-layout=b] td,#leo-clinica-refinada[data-layout=c] td{padding:0;height:auto;border:0}
+#leo-clinica-refinada[data-layout=b] td:first-child,#leo-clinica-refinada[data-layout=c] td:first-child{grid-column:1;grid-row:1}
+#leo-clinica-refinada[data-layout=b] td:nth-child(2),#leo-clinica-refinada[data-layout=c] td:nth-child(2){grid-column:1;grid-row:2}
+#leo-clinica-refinada[data-layout=b] td:nth-child(3),#leo-clinica-refinada[data-layout=c] td:nth-child(3){grid-column:2;grid-row:1/3}
+#leo-clinica-refinada[data-layout=b] td:last-child,#leo-clinica-refinada[data-layout=c] td:last-child{grid-column:3;grid-row:1/3}
+#leo-clinica-refinada[data-layout=b] .name,#leo-clinica-refinada[data-layout=c] .name{font-size:16px}
+#leo-clinica-refinada[data-layout=c] .workspace{background:transparent;border:0;box-shadow:none}
+#leo-clinica-refinada[data-layout=c] .searchrow,#leo-clinica-refinada[data-layout=c] .report-filters{background:#fff}
+#leo-clinica-refinada[data-layout=c] tr{background:#fff;border:1px solid #e2e8f0;border-radius:12px;margin-top:14px}
+@media(max-width:700px){#leo-clinica-refinada[data-layout=b] tr,#leo-clinica-refinada[data-layout=c] tr{grid-template-columns:minmax(0,1fr) 110px}#leo-clinica-refinada[data-layout=b] td:nth-child(3),#leo-clinica-refinada[data-layout=c] td:nth-child(3){grid-column:1;grid-row:3}#leo-clinica-refinada[data-layout=b] td:last-child,#leo-clinica-refinada[data-layout=c] td:last-child{grid-column:2;grid-row:1/4}}
+</style>
+
+
+<style>
+#leo-clinica-refinada .layout-choices{display:none}
+#leo-clinica-refinada .unified-toolbar{display:grid;grid-template-columns:minmax(150px,1.3fr) minmax(130px,1fr) minmax(120px,1fr) minmax(110px,.9fr);gap:8px;align-items:center;padding:16px;border-bottom:1px solid #e2e8f0;background:white}
+#leo-clinica-refinada .unified-toolbar .searchrow{padding:0;border:0;gap:8px;min-width:0}
+#leo-clinica-refinada .unified-toolbar label{min-width:0}
+#leo-clinica-refinada .unified-toolbar select{width:100%;max-width:none;min-width:0;padding:9px 7px;font-size:12px}
+#leo-clinica-refinada .unified-toolbar input{font-size:12px}
+@media(max-width:850px){#leo-clinica-refinada .unified-toolbar{grid-template-columns:repeat(3,minmax(0,1fr))}#leo-clinica-refinada .unified-toolbar .searchrow{grid-column:1/-1;padding-bottom:8px}}
+@media(max-width:450px){#leo-clinica-refinada .unified-toolbar{grid-template-columns:1fr}#leo-clinica-refinada .unified-toolbar select{font-size:14px}}
+</style>
+
+
+<style>
+#leo-clinica-refinada .finance-summary{margin-top:24px;padding:22px;background:white;border:1px solid #e2e8f0;border-radius:12px}
+#leo-clinica-refinada .finance-summary h3{margin:0;color:#1e3a5f;font-size:17px}
+#leo-clinica-refinada .summary-title{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+#leo-clinica-refinada .finance-summary .money{text-align:right;font-variant-numeric:tabular-nums}
+#leo-clinica-refinada .total-line{display:flex;justify-content:space-between;border-top:1px solid #e2e8f0;padding-top:18px;margin-top:12px;color:#1e3a5f;font-weight:500}
+</style>
+
+
+<style>
+#leo-clinica-refinada .period-controls{display:flex;gap:12px;align-items:end;flex-wrap:wrap;padding:16px;border-bottom:1px solid #e2e8f0;background:white}
+#leo-clinica-refinada .period-controls label{display:grid;gap:6px;font-size:12px;color:#526277}
+#leo-clinica-refinada .period-controls input,#leo-clinica-refinada .period-controls select{width:auto;max-width:100%;font:inherit;border:1px solid #e2e8f0;border-radius:7px;padding:9px;background:white;color:#1e3a5f}
+#leo-clinica-refinada .period-controls .dates{width:140px}
+#leo-clinica-refinada [hidden]{display:none!important}
+#leo-clinica-refinada .summary-row{display:grid;grid-template-columns:1fr 70px 110px 110px;gap:12px;padding:15px 0;border-top:1px solid #e2e8f0;align-items:center}
+#leo-clinica-refinada .summary-row span:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}
+@media(max-width:600px){#leo-clinica-refinada .summary-row{grid-template-columns:1fr 45px 80px 80px;gap:5px;font-size:12px}}
+</style>
+
+
+<style>
+#leo-clinica-refinada .clinic-tabs{display:flex;gap:8px;flex-wrap:wrap;padding:16px;border-bottom:1px solid #e2e8f0}
+#leo-clinica-refinada .clinic-tabs button{border:0;background:transparent}
+#leo-clinica-refinada .clinic-tabs button[aria-selected=true]{background:#eef2f8;color:#1e3a5f}
+#leo-clinica-refinada .clinic-panel{padding:28px}
+#leo-clinica-refinada .clinic-panel h3{font-size:19px;color:#1e3a5f;margin:0 0 8px}
+#leo-clinica-refinada .clinic-panel h4{font-size:14px;color:#1e3a5f;margin:28px 0 18px}
+#leo-clinica-refinada .clinic-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin:24px 0}
+#leo-clinica-refinada .clinic-grid label{display:grid;gap:8px;font-size:13px;color:#526277}
+#leo-clinica-refinada .clinic-grid input{border:1px solid #d5dfeb;border-radius:8px;padding:11px;color:#1e3a5f;width:100%;min-width:0}
+#leo-clinica-refinada .clinic-row{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:20px 0;border-bottom:1px solid #e2e8f0}
+#leo-clinica-refinada .clinic-row .lead{display:flex;gap:12px;align-items:center}
+#leo-clinica-refinada .clinic-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:26px}
+#leo-clinica-refinada .clinic-note{font-size:12px;color:#64748b;margin-top:20px}
+@media(max-width:550px){#leo-clinica-refinada .clinic-grid{grid-template-columns:1fr}#leo-clinica-refinada .clinic-panel{padding:18px}}
+</style>
+<script>
+(()=>{
+const root=document.getElementById('leo-clinica-refinada');const panel=root.querySelector('.clinic-panel');const tabs=root.querySelector('.clinic-tabs');
+const icon=name=>'<i data-lucide="'+name+'" aria-hidden="true"></i>';
+const row=(symbol,title,sub,action)=>'<div class="clinic-row"><div class="lead">'+icon(symbol)+'<div><span class="name">'+title+'</span><div class="secondary">'+sub+'</div></div></div><button type="button" data-demo="'+action+'">'+action+'</button></div>';
+const pages={
+local:'<h3>Dados do local</h3><div class="sub">Informações cadastrais e identidade nos laudos.</div><div class="clinic-grid"><label>Nome do local<input value="Clínica demonstração"></label><label>Razão social<input placeholder="Não informada"></label><label>CNPJ<input placeholder="Não informado"></label><label>Telefone<input placeholder="Não informado"></label><label>E-mail<input type="email" placeholder="Não informado"></label><label>Endereço<input placeholder="Não informado"></label></div><h4>Identidade nos laudos</h4>'+row('image','Logotipo do local','Marca utilizada nos documentos da clínica.','Enviar logotipo')+row('file-text','Timbre dos laudos','A identidade do documento é independente da interface do LEO.','Configurar timbre')+'<div class="clinic-actions"><button type="button" class="primary" data-demo="Salvar alterações">'+icon('save')+'Salvar alterações</button></div>',
+team:'<h3>Equipe</h3><div class="sub">Pessoas com acesso a este local.</div>'+row('user-round','Médico demonstração','Responsável pelo local · perfil demonstrativo','Ver permissões')+row('user-round','Recepção demonstração','Acesso administrativo · perfil demonstrativo','Ver permissões')+'<div class="clinic-actions"><button type="button" class="primary" data-demo="Convidar membro">'+icon('user-round-plus')+'Convidar membro</button></div>',
+types:'<h3>Tipos de exame</h3><div class="sub">Exames disponíveis e forma de elaboração do laudo.</div>'+row('monitor','Ecocardiograma transtorácico','Laudo pelo motor clínico','Configurar')+row('waves','Doppler de carótidas','Laudo em texto','Configurar')+row('activity','Eletrocardiograma','Anexo PDF do aparelho','Configurar')+row('chart-no-axes-combined','MAPA','Anexo PDF do aparelho','Configurar')+row('history','Holter','Anexo PDF do aparelho','Configurar')+row('footprints','Teste ergométrico','Anexo PDF do aparelho','Configurar')+'<div class="clinic-actions"><button type="button" data-demo="Adicionar tipo de exame">'+icon('plus')+'Adicionar tipo</button></div>',
+plan:'<h3>Plano e franquia</h3><div class="sub">Plano contratado e utilização do ciclo.</div>'+row('credit-card','Plano do local','Informações do contrato serão exibidas aqui.','Ver detalhes')+row('file-text','Franquia de laudos','Consumo e saldo do ciclo serão exibidos com os dados reais.','Ver utilização')+'<p class="clinic-note">Prévia visual sem plano, preço ou consumo reais.</p>'};
+function show(key){panel.innerHTML=pages[key];tabs.querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.tab===key)));panel.setAttribute('role','tabpanel');panel.id='clinic-panel';panel.setAttribute('aria-labelledby','clinic-tab-'+key);if(globalThis.lucide)lucide.createIcons({attrs:{width:16,height:16}});}
+[['local','building-2','Dados do local'],['team','users-round','Equipe'],['types','list-tree','Tipos de exame'],['plan','credit-card','Plano e franquia']].forEach(([key,symbol,label])=>{const b=document.createElement('button');b.type='button';b.id='clinic-tab-'+key;b.dataset.tab=key;b.setAttribute('role','tab');b.setAttribute('aria-controls','clinic-panel');b.innerHTML=icon(symbol)+label;b.onclick=()=>show(key);tabs.append(b);});
+root.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.demo)root.querySelector('[role=status]').textContent=b.dataset.demo+' — ação ilustrativa; nenhuma alteração será salva nesta prévia.';if(b.classList.contains('mobile-menu')){const open=root.querySelector('.shell').classList.toggle('menu-open');b.setAttribute('aria-expanded',String(open));}});show('local');
+})();
+</script>
+
+<style>
+#leo-clinica-refinada .clinic-section{padding:8px 0 24px;border-bottom:1px solid #e2e8f0}
+#leo-clinica-refinada .clinic-section h4{margin:24px 0 8px}
+#leo-clinica-refinada .clinic-section .clinic-grid{margin:18px 0 0}
+#leo-clinica-refinada .letterhead-preview{margin:20px 0;background:#fafbfd;border:1px solid #e2e8f0;padding:24px;border-radius:10px}
+#leo-clinica-refinada .letterhead-paper{background:white;border:1px solid #e2e8f0;padding:26px;color:#526277}
+#leo-clinica-refinada .letterhead-name{font-size:18px;font-weight:500;color:#8b1a1a;padding-bottom:12px;border-bottom:2px solid #8b1a1a;overflow-wrap:anywhere}
+#leo-clinica-refinada .letterhead-contact{font-size:12px;padding-top:10px;overflow-wrap:anywhere}
+#leo-clinica-refinada .pending-changes{font-size:12px;color:#64748b;margin-right:auto;align-self:center}
+#leo-clinica-refinada .clinic-actions[hidden]{display:none!important}
+</style>
+<script>
+(()=>{
+const root=document.getElementById('leo-clinica-refinada');const panel=root.querySelector('.clinic-panel');
+function refine(){
+if(panel.querySelector('.clinic-section'))return;
+const active=root.querySelector('.clinic-tabs [aria-selected=true]');
+if(active.dataset.tab==='team'){panel.querySelectorAll('.clinic-row .secondary').forEach(el=>{el.textContent+=' · Ativo';});return;}
+if(active.dataset.tab!=='local')return;
+const grid=panel.querySelector('.clinic-grid');const labels=Array.from(grid.children);const sections=document.createElement('div');
+[['Cadastro',[0,1,2]],['Contato e endereço',[3,4,5]]].forEach(([title,indices])=>{const section=document.createElement('section');section.className='clinic-section';const heading=document.createElement('h4');heading.textContent=title;const fields=document.createElement('div');fields.className='clinic-grid';indices.forEach(i=>fields.append(labels[i]));section.append(heading,fields);sections.append(section);});grid.replaceWith(sections);
+const preview=document.createElement('div');preview.className='letterhead-preview';preview.setAttribute('aria-label','Prévia ilustrativa do cabeçalho do laudo');preview.innerHTML='<div class="letterhead-paper"><div class="letterhead-name"></div><div class="letterhead-contact"></div></div><p class="clinic-note">Cabeçalho ilustrativo · a cor do documento continua independente do azul da plataforma.</p>';
+const identityHeading=Array.from(panel.querySelectorAll('h4')).find(x=>x.textContent==='Identidade nos laudos');identityHeading.after(preview);
+const actions=panel.querySelector('.clinic-actions');actions.hidden=true;const pending=document.createElement('span');pending.className='pending-changes';pending.textContent='Alterações ainda não salvas';actions.prepend(pending);
+const inputs=Array.from(panel.querySelectorAll('input'));let saved=inputs.map(x=>x.value);
+function update(){preview.querySelector('.letterhead-name').textContent=inputs[0].value||'Nome do local';preview.querySelector('.letterhead-contact').textContent=[inputs[5].value,inputs[3].value,inputs[4].value].filter(Boolean).join(' · ')||'Endereço e contatos aparecerão aqui';actions.hidden=!inputs.some((x,i)=>x.value!==saved[i]);}
+inputs.forEach(x=>x.addEventListener('input',update));
+const save=actions.querySelector('button');save.addEventListener('click',()=>{saved=inputs.map(x=>x.value);update();});update();
+}
+refine();root.querySelector('.clinic-tabs').addEventListener('click',()=>{refine();});
+})();
+</script>

@@ -13,6 +13,9 @@
   --color-p2-deep: #1D4ED8;  /* fim do gradiente de botão */
   --color-surface: #F1F5F9;  /* fundo da área de trabalho */
   --color-card: #FFFFFF;     /* superfície de card/sidebar */
+  --color-sidebar: #EAF1FA;  /* sidebar D aprovada */
+  --color-sidebar-border: #D6E2F1;
+  --color-sidebar-ink: #445D7B;
   --color-borda: #E2E8F0;
   --color-ink: #1E293B;      /* texto principal */
   --color-ink-2: #64748B;    /* texto secundário */

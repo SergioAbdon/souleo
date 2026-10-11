@@ -1,0 +1,198 @@
+<div id="leo-laudos-a-toolbar" data-variant="d" aria-label="Paletas D e F da Agenda">
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+#leo-laudos-a-toolbar {font-family:'IBM Plex Sans',Arial,sans-serif;color:#243449;font-size:14px;}
+#leo-laudos-a-toolbar * {box-sizing:border-box;}
+#leo-laudos-a-toolbar .choice {display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff;padding:12px;border-bottom:1px solid #e2e8f0;}
+#leo-laudos-a-toolbar button {font:inherit;cursor:pointer;color:inherit;background:white;border:1px solid #e2e8f0;border-radius:7px;padding:8px 12px;min-height:36px;display:inline-flex;align-items:center;gap:8px;}
+#leo-laudos-a-toolbar button:focus-visible,#leo-laudos-a-toolbar input:focus-visible {outline:2px solid #2563eb;outline-offset:3px;}
+#leo-laudos-a-toolbar .choice button[aria-pressed=true] {background:#eef2f8;color:#1e3a5f;border-color:#a5b9d7;}
+#leo-laudos-a-toolbar .note {color:#64748b;font-size:12px;margin-left:auto;}
+#leo-laudos-a-toolbar .shell {display:grid;grid-template-columns:180px minmax(0,1fr);background:#f1f5f9;border:1px solid #e2e8f0;min-height:630px;}
+#leo-laudos-a-toolbar aside {background:#fff;border-right:1px solid #e2e8f0;padding:24px 12px;display:flex;flex-direction:column;gap:24px;}
+#leo-laudos-a-toolbar .brand {width:98px;height:46px;margin-left:12px;}
+#leo-laudos-a-toolbar .place {padding:0 12px;font-size:12px;color:#64748b;}
+#leo-laudos-a-toolbar .place strong {display:block;color:#1e3a5f;font-size:14px;font-weight:500;margin-bottom:4px;}
+#leo-laudos-a-toolbar nav {display:grid;gap:5px;}
+#leo-laudos-a-toolbar .navitem {display:flex;align-items:center;gap:10px;padding:9px 12px;font-size:13px;color:#637083;border-radius:7px;}
+#leo-laudos-a-toolbar .navitem.active {background:#eef2f8;color:#1e3a5f;font-weight:600;}
+#leo-laudos-a-toolbar .account {margin-top:auto;border-top:1px solid #e2e8f0;padding:18px 10px 0;display:flex;gap:10px;align-items:center;font-size:12px;}
+#leo-laudos-a-toolbar .avatar {border-radius:50%;background:#eef2f8;color:#1e3a5f;padding:9px;}
+#leo-laudos-a-toolbar main {min-width:0;padding:0 24px 24px;}
+#leo-laudos-a-toolbar .crumb {font-size:12px;color:#64748b;padding:17px 0;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:8px;}
+#leo-laudos-a-toolbar .pagehead {display:flex;justify-content:space-between;align-items:center;gap:16px;padding:25px 0 22px;flex-wrap:wrap;}
+#leo-laudos-a-toolbar h2 {font-size:25px;letter-spacing:-.8px;color:#1e3a5f;margin:0 0 4px;font-weight:600;}
+#leo-laudos-a-toolbar .sub {font-size:13px;color:#64748b;}
+#leo-laudos-a-toolbar button.primary {background:#2563eb;border-color:#2563eb;color:#fff;}
+#leo-laudos-a-toolbar .head-actions {display:flex;gap:8px;flex-wrap:wrap;}
+#leo-laudos-a-toolbar .workspace {background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;}
+#leo-laudos-a-toolbar .filters {display:flex;gap:5px;padding:12px 14px;border-bottom:1px solid #e2e8f0;flex-wrap:wrap;}
+#leo-laudos-a-toolbar .filters button {border:0;padding:6px 9px;font-size:12px;color:#64748b;}
+#leo-laudos-a-toolbar .filters button[aria-pressed=true] {background:#eef2f8;color:#1e3a5f;font-weight:500;}
+#leo-laudos-a-toolbar .count {font-size:11px;opacity:.7;}
+#leo-laudos-a-toolbar .searchrow {display:flex;gap:10px;padding:12px 16px;align-items:center;border-bottom:1px solid #e2e8f0;}
+#leo-laudos-a-toolbar input {border:0;outline:none;min-width:0;width:100%;font:inherit;font-size:13px;color:#243449;background:#fff;}
+#leo-laudos-a-toolbar table {width:100%;border-collapse:collapse;text-align:left;font-size:13px;}
+#leo-laudos-a-toolbar th {font-weight:400;font-size:11px;color:#64748b;background:#fafbfd;padding:10px 12px;}
+#leo-laudos-a-toolbar td {border-top:1px solid #edf0f4;padding:8px 12px;height:46px;}
+#leo-laudos-a-toolbar .roomy td {padding-top:19px;padding-bottom:19px;height:76px;}
+#leo-laudos-a-toolbar .name {display:block;color:#1e3a5f;font-weight:500;}
+#leo-laudos-a-toolbar .secondary {color:#64748b;font-size:11px;margin-top:3px;}
+#leo-laudos-a-toolbar .time {font-variant-numeric:tabular-nums;color:#64748b;}
+#leo-laudos-a-toolbar .pill {display:inline-flex;align-items:center;gap:5px;padding:3px 7px;border-radius:5px;font-size:11px;white-space:nowrap;}
+#leo-laudos-a-toolbar .pill::before {content:'';width:5px;height:5px;border-radius:50%;background:currentColor;}
+#leo-laudos-a-toolbar .waiting {background:#fef3c7;color:#92400e;}
+#leo-laudos-a-toolbar .working {background:#dbeafe;color:#1e40af;}
+#leo-laudos-a-toolbar .done {background:#d1fae5;color:#065f46;}
+#leo-laudos-a-toolbar .action {border:0;background:transparent;padding:4px;color:#2563eb;font-size:12px;}
+#leo-laudos-a-toolbar .foot {padding:13px 16px;color:#64748b;font-size:11px;border-top:1px solid #e2e8f0;}
+#leo-laudos-a-toolbar .empty {text-align:center;color:#64748b;padding:30px;}
+#leo-laudos-a-toolbar .sweep {animation:ll-sweep .681818181818s ease-in-out infinite;}
+@keyframes ll-sweep {0%,12%{transform:translateX(-30px)}68%,100%{transform:translateX(235px)}}
+@media(prefers-reduced-motion:reduce){#leo-laudos-a-toolbar .sweep{animation:none;opacity:0}}
+@media(max-width:800px){#leo-laudos-a-toolbar .shell{grid-template-columns:145px minmax(0,1fr)}#leo-laudos-a-toolbar main{padding:0 14px 16px}#leo-laudos-a-toolbar .optional{display:none}#leo-laudos-a-toolbar td,#leo-laudos-a-toolbar th{padding-left:8px;padding-right:8px}}
+@media(max-width:550px){#leo-laudos-a-toolbar .shell{display:block}#leo-laudos-a-toolbar aside{display:none}#leo-laudos-a-toolbar .note{margin-left:0;width:100%}#leo-laudos-a-toolbar .exam{display:none}#leo-laudos-a-toolbar .pagehead{padding:18px 0}#leo-laudos-a-toolbar .head-actions{gap:5px}#leo-laudos-a-toolbar button{min-height:44px}#leo-laudos-a-toolbar .filters{gap:0;padding:8px}#leo-laudos-a-toolbar main{padding:0 10px 12px}#leo-laudos-a-toolbar td{font-size:12px}}
+#leo-laudos-a-toolbar .shell{grid-template-columns:184px minmax(0,1fr)}
+#leo-laudos-a-toolbar .date{width:142px;flex:none;border-right:1px solid #e2e8f0;padding-right:10px}
+#leo-laudos-a-toolbar .searchrow{padding:18px 16px}
+#leo-laudos-a-toolbar .workspace{box-shadow:0 2px 8px rgba(30,58,95,.035)}
+#leo-laudos-a-toolbar tbody tr:hover{background:#f8fafc}
+#leo-laudos-a-toolbar .examline{display:flex;align-items:center;gap:6px}
+#leo-laudos-a-toolbar .acc{font-family:monospace;font-size:11px;color:#64748b;margin-top:5px}
+#leo-laudos-a-toolbar .wait{font-size:11px;color:#92400e;margin-top:5px}
+#leo-laudos-a-toolbar .mobile-menu{display:none}
+#leo-laudos-a-toolbar .roomy td{padding-top:20px;padding-bottom:20px}
+@media(max-width:700px){#leo-laudos-a-toolbar .shell{display:block}#leo-laudos-a-toolbar aside{display:none}#leo-laudos-a-toolbar .mobile-menu{display:inline-flex}#leo-laudos-a-toolbar .shell.menu-open aside{display:flex}#leo-laudos-a-toolbar .exam{display:table-cell}#leo-laudos-a-toolbar .searchrow{flex-wrap:wrap}#leo-laudos-a-toolbar input[type=search]{flex:1}#leo-laudos-a-toolbar table,#leo-laudos-a-toolbar tbody{display:block}#leo-laudos-a-toolbar thead{display:none}#leo-laudos-a-toolbar tr{display:grid;grid-template-columns:1fr 1fr;padding:14px 4px;border-top:1px solid #e2e8f0}#leo-laudos-a-toolbar .roomy td{display:block;height:auto;padding:6px 10px;border:0}#leo-laudos-a-toolbar td.time{grid-column:1/-1}#leo-laudos-a-toolbar td.optional{display:block}#leo-laudos-a-toolbar td.exam{grid-column:1}#leo-laudos-a-toolbar td:nth-child(2){grid-column:1/-1}#leo-laudos-a-toolbar main{padding:0 12px 16px}}
+#leo-laudos-a-toolbar .variant-picker{display:flex;gap:8px;flex-wrap:wrap;padding:12px 0}
+#leo-laudos-a-toolbar .variant-picker button[aria-pressed=true]{background:#1e3a5f;color:white;border-color:#1e3a5f}
+#leo-laudos-a-toolbar .variant-description{font-size:13px;color:#526277;margin:0 0 16px}
+#leo-laudos-a-toolbar[data-variant=b] .shell{background:#fff}
+#leo-laudos-a-toolbar[data-variant=b] .workspace{border:0;border-radius:0;box-shadow:none}
+#leo-laudos-a-toolbar[data-variant=b] .filters{padding-left:0;padding-bottom:0;gap:12px}
+#leo-laudos-a-toolbar[data-variant=b] .filters button{border-radius:0;padding:12px 4px;border-bottom:2px solid transparent}
+#leo-laudos-a-toolbar[data-variant=b] .filters button[aria-pressed=true]{background:transparent;border-bottom-color:#2563eb;color:#1e3a5f}
+#leo-laudos-a-toolbar[data-variant=b] .searchrow{padding:20px 0}
+#leo-laudos-a-toolbar[data-variant=b] th{background:#fff}
+#leo-laudos-a-toolbar[data-variant=b] .pagehead{padding-top:34px;padding-bottom:30px}
+#leo-laudos-a-toolbar[data-variant=b] .roomy td{padding-top:23px;padding-bottom:23px}
+#leo-laudos-a-toolbar[data-variant=f] .workspace{background:transparent;border:0;box-shadow:none;overflow:visible}
+#leo-laudos-a-toolbar[data-variant=f] .filters{padding:0 0 16px;border:0}
+#leo-laudos-a-toolbar[data-variant=f] .filters button{background:transparent}
+#leo-laudos-a-toolbar[data-variant=f] .filters button[aria-pressed=true]{background:#1e3a5f;color:#fff}
+#leo-laudos-a-toolbar[data-variant=f] .searchrow{background:#fff;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:16px}
+#leo-laudos-a-toolbar[data-variant=f] table,#leo-laudos-a-toolbar[data-variant=f] tbody{display:block}
+#leo-laudos-a-toolbar[data-variant=f] thead{display:none}
+#leo-laudos-a-toolbar[data-variant=f] tr{display:grid;grid-template-columns:minmax(180px,1.5fr) minmax(145px,1fr) minmax(130px,1fr) 90px;align-items:center;gap:4px 14px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:18px;margin-bottom:10px}
+#leo-laudos-a-toolbar[data-variant=f] .roomy td{padding:0;height:auto;border:0}
+#leo-laudos-a-toolbar[data-variant=f] td:nth-child(2){grid-column:1;grid-row:1}
+#leo-laudos-a-toolbar[data-variant=f] td.time{grid-column:1;grid-row:2;font-size:11px}
+#leo-laudos-a-toolbar[data-variant=f] td.time:before{content:'Chegada '}
+#leo-laudos-a-toolbar[data-variant=f] td.exam{grid-column:2;grid-row:1}
+#leo-laudos-a-toolbar[data-variant=f] td.optional{display:block;grid-column:2;grid-row:2;font-size:11px;color:#64748b}
+#leo-laudos-a-toolbar[data-variant=f] td:nth-child(5){grid-column:3;grid-row:1/3}
+#leo-laudos-a-toolbar[data-variant=f] td:last-child{grid-column:4;grid-row:1/3}
+#leo-laudos-a-toolbar[data-variant=f] .name{font-size:15px}
+#leo-laudos-a-toolbar[data-variant=f] .foot{border:0;padding-left:0}
+@media(max-width:950px){#leo-laudos-a-toolbar[data-variant=f] tr{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}#leo-laudos-a-toolbar[data-variant=f] td:nth-child(5){grid-column:1;grid-row:3}#leo-laudos-a-toolbar[data-variant=f] td:last-child{grid-column:2;grid-row:3}#leo-laudos-a-toolbar[data-variant=f] tr{gap:14px}}
+#leo-laudos-a-toolbar[data-variant=d] aside{background:#eaf1fa;border-color:#d6e2f1}
+#leo-laudos-a-toolbar[data-variant=d] .navitem{color:#445d7b}
+#leo-laudos-a-toolbar[data-variant=d] .navitem.active{background:#fff;color:#1e3a5f;box-shadow:0 2px 6px rgba(30,58,95,.07)}
+#leo-laudos-a-toolbar[data-variant=d] .place,#leo-laudos-a-toolbar[data-variant=d] .account .secondary{color:#506580}
+#leo-laudos-a-toolbar[data-variant=d] .account{border-color:#cfdced}
+#leo-laudos-a-toolbar[data-variant=d] .avatar{background:#d6e4f6;color:#1e3a5f}
+#leo-laudos-a-toolbar[data-variant=f] aside{background:#1e3a5f;border-color:#1e3a5f}
+#leo-laudos-a-toolbar[data-variant=f] .navitem{color:#d5e1f0}
+#leo-laudos-a-toolbar[data-variant=f] .navitem.active{background:#34577f;color:#fff}
+#leo-laudos-a-toolbar[data-variant=f] .place,#leo-laudos-a-toolbar[data-variant=f] .account .secondary{color:#c3d3e6}
+#leo-laudos-a-toolbar[data-variant=f] .place strong,#leo-laudos-a-toolbar[data-variant=f] .account{color:#fff}
+#leo-laudos-a-toolbar[data-variant=f] .account{border-color:#46617f}
+#leo-laudos-a-toolbar[data-variant=f] .avatar{background:#34577f;color:#fff}
+#leo-laudos-a-toolbar[data-variant=f] .brand{background:#fff;border-radius:8px;padding:5px;width:108px;height:54px}
+#leo-laudos-a-toolbar .patient-detail{background:white;border:1px solid #e2e8f0;border-radius:12px;margin-top:20px;padding:24px}
+#leo-laudos-a-toolbar .patient-detail h3{color:#1e3a5f;font-size:20px;margin:0 0 8px}
+#leo-laudos-a-toolbar .detailhead{display:flex;justify-content:space-between;align-items:center;gap:12px}
+#leo-laudos-a-toolbar .history{display:flex;justify-content:space-between;align-items:center;gap:16px;border-top:1px solid #e2e8f0;padding:18px 0;flex-wrap:wrap}
+#leo-laudos-a-toolbar .patient-detail h4{margin:28px 0 14px;font-size:14px;color:#1e3a5f}
+#leo-laudos-a-toolbar tr.selected{background:#eef2f8}
+@media(max-width:700px){#leo-laudos-a-toolbar td:nth-child(2){grid-column:auto}#leo-laudos-a-toolbar .patient-detail{padding:16px}}
+#leo-laudos-a-toolbar .report-filters{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:16px;border-bottom:1px solid #e2e8f0} #leo-laudos-a-toolbar .report-filters label{display:flex;gap:10px;align-items:center;font-size:13px;flex-wrap:wrap} #leo-laudos-a-toolbar select{font:inherit;color:#1e3a5f;border:1px solid #e2e8f0;border-radius:7px;background:white;padding:8px;max-width:100%} </style>
+
+<div class="shell roomy">
+<aside>
+<svg class="brand" viewBox="-10 0 500 230" role="img" aria-label="LEO">
+<defs><linearGradient id="ll-blue" x2="1" y2="1"><stop stop-color="#284f83"/><stop offset="1" stop-color="#2877ff"/></linearGradient><clipPath id="ll-trace"><path d="M17 153 H48 L68 113 L70 188 L87 159 H200" fill="none" stroke="white" stroke-width="3.5"/></clipPath></defs>
+<g fill="url(#ll-blue)"><path d="M55 10 H128 L91 151 H202 L201 155 H85 L74 171 L72 95 L46 149 H18 Z"/><path d="M16 158 H50 L64 135 L66 202 L86 164 H198 L188 214 H0 Z"/></g>
+<g fill="#1e3a5f" transform="translate(213 104) skewX(-12)"><path d="M0 0 H100 V23 H28 V43 H93 V65 H28 V87 H100 V110 H0 Z"/><path fill-rule="evenodd" d="M150 0 H202 Q232 0 232 29 V81 Q232 110 202 110 H150 Q120 110 120 81 V29 Q120 0 150 0 Z M158 23 Q148 23 148 35 V75 Q148 87 158 87 H194 Q204 87 204 75 V35 Q204 23 194 23 Z"/></g><g clip-path="url(#ll-trace)"><rect class="sweep" width="28" height="220" fill="#77aaff"/></g></svg>
+<div class="place"><strong>Clínica demonstração</strong>Ambiente de prévia</div>
+<nav aria-label="Navegação ilustrativa"><div class="navitem"><i data-lucide="calendar-days" aria-hidden="true"></i>Agenda</div><div class="navitem"><i data-lucide="users" aria-hidden="true"></i>Pacientes</div><div class="navitem active"><i data-lucide="file-text" aria-hidden="true"></i>Laudos</div><div class="navitem"><i data-lucide="chart-no-axes-combined" aria-hidden="true"></i>Financeiro</div><div class="navitem"><i data-lucide="building-2" aria-hidden="true"></i>Clínica</div><div class="navitem"><i data-lucide="network" aria-hidden="true"></i>Integrações</div></nav>
+<div class="account"><span class="avatar">SM</span><span>Médico exemplo<br><span class="secondary">Minha conta</span></span></div>
+</aside>
+<main>
+<div class="crumb"><button class="mobile-menu" type="button" aria-label="Abrir menu" aria-expanded="false"><i data-lucide="menu" aria-hidden="true"></i></button><i data-lucide="calendar-days" aria-hidden="true"></i>Clínica demonstração / Laudos</div>
+<div class="pagehead"><div><h2>Laudos</h2><div class="sub">Documentos emitidos de todos os pacientes</div></div><div class="head-actions"></div></div>
+<section class="workspace" aria-label="Laudos emitidos"><div class="searchrow"><i data-lucide="search" aria-hidden="true"></i><input type="search" aria-label="Buscar paciente" placeholder="Buscar por paciente ou exame"></div><div class="report-filters"><label>Tipo de exame <select aria-label="Tipo de exame"><option value="">Todos os exames</option><option>Eco transtorácico</option><option>Doppler de carótidas</option><option>ECG</option></select></label><span class="sub">Todos os períodos · dados demonstrativos</span></div><table><thead><tr><th>Paciente</th><th>Exame</th><th>Emissão / responsável</th><th></th></tr></thead><tbody></tbody></table><div class="foot" aria-live="polite"></div></section><section class="patient-detail" hidden aria-label="Ficha do paciente"></section>
+<p class="sub" id="ll-feedback" role="status"></p>
+</main>
+</div>
+
+</div>
+<script>
+(()=>{
+const root=document.getElementById('leo-laudos-a-toolbar');
+const patients=[['Ana Martins','62 anos','Eco transtorácico','08/09/2026'],['Beatriz Costa','47 anos','Doppler de carótidas','08/09/2026'],['Carlos Lima','54 anos','Eco transtorácico','08/09/2026'],['Helena Duarte','59 anos','Eco transtorácico','21/08/2026'],['João Fernandes','72 anos','Doppler de carótidas','15/08/2026'],['Marina Alves','51 anos','Eco transtorácico','12/08/2026'],['Paulo Ribeiro','68 anos','Eco transtorácico','08/09/2026'],['Rafael Souza','43 anos','ECG','01/09/2026']];
+const icons=()=>{if(globalThis.lucide)lucide.createIcons({attrs:{width:16,height:16}});};
+function render(){const query=root.querySelector('input[type=search]').value.toLocaleLowerCase('pt-BR');const selected=patients.filter(p=>(p[0]+' '+p[2]).toLocaleLowerCase('pt-BR').includes(query)&&(!root.querySelector('select').value||p[2]===root.querySelector('select').value));root.querySelector('tbody').innerHTML=selected.map(p=>`<tr><td><button type="button" class="action name" data-patient="${patients.indexOf(p)}">${p[0]}</button><div class="secondary">${p[1]}</div></td><td>${p[2]}<div class="acc">ACC DEMO-${String(patients.indexOf(p)+1).padStart(3,"0")}</div></td><td class="time">${p[3]}<div class="secondary">Médico demonstração</div></td><td><button type="button" class="action" data-demo="Ver PDF — ${p[0]}"><i data-lucide="file-text" aria-hidden="true"></i>Ver PDF</button><div class="secondary-actions"><button type="button" class="action" data-demo="Baixar PDF — ${p[0]}" aria-label="Baixar PDF"><i data-lucide="download" aria-hidden="true"></i></button><button type="button" class="action" data-demo="Imprimir — ${p[0]}" aria-label="Imprimir laudo"><i data-lucide="printer" aria-hidden="true"></i></button></div></td></tr>`).join('')||'<tr><td colspan="4" class="empty">Nenhum laudo encontrado.</td></tr>';root.querySelector('.foot').textContent=selected.length+' laudos emitidos · dados fictícios';icons();}
+root.querySelector('input[type=search]').addEventListener('input',render);root.querySelector('select').addEventListener('change',render);
+root.addEventListener('click',e=>{const button=e.target.closest('button');if(!button)return;if(button.dataset.patient!==undefined){const p=patients[Number(button.dataset.patient)];const detail=root.querySelector('.patient-detail');detail.hidden=false;detail.innerHTML=`<div class="detailhead"><div><h3>${p[0]}</h3><div class="sub">${p[1]} · Cadastro demonstrativo</div></div><button type="button" data-close aria-label="Fechar ficha"><i data-lucide="x" aria-hidden="true"></i></button></div><h4>Histórico de exames</h4><div class="history"><div><span class="name">${p[2]}</span><div class="secondary">${p[3]} · Clínica demonstração</div></div><span class="pill done">Emitido</span><button type="button" class="action" data-demo="Abrir PDF"><i data-lucide="file-text" aria-hidden="true"></i>Ver PDF</button></div>`;icons();detail.scrollIntoView({block:'nearest'});}if(button.hasAttribute('data-close'))root.querySelector('.patient-detail').hidden=true;if(button.dataset.demo)root.querySelector('#ll-feedback').textContent=button.dataset.demo+' — ação ilustrativa nesta prévia.';if(button.classList.contains('mobile-menu')){const open=root.querySelector('.shell').classList.toggle('menu-open');button.setAttribute('aria-expanded',String(open));}});
+render();
+})();
+</script>
+
+
+
+
+<style>
+#leo-laudos-a-toolbar .layout-choices{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
+#leo-laudos-a-toolbar .layout-choices button[aria-pressed=true]{background:#1e3a5f;color:white}
+#leo-laudos-a-toolbar .acc{font-family:monospace;font-size:11px;color:#64748b;margin-top:6px}
+#leo-laudos-a-toolbar .secondary-actions{display:flex;gap:8px}
+#leo-laudos-a-toolbar .name{padding:0;font-size:14px;color:#1e3a5f;text-align:left}
+#leo-laudos-a-toolbar .report-filters .extra-filter{max-width:180px}
+#leo-laudos-a-toolbar[data-layout=b] table,#leo-laudos-a-toolbar[data-layout=b] tbody,#leo-laudos-a-toolbar[data-layout=c] table,#leo-laudos-a-toolbar[data-layout=c] tbody{display:block}
+#leo-laudos-a-toolbar[data-layout=b] thead,#leo-laudos-a-toolbar[data-layout=c] thead{display:none}
+#leo-laudos-a-toolbar[data-layout=b] tr,#leo-laudos-a-toolbar[data-layout=c] tr{display:grid;grid-template-columns:minmax(0,1fr) 160px 110px;gap:6px 20px;padding:22px;border-top:1px solid #e2e8f0;align-items:center}
+#leo-laudos-a-toolbar[data-layout=b] td,#leo-laudos-a-toolbar[data-layout=c] td{padding:0;height:auto;border:0}
+#leo-laudos-a-toolbar[data-layout=b] td:first-child,#leo-laudos-a-toolbar[data-layout=c] td:first-child{grid-column:1;grid-row:1}
+#leo-laudos-a-toolbar[data-layout=b] td:nth-child(2),#leo-laudos-a-toolbar[data-layout=c] td:nth-child(2){grid-column:1;grid-row:2}
+#leo-laudos-a-toolbar[data-layout=b] td:nth-child(3),#leo-laudos-a-toolbar[data-layout=c] td:nth-child(3){grid-column:2;grid-row:1/3}
+#leo-laudos-a-toolbar[data-layout=b] td:last-child,#leo-laudos-a-toolbar[data-layout=c] td:last-child{grid-column:3;grid-row:1/3}
+#leo-laudos-a-toolbar[data-layout=b] .name,#leo-laudos-a-toolbar[data-layout=c] .name{font-size:16px}
+#leo-laudos-a-toolbar[data-layout=c] .workspace{background:transparent;border:0;box-shadow:none}
+#leo-laudos-a-toolbar[data-layout=c] .searchrow,#leo-laudos-a-toolbar[data-layout=c] .report-filters{background:#fff}
+#leo-laudos-a-toolbar[data-layout=c] tr{background:#fff;border:1px solid #e2e8f0;border-radius:12px;margin-top:14px}
+@media(max-width:700px){#leo-laudos-a-toolbar[data-layout=b] tr,#leo-laudos-a-toolbar[data-layout=c] tr{grid-template-columns:minmax(0,1fr) 110px}#leo-laudos-a-toolbar[data-layout=b] td:nth-child(3),#leo-laudos-a-toolbar[data-layout=c] td:nth-child(3){grid-column:1;grid-row:3}#leo-laudos-a-toolbar[data-layout=b] td:last-child,#leo-laudos-a-toolbar[data-layout=c] td:last-child{grid-column:2;grid-row:1/4}}
+</style>
+<script>
+(()=>{
+const root=document.getElementById('leo-laudos-a-toolbar');root.dataset.layout='a';
+const choices=document.createElement('div');choices.className='layout-choices';
+[['a','A · Tabela detalhada'],['b','B · Paciente em destaque'],['c','C · Blocos de laudos']].forEach(([v,label])=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.setAttribute('aria-pressed',String(v==='a'));b.onclick=()=>{root.dataset.layout=v;choices.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));};choices.append(b);});root.prepend(choices);
+const filters=root.querySelector('.report-filters');filters.querySelector('span').remove();
+[['Período',['Todos os períodos','Setembro de 2026','Agosto de 2026']],['Convênio',['Todos os convênios','Particular','Unimed']]].forEach(([label,options])=>{const field=document.createElement('label');field.textContent=label+' ';const select=document.createElement('select');select.className='extra-filter';select.setAttribute('aria-label',label);options.forEach(value=>{const o=document.createElement('option');o.textContent=value;select.append(o);});field.append(select);filters.append(field);select.onchange=()=>{const feedback=root.querySelector('#ll-feedback');feedback.textContent=label+': '+select.value+' — filtro ilustrativo; a busca e o filtro de exame estão ativos nesta prévia.';};});
+})();
+</script>
+
+<style>
+#leo-laudos-a-toolbar .layout-choices{display:none}
+#leo-laudos-a-toolbar .unified-toolbar{display:grid;grid-template-columns:minmax(150px,1.3fr) minmax(130px,1fr) minmax(120px,1fr) minmax(110px,.9fr);gap:8px;align-items:center;padding:16px;border-bottom:1px solid #e2e8f0;background:white}
+#leo-laudos-a-toolbar .unified-toolbar .searchrow{padding:0;border:0;gap:8px;min-width:0}
+#leo-laudos-a-toolbar .unified-toolbar label{min-width:0}
+#leo-laudos-a-toolbar .unified-toolbar select{width:100%;max-width:none;min-width:0;padding:9px 7px;font-size:12px}
+#leo-laudos-a-toolbar .unified-toolbar input{font-size:12px}
+@media(max-width:850px){#leo-laudos-a-toolbar .unified-toolbar{grid-template-columns:repeat(3,minmax(0,1fr))}#leo-laudos-a-toolbar .unified-toolbar .searchrow{grid-column:1/-1;padding-bottom:8px}}
+@media(max-width:450px){#leo-laudos-a-toolbar .unified-toolbar{grid-template-columns:1fr}#leo-laudos-a-toolbar .unified-toolbar select{font-size:14px}}
+</style>
+<script>
+(()=>{const root=document.getElementById('leo-laudos-a-toolbar');const toolbar=document.createElement('div');toolbar.className='unified-toolbar';toolbar.setAttribute('aria-label','Busca e filtros de laudos');const search=root.querySelector('.searchrow');const filters=root.querySelector('.report-filters');root.querySelector('.workspace').prepend(toolbar);toolbar.append(search);filters.querySelectorAll('label').forEach(label=>{const select=label.querySelector('select');select.setAttribute('title',select.getAttribute('aria-label'));Array.from(label.childNodes).filter(n=>n.nodeType===3).forEach(n=>n.remove());toolbar.append(label);});filters.remove();})();
+</script>

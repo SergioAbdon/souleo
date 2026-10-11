@@ -1,0 +1,232 @@
+<div id="leo-perfil" data-variant="d" aria-label="Paletas D e F da Agenda">
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+#leo-perfil {font-family:'IBM Plex Sans',Arial,sans-serif;color:#243449;font-size:14px;}
+#leo-perfil * {box-sizing:border-box;}
+#leo-perfil .choice {display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff;padding:12px;border-bottom:1px solid #e2e8f0;}
+#leo-perfil button {font:inherit;cursor:pointer;color:inherit;background:white;border:1px solid #e2e8f0;border-radius:7px;padding:8px 12px;min-height:36px;display:inline-flex;align-items:center;gap:8px;}
+#leo-perfil button:focus-visible,#leo-perfil input:focus-visible {outline:2px solid #2563eb;outline-offset:3px;}
+#leo-perfil .choice button[aria-pressed=true] {background:#eef2f8;color:#1e3a5f;border-color:#a5b9d7;}
+#leo-perfil .note {color:#64748b;font-size:12px;margin-left:auto;}
+#leo-perfil .shell {display:grid;grid-template-columns:180px minmax(0,1fr);background:#f1f5f9;border:1px solid #e2e8f0;min-height:630px;}
+#leo-perfil aside {background:#fff;border-right:1px solid #e2e8f0;padding:24px 12px;display:flex;flex-direction:column;gap:24px;}
+#leo-perfil .brand {width:98px;height:46px;margin-left:12px;}
+#leo-perfil .place {padding:0 12px;font-size:12px;color:#64748b;}
+#leo-perfil .place strong {display:block;color:#1e3a5f;font-size:14px;font-weight:500;margin-bottom:4px;}
+#leo-perfil nav {display:grid;gap:5px;}
+#leo-perfil .navitem {display:flex;align-items:center;gap:10px;padding:9px 12px;font-size:13px;color:#637083;border-radius:7px;}
+#leo-perfil .navitem.active {background:#eef2f8;color:#1e3a5f;font-weight:600;}
+#leo-perfil .account {margin-top:auto;border-top:1px solid #e2e8f0;padding:18px 10px 0;display:flex;gap:10px;align-items:center;font-size:12px;}
+#leo-perfil .avatar {border-radius:50%;background:#eef2f8;color:#1e3a5f;padding:9px;}
+#leo-perfil main {min-width:0;padding:0 24px 24px;}
+#leo-perfil .crumb {font-size:12px;color:#64748b;padding:17px 0;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:8px;}
+#leo-perfil .pagehead {display:flex;justify-content:space-between;align-items:center;gap:16px;padding:25px 0 22px;flex-wrap:wrap;}
+#leo-perfil h2 {font-size:25px;letter-spacing:-.8px;color:#1e3a5f;margin:0 0 4px;font-weight:600;}
+#leo-perfil .sub {font-size:13px;color:#64748b;}
+#leo-perfil button.primary {background:#2563eb;border-color:#2563eb;color:#fff;}
+#leo-perfil .head-actions {display:flex;gap:8px;flex-wrap:wrap;}
+#leo-perfil .workspace {background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;}
+#leo-perfil .filters {display:flex;gap:5px;padding:12px 14px;border-bottom:1px solid #e2e8f0;flex-wrap:wrap;}
+#leo-perfil .filters button {border:0;padding:6px 9px;font-size:12px;color:#64748b;}
+#leo-perfil .filters button[aria-pressed=true] {background:#eef2f8;color:#1e3a5f;font-weight:500;}
+#leo-perfil .count {font-size:11px;opacity:.7;}
+#leo-perfil .searchrow {display:flex;gap:10px;padding:12px 16px;align-items:center;border-bottom:1px solid #e2e8f0;}
+#leo-perfil input {border:0;outline:none;min-width:0;width:100%;font:inherit;font-size:13px;color:#243449;background:#fff;}
+#leo-perfil table {width:100%;border-collapse:collapse;text-align:left;font-size:13px;}
+#leo-perfil th {font-weight:400;font-size:11px;color:#64748b;background:#fafbfd;padding:10px 12px;}
+#leo-perfil td {border-top:1px solid #edf0f4;padding:8px 12px;height:46px;}
+#leo-perfil .roomy td {padding-top:19px;padding-bottom:19px;height:76px;}
+#leo-perfil .name {display:block;color:#1e3a5f;font-weight:500;}
+#leo-perfil .secondary {color:#64748b;font-size:11px;margin-top:3px;}
+#leo-perfil .time {font-variant-numeric:tabular-nums;color:#64748b;}
+#leo-perfil .pill {display:inline-flex;align-items:center;gap:5px;padding:3px 7px;border-radius:5px;font-size:11px;white-space:nowrap;}
+#leo-perfil .pill::before {content:'';width:5px;height:5px;border-radius:50%;background:currentColor;}
+#leo-perfil .waiting {background:#fef3c7;color:#92400e;}
+#leo-perfil .working {background:#dbeafe;color:#1e40af;}
+#leo-perfil .done {background:#d1fae5;color:#065f46;}
+#leo-perfil .action {border:0;background:transparent;padding:4px;color:#2563eb;font-size:12px;}
+#leo-perfil .foot {padding:13px 16px;color:#64748b;font-size:11px;border-top:1px solid #e2e8f0;}
+#leo-perfil .empty {text-align:center;color:#64748b;padding:30px;}
+#leo-perfil .sweep {animation:fin-sweep .681818181818s ease-in-out infinite;}
+@keyframes fin-sweep {0%,12%{transform:translateX(-30px)}68%,100%{transform:translateX(235px)}}
+@media(prefers-reduced-motion:reduce){#leo-perfil .sweep{animation:none;opacity:0}}
+@media(max-width:800px){#leo-perfil .shell{grid-template-columns:145px minmax(0,1fr)}#leo-perfil main{padding:0 14px 16px}#leo-perfil .optional{display:none}#leo-perfil td,#leo-perfil th{padding-left:8px;padding-right:8px}}
+@media(max-width:550px){#leo-perfil .shell{display:block}#leo-perfil aside{display:none}#leo-perfil .note{margin-left:0;width:100%}#leo-perfil .exam{display:none}#leo-perfil .pagehead{padding:18px 0}#leo-perfil .head-actions{gap:5px}#leo-perfil button{min-height:44px}#leo-perfil .filters{gap:0;padding:8px}#leo-perfil main{padding:0 10px 12px}#leo-perfil td{font-size:12px}}
+#leo-perfil .shell{grid-template-columns:184px minmax(0,1fr)}
+#leo-perfil .date{width:142px;flex:none;border-right:1px solid #e2e8f0;padding-right:10px}
+#leo-perfil .searchrow{padding:18px 16px}
+#leo-perfil .workspace{box-shadow:0 2px 8px rgba(30,58,95,.035)}
+#leo-perfil tbody tr:hover{background:#f8fafc}
+#leo-perfil .examline{display:flex;align-items:center;gap:6px}
+#leo-perfil .acc{font-family:monospace;font-size:11px;color:#64748b;margin-top:5px}
+#leo-perfil .wait{font-size:11px;color:#92400e;margin-top:5px}
+#leo-perfil .mobile-menu{display:none}
+#leo-perfil .roomy td{padding-top:20px;padding-bottom:20px}
+@media(max-width:700px){#leo-perfil .shell{display:block}#leo-perfil aside{display:none}#leo-perfil .mobile-menu{display:inline-flex}#leo-perfil .shell.menu-open aside{display:flex}#leo-perfil .exam{display:table-cell}#leo-perfil .searchrow{flex-wrap:wrap}#leo-perfil input[type=search]{flex:1}#leo-perfil table,#leo-perfil tbody{display:block}#leo-perfil thead{display:none}#leo-perfil tr{display:grid;grid-template-columns:1fr 1fr;padding:14px 4px;border-top:1px solid #e2e8f0}#leo-perfil .roomy td{display:block;height:auto;padding:6px 10px;border:0}#leo-perfil td.time{grid-column:1/-1}#leo-perfil td.optional{display:block}#leo-perfil td.exam{grid-column:1}#leo-perfil td:nth-child(2){grid-column:1/-1}#leo-perfil main{padding:0 12px 16px}}
+#leo-perfil .variant-picker{display:flex;gap:8px;flex-wrap:wrap;padding:12px 0}
+#leo-perfil .variant-picker button[aria-pressed=true]{background:#1e3a5f;color:white;border-color:#1e3a5f}
+#leo-perfil .variant-description{font-size:13px;color:#526277;margin:0 0 16px}
+#leo-perfil[data-variant=b] .shell{background:#fff}
+#leo-perfil[data-variant=b] .workspace{border:0;border-radius:0;box-shadow:none}
+#leo-perfil[data-variant=b] .filters{padding-left:0;padding-bottom:0;gap:12px}
+#leo-perfil[data-variant=b] .filters button{border-radius:0;padding:12px 4px;border-bottom:2px solid transparent}
+#leo-perfil[data-variant=b] .filters button[aria-pressed=true]{background:transparent;border-bottom-color:#2563eb;color:#1e3a5f}
+#leo-perfil[data-variant=b] .searchrow{padding:20px 0}
+#leo-perfil[data-variant=b] th{background:#fff}
+#leo-perfil[data-variant=b] .pagehead{padding-top:34px;padding-bottom:30px}
+#leo-perfil[data-variant=b] .roomy td{padding-top:23px;padding-bottom:23px}
+#leo-perfil[data-variant=f] .workspace{background:transparent;border:0;box-shadow:none;overflow:visible}
+#leo-perfil[data-variant=f] .filters{padding:0 0 16px;border:0}
+#leo-perfil[data-variant=f] .filters button{background:transparent}
+#leo-perfil[data-variant=f] .filters button[aria-pressed=true]{background:#1e3a5f;color:#fff}
+#leo-perfil[data-variant=f] .searchrow{background:#fff;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:16px}
+#leo-perfil[data-variant=f] table,#leo-perfil[data-variant=f] tbody{display:block}
+#leo-perfil[data-variant=f] thead{display:none}
+#leo-perfil[data-variant=f] tr{display:grid;grid-template-columns:minmax(180px,1.5fr) minmax(145px,1fr) minmax(130px,1fr) 90px;align-items:center;gap:4px 14px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:18px;margin-bottom:10px}
+#leo-perfil[data-variant=f] .roomy td{padding:0;height:auto;border:0}
+#leo-perfil[data-variant=f] td:nth-child(2){grid-column:1;grid-row:1}
+#leo-perfil[data-variant=f] td.time{grid-column:1;grid-row:2;font-size:11px}
+#leo-perfil[data-variant=f] td.time:before{content:'Chegada '}
+#leo-perfil[data-variant=f] td.exam{grid-column:2;grid-row:1}
+#leo-perfil[data-variant=f] td.optional{display:block;grid-column:2;grid-row:2;font-size:11px;color:#64748b}
+#leo-perfil[data-variant=f] td:nth-child(5){grid-column:3;grid-row:1/3}
+#leo-perfil[data-variant=f] td:last-child{grid-column:4;grid-row:1/3}
+#leo-perfil[data-variant=f] .name{font-size:15px}
+#leo-perfil[data-variant=f] .foot{border:0;padding-left:0}
+@media(max-width:950px){#leo-perfil[data-variant=f] tr{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}#leo-perfil[data-variant=f] td:nth-child(5){grid-column:1;grid-row:3}#leo-perfil[data-variant=f] td:last-child{grid-column:2;grid-row:3}#leo-perfil[data-variant=f] tr{gap:14px}}
+#leo-perfil[data-variant=d] aside{background:#eaf1fa;border-color:#d6e2f1}
+#leo-perfil[data-variant=d] .navitem{color:#445d7b}
+#leo-perfil[data-variant=d] .navitem.active{background:#fff;color:#1e3a5f;box-shadow:0 2px 6px rgba(30,58,95,.07)}
+#leo-perfil[data-variant=d] .place,#leo-perfil[data-variant=d] .account .secondary{color:#506580}
+#leo-perfil[data-variant=d] .account{border-color:#cfdced}
+#leo-perfil[data-variant=d] .avatar{background:#d6e4f6;color:#1e3a5f}
+#leo-perfil[data-variant=f] aside{background:#1e3a5f;border-color:#1e3a5f}
+#leo-perfil[data-variant=f] .navitem{color:#d5e1f0}
+#leo-perfil[data-variant=f] .navitem.active{background:#34577f;color:#fff}
+#leo-perfil[data-variant=f] .place,#leo-perfil[data-variant=f] .account .secondary{color:#c3d3e6}
+#leo-perfil[data-variant=f] .place strong,#leo-perfil[data-variant=f] .account{color:#fff}
+#leo-perfil[data-variant=f] .account{border-color:#46617f}
+#leo-perfil[data-variant=f] .avatar{background:#34577f;color:#fff}
+#leo-perfil[data-variant=f] .brand{background:#fff;border-radius:8px;padding:5px;width:108px;height:54px}
+#leo-perfil .patient-detail{background:white;border:1px solid #e2e8f0;border-radius:12px;margin-top:20px;padding:24px}
+#leo-perfil .patient-detail h3{color:#1e3a5f;font-size:20px;margin:0 0 8px}
+#leo-perfil .detailhead{display:flex;justify-content:space-between;align-items:center;gap:12px}
+#leo-perfil .history{display:flex;justify-content:space-between;align-items:center;gap:16px;border-top:1px solid #e2e8f0;padding:18px 0;flex-wrap:wrap}
+#leo-perfil .patient-detail h4{margin:28px 0 14px;font-size:14px;color:#1e3a5f}
+#leo-perfil tr.selected{background:#eef2f8}
+@media(max-width:700px){#leo-perfil td:nth-child(2){grid-column:auto}#leo-perfil .patient-detail{padding:16px}}
+#leo-perfil .report-filters{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:16px;border-bottom:1px solid #e2e8f0} #leo-perfil .report-filters label{display:flex;gap:10px;align-items:center;font-size:13px;flex-wrap:wrap} #leo-perfil select{font:inherit;color:#1e3a5f;border:1px solid #e2e8f0;border-radius:7px;background:white;padding:8px;max-width:100%} </style>
+
+<div class="shell roomy">
+<aside>
+<svg class="brand" viewBox="-10 0 500 230" role="img" aria-label="LEO">
+<defs><linearGradient id="fin-blue" x2="1" y2="1"><stop stop-color="#284f83"/><stop offset="1" stop-color="#2877ff"/></linearGradient><clipPath id="fin-trace"><path d="M17 153 H48 L68 113 L70 188 L87 159 H200" fill="none" stroke="white" stroke-width="3.5"/></clipPath></defs>
+<g fill="url(#fin-blue)"><path d="M55 10 H128 L91 151 H202 L201 155 H85 L74 171 L72 95 L46 149 H18 Z"/><path d="M16 158 H50 L64 135 L66 202 L86 164 H198 L188 214 H0 Z"/></g>
+<g fill="#1e3a5f" transform="translate(213 104) skewX(-12)"><path d="M0 0 H100 V23 H28 V43 H93 V65 H28 V87 H100 V110 H0 Z"/><path fifin-rule="evenodd" d="M150 0 H202 Q232 0 232 29 V81 Q232 110 202 110 H150 Q120 110 120 81 V29 Q120 0 150 0 Z M158 23 Q148 23 148 35 V75 Q148 87 158 87 H194 Q204 87 204 75 V35 Q204 23 194 23 Z"/></g><g clip-path="url(#fin-trace)"><rect class="sweep" width="28" height="220" fill="#77aaff"/></g></svg>
+<div class="place"><strong>Clínica demonstração</strong>Ambiente de prévia</div>
+<nav aria-label="Navegação ilustrativa"><div class="navitem"><i data-lucide="calendar-days" aria-hidden="true"></i>Agenda</div><div class="navitem"><i data-lucide="users" aria-hidden="true"></i>Pacientes</div><div class="navitem"><i data-lucide="file-text" aria-hidden="true"></i>Laudos</div><div class="navitem"><i data-lucide="chart-no-axes-combined" aria-hidden="true"></i>Financeiro</div><div class="navitem"><i data-lucide="building-2" aria-hidden="true"></i>Clínica</div><div class="navitem"><i data-lucide="network" aria-hidden="true"></i>Integrações</div></nav>
+<div class="account"><span class="avatar">SM</span><span>Médico exemplo<br><span class="secondary">Minha conta</span></span></div>
+</aside>
+<main>
+<div class="crumb"><button class="mobile-menu" type="button" aria-label="Abrir menu" aria-expanded="false"><i data-lucide="menu" aria-hidden="true"></i></button><i data-lucide="calendar-days" aria-hidden="true"></i>Clínica demonstração / Perfil</div>
+<div class="pagehead"><div><h2>Meu perfil</h2><div class="sub">Dados pessoais e identificação profissional</div></div><div class="head-actions"></div></div>
+<section class="workspace" aria-label="Configurações da clínica"><div class="clinic-tabs" role="tablist" aria-label="Seções da clínica"></div><div class="clinic-panel"></div></section><section class="patient-detail" hidden aria-label="Ficha do paciente"></section>
+<p class="sub" id="fin-feedback" role="status"></p>
+</main>
+</div>
+
+</div>
+
+
+
+
+
+<style>
+#leo-perfil .layout-choices{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
+#leo-perfil .layout-choices button[aria-pressed=true]{background:#1e3a5f;color:white}
+#leo-perfil .acc{font-family:monospace;font-size:11px;color:#64748b;margin-top:6px}
+#leo-perfil .secondary-actions{display:flex;gap:8px}
+#leo-perfil .name{padding:0;font-size:14px;color:#1e3a5f;text-align:left}
+#leo-perfil .report-filters .extra-filter{max-width:180px}
+#leo-perfil[data-layout=b] table,#leo-perfil[data-layout=b] tbody,#leo-perfil[data-layout=c] table,#leo-perfil[data-layout=c] tbody{display:block}
+#leo-perfil[data-layout=b] thead,#leo-perfil[data-layout=c] thead{display:none}
+#leo-perfil[data-layout=b] tr,#leo-perfil[data-layout=c] tr{display:grid;grid-template-columns:minmax(0,1fr) 160px 110px;gap:6px 20px;padding:22px;border-top:1px solid #e2e8f0;align-items:center}
+#leo-perfil[data-layout=b] td,#leo-perfil[data-layout=c] td{padding:0;height:auto;border:0}
+#leo-perfil[data-layout=b] td:first-child,#leo-perfil[data-layout=c] td:first-child{grid-column:1;grid-row:1}
+#leo-perfil[data-layout=b] td:nth-child(2),#leo-perfil[data-layout=c] td:nth-child(2){grid-column:1;grid-row:2}
+#leo-perfil[data-layout=b] td:nth-child(3),#leo-perfil[data-layout=c] td:nth-child(3){grid-column:2;grid-row:1/3}
+#leo-perfil[data-layout=b] td:last-child,#leo-perfil[data-layout=c] td:last-child{grid-column:3;grid-row:1/3}
+#leo-perfil[data-layout=b] .name,#leo-perfil[data-layout=c] .name{font-size:16px}
+#leo-perfil[data-layout=c] .workspace{background:transparent;border:0;box-shadow:none}
+#leo-perfil[data-layout=c] .searchrow,#leo-perfil[data-layout=c] .report-filters{background:#fff}
+#leo-perfil[data-layout=c] tr{background:#fff;border:1px solid #e2e8f0;border-radius:12px;margin-top:14px}
+@media(max-width:700px){#leo-perfil[data-layout=b] tr,#leo-perfil[data-layout=c] tr{grid-template-columns:minmax(0,1fr) 110px}#leo-perfil[data-layout=b] td:nth-child(3),#leo-perfil[data-layout=c] td:nth-child(3){grid-column:1;grid-row:3}#leo-perfil[data-layout=b] td:last-child,#leo-perfil[data-layout=c] td:last-child{grid-column:2;grid-row:1/4}}
+</style>
+
+
+<style>
+#leo-perfil .layout-choices{display:none}
+#leo-perfil .unified-toolbar{display:grid;grid-template-columns:minmax(150px,1.3fr) minmax(130px,1fr) minmax(120px,1fr) minmax(110px,.9fr);gap:8px;align-items:center;padding:16px;border-bottom:1px solid #e2e8f0;background:white}
+#leo-perfil .unified-toolbar .searchrow{padding:0;border:0;gap:8px;min-width:0}
+#leo-perfil .unified-toolbar label{min-width:0}
+#leo-perfil .unified-toolbar select{width:100%;max-width:none;min-width:0;padding:9px 7px;font-size:12px}
+#leo-perfil .unified-toolbar input{font-size:12px}
+@media(max-width:850px){#leo-perfil .unified-toolbar{grid-template-columns:repeat(3,minmax(0,1fr))}#leo-perfil .unified-toolbar .searchrow{grid-column:1/-1;padding-bottom:8px}}
+@media(max-width:450px){#leo-perfil .unified-toolbar{grid-template-columns:1fr}#leo-perfil .unified-toolbar select{font-size:14px}}
+</style>
+
+
+<style>
+#leo-perfil .finance-summary{margin-top:24px;padding:22px;background:white;border:1px solid #e2e8f0;border-radius:12px}
+#leo-perfil .finance-summary h3{margin:0;color:#1e3a5f;font-size:17px}
+#leo-perfil .summary-title{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+#leo-perfil .finance-summary .money{text-align:right;font-variant-numeric:tabular-nums}
+#leo-perfil .total-line{display:flex;justify-content:space-between;border-top:1px solid #e2e8f0;padding-top:18px;margin-top:12px;color:#1e3a5f;font-weight:500}
+</style>
+
+
+<style>
+#leo-perfil .period-controls{display:flex;gap:12px;align-items:end;flex-wrap:wrap;padding:16px;border-bottom:1px solid #e2e8f0;background:white}
+#leo-perfil .period-controls label{display:grid;gap:6px;font-size:12px;color:#526277}
+#leo-perfil .period-controls input,#leo-perfil .period-controls select{width:auto;max-width:100%;font:inherit;border:1px solid #e2e8f0;border-radius:7px;padding:9px;background:white;color:#1e3a5f}
+#leo-perfil .period-controls .dates{width:140px}
+#leo-perfil [hidden]{display:none!important}
+#leo-perfil .summary-row{display:grid;grid-template-columns:1fr 70px 110px 110px;gap:12px;padding:15px 0;border-top:1px solid #e2e8f0;align-items:center}
+#leo-perfil .summary-row span:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}
+@media(max-width:600px){#leo-perfil .summary-row{grid-template-columns:1fr 45px 80px 80px;gap:5px;font-size:12px}}
+</style>
+
+
+<style>
+#leo-perfil .clinic-tabs{display:flex;gap:8px;flex-wrap:wrap;padding:16px;border-bottom:1px solid #e2e8f0}
+#leo-perfil .clinic-tabs button{border:0;background:transparent}
+#leo-perfil .clinic-tabs button[aria-selected=true]{background:#eef2f8;color:#1e3a5f}
+#leo-perfil .clinic-panel{padding:28px}
+#leo-perfil .clinic-panel h3{font-size:19px;color:#1e3a5f;margin:0 0 8px}
+#leo-perfil .clinic-panel h4{font-size:14px;color:#1e3a5f;margin:28px 0 18px}
+#leo-perfil .clinic-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin:24px 0}
+#leo-perfil .clinic-grid label{display:grid;gap:8px;font-size:13px;color:#526277}
+#leo-perfil .clinic-grid input{border:1px solid #d5dfeb;border-radius:8px;padding:11px;color:#1e3a5f;width:100%;min-width:0}
+#leo-perfil .clinic-row{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:20px 0;border-bottom:1px solid #e2e8f0}
+#leo-perfil .clinic-row .lead{display:flex;gap:12px;align-items:center}
+#leo-perfil .clinic-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:26px}
+#leo-perfil .clinic-note{font-size:12px;color:#64748b;margin-top:20px}
+@media(max-width:550px){#leo-perfil .clinic-grid{grid-template-columns:1fr}#leo-perfil .clinic-panel{padding:18px}}
+</style>
+
+
+<style>
+#leo-perfil .profile-section{padding:4px 0 24px;margin-bottom:24px;border-bottom:1px solid #e2e8f0}
+#leo-perfil .profile-section:last-of-type{border-bottom:0}
+#leo-perfil .profile-section h3{font-size:16px}
+#leo-perfil .clinic-grid select{font:inherit;width:100%;padding:11px;border:1px solid #d5dfeb;border-radius:8px;background:white;color:#1e3a5f}
+#leo-perfil .profile-section .sub{font-size:12px}
+#leo-perfil .clinic-actions[hidden]{display:none!important}
+</style>
+<script>
+(()=>{
+const root=document.getElementById('leo-perfil');root.querySelector('.clinic-tabs').remove();const panel=root.querySelector('.clinic-panel');panel.innerHTML='<section class="profile-section"><h3>Dados pessoais</h3><div class="clinic-grid"><label>Nome completo<input value="Médico demonstração"></label><label>Telefone<input type="tel" placeholder="Não informado"></label></div><label class="sub">E-mail da conta</label><div class="clinic-row"><span>medico@example.com</span><span class="secondary">Conta demonstrativa</span></div></section><section class="profile-section"><h3>Identificação profissional</h3><div class="sub">Dados utilizados na identificação do responsável pelos laudos.</div><div class="clinic-grid"><label>CRM<input placeholder="Número do CRM"></label><label>UF<select><option value="">Selecionar</option>PA<option>PA</option><option>SP</option><option>RJ</option><option>CE</option></select></label></div><div class="clinic-row"><div><span class="name">Assinatura</span><div class="secondary">Nenhuma imagem enviada nesta demonstração.</div></div><button type="button" data-demo="Enviar assinatura">Enviar assinatura</button></div></section><section class="profile-section"><h3>Acesso à conta</h3><div class="clinic-row"><div><span class="name">Senha</span><div class="secondary">Solicitar atualização da senha de acesso.</div></div><button type="button" data-demo="Alterar senha">Alterar senha</button></div></section><div class="clinic-actions" hidden><button type="button" class="primary" data-save>Salvar alterações</button></div><p class="clinic-note">Dados fictícios · prévia visual sem salvar no site.</p>';
+const fields=Array.from(panel.querySelectorAll('input,select'));let values=fields.map(x=>x.value);function update(){panel.querySelector('.clinic-actions').hidden=!fields.some((x,i)=>x.value!==values[i]);}fields.forEach(x=>{x.addEventListener('input',update);x.addEventListener('change',update);});root.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.demo)root.querySelector('[role=status]').textContent=b.dataset.demo+' — ação ilustrativa.';if(b.hasAttribute('data-save')){values=fields.map(x=>x.value);update();root.querySelector('[role=status]').textContent='Salvamento simulado apenas nesta prévia.';}if(b.classList.contains('mobile-menu')){const open=root.querySelector('.shell').classList.toggle('menu-open');b.setAttribute('aria-expanded',String(open));}});
+})();
+</script>

@@ -2108,7 +2108,7 @@ function LaudoPageInner() {
   }
 
   return (
-    <div className={`h-screen grid grid-cols-[390px_1fr] overflow-hidden font-[family-name:var(--font-ibm-plex)] ${emitido ? 'laudo-locked' : ''}`}>
+    <div className={`laudo-workspace font-[family-name:var(--font-ibm-plex)] ${emitido ? 'laudo-locked' : ''}`}>
       {/* v3: alerta se motor falhou */}
       {motorErro && (
         <div className="fixed top-0 left-0 right-0 z-[9999] bg-red-600 text-white text-center py-2 text-sm font-semibold">
@@ -2236,6 +2236,28 @@ function LaudoPageInner() {
       />
       {/* CSS global */}
       <style jsx global>{`
+        /* Ambiente do editor: a folha e o PDF preservam seus estilos próprios. */
+        .laudo-workspace{height:100dvh;display:grid;grid-template-columns:340px minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr);overflow:hidden;background:#F1F5F9;}
+        .laudo-workspace-header,.laudo-command-line{grid-column:1/-1;}
+        .laudo-workspace-header{grid-row:1;}
+        .laudo-command-line{grid-row:2;}
+        .laudo-fields{grid-column:1;grid-row:3;scrollbar-color:#B8C9DF #EAF1FA;}
+        .laudo-workspace > #laudo-sidebar + div{grid-column:2;grid-row:3;min-width:0;background:#F1F5F9;padding:24px;}
+        .laudo-command-secondary{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid #D6E2F1;border-radius:8px;padding:10px 12px;font-size:12px;font-weight:500;white-space:nowrap;cursor:pointer;}
+        .laudo-command-secondary:not(:disabled):hover{background:#EAF1FA;}
+        .laudo-command-line button:focus-visible,.laudo-fields button:focus-visible{outline:2px solid #2563EB;outline-offset:2px;}
+        .laudo-workspace #laudo-sidebar .sf{min-width:0;min-height:36px;border:1px solid #D5DFEB;border-radius:7px;padding:8px 9px;font-size:13px;color:#1E3A5F;}
+        .laudo-workspace #laudo-sidebar .sf:focus{outline:2px solid #2563EB;outline-offset:1px;border-color:#2563EB;}
+        .laudo-workspace #laudo-sidebar .sf::placeholder{color:#526277;}
+        .laudo-workspace #laudo-sidebar .sf::selection{background:#D6E2F1;}
+        @media(max-width:900px){
+          .laudo-workspace{height:auto;min-height:100dvh;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto auto;overflow:visible;}
+          .laudo-fields{grid-column:1;grid-row:3;overflow:visible;border-right:0;}
+          .laudo-workspace > #laudo-sidebar + div{grid-column:1;grid-row:4;overflow:auto;padding:12px;}
+          .laudo-workspace-header{padding:18px 16px 12px;}
+          .laudo-command-line{padding:0 16px 16px;}
+        }
+        @media(pointer:coarse){.laudo-command-line button{min-height:44px;min-width:44px;}}
         .sf{width:100%;border:1.5px solid #E5E7EB;border-radius:5px;padding:5px 7px;font-size:12px;font-family:'IBM Plex Sans',sans-serif;color:#111827;background:#fff;transition:border-color .15s;}
         .sf:focus{outline:none;border-color:#1E3A5F;}
 

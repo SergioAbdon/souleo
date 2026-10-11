@@ -1,0 +1,8 @@
+.sweep { animation: sweep .681818181818s ease-in-out infinite; }
+@keyframes sweep {
+  0%, 12% { transform: translateX(-30px); }
+  68%, 100% { transform: translateX(235px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sweep { animation: none; opacity: 0; }
+}

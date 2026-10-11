@@ -10,6 +10,8 @@
 // na revisão final — sem janela de 30 dias).
 // ══════════════════════════════════════════════════════════════════
 
+import ListIcon from '@/components/ListIcon';
+
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -86,8 +88,8 @@ export default function FichaPacientePage() {
     if (st === 'emitido' && item.pdfUrl) {
       return (
         <button onClick={() => abrirPdfUrl(item.pdfUrl as string)}
-          className="bg-p2 text-white px-3 py-1.5 rounded text-xs font-semibold hover:bg-p2-deep transition">
-          🖨️ Abrir PDF
+          className="bg-p2 text-white px-3 py-2 rounded-lg text-xs font-semibold hover:bg-p2-deep transition">
+          <ListIcon name="print" /> Abrir PDF
         </button>
       );
     }
@@ -109,7 +111,7 @@ export default function FichaPacientePage() {
     }
     return (
       <button onClick={() => abrirLaudo(item)}
-        className="bg-p2 text-white px-3 py-1.5 rounded text-xs font-semibold hover:bg-p2-deep transition">
+        className="bg-p2 text-white px-3 py-2 rounded-lg text-xs font-semibold hover:bg-p2-deep transition">
         Abrir laudo
       </button>
     );
@@ -118,7 +120,7 @@ export default function FichaPacientePage() {
   if (loading) {
     return (
       <div className="text-center py-12 text-ink-3">
-        <span className="text-3xl animate-pulse">🫀</span>
+        <span className="text-3xl animate-pulse"><ListIcon name="file" className="h-7 w-7" /></span>
         <p className="text-sm mt-2">Carregando ficha...</p>
       </div>
     );
@@ -126,8 +128,8 @@ export default function FichaPacientePage() {
 
   if (naoEncontrado || !paciente) {
     return (
-      <div className="bg-card border border-borda rounded-xl p-8 text-center">
-        <p className="text-3xl mb-2">🔍</p>
+      <div className="bg-white border border-slate-200 rounded-xl p-8 text-center">
+        <p className="text-3xl mb-2"><ListIcon name="search" className="h-7 w-7" /></p>
         <p className="text-sm text-ink-2 mb-4">Paciente não encontrado.</p>
         <button onClick={() => router.push('/pacientes')}
           className="text-sm text-p2 font-semibold hover:underline">← Voltar para Pacientes</button>
@@ -146,8 +148,8 @@ export default function FichaPacientePage() {
     <>
       <PageHeader titulo={paciente.nome || 'Paciente'}>
         <button onClick={() => setModalEditar(true)}
-          className="bg-p2 text-white px-3 py-1.5 rounded text-xs font-semibold hover:bg-p2-deep transition">
-          ✏️ Editar cadastro
+          className="bg-p2 text-white px-3 py-2 rounded-lg text-xs font-semibold hover:bg-p2-deep transition">
+          <ListIcon name="edit" /> Editar cadastro
         </button>
       </PageHeader>
 
@@ -160,8 +162,9 @@ export default function FichaPacientePage() {
         onSaved={carregarFicha}
       />
 
-      <div className="bg-card border border-borda rounded-xl p-4 mb-4">
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
+      <div className="grid items-start gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
+      <div className="bg-white border border-slate-200 rounded-xl p-5 sm:p-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-6 text-sm break-words">
           <div>
             <span className="text-xs text-ink-3 block">CPF</span>
             <span className="text-ink font-mono">{formatCpf(paciente.cpf)}</span>
@@ -185,18 +188,18 @@ export default function FichaPacientePage() {
         </div>
       </div>
 
-      <div className="bg-card border border-borda rounded-xl p-4">
-        <h2 className="text-sm font-bold text-ink mb-3">Linha do tempo</h2>
+      <div className="min-w-0 bg-white border border-slate-200 rounded-xl p-5 sm:p-6">
+        <h2 className="text-lg font-semibold text-[#1E3A5F] mb-5">Linha do tempo</h2>
         {timeline.length === 0 ? (
           <div className="text-center py-10 text-ink-3">
             <p className="text-sm">Nenhum exame registrado.</p>
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col divide-y divide-slate-200">
             {timeline.map(item => {
               const st = statusConhecido(item.status as string);
               return (
-                <div key={item.id} className="border border-borda rounded-lg p-3 flex items-center gap-3 flex-wrap">
+                <div key={item.id} className="py-5 flex items-center gap-3 flex-wrap">
                   <span className="text-xs text-ink-2 font-mono w-24">{fmtData(item.dataExame)}</span>
                   <span className="text-sm text-ink flex-1 min-w-[120px]">
                     {tiposMap[(item.tipoExame as string) || '']?.nome || item.tipoExame || '—'}
@@ -214,6 +217,7 @@ export default function FichaPacientePage() {
             {naoRealizadosTotal} não realizado{naoRealizadosTotal !== 1 ? 's' : ''}
           </p>
         )}
+      </div>
       </div>
     </>
   );

@@ -31,3 +31,12 @@ Ordem cronológica. Ler o(s) recente(s) antes de mexer na área relacionada.
 | 2026-08-30 | [Seção 7 ondas 2+2b: servidor dono dos carimbos, status e ciclo](2026-08-30-secao7-onda2-servidor-dono.md) ✅ merges `2bc333b`+`cb6beb7`, ⚠️ REGRA PUBLICADA 30/08 — E3 servidor, E11-D giro ao emitir, E10/E14 status/whitelist | Emissão / billing / regras / Direx |
 | 2026-08-31 | [SEÇÃO 7 FECHADA — Emissão/PDF/exportação](2026-08-31-secao7-FECHADA.md) ✅ 5 merges (ondas 0-4), 68 achados tratados, regra publicada 30/08, tríade em toda onda — unit 757 api 301 rules 150 | Emissão / PDF / billing / exportação |
 | 2026-09-07 | [SEÇÃO 8 FECHADA — Histórico/Extrato (última do mapa!)](2026-09-07-secao8-FECHADA.md) ✅ 3 merges (81d248e/07fc253/c1277f0), 30 achados por tríade, extrato sem truncar, contador monotônico, logs assinados — unit 771 rules 162. ⚠️ REGRA PUBLICADA 07/09 | Histórico / Extrato / billing / regras |
+| 2026-09-08 | [Identidade, layout e ícones LEO](2026-09-08-identidade-layout-icones-leo.md) — redesenho local aplicado; typecheck, 771 testes e build aprovados; revisão visual integral pendente | Design / memória |
+
+
+## Validação local — 09/10/2026
+Implementação visual concluída na branch codex/layout-visual-aprovado, incluindo A4 de carótidas, sidebar D original, ECG a 88 bpm, ficha B e editor minimalista. TypeScript/build aprovados, 771 testes unitários e 26 verificações de interface em 11 telas (1440 e 390 px). Campos preservados ao recolher seções, trava de emitido e configurações mantidas. Corrigido overflow dos rótulos acessíveis das tabelas. Revisões independentes não encontraram regressões funcionais. Funções clínicas, persistência e geração PDF preservadas.
+
+Evidências: docs/design/2026-09-24-layout-aprovado/validacao-final. Reproduzir com npm run build e node tests/visual/layout-check.mjs. Componentes reais com dados fictícios, rede externa e gravações bloqueadas. APIs reais, emissão clínica e PDF gerado não foram exercitados. Catálogo de ícones permanece como referência, sem afirmar migração de todo ícone legado do produto.
+
+Lint geral tem 25 erros e 20 avisos anteriores; comparação inicial dos arquivos alterados com HEAD sem novos achados. Última checagem dos arquivos de produção finais passou. Build conserva aviso anterior de rastreamento amplo em pdf-browser/next.config. Obsidian atualizado (decisões, visão geral e roadmap). Implementação local concluída; publicação/merge/deploy ainda dependem de autorização do Sergio.

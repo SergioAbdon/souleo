@@ -1,0 +1,924 @@
+<style>@scope (#editor-redesign){/*! tailwindcss v4.2.2 | MIT License | https://tailwindcss.com */
+@layer properties;
+@layer theme, base, components, utilities;
+@layer theme {
+  :scope {
+    --font-sans: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
+      "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+      "Courier New", monospace;
+    --color-amber-50: oklch(98.7% 0.022 95.277);
+    --color-amber-200: oklch(92.4% 0.12 95.746);
+    --color-amber-600: oklch(66.6% 0.179 58.318);
+    --color-blue-50: oklch(97% 0.014 254.604);
+    --color-blue-100: oklch(93.2% 0.032 255.585);
+    --color-gray-50: oklch(98.5% 0.002 247.839);
+    --color-gray-200: oklch(92.8% 0.006 264.531);
+    --color-gray-500: oklch(55.1% 0.027 264.364);
+    --color-gray-600: oklch(44.6% 0.03 256.802);
+    --color-white: #fff;
+    --spacing: 0.25rem;
+    --text-base: 1rem;
+    --text-base--line-height: calc(1.5 / 1);
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+    --tracking-wide: 0.025em;
+    --tracking-wider: 0.05em;
+    --leading-relaxed: 1.625;
+    --radius-md: 0.375rem;
+    --radius-lg: 0.5rem;
+    --default-transition-duration: 150ms;
+    --default-transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    --default-font-family: var(--font-sans);
+    --default-mono-font-family: var(--font-mono);
+  }
+}
+@layer base {
+  *, ::after, ::before, ::backdrop, ::file-selector-button {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border: 0 solid;
+  }
+  html, :host {
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+    tab-size: 4;
+    font-family: var(--default-font-family, ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji");
+    font-feature-settings: var(--default-font-feature-settings, normal);
+    font-variation-settings: var(--default-font-variation-settings, normal);
+    -webkit-tap-highlight-color: transparent;
+  }
+  hr {
+    height: 0;
+    color: inherit;
+    border-top-width: 1px;
+  }
+  abbr:where([title]) {
+    -webkit-text-decoration: underline dotted;
+    text-decoration: underline dotted;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-size: inherit;
+    font-weight: inherit;
+  }
+  a {
+    color: inherit;
+    -webkit-text-decoration: inherit;
+    text-decoration: inherit;
+  }
+  b, strong {
+    font-weight: bolder;
+  }
+  code, kbd, samp, pre {
+    font-family: var(--default-mono-font-family, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);
+    font-feature-settings: var(--default-mono-font-feature-settings, normal);
+    font-variation-settings: var(--default-mono-font-variation-settings, normal);
+    font-size: 1em;
+  }
+  small {
+    font-size: 80%;
+  }
+  sub, sup {
+    font-size: 75%;
+    line-height: 0;
+    position: relative;
+    vertical-align: baseline;
+  }
+  sub {
+    bottom: -0.25em;
+  }
+  sup {
+    top: -0.5em;
+  }
+  table {
+    text-indent: 0;
+    border-color: inherit;
+    border-collapse: collapse;
+  }
+  :-moz-focusring {
+    outline: auto;
+  }
+  progress {
+    vertical-align: baseline;
+  }
+  summary {
+    display: list-item;
+  }
+  ol, ul, menu {
+    list-style: none;
+  }
+  img, svg, video, canvas, audio, iframe, embed, object {
+    display: block;
+    vertical-align: middle;
+  }
+  img, video {
+    max-width: 100%;
+    height: auto;
+  }
+  button, input, select, optgroup, textarea, ::file-selector-button {
+    font: inherit;
+    font-feature-settings: inherit;
+    font-variation-settings: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    border-radius: 0;
+    background-color: transparent;
+    opacity: 1;
+  }
+  :where(select:is([multiple], [size])) optgroup {
+    font-weight: bolder;
+  }
+  :where(select:is([multiple], [size])) optgroup option {
+    padding-inline-start: 20px;
+  }
+  ::file-selector-button {
+    margin-inline-end: 4px;
+  }
+  ::placeholder {
+    opacity: 1;
+  }
+  @supports (not (-webkit-appearance: -apple-pay-button))  or (contain-intrinsic-size: 1px) {
+    ::placeholder {
+      color: currentcolor;
+      @supports (color: color-mix(in lab, red, red)) {
+        color: color-mix(in oklab, currentcolor 50%, transparent);
+      }
+    }
+  }
+  textarea {
+    resize: vertical;
+  }
+  ::-webkit-search-decoration {
+    -webkit-appearance: none;
+  }
+  ::-webkit-date-and-time-value {
+    min-height: 1lh;
+    text-align: inherit;
+  }
+  ::-webkit-datetime-edit {
+    display: inline-flex;
+  }
+  ::-webkit-datetime-edit-fields-wrapper {
+    padding: 0;
+  }
+  ::-webkit-datetime-edit, ::-webkit-datetime-edit-year-field, ::-webkit-datetime-edit-month-field, ::-webkit-datetime-edit-day-field, ::-webkit-datetime-edit-hour-field, ::-webkit-datetime-edit-minute-field, ::-webkit-datetime-edit-second-field, ::-webkit-datetime-edit-millisecond-field, ::-webkit-datetime-edit-meridiem-field {
+    padding-block: 0;
+  }
+  ::-webkit-calendar-picker-indicator {
+    line-height: 1;
+  }
+  :-moz-ui-invalid {
+    box-shadow: none;
+  }
+  button, input:where([type="button"], [type="reset"], [type="submit"]), ::file-selector-button {
+    appearance: button;
+  }
+  ::-webkit-inner-spin-button, ::-webkit-outer-spin-button {
+    height: auto;
+  }
+  [hidden]:where(:not([hidden="until-found"])) {
+    display: none !important;
+  }
+}
+@layer utilities {
+  .sticky {
+    position: sticky;
+  }
+  .top-0 {
+    top: calc(var(--spacing) * 0);
+  }
+  .z-10 {
+    z-index: 10;
+  }
+  .col-span-2 {
+    grid-column: span 2 / span 2;
+  }
+  .mx-auto {
+    margin-inline: auto;
+  }
+  .mt-0\.5 {
+    margin-top: calc(var(--spacing) * 0.5);
+  }
+  .mt-1 {
+    margin-top: calc(var(--spacing) * 1);
+  }
+  .mt-1\.5 {
+    margin-top: calc(var(--spacing) * 1.5);
+  }
+  .mt-2 {
+    margin-top: calc(var(--spacing) * 2);
+  }
+  .mt-4 {
+    margin-top: calc(var(--spacing) * 4);
+  }
+  .mt-\[7px\] {
+    margin-top: 7px;
+  }
+  .mb-0\.5 {
+    margin-bottom: calc(var(--spacing) * 0.5);
+  }
+  .mb-1 {
+    margin-bottom: calc(var(--spacing) * 1);
+  }
+  .mb-2 {
+    margin-bottom: calc(var(--spacing) * 2);
+  }
+  .mb-3 {
+    margin-bottom: calc(var(--spacing) * 3);
+  }
+  .mb-\[3px\] {
+    margin-bottom: 3px;
+  }
+  .ml-\[3px\] {
+    margin-left: 3px;
+  }
+  .ml-auto {
+    margin-left: auto;
+  }
+  .block {
+    display: block;
+  }
+  .flex {
+    display: flex;
+  }
+  .grid {
+    display: grid;
+  }
+  .hidden {
+    display: none;
+  }
+  .h-screen {
+    height: 100vh;
+  }
+  .w-full {
+    width: 100%;
+  }
+  .flex-1 {
+    flex: 1;
+  }
+  .shrink-0 {
+    flex-shrink: 0;
+  }
+  .border-collapse {
+    border-collapse: collapse;
+  }
+  .cursor-pointer {
+    cursor: pointer;
+  }
+  .grid-cols-1 {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+  .grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .grid-cols-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .flex-col {
+    flex-direction: column;
+  }
+  .items-center {
+    align-items: center;
+  }
+  .items-end {
+    align-items: flex-end;
+  }
+  .justify-between {
+    justify-content: space-between;
+  }
+  .gap-1\.5 {
+    gap: calc(var(--spacing) * 1.5);
+  }
+  .gap-2 {
+    gap: calc(var(--spacing) * 2);
+  }
+  .gap-2\.5 {
+    gap: calc(var(--spacing) * 2.5);
+  }
+  .gap-\[2px\] {
+    gap: 2px;
+  }
+  .gap-\[3px\] {
+    gap: 3px;
+  }
+  .gap-x-3 {
+    column-gap: calc(var(--spacing) * 3);
+  }
+  .gap-y-\[7px\] {
+    row-gap: 7px;
+  }
+  .overflow-y-auto {
+    overflow-y: auto;
+  }
+  .rounded {
+    border-radius: 0.25rem;
+  }
+  .rounded-\[3px\] {
+    border-radius: 3px;
+  }
+  .rounded-\[5px\] {
+    border-radius: 5px;
+  }
+  .rounded-lg {
+    border-radius: var(--radius-lg);
+  }
+  .rounded-md {
+    border-radius: var(--radius-md);
+  }
+  .border {
+    border-style: var(--tw-border-style);
+    border-width: 1px;
+  }
+  .border-2 {
+    border-style: var(--tw-border-style);
+    border-width: 2px;
+  }
+  .border-t {
+    border-top-style: var(--tw-border-style);
+    border-top-width: 1px;
+  }
+  .border-t-0 {
+    border-top-style: var(--tw-border-style);
+    border-top-width: 0px;
+  }
+  .border-r {
+    border-right-style: var(--tw-border-style);
+    border-right-width: 1px;
+  }
+  .border-b {
+    border-bottom-style: var(--tw-border-style);
+    border-bottom-width: 1px;
+  }
+  .border-dashed {
+    --tw-border-style: dashed;
+    border-style: dashed;
+  }
+  .border-none {
+    --tw-border-style: none;
+    border-style: none;
+  }
+  .border-\[\#2563EB\] {
+    border-color: #2563EB;
+  }
+  .border-\[\#E5E7EB\] {
+    border-color: #E5E7EB;
+  }
+  .border-\[\#ddd\] {
+    border-color: #ddd;
+  }
+  .border-amber-200 {
+    border-color: var(--color-amber-200);
+  }
+  .border-white\/\[\.22\] {
+    border-color: color-mix(in srgb, #fff 22%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--color-white) 22%, transparent);
+    }
+  }
+  .bg-\[\#1E3A5F\] {
+    background-color: #1E3A5F;
+  }
+  .bg-\[\#D8DEE8\] {
+    background-color: #D8DEE8;
+  }
+  .bg-\[\#EEF2F8\] {
+    background-color: #EEF2F8;
+  }
+  .bg-\[\#F3F4F6\] {
+    background-color: #F3F4F6;
+  }
+  .bg-\[\#F9FAFB\] {
+    background-color: #F9FAFB;
+  }
+  .bg-amber-50 {
+    background-color: var(--color-amber-50);
+  }
+  .bg-blue-50 {
+    background-color: var(--color-blue-50);
+  }
+  .bg-gray-200 {
+    background-color: var(--color-gray-200);
+  }
+  .bg-transparent {
+    background-color: transparent;
+  }
+  .bg-white {
+    background-color: var(--color-white);
+  }
+  .bg-white\/\[\.13\] {
+    background-color: color-mix(in srgb, #fff 13%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-white) 13%, transparent);
+    }
+  }
+  .p-0 {
+    padding: calc(var(--spacing) * 0);
+  }
+  .p-1 {
+    padding: calc(var(--spacing) * 1);
+  }
+  .p-2\.5 {
+    padding: calc(var(--spacing) * 2.5);
+  }
+  .p-5 {
+    padding: calc(var(--spacing) * 5);
+  }
+  .px-1\.5 {
+    padding-inline: calc(var(--spacing) * 1.5);
+  }
+  .px-2 {
+    padding-inline: calc(var(--spacing) * 2);
+  }
+  .px-2\.5 {
+    padding-inline: calc(var(--spacing) * 2.5);
+  }
+  .px-3 {
+    padding-inline: calc(var(--spacing) * 3);
+  }
+  .px-5 {
+    padding-inline: calc(var(--spacing) * 5);
+  }
+  .py-0\.5 {
+    padding-block: calc(var(--spacing) * 0.5);
+  }
+  .py-1 {
+    padding-block: calc(var(--spacing) * 1);
+  }
+  .py-2 {
+    padding-block: calc(var(--spacing) * 2);
+  }
+  .py-2\.5 {
+    padding-block: calc(var(--spacing) * 2.5);
+  }
+  .py-3\.5 {
+    padding-block: calc(var(--spacing) * 3.5);
+  }
+  .py-\[3px\] {
+    padding-block: 3px;
+  }
+  .py-\[9px\] {
+    padding-block: 9px;
+  }
+  .pt-1 {
+    padding-top: calc(var(--spacing) * 1);
+  }
+  .pt-1\.5 {
+    padding-top: calc(var(--spacing) * 1.5);
+  }
+  .pt-\[3mm\] {
+    padding-top: 3mm;
+  }
+  .pb-1 {
+    padding-bottom: calc(var(--spacing) * 1);
+  }
+  .pb-10 {
+    padding-bottom: calc(var(--spacing) * 10);
+  }
+  .pb-\[7px\] {
+    padding-bottom: 7px;
+  }
+  .text-center {
+    text-align: center;
+  }
+  .text-left {
+    text-align: left;
+  }
+  .font-mono {
+    font-family: var(--font-mono);
+  }
+  .text-base {
+    font-size: var(--text-base);
+    line-height: var(--tw-leading, var(--text-base--line-height));
+  }
+  .text-\[9\.5px\] {
+    font-size: 9.5px;
+  }
+  .text-\[9px\] {
+    font-size: 9px;
+  }
+  .text-\[10\.5px\] {
+    font-size: 10.5px;
+  }
+  .text-\[10px\] {
+    font-size: 10px;
+  }
+  .text-\[11px\] {
+    font-size: 11px;
+  }
+  .text-\[12\.5px\] {
+    font-size: 12.5px;
+  }
+  .text-\[15px\] {
+    font-size: 15px;
+  }
+  .leading-relaxed {
+    --tw-leading: var(--leading-relaxed);
+    line-height: var(--leading-relaxed);
+  }
+  .font-bold {
+    --tw-font-weight: var(--font-weight-bold);
+    font-weight: var(--font-weight-bold);
+  }
+  .font-medium {
+    --tw-font-weight: var(--font-weight-medium);
+    font-weight: var(--font-weight-medium);
+  }
+  .font-normal {
+    --tw-font-weight: var(--font-weight-normal);
+    font-weight: var(--font-weight-normal);
+  }
+  .font-semibold {
+    --tw-font-weight: var(--font-weight-semibold);
+    font-weight: var(--font-weight-semibold);
+  }
+  .tracking-\[0\.7px\] {
+    --tw-tracking: 0.7px;
+    letter-spacing: 0.7px;
+  }
+  .tracking-wide {
+    --tw-tracking: var(--tracking-wide);
+    letter-spacing: var(--tracking-wide);
+  }
+  .tracking-wider {
+    --tw-tracking: var(--tracking-wider);
+    letter-spacing: var(--tracking-wider);
+  }
+  .whitespace-nowrap {
+    white-space: nowrap;
+  }
+  .whitespace-pre-line {
+    white-space: pre-line;
+  }
+  .text-\[\#1E3A5F\] {
+    color: #1E3A5F;
+  }
+  .text-\[\#6B7280\] {
+    color: #6B7280;
+  }
+  .text-\[\#9CA3AF\] {
+    color: #9CA3AF;
+  }
+  .text-\[\#93C5FD\] {
+    color: #93C5FD;
+  }
+  .text-\[\#2563EB\] {
+    color: #2563EB;
+  }
+  .text-amber-600 {
+    color: var(--color-amber-600);
+  }
+  .text-gray-500 {
+    color: var(--color-gray-500);
+  }
+  .text-gray-600 {
+    color: var(--color-gray-600);
+  }
+  .text-white {
+    color: var(--color-white);
+  }
+  .uppercase {
+    text-transform: uppercase;
+  }
+  .italic {
+    font-style: italic;
+  }
+  .shadow-\[0_4px_20px_rgba\(0\,0\,0\,\.15\)\] {
+    --tw-shadow: 0 4px 20px var(--tw-shadow-color, rgba(0,0,0,.15));
+    box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
+  }
+  .transition {
+    transition-property: color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to, opacity, box-shadow, transform, translate, scale, rotate, filter, -webkit-backdrop-filter, backdrop-filter, display, content-visibility, overlay, pointer-events;
+    transition-timing-function: var(--tw-ease, var(--default-transition-timing-function));
+    transition-duration: var(--tw-duration, var(--default-transition-duration));
+  }
+  .select-none {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .hover\:bg-\[\#F3F4F6\] {
+    &:hover {
+      @media (hover: hover) {
+        background-color: #F3F4F6;
+      }
+    }
+  }
+  .hover\:bg-blue-100 {
+    &:hover {
+      @media (hover: hover) {
+        background-color: var(--color-blue-100);
+      }
+    }
+  }
+  .hover\:bg-gray-50 {
+    &:hover {
+      @media (hover: hover) {
+        background-color: var(--color-gray-50);
+      }
+    }
+  }
+  .hover\:bg-white {
+    &:hover {
+      @media (hover: hover) {
+        background-color: var(--color-white);
+      }
+    }
+  }
+  .hover\:bg-white\/25 {
+    &:hover {
+      @media (hover: hover) {
+        background-color: color-mix(in srgb, #fff 25%, transparent);
+        @supports (color: color-mix(in lab, red, red)) {
+          background-color: color-mix(in oklab, var(--color-white) 25%, transparent);
+        }
+      }
+    }
+  }
+  .hover\:text-\[\#1E3A5F\] {
+    &:hover {
+      @media (hover: hover) {
+        color: #1E3A5F;
+      }
+    }
+  }
+  .hover\:brightness-110 {
+    &:hover {
+      @media (hover: hover) {
+        --tw-brightness: brightness(110%);
+        filter: var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,);
+      }
+    }
+  }
+  .disabled\:opacity-50 {
+    &:disabled {
+      opacity: 50%;
+    }
+  }
+}
+@property --tw-border-style {
+  syntax: "*";
+  inherits: false;
+  initial-value: solid;
+}
+@property --tw-leading {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-font-weight {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-tracking {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-shadow {
+  syntax: "*";
+  inherits: false;
+  initial-value: 0 0 #0000;
+}
+@property --tw-shadow-color {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-shadow-alpha {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 100%;
+}
+@property --tw-inset-shadow {
+  syntax: "*";
+  inherits: false;
+  initial-value: 0 0 #0000;
+}
+@property --tw-inset-shadow-color {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-inset-shadow-alpha {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 100%;
+}
+@property --tw-ring-color {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-ring-shadow {
+  syntax: "*";
+  inherits: false;
+  initial-value: 0 0 #0000;
+}
+@property --tw-inset-ring-color {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-inset-ring-shadow {
+  syntax: "*";
+  inherits: false;
+  initial-value: 0 0 #0000;
+}
+@property --tw-ring-inset {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-ring-offset-width {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --tw-ring-offset-color {
+  syntax: "*";
+  inherits: false;
+  initial-value: #fff;
+}
+@property --tw-ring-offset-shadow {
+  syntax: "*";
+  inherits: false;
+  initial-value: 0 0 #0000;
+}
+@property --tw-blur {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-brightness {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-contrast {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-grayscale {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-hue-rotate {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-invert {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-opacity {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-saturate {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-sepia {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-drop-shadow {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-drop-shadow-color {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-drop-shadow-alpha {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 100%;
+}
+@property --tw-drop-shadow-size {
+  syntax: "*";
+  inherits: false;
+}
+@layer properties {
+  @supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))) {
+    *, ::before, ::after, ::backdrop {
+      --tw-border-style: solid;
+      --tw-leading: initial;
+      --tw-font-weight: initial;
+      --tw-tracking: initial;
+      --tw-shadow: 0 0 #0000;
+      --tw-shadow-color: initial;
+      --tw-shadow-alpha: 100%;
+      --tw-inset-shadow: 0 0 #0000;
+      --tw-inset-shadow-color: initial;
+      --tw-inset-shadow-alpha: 100%;
+      --tw-ring-color: initial;
+      --tw-ring-shadow: 0 0 #0000;
+      --tw-inset-ring-color: initial;
+      --tw-inset-ring-shadow: 0 0 #0000;
+      --tw-ring-inset: initial;
+      --tw-ring-offset-width: 0px;
+      --tw-ring-offset-color: #fff;
+      --tw-ring-offset-shadow: 0 0 #0000;
+      --tw-blur: initial;
+      --tw-brightness: initial;
+      --tw-contrast: initial;
+      --tw-grayscale: initial;
+      --tw-hue-rotate: initial;
+      --tw-invert: initial;
+      --tw-opacity: initial;
+      --tw-saturate: initial;
+      --tw-sepia: initial;
+      --tw-drop-shadow: initial;
+      --tw-drop-shadow-color: initial;
+      --tw-drop-shadow-alpha: 100%;
+      --tw-drop-shadow-size: initial;
+    }
+  }
+}
+}#editor-redesign{font-family:'IBM Plex Sans',Arial,sans-serif;color:#111827;background:#d8dee8}#editor-redesign .full-editor{display:grid;grid-template-columns:350px minmax(0,1fr);align-items:start}#editor-redesign #laudo-sidebar{height:auto}#editor-redesign #laudo-sidebar .overflow-y-auto{overflow:visible}#editor-redesign #demo-feedback{padding:14px;background:white;font-size:12px}#editor-redesign button{cursor:pointer}#editor-redesign .sf{width:100%;border:1.5px solid #e5e7eb;border-radius:5px;padding:5px 7px;font-size:12px;background:#fff}#editor-redesign #laudo-sheet{max-width:100%;} @media(max-width:900px){#editor-redesign .full-editor{grid-template-columns:1fr}#editor-redesign #laudo-sidebar{width:100%}}</style><div id="editor-redesign"><div class="full-editor"><div id="laudo-sidebar" class="bg-white border-r border-[#E5E7EB] flex flex-col h-screen"><div class="sticky top-0 z-10 bg-[#1E3A5F] px-5 py-3.5 shrink-0"><div class="flex items-center justify-between mb-0.5"><h1 class="text-white text-[12.5px] font-semibold tracking-wide">🫀 Laudo ECO · <span id="hdr-clinica">Clínica demonstração</span></h1><div class="flex gap-1.5"><button class="bg-white/[.13] border border-white/[.22] text-white text-[10.5px] px-2.5 py-1 rounded-[5px] font-medium whitespace-nowrap hover:bg-white/25 transition cursor-pointer">← Voltar</button></div></div><p id="hdr-subtitulo" class="text-[#93C5FD] text-[10px] mt-0.5">Médico demonstração</p></div><div class="shrink-0 border-b border-[#E5E7EB] bg-white"><div id="modo-edicao" class="flex items-center gap-2 px-5 py-2"><button disabled="" title="Sem medidas DICOM ainda — aguarde Wader processar o exame" class="px-3 py-2 rounded-md text-[11px] font-semibold cursor-pointer transition border-none whitespace-nowrap bg-gray-200 text-gray-500 disabled:opacity-50">📡 Importar</button><button disabled="" title="Sem imagens DICOM ainda — aguarde Wader processar" class="px-3 py-2 rounded-md text-[11px] font-semibold cursor-pointer transition border-none whitespace-nowrap bg-gray-200 text-gray-500 disabled:opacity-50">🖼️ Imagens</button><button class="flex-1 py-2 rounded-md font-semibold text-white text-[11px] cursor-pointer hover:brightness-110 transition border-none bg-[#1E3A5F]">💾 Salvar / Emitir</button><button class="px-3 py-2 rounded-md border border-[#E5E7EB] bg-white text-[#6B7280] text-[11px] font-medium cursor-pointer hover:bg-gray-50 transition">🗑️</button></div></div><div class="flex-1 overflow-y-auto pb-10"><div id="sec-id" class="border-b border-[#E5E7EB]"><button class="section-btn w-full flex items-center gap-2 px-5 py-[9px] bg-[#F9FAFB] text-[11px] font-semibold uppercase tracking-[0.7px] text-[#1E3A5F] cursor-pointer select-none hover:bg-[#F3F4F6] transition">👤 Identificação<span class="ml-auto text-[#6B7280] text-[15px]">▾</span></button><div class="grid grid-cols-1 gap-x-3 gap-y-[7px] px-5 py-2.5"><div class="mb-2 rounded-lg border-2 border-[#2563EB] bg-blue-50 p-2.5"><div class="text-[9px] text-[#2563EB] font-semibold uppercase tracking-wide mb-1">🏥 ACC (AccessionNumber DICOM)</div><button type="button" title="Clique para copiar" class="font-mono text-base font-bold text-[#1E3A5F] tracking-wide hover:bg-blue-100 px-1.5 py-0.5 rounded transition cursor-pointer block w-full text-left">DEMO-001</button><div class="text-[10px] text-gray-600 mt-1.5 leading-relaxed"><strong>Em caso de cadastro manual no Vivid:</strong> copie este código e cole em<em> Patient → Edit → AccessionNumber</em> antes de enviar as imagens. Sem isso, o LEO não casa as imagens com este exame.</div></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Nome completo</label><input type="text" id="nome" class="sf "/></div><div class="grid grid-cols-2 gap-x-3 gap-y-[7px] mt-[7px]"><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Data de nascimento</label><input type="date" id="dtnasc" class="sf "/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Data do exame</label><input type="date" id="dtexame" class="sf "/></div></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Convênio</label><input type="text" id="convenio" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Médico solicitante</label><input type="text" id="solicitante" class="sf"/></div></div></div><div id="sec-med" class="border-b border-[#E5E7EB]"><button class="section-btn w-full flex items-center gap-2 px-5 py-[9px] bg-[#F9FAFB] text-[11px] font-semibold uppercase tracking-[0.7px] text-[#1E3A5F] cursor-pointer select-none hover:bg-[#F3F4F6] transition">📏 Medidas Gerais<span class="ml-auto text-[#6B7280] text-[15px]">▾</span></button><div class="grid grid-cols-2 gap-x-3 gap-y-[7px] px-5 py-2.5"><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Sexo</label><select id="sexo" class="sf"><option value="">—</option><option value="M">Masculino</option><option value="F">Feminino</option></select></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Ritmo</label><select id="ritmo" class="sf"><option value="S">Regular</option><option value="N">Irregular</option></select></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Peso<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">kg</span></label><input type="number" id="peso" step="0.1" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Altura<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">cm</span></label><input type="number" id="altura" step="0.1" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">IMC<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">kg/m²</span></label><div id="calc-imc" class="text-[11px] text-[#1E3A5F] bg-[#EEF2F8] px-1.5 py-[3px] rounded font-mono font-medium">—</div></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">ASC<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">m²</span></label><div id="calc-asc" class="text-[11px] text-[#1E3A5F] bg-[#EEF2F8] px-1.5 py-[3px] rounded font-mono font-medium">—</div></div></div></div><div id="sec-cam" class="border-b border-[#E5E7EB]"><button class="section-btn w-full flex items-center gap-2 px-5 py-[9px] bg-[#F9FAFB] text-[11px] font-semibold uppercase tracking-[0.7px] text-[#1E3A5F] cursor-pointer select-none hover:bg-[#F3F4F6] transition">📐 Câmaras<span class="ml-auto text-[#6B7280] text-[15px]">▾</span></button><div class="grid grid-cols-2 gap-x-3 gap-y-[7px] px-5 py-2.5"><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Raiz Aórtica<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">mm</span></label><input type="number" id="b7" step="0.1" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Átrio Esquerdo<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">mm</span></label><input type="number" id="b8" step="0.1" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">DDVE<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">mm</span></label><input type="number" id="b9" step="0.1" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Septo IV<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">mm</span></label><input type="number" id="b10" step="0.1" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Parede Posterior<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">mm</span></label><input type="number" id="b11" step="0.1" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">DSVE<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">mm</span></label><input type="number" id="b12" step="0.1" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Ventrículo Direito<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">mm</span></label><input type="number" id="b13" step="0.1" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Aorta Ascendente<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">mm</span></label><input type="number" id="b28" step="0.1" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Arco Aórtico<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">mm</span></label><input type="number" id="b29" step="0.1" class="sf"/></div><div class="col-span-2 border-t border-dashed border-[#E5E7EB] mt-1 pt-1.5 grid grid-cols-2 gap-x-3 gap-y-[7px]"><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">VDF VE<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">ml</span></label><div id="calc-vdf" class="text-[11px] text-[#1E3A5F] bg-[#EEF2F8] px-1.5 py-[3px] rounded font-mono font-medium">—</div></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">VSF VE<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">ml</span></label><div id="calc-vsf" class="text-[11px] text-[#1E3A5F] bg-[#EEF2F8] px-1.5 py-[3px] rounded font-mono font-medium">—</div></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">FE Teichholz</label><div id="calc-fe" class="text-[11px] text-[#1E3A5F] bg-[#EEF2F8] px-1.5 py-[3px] rounded font-mono font-medium">—</div></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Fração Encurt.</label><div id="calc-fs" class="text-[11px] text-[#1E3A5F] bg-[#EEF2F8] px-1.5 py-[3px] rounded font-mono font-medium">—</div></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Massa VE<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">g</span></label><div id="calc-massa" class="text-[11px] text-[#1E3A5F] bg-[#EEF2F8] px-1.5 py-[3px] rounded font-mono font-medium">—</div></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Índice Massa<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">g/m²</span></label><div id="calc-im" class="text-[11px] text-[#1E3A5F] bg-[#EEF2F8] px-1.5 py-[3px] rounded font-mono font-medium">—</div></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Esp. Relativa</label><div id="calc-er" class="text-[11px] text-[#1E3A5F] bg-[#EEF2F8] px-1.5 py-[3px] rounded font-mono font-medium">—</div></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Relação Ao/AE</label><div id="calc-aoae" class="text-[11px] text-[#1E3A5F] bg-[#EEF2F8] px-1.5 py-[3px] rounded font-mono font-medium">—</div></div></div></div></div><div id="sec-diast" class="border-b border-[#E5E7EB]"><button class="section-btn w-full flex items-center gap-2 px-5 py-[9px] bg-[#F9FAFB] text-[11px] font-semibold uppercase tracking-[0.7px] text-[#1E3A5F] cursor-pointer select-none hover:bg-[#F3F4F6] transition">📊 Função Diastólica<span class="ml-auto text-[#6B7280] text-[15px]">▾</span></button><div class="grid grid-cols-2 gap-x-3 gap-y-[7px] px-5 py-2.5"><div class="col-span-2 mb-1"><div class="flex items-center gap-1.5 bg-[#F3F4F6] rounded-md p-1"><button type="button" id="diast-btn-auto" class="flex-1 text-[10px] font-semibold py-1 rounded transition bg-[#1E3A5F] text-white">Automático</button><button type="button" id="diast-btn-manual" class="flex-1 text-[10px] font-semibold py-1 rounded transition bg-transparent text-[#6B7280] hover:bg-white">Manual</button></div><div id="diast-manual-panel" class="hidden mt-1.5"><select id="diast-manual-sel" class="sf w-full text-[10px]"><option value="-1">— Selecione —</option><option value="0">Índices diastólicos preservados</option><option value="1">Disfunção diastólica grau I (alt. relaxamento)</option><option value="2">Disfunção diastólica grau II (pseudonormal)</option><option value="3">Disfunção diastólica grau III (restritivo)</option><option value="4">Função diastólica indeterminada</option><option value="5">Avaliação limitada (arritmia)</option><option value="6">Não avaliar</option></select></div></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Onda E<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">cm/s</span></label><input type="number" id="b19" step="0.1" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Relação E/A</label><input type="number" id="b20" step="0.01" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">e&#x27; septal<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">cm/s</span></label><input type="number" id="b21" step="0.1" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Relação E/e&#x27;</label><input type="number" id="b22" step="0.1" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Vel. IT<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">m/s</span></label><input type="number" id="b23" step="0.01" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">PSAP<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">mmHg</span></label><input type="number" id="b37" step="1" class="sf"/></div><div id="alerta-psap" class="col-span-2 text-[9px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1 font-medium" style="display:none">⚠️ Vel. IT preenchida sem PSAP — informe a PSAP estimada</div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Vol. AE index<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">ml/m²</span></label><input type="number" id="b24" step="0.1" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">≥2 sinais indiretos de HP?</label><select id="b38" class="sf"><option value="">Não</option><option value="S">Sim</option></select></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Vol. AD index<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">ml/m²</span></label><input type="number" id="b25" step="0.1" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">LA strain<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">% · VR≥18</span></label><input type="number" id="lars" step="0.1" class="sf" placeholder="reservoir"/></div></div></div><div id="sec-valv" class="border-b border-[#E5E7EB]"><button class="section-btn w-full flex items-center gap-2 px-5 py-[9px] bg-[#F9FAFB] text-[11px] font-semibold uppercase tracking-[0.7px] text-[#1E3A5F] cursor-pointer select-none hover:bg-[#F3F4F6] transition">🔵 Válvulas<span class="ml-auto text-[#6B7280] text-[15px]">▾</span></button><div class="grid grid-cols-2 gap-x-3 gap-y-[7px] px-5 py-2.5"><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">V. Mitral</label><select id="b34" class="sf"><option value="">— Normal —</option><option value="EL">EL — Espessada leve</option><option value="ELM">ELM — Espessada leve-mod</option><option value="EM">EM — Espessada moderada</option><option value="EMI">EMI — Espessada mod-imp</option><option value="EI">EI — Espessada importante</option><option value="FL">FL — Fibrocalcif. leve</option><option value="FLM">FLM — Fibrocalcif. leve-mod</option><option value="FM">FM — Fibrocalcif. moderada</option><option value="FMI">FMI — Fibrocalcif. mod-imp</option><option value="FI">FI — Fibrocalcif. importante</option><option value="EFL">EFL — Esp/Fibrocalcif. leve</option><option value="EFLM">EFLM — Esp/Fibrocalcif. leve-mod</option><option value="EFM">EFM — Esp/Fibrocalcif. moderada</option><option value="EFMI">EFMI — Esp/Fibrocalcif. mod-imp</option><option value="EFI">EFI — Esp/Fibrocalcif. importante</option></select></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Refluxo Mitral</label><select id="b35" class="sf"><option value="">— Ausente —</option><option value="L">L — Leve</option><option value="LM">LM — Leve-Mod</option><option value="M">M — Moderado</option><option value="MI">MI — Mod-Imp</option><option value="I">I — Importante</option></select></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">V. Aórtica</label><select id="b39" class="sf"><option value="">— Normal —</option><option value="EL">EL — Espessada leve</option><option value="ELM">ELM — Espessada leve-mod</option><option value="EM">EM — Espessada moderada</option><option value="EMI">EMI — Espessada mod-imp</option><option value="EI">EI — Espessada importante</option><option value="FL">FL — Fibrocalcif. leve</option><option value="FLM">FLM — Fibrocalcif. leve-mod</option><option value="FM">FM — Fibrocalcif. moderada</option><option value="FMI">FMI — Fibrocalcif. mod-imp</option><option value="FI">FI — Fibrocalcif. importante</option><option value="EFL">EFL — Esp/Fibrocalcif. leve</option><option value="EFLM">EFLM — Esp/Fibrocalcif. leve-mod</option><option value="EFM">EFM — Esp/Fibrocalcif. moderada</option><option value="EFMI">EFMI — Esp/Fibrocalcif. mod-imp</option><option value="EFI">EFI — Esp/Fibrocalcif. importante</option></select></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Refluxo Aórtico</label><select id="b40" class="sf"><option value="">— Ausente —</option><option value="L">L — Leve</option><option value="LM">LM — Leve-Mod</option><option value="M">M — Moderado</option><option value="MI">MI — Mod-Imp</option><option value="I">I — Importante</option></select></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">V. Tricúspide</label><select id="b34t" class="sf"><option value="">— Normal —</option><option value="EL">EL — Espessada leve</option><option value="ELM">ELM — Espessada leve-mod</option><option value="EM">EM — Espessada moderada</option><option value="EMI">EMI — Espessada mod-imp</option><option value="EI">EI — Espessada importante</option><option value="FL">FL — Fibrocalcif. leve</option><option value="FLM">FLM — Fibrocalcif. leve-mod</option><option value="FM">FM — Fibrocalcif. moderada</option><option value="FMI">FMI — Fibrocalcif. mod-imp</option><option value="FI">FI — Fibrocalcif. importante</option><option value="EFL">EFL — Esp/Fibrocalcif. leve</option><option value="EFLM">EFLM — Esp/Fibrocalcif. leve-mod</option><option value="EFM">EFM — Esp/Fibrocalcif. moderada</option><option value="EFMI">EFMI — Esp/Fibrocalcif. mod-imp</option><option value="EFI">EFI — Esp/Fibrocalcif. importante</option></select></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Refluxo Tricúspide</label><select id="b36" class="sf"><option value="">— Ausente —</option><option value="L">L — Leve</option><option value="LM">LM — Leve-Mod</option><option value="M">M — Moderado</option><option value="MI">MI — Mod-Imp</option><option value="I">I — Importante</option></select></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">V. Pulmonar</label><select id="b39p" class="sf"><option value="">— Normal —</option><option value="EL">EL — Espessada leve</option><option value="ELM">ELM — Espessada leve-mod</option><option value="EM">EM — Espessada moderada</option><option value="EMI">EMI — Espessada mod-imp</option><option value="EI">EI — Espessada importante</option><option value="FL">FL — Fibrocalcif. leve</option><option value="FLM">FLM — Fibrocalcif. leve-mod</option><option value="FM">FM — Fibrocalcif. moderada</option><option value="FMI">FMI — Fibrocalcif. mod-imp</option><option value="FI">FI — Fibrocalcif. importante</option><option value="EFL">EFL — Esp/Fibrocalcif. leve</option><option value="EFLM">EFLM — Esp/Fibrocalcif. leve-mod</option><option value="EFM">EFM — Esp/Fibrocalcif. moderada</option><option value="EFMI">EFMI — Esp/Fibrocalcif. mod-imp</option><option value="EFI">EFI — Esp/Fibrocalcif. importante</option></select></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Refluxo Pulmonar</label><select id="b40p" class="sf"><option value="">— Ausente —</option><option value="L">L — Leve</option><option value="LM">LM — Leve-Mod</option><option value="M">M — Moderado</option><option value="MI">MI — Mod-Imp</option><option value="I">I — Importante</option></select></div><div id="field-psmap" class="col-span-2" style="display:none"><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Pressão Sist. Média Art. Pulmonar<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">mmHg</span></label><input type="number" id="psmap" step="1" class="sf"/></div></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Derrame Pericárdico</label><select id="b41" class="sf"><option value="">— Ausente —</option><option value="L">L — Leve</option><option value="LM">LM — Leve-Mod</option><option value="M">M — Moderado</option><option value="MI">MI — Mod-Imp</option><option value="I">I — Importante</option></select></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Placas Arco Aórtico</label><select id="b42" class="sf"><option value="">— Não —</option><option value="s">Sim — Calcificadas</option></select></div><div class="col-span-2 border-t border-dashed border-[#E5E7EB] mt-1 pt-1.5"><p class="text-[10.5px] font-semibold text-[#1E3A5F] mb-1">Estenose Mitral</p><div class="grid grid-cols-2 gap-x-3 gap-y-[7px]"><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Grad. máx.<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">mmHg</span></label><input type="number" id="b45" step="0.1" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Grad. médio<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">mmHg</span></label><input type="number" id="b46" step="0.1" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Área mitral<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">cm²</span></label><input type="number" id="b47" step="0.01" class="sf"/></div></div><button type="button" class="flex items-center gap-2 mt-2 mb-1 cursor-pointer text-[10px] font-semibold text-[#6B7280] hover:text-[#1E3A5F] transition"><span id="wilkins-icon">☐</span> Escore de Wilkins</button><input type="checkbox" id="wilkins-toggle" class="hidden"/><div id="wilkins-fields" class="grid grid-cols-4 gap-2" style="display:none"><div class="flex flex-col gap-[2px]"><label class="text-[9px] text-[#6B7280]">Mobilid.</label><select id="wk-mob" class="sf text-[10px]"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div><div class="flex flex-col gap-[2px]"><label class="text-[9px] text-[#6B7280]">Espess.</label><select id="wk-esp" class="sf text-[10px]"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div><div class="flex flex-col gap-[2px]"><label class="text-[9px] text-[#6B7280]">Calcif.</label><select id="wk-cal" class="sf text-[10px]"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div><div class="flex flex-col gap-[2px]"><label class="text-[9px] text-[#6B7280]">Subvalv.</label><select id="wk-sub" class="sf text-[10px]"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div></div><div id="calc-wilkins" class="text-[10px] text-[#1E3A5F] font-semibold mt-1"></div></div><div class="col-span-2 border-t border-dashed border-[#E5E7EB] mt-1 pt-1.5"><p class="text-[10.5px] font-semibold text-[#1E3A5F] mb-1">Estenose Aórtica</p><div class="grid grid-cols-2 gap-x-3 gap-y-[7px]"><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Grad. máx.<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">mmHg</span></label><input type="number" id="b50" step="0.1" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Grad. médio<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">mmHg</span></label><input type="number" id="b51" step="0.1" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Área aórtica<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">cm²</span></label><input type="number" id="b52" step="0.01" class="sf"/></div></div></div><div class="col-span-2 border-t border-dashed border-[#E5E7EB] mt-1 pt-1.5"><p class="text-[10.5px] font-semibold text-[#1E3A5F] mb-1">Estenose Tricúspide</p><div class="grid grid-cols-2 gap-x-3 gap-y-[7px]"><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Grad. médio<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">mmHg</span></label><input type="number" id="b46t" step="0.1" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Área tricúspide<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">cm²</span></label><input type="number" id="b47t" step="0.01" class="sf"/></div></div></div><div class="col-span-2 border-t border-dashed border-[#E5E7EB] mt-1 pt-1.5"><p class="text-[10.5px] font-semibold text-[#1E3A5F] mb-1">Estenose Pulmonar</p><div class="grid grid-cols-2 gap-x-3 gap-y-[7px]"><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Grad. máx.<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">mmHg</span></label><input type="number" id="b50p" step="0.1" class="sf"/></div></div></div></div></div><div id="sec-sist" class="border-b border-[#E5E7EB]"><button class="section-btn w-full flex items-center gap-2 px-5 py-[9px] bg-[#F9FAFB] text-[11px] font-semibold uppercase tracking-[0.7px] text-[#1E3A5F] cursor-pointer select-none hover:bg-[#F3F4F6] transition">💓 Função Sistólica<span class="ml-auto text-[#6B7280] text-[15px]">▸</span></button><div hidden="" class="grid grid-cols-2 gap-x-3 gap-y-[7px] px-5 py-2.5"><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Simpson VE<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">%</span></label><input type="number" id="b54" step="0.1" class="sf" placeholder="se disponível"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">TAPSE<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">mm · VR≥17</span></label><input type="number" id="b33" step="0.1" class="sf"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">GLS VE<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">% · VR≥-18</span></label><input type="number" id="gls_ve" step="0.1" class="sf" placeholder="ex: -21"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">GLS VD<span class="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">% · VR≥-20</span></label><input type="number" id="gls_vd" step="0.1" class="sf" placeholder="ex: -24"/></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Disfunção VD</label><select id="b32" class="sf"><option value="">— Preservada —</option><option value="L">Leve</option><option value="LM">Leve-Mod</option><option value="M">Moderada</option><option value="MI">Mod-Imp</option><option value="I">Importante</option></select></div></div></div><div id="sec-seg" class="border-b border-[#E5E7EB]"><button class="section-btn w-full flex items-center gap-2 px-5 py-[9px] bg-[#F9FAFB] text-[11px] font-semibold uppercase tracking-[0.7px] text-[#1E3A5F] cursor-pointer select-none hover:bg-[#F3F4F6] transition">🗺️ Contratilidade Segmentar<span class="ml-auto text-[#6B7280] text-[15px]">▸</span></button><div hidden="" class="grid grid-cols-2 gap-x-3 gap-y-[7px] px-5 py-2.5"><div class="col-span-2 text-[10px] text-[#6B7280] italic pb-1">H=Hipocin · A=Acin · D=Discin · B=basal · M=média · A=apical</div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Região Apical</label><select id="b55" class="sf"><option value="">— Normal —</option><option value="H">Hipocinesia</option><option value="A">Acinesia</option><option value="D">Discinesia</option></select></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">P. Anterior</label><select id="b56" class="sf"><option value="">— Normal —</option><option value="HB">HB — Hipocin. basal</option><option value="HMB">HMB — Hipocin. médiobasal</option><option value="HM">HM — Hipocin. média</option><option value="HMA">HMA — Hipocin. médioapical</option><option value="HA">HA — Hipocin. apical</option><option value="H">H — Hipocinesia difusa</option><option value="AB">AB — Acinesia basal</option><option value="AMB">AMB — Acinesia médiobasal</option><option value="AM">AM — Acinesia média</option><option value="AMA">AMA — Acinesia médioapical</option><option value="AA">AA — Acinesia apical</option><option value="A">A — Acinesia difusa</option><option value="DB">DB — Discinesia basal</option><option value="DMB">DMB — Discinesia médiobasal</option><option value="DM">DM — Discinesia média</option><option value="DMA">DMA — Discinesia médioapical</option><option value="DA">DA — Discinesia apical</option><option value="D">D — Discinesia difusa</option></select></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">P. Septal anterior</label><select id="b57" class="sf"><option value="">— Normal —</option><option value="HB">HB — Hipocin. basal</option><option value="HMB">HMB — Hipocin. médiobasal</option><option value="HM">HM — Hipocin. média</option><option value="HMA">HMA — Hipocin. médioapical</option><option value="HA">HA — Hipocin. apical</option><option value="H">H — Hipocinesia difusa</option><option value="AB">AB — Acinesia basal</option><option value="AMB">AMB — Acinesia médiobasal</option><option value="AM">AM — Acinesia média</option><option value="AMA">AMA — Acinesia médioapical</option><option value="AA">AA — Acinesia apical</option><option value="A">A — Acinesia difusa</option><option value="DB">DB — Discinesia basal</option><option value="DMB">DMB — Discinesia médiobasal</option><option value="DM">DM — Discinesia média</option><option value="DMA">DMA — Discinesia médioapical</option><option value="DA">DA — Discinesia apical</option><option value="D">D — Discinesia difusa</option></select></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">P. Septal inferior</label><select id="b58" class="sf"><option value="">— Normal —</option><option value="HB">HB — Hipocin. basal</option><option value="HMB">HMB — Hipocin. médiobasal</option><option value="HM">HM — Hipocin. média</option><option value="HMA">HMA — Hipocin. médioapical</option><option value="HA">HA — Hipocin. apical</option><option value="H">H — Hipocinesia difusa</option><option value="AB">AB — Acinesia basal</option><option value="AMB">AMB — Acinesia médiobasal</option><option value="AM">AM — Acinesia média</option><option value="AMA">AMA — Acinesia médioapical</option><option value="AA">AA — Acinesia apical</option><option value="A">A — Acinesia difusa</option><option value="DB">DB — Discinesia basal</option><option value="DMB">DMB — Discinesia médiobasal</option><option value="DM">DM — Discinesia média</option><option value="DMA">DMA — Discinesia médioapical</option><option value="DA">DA — Discinesia apical</option><option value="D">D — Discinesia difusa</option></select></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">P. Inferior</label><select id="b59" class="sf"><option value="">— Normal —</option><option value="HB">HB — Hipocin. basal</option><option value="HMB">HMB — Hipocin. médiobasal</option><option value="HM">HM — Hipocin. média</option><option value="HMA">HMA — Hipocin. médioapical</option><option value="HA">HA — Hipocin. apical</option><option value="H">H — Hipocinesia difusa</option><option value="AB">AB — Acinesia basal</option><option value="AMB">AMB — Acinesia médiobasal</option><option value="AM">AM — Acinesia média</option><option value="AMA">AMA — Acinesia médioapical</option><option value="AA">AA — Acinesia apical</option><option value="A">A — Acinesia difusa</option><option value="DB">DB — Discinesia basal</option><option value="DMB">DMB — Discinesia médiobasal</option><option value="DM">DM — Discinesia média</option><option value="DMA">DMA — Discinesia médioapical</option><option value="DA">DA — Discinesia apical</option><option value="D">D — Discinesia difusa</option></select></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">P. Inferolateral</label><select id="b60" class="sf"><option value="">— Normal —</option><option value="HB">HB — Hipocin. basal</option><option value="HMB">HMB — Hipocin. médiobasal</option><option value="HM">HM — Hipocin. média</option><option value="HMA">HMA — Hipocin. médioapical</option><option value="HA">HA — Hipocin. apical</option><option value="H">H — Hipocinesia difusa</option><option value="AB">AB — Acinesia basal</option><option value="AMB">AMB — Acinesia médiobasal</option><option value="AM">AM — Acinesia média</option><option value="AMA">AMA — Acinesia médioapical</option><option value="AA">AA — Acinesia apical</option><option value="A">A — Acinesia difusa</option><option value="DB">DB — Discinesia basal</option><option value="DMB">DMB — Discinesia médiobasal</option><option value="DM">DM — Discinesia média</option><option value="DMA">DMA — Discinesia médioapical</option><option value="DA">DA — Discinesia apical</option><option value="D">D — Discinesia difusa</option></select></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">P. Lateral</label><select id="b61" class="sf"><option value="">— Normal —</option><option value="HB">HB — Hipocin. basal</option><option value="HMB">HMB — Hipocin. médiobasal</option><option value="HM">HM — Hipocin. média</option><option value="HMA">HMA — Hipocin. médioapical</option><option value="HA">HA — Hipocin. apical</option><option value="H">H — Hipocinesia difusa</option><option value="AB">AB — Acinesia basal</option><option value="AMB">AMB — Acinesia médiobasal</option><option value="AM">AM — Acinesia média</option><option value="AMA">AMA — Acinesia médioapical</option><option value="AA">AA — Acinesia apical</option><option value="A">A — Acinesia difusa</option><option value="DB">DB — Discinesia basal</option><option value="DMB">DMB — Discinesia médiobasal</option><option value="DM">DM — Discinesia média</option><option value="DMA">DMA — Discinesia médioapical</option><option value="DA">DA — Discinesia apical</option><option value="D">D — Discinesia difusa</option></select></div><div class="flex flex-col gap-[3px]"><label class="text-[10.5px] text-[#6B7280] font-medium">Demais paredes</label><select id="b62" class="sf"><option value="NL">NL — Preservadas</option><option value="HD">Hipocin. difusa</option><option value="HR">Hipocin. demais</option><option value="AD">Acinesia difusa</option><option value="DD">Discinesia difusa</option></select></div></div></div></div></div><div class="bg-[#D8DEE8] overflow-y-auto p-5 flex-1"><p class="text-[10px] text-[#6B7280] font-semibold uppercase tracking-wider mb-3 text-center">Pré-visualização — edite os textos diretamente no laudo</p><div id="laudo-sheet" class="bg-white mx-auto shadow-[0_4px_20px_rgba(0,0,0,.15)]" style="width:210mm;min-height:297mm;padding:30px 40px;font-size:9pt;font-family:&#x27;IBM Plex Sans&#x27;, sans-serif;color:#1a1a1a"><div class="pb-[7px] mb-2" style="border-bottom:2.5px solid #8b1a1a"><div class="flex items-center gap-2.5" style="margin-bottom:-2px"><div><span class="block font-bold whitespace-nowrap" style="font-size:14pt;color:#8b1a1a;letter-spacing:-0.3px;line-height:1.1">Clínica demonstração</span></div></div><div id="laudo-titulo-exame" class="font-bold text-center whitespace-nowrap" style="font-size:10.5pt;color:#8b1a1a;letter-spacing:0.3px">ECOCARDIOGRAMA TRANSTORÁCICO</div></div><div class="rounded-[3px] mb-3" style="border:1px solid #8b1a1a;padding:4px 8px"><div class="flex gap-2 mb-[3px]"><div style="flex:2"><span class="block font-semibold uppercase" style="font-size:5.5pt;color:#8b1a1a;letter-spacing:0.3px">NOME</span><span id="out-nome" class="block font-medium" style="font-size:9pt">—</span></div><div style="flex:1"><span class="block font-semibold uppercase" style="font-size:5.5pt;color:#8b1a1a;letter-spacing:0.3px">IDADE</span><span id="out-idade" class="block font-medium" style="font-size:9pt">—</span></div><div style="flex:1"><span class="block font-semibold uppercase" style="font-size:5.5pt;color:#8b1a1a;letter-spacing:0.3px">DATA DE NASCIMENTO</span><span id="out-dtnasc" class="block font-medium" style="font-size:9pt">—</span></div></div><div class="flex gap-2"><div style="flex:1"><span class="block font-semibold uppercase" style="font-size:5.5pt;color:#8b1a1a;letter-spacing:0.3px">CONVÊNIO</span><span id="out-convenio" class="block font-medium" style="font-size:9pt">—</span></div><div style="flex:1"><span class="block font-semibold uppercase" style="font-size:5.5pt;color:#8b1a1a;letter-spacing:0.3px">MÉDICO SOLICITANTE</span><span id="out-solicitante" class="block font-medium" style="font-size:9pt">—</span></div><div style="flex:1"><span class="block font-semibold uppercase" style="font-size:5.5pt;color:#8b1a1a;letter-spacing:0.3px">DATA DO EXAME</span><span id="out-dtexame" class="block font-medium" style="font-size:9pt">—</span></div></div></div><div class="font-bold text-white px-2 py-[3px] " style="background:#8b1a1a;font-size:8pt">MEDIDAS E PARÂMETROS</div><div class="border border-[#ddd] border-t-0 p-0"><table class="w-full border-collapse" style="font-size:7.5pt"><thead><tr><th style="background:#8b1a1a;color:#fff;padding:2px 5px;font-weight:600;text-align:left;width:22%">Parâmetro</th><th style="background:#8b1a1a;color:#fff;padding:2px 5px;font-weight:600;text-align:left;width:8%">Valor</th><th style="background:#8b1a1a;color:#fff;padding:2px 5px;font-weight:600;text-align:left;width:6%">Unid.</th><th style="background:#8b1a1a;color:#fff;padding:2px 5px;font-weight:600;text-align:left;width:16%">Referência</th><th style="background:#8b1a1a;color:#fff;padding:2px 5px;font-weight:600;text-align:left;width:22%;border-left:2px solid #8b1a1a">Parâmetro</th><th style="background:#8b1a1a;color:#fff;padding:2px 5px;font-weight:600;text-align:left;width:8%">Valor</th><th style="background:#8b1a1a;color:#fff;padding:2px 5px;font-weight:600;text-align:left;width:6%">Unid.</th><th style="background:#8b1a1a;color:#fff;padding:2px 5px;font-weight:600;text-align:left;width:12%">Referência</th></tr></thead><tbody id="params-tbody"></tbody></table><div style="font-size:5.5pt;color:#888;line-height:1.4;padding:2px 4px;border-top:0.5px solid #ddd"><span>DDVE= Diâmetro diastólico do VE. DSVE= Diâmetro sistólico do VE. VE= Ventrículo esquerdo. VD= Ventrículo direito.</span><br/><span>Valores de referência: Lang 2015 (ASE/EACVI); Goldstein 2015 (ASE); ACC/AHA 2022; WASE 2022; ASE 2025 (coração direito); ASE/EACVI 2025 (strain).</span></div></div><div class="font-bold text-white px-2 py-[3px] mt-2" style="background:#8b1a1a;font-size:8pt">COMENTÁRIOS</div><div id="editor-laudo-container" class="border border-[#ddd] border-t-0 px-2 py-1"><div><div class="flex gap-2 py-2"><button type="button" class="border rounded px-2 py-1">N</button><button type="button" class="border rounded px-2 py-1">I</button><button type="button" class="border rounded px-2 py-1">S</button><button type="button" class="border rounded px-2 py-1">Lista</button><button type="button" class="border rounded px-2 py-1">Desfazer</button><button type="button" class="border rounded px-2 py-1">Refazer</button><button type="button" class="border rounded px-2 py-1">Banco de frases</button></div><div contentEditable="true" aria-label="Achados e conclusão" style="min-height:170px;font-size:9pt;line-height:1.7"><p>Achados do exame — espaço editável nesta demonstração.</p><h3 style="background:#8b1a1a;color:white;padding:4px 8px;margin-top:16px">CONCLUSÃO</h3><p>Conclusão do exame — conteúdo demonstrativo.</p></div></div></div><div class="flex justify-between items-end gap-2.5 mt-4 pt-[3mm]" style="border-top:1.5px solid #8b1a1a"><div class="leading-relaxed" style="font-size:6.8pt;color:#888"><strong style="color:#8b1a1a;font-size:8pt">Clínica demonstração</strong><br/>Endereço demonstrativo<br/>☎ Contato demonstrativo</div><div class="text-center shrink-0" style="font-size:7pt;color:#444"><div class="mx-auto mb-[3px]" style="border-top:1px solid #333;width:180px;margin-top:24px"></div><div class="whitespace-pre-line" style="line-height:1.4">Médico demonstração · CRM ilustrativo</div></div></div><div class="text-center mt-1.5 pt-1" style="border-top:0.5px solid #e0e0e0;font-size:6pt;color:#aaa;letter-spacing:0.3px">Laudo emitido com ajuda do <strong>LEO</strong> · www.souleo.com.br</div></div></div></div><p id="demo-feedback" role="status">Prévia dos componentes atuais · dados fictícios · sem motor clínico ou persistência.</p></div><script>(()=>{const root=document.getElementById('editor-redesign');root.querySelectorAll('.section-btn').forEach(b=>b.addEventListener('click',()=>{const body=b.nextElementSibling;if(body){body.hidden=!body.hidden;b.setAttribute('aria-expanded',String(!body.hidden));}}));const tbody=root.querySelector('#params-tbody');if(tbody){const names=['Raiz aórtica','Átrio esquerdo','DDVE','Septo interventricular','Parede posterior','DSVE','Ventrículo direito','Aorta ascendente','Arco aórtico','Volume diastólico VE','Volume sistólico VE','Fração de ejeção','Massa VE','Índice de massa VE','Espessura relativa','Relação E/A'];for(let i=0;i<names.length;i+=2){const tr=document.createElement('tr');for(const name of names.slice(i,i+2)){for(const txt of [name,'—','—','—']){const td=document.createElement('td');td.textContent=txt;td.style.cssText='padding:5px;border-bottom:1px solid #eee';tr.append(td);}}tbody.append(tr);}}const vals={nome:'Ana Martins',dtnasc:'1964-05-12',dtexame:'2026-09-24',convenio:'Particular','out-nome':'Ana Martins','out-idade':'62 anos','out-dtnasc':'12/05/1964','out-dtexame':'24/09/2026','out-convenio':'Particular'};Object.entries(vals).forEach(([id,v])=>{const el=root.querySelector('[id="'+id+'"]');if(el){if(el.tagName==='INPUT')el.value=v;else el.textContent=v;}});root.addEventListener('click',e=>{if(e.target.closest('button'))root.querySelector('#demo-feedback').textContent='Demonstração visual — nenhuma operação no projeto ou em pacientes reais.';});})();</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+#editor-redesign{background:#f1f5f9;color:#1e3a5f;font-family:'IBM Plex Sans',sans-serif}
+#editor-redesign .redesign-header{background:#fff;border-bottom:1px solid #dce5f0;padding:22px 26px;display:flex;justify-content:space-between;gap:20px;align-items:center;flex-wrap:wrap}
+#editor-redesign .redesign-header h2{font-size:22px;font-weight:500;letter-spacing:-.4px;margin:4px 0}
+#editor-redesign .redesign-header small{font-size:12px;color:#526277}
+#editor-redesign .redesign-actions{display:flex;gap:8px;flex-wrap:wrap}
+#editor-redesign .redesign-actions button,#editor-redesign .document-tools button{display:inline-flex;gap:8px;align-items:center;background:white;color:#1e3a5f;border:1px solid #d6e2f1;border-radius:8px;padding:10px 14px;font-size:13px}
+#editor-redesign .redesign-actions button.primary{background:#2563eb;color:white;border-color:#2563eb}
+#editor-redesign .full-editor{grid-template-columns:340px minmax(0,1fr);background:#f1f5f9}
+#editor-redesign #laudo-sidebar{background:#eaf1fa;border-right:1px solid #d6e2f1;padding:18px 14px 26px;gap:12px}
+#editor-redesign #laudo-sidebar>.sticky{display:none}
+#editor-redesign #laudo-sidebar .section-btn{background:transparent;border:0;border-radius:0;padding:17px 14px;font-size:13px;letter-spacing:0;text-transform:none;color:#1e3a5f;font-weight:500}
+#editor-redesign #laudo-sidebar [id^=sec-]{border:1px solid #d6e2f1;border-radius:11px;background:#fff;overflow:hidden;margin-bottom:12px}
+#editor-redesign #laudo-sidebar [id^=sec-]>div{padding:0 14px 20px;gap:14px 12px}
+#editor-redesign #laudo-sidebar label{font-size:11.5px;color:#526277;margin-bottom:3px}
+#editor-redesign #laudo-sidebar .sf{border:1px solid #d5dfeb;border-radius:7px;padding:9px 10px;font-size:13px;min-height:36px}
+#editor-redesign #laudo-sidebar [id^=calc-]{padding:9px;background:#f1f5f9;color:#526277;border-radius:7px}
+#editor-redesign .full-editor>div:nth-child(2){background:#f1f5f9;padding:24px}
+#editor-redesign #laudo-sheet{box-shadow:0 5px 22px #1e3a5f12;border:1px solid #e0e6ed;border-radius:3px}
+#editor-redesign .document-tools{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;margin:0 auto 20px;max-width:794px}
+#editor-redesign .document-tools span{font-size:12px;color:#526277}
+#editor-redesign .document-tools>div{display:flex;gap:8px}
+#editor-redesign [contenteditable=true]{outline-offset:5px}
+#editor-redesign .reference-switch{display:flex;gap:8px;padding:12px 20px;background:#fff;border-bottom:1px solid #e2e8f0;flex-wrap:wrap}
+#editor-redesign .reference-switch button{padding:8px 12px;border:1px solid #d6e2f1;border-radius:7px;background:white;color:#1e3a5f;font-size:13px}
+#editor-redesign .reference-switch button[aria-pressed=true]{background:#1e3a5f;color:#fff}
+#editor-redesign .tool-panel{background:white;border:1px solid #d6e2f1;padding:20px;margin-bottom:18px;border-radius:10px;font-size:13px}
+#editor-redesign .tool-panel[hidden]{display:none}
+#editor-redesign button:focus-visible,#editor-redesign input:focus-visible{outline:2px solid #2563eb;outline-offset:2px}
+@media(max-width:900px){#editor-redesign .full-editor{grid-template-columns:1fr}#editor-redesign .full-editor>div:nth-child(2){padding:12px}#editor-redesign .redesign-header{padding:18px}}
+</style>
+<script>
+(()=>{
+const root=document.getElementById('editor-redesign');
+const icon=n=>'<i data-lucide="'+n+'" aria-hidden="true"></i>';
+const header=document.createElement('header');header.className='redesign-header';header.innerHTML='<div><small>Editor do laudo · Eco transtorácico</small><h2>Ana Martins</h2><small>62 anos · Particular · ACC DEMO-001</small></div><div class="redesign-actions"><button type="button" data-action="Voltar à Agenda">'+icon('arrow-left')+'Agenda</button><button type="button" data-action="Salvar rascunho">'+icon('save')+'Salvar rascunho</button><button type="button" class="primary" data-action="Revisar emissão">'+icon('file-check-2')+'Emitir laudo</button></div>';root.prepend(header);
+const symbols=['user-round','ruler','layout-grid','waves','heart','zap','target'];
+root.querySelectorAll('.section-btn').forEach((b,i)=>{const title=b.childNodes[0];if(title&&title.nodeType===3)title.textContent=title.textContent.replace(/^[^\p{L}]+/u,'');const mark=document.createElement('span');mark.innerHTML=icon(symbols[i]);b.prepend(mark);});
+const view=root.querySelector('.full-editor>div:nth-child(2)');const prior=view.querySelector('p');if(prior)prior.remove();const toolbar=document.createElement('div');toolbar.className='document-tools';toolbar.innerHTML='<span>Documento · identidade da clínica preservada</span><div><button type="button" data-tool="images">'+icon('image')+'Imagens</button><button type="button" data-tool="phrases">'+icon('library')+'Banco de frases</button></div>';view.prepend(toolbar);
+const panel=document.createElement('div');panel.className='tool-panel';panel.hidden=true;toolbar.after(panel);toolbar.addEventListener('click',e=>{const b=e.target.closest('[data-tool]');if(!b)return;panel.hidden=false;panel.textContent=b.dataset.tool==='images'?'Imagens do exame — nenhuma imagem carregada nesta demonstração.':'Banco de frases — painel de apoio ao texto do laudo. Conteúdo demonstrativo.';});
+const tools=document.createElement('div');tools.className='redesign-actions';tools.style.marginBottom='18px';tools.innerHTML='<button type="button" data-action="Importar medidas">'+icon('download')+'Importar medidas</button>';root.querySelector('#laudo-sidebar').prepend(tools);
+root.addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(b)root.querySelector('#demo-feedback').textContent=b.dataset.action+' — ação demonstrativa, sem salvar ou emitir no site.';});
+if(globalThis.lucide)lucide.createIcons({attrs:{width:16,height:16}});
+})();
+</script>
+
+
+<style>
+#editor-redesign .redesign-header{display:block;padding:18px 24px}
+#editor-redesign .command-line{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;margin-top:16px}
+#editor-redesign .command-line button{white-space:nowrap;flex-shrink:0;padding:9px 11px;font-size:12px}
+#editor-redesign .command-line .primary{margin-left:auto}
+#editor-redesign .acc-minimal{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#f1f5f9;border:0!important;border-radius:7px;padding:10px 12px;margin-bottom:14px}
+#editor-redesign .acc-minimal .acc-label{font-size:11px;color:#526277;font-weight:500}
+#editor-redesign .acc-minimal button{font-family:monospace;font-size:13px;font-weight:500;color:#1e3a5f;padding:0;background:transparent;border:0;width:auto}
+@media(max-width:760px){#editor-redesign .command-line{flex-wrap:wrap}#editor-redesign .command-line .primary{margin-left:0}}
+</style>
+<script>
+(()=>{
+const root=document.getElementById('editor-redesign'),side=root.querySelector('#laudo-sidebar'),header=root.querySelector('.redesign-header');
+side.querySelector(':scope>.redesign-actions')?.remove();side.querySelectorAll(':scope>.shrink-0').forEach(el=>el.remove());
+const accButton=Array.from(side.querySelectorAll('button')).find(b=>b.textContent.trim()==='DEMO-001');
+if(accButton){const box=accButton.parentElement;box.className='acc-minimal';const label=document.createElement('span');label.className='acc-label';label.textContent='ACC';box.replaceChildren(label,accButton);}
+const actions=header.querySelector('.redesign-actions');actions.classList.add('command-line');
+const icon=n=>'<i data-lucide="'+n+'" aria-hidden="true"></i>';
+const save=actions.querySelector('[data-action="Salvar rascunho"]');
+[['download','Importar medidas','Importar medidas'],['image','Imagens','Abrir imagens'],['library','Frases','Banco de frases']].forEach(([symbol,label,action])=>{const b=document.createElement('button');b.type='button';b.dataset.action=action;b.innerHTML=icon(symbol)+label;actions.insertBefore(b,save);});
+root.querySelector('.document-tools>div')?.remove();
+if(globalThis.lucide)lucide.createIcons({attrs:{width:16,height:16}});
+})();
+</script>
+
+
+<script>(()=>{const b=document.querySelector("#editor-redesign #sec-valv .section-btn");if(b){const mark=b.firstElementChild;const img=document.createElement("img");img.src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiIgY29sb3I9IiMxZTNhNWYiPjxnIGlkPSJhIiBmaWxsPSJub25lIiBzdHJva2U9ImN1cnJlbnRDb2xvciIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PGNpcmNsZSBjeD0iMTYiIGN5PSIxNiIgcj0iMTIiLz48cGF0aCBkPSJNMTYgNCBRMTEgMTAgMTYgMTYgTTUuNiAyMiBRMTMgMjQgMTYgMTYgTTI2LjQgMjIgUTI0IDE0IDE2IDE2Ii8+PC9nPjwvc3ZnPg==";img.alt="";img.width=16;img.height=16;mark.replaceChildren(img);}})();</script>
+
+<style>
+#editor-redesign .format-light{display:flex;align-items:center;gap:3px;flex-wrap:wrap;padding:7px 0;margin:0 0 14px;border-bottom:1px solid #e8edf3}
+#editor-redesign .format-light button{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:0;background:transparent;color:#526277;border-radius:5px;min-width:30px;height:30px;padding:5px 8px;font-family:'IBM Plex Sans',sans-serif;font-size:12px;line-height:1}
+#editor-redesign .format-light button:hover{background:#eef2f8;color:#1e3a5f}
+#editor-redesign .format-light button:focus-visible{outline:2px solid #2563eb;outline-offset:2px}
+#editor-redesign .format-light svg{width:15px;height:15px;stroke-width:1.6}
+#editor-redesign .format-light .separator{height:14px;width:1px;background:#e2e8f0;margin:0 5px}
+@media(pointer:coarse){#editor-redesign .format-light button{min-width:44px;height:44px}}
+</style>
+<script>
+(()=>{
+const root=document.getElementById('editor-redesign');const edit=root.querySelector('[contenteditable=true]');const old=edit.previousElementSibling;const bar=document.createElement('div');bar.className='format-light';bar.setAttribute('role','toolbar');bar.setAttribute('aria-label','Formatação do laudo');
+const items=[['bold','N','Negrito'],['italic','I','Itálico'],['underline','S','Sublinhado'],null,['insertUnorderedList','list','Lista com marcadores'],['insertOrderedList','list-ordered','Lista numerada'],null,['undo','undo-2','Desfazer'],['redo','redo-2','Refazer'],null,['phrases','library','Banco de frases']];
+items.forEach(item=>{if(!item){const separator=document.createElement('span');separator.className='separator';separator.setAttribute('aria-hidden','true');bar.append(separator);return;}const [cmd,label,title]=item;const button=document.createElement('button');button.type='button';button.className='cursor-interaction';button.setAttribute('aria-label',title);button.setAttribute('data-tooltip',title);if(label.length===1){const letter=document.createElement(cmd==='bold'?'b':cmd==='italic'?'em':'u');letter.textContent=label;button.append(letter);}else{button.innerHTML='<i data-lucide="'+label+'" aria-hidden="true"></i>';if(cmd==='phrases'){const text=document.createElement('span');text.textContent='Frases';button.append(text);}}button.onmousedown=e=>e.preventDefault();button.onclick=()=>{if(cmd==='phrases'){const panel=root.querySelector('.tool-panel');panel.hidden=false;panel.textContent='Banco de frases — painel demonstrativo de apoio à edição.';}else{if(!edit.contains(window.getSelection()?.anchorNode))edit.focus();document.execCommand(cmd,false,null);}};bar.append(button);});old.replaceWith(bar);if(globalThis.lucide)lucide.createIcons({attrs:{width:15,height:15,'stroke-width':1.6}});
+})();
+</script>

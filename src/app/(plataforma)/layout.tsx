@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Sidebar from '@/components/shell/Sidebar';
 import EscolherLocalGate from '@/components/EscolherLocalGate';
+import LeoLogo from '@/components/shell/LeoLogo';
+import NavIcon from '@/components/shell/NavIcon';
 
 export default function PlataformaLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -18,7 +20,7 @@ export default function PlataformaLayout({ children }: { children: React.ReactNo
     if (!loading && !user) router.replace('/login');
   }, [loading, user, router]);
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center"><span className="text-4xl animate-pulse">🫀</span></div>;
+  if (loading) return <div className="min-h-screen flex items-center justify-center"><LeoLogo className="w-28" /></div>;
   if (!user) return null;
 
   return (
@@ -42,10 +44,10 @@ export default function PlataformaLayout({ children }: { children: React.ReactNo
         {/* Barra fina só no mobile, pra abrir o drawer */}
         <div className="lg:hidden sticky top-0 z-40 bg-card border-b border-borda px-4 py-2.5 flex items-center gap-3">
           <button onClick={() => setDrawer(true)} aria-label="Abrir menu"
-            className="text-ink-2 text-lg leading-none">☰</button>
-          <span className="font-bold text-p1">LEO</span>
+            className="text-sidebar-ink p-2 rounded-lg hover:bg-sidebar focus-visible:outline-2 focus-visible:outline-p2"><NavIcon name="menu" /></button>
+          <LeoLogo className="w-16 h-8" />
         </div>
-        <main className="p-5 lg:p-7 max-w-6xl mx-auto">
+        <main className="p-4 sm:p-6 lg:p-8 max-w-[1440px] mx-auto">
           <EscolherLocalGate>{children}</EscolherLocalGate>
         </main>
       </div>

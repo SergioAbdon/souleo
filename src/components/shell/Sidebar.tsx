@@ -1,5 +1,5 @@
 'use client';
-// Sidebar branca da plataforma (spec §2-3, mockup "sidebar-branca").
+// Sidebar D da plataforma (decisão visual consolidada em 24/09/2026).
 // Navegação vem de nav.ts; rodapé = conta (perfil, trocar local, sair).
 import { useState } from 'react';
 import Link from 'next/link';
@@ -10,6 +10,8 @@ import { auth } from '@/lib/firebase';
 import PerfilModal from '@/components/PerfilModal';
 import SeletorLocal from '@/components/SeletorLocal';
 import SeloCrm from '@/components/SeloCrm';
+import LeoLogo from './LeoLogo';
+import NavIcon from './NavIcon';
 
 export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { user, profile, papel, contextos, workspace, reloadProfile } = useAuth();
@@ -22,23 +24,22 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     .split(' ').filter(Boolean).slice(0, 2).map(n => n[0]).join('').toUpperCase();
 
   return (
-    <aside className="w-56 shrink-0 h-full bg-card border-r border-borda flex flex-col">
+    <aside className="w-56 shrink-0 h-full bg-sidebar border-r border-sidebar-border flex flex-col">
       {/* Logo */}
-      <div className="flex items-center gap-2.5 px-4 pt-5 pb-6">
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-p1 to-p2 flex items-center justify-center text-base shadow-sm">🫀</div>
-        <span className="font-bold text-p1 text-lg tracking-wide">LEO</span>
+      <div className="px-6 pt-6 pb-8">
+        <LeoLogo className="w-28 h-auto" />
       </div>
 
       {/* Seções */}
-      <nav className="flex-1 px-3 space-y-1">
+      <nav className="flex-1 px-3 space-y-1.5">
         {itensVisiveis(papel).map(item => {
           const ativo = pathname.startsWith(item.href);
           return (
             <Link key={item.href} href={item.href} onClick={onNavigate}
-              className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition ${
-                ativo ? 'bg-ativo text-p1 font-bold' : 'text-ink-2 font-medium hover:bg-surface'
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                ativo ? 'bg-card text-p1 font-medium shadow-sm' : 'text-sidebar-ink font-medium hover:bg-card/60'
               }`}>
-              <span className="text-base">{item.icone}</span>
+              <NavIcon name={item.href} />
               {item.rotulo}
             </Link>
           );
@@ -46,17 +47,17 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </nav>
 
       {/* Conta (rodapé) */}
-      <div className="border-t border-borda px-3 py-3">
+      <div className="border-t border-sidebar-border px-3 py-4">
         {contaOpen && (
           <div className="mb-2 space-y-1">
             <button onClick={() => { setPerfilOpen(true); setContaOpen(false); }}
               className="w-full text-left px-3 py-2 rounded-lg text-sm text-ink-2 font-medium hover:bg-surface transition">
-              ✏️ Editar perfil
+              <span className="flex items-center gap-2"><NavIcon name="profile" /> Editar perfil</span>
             </button>
             {contextos.length >= 2 && <div className="px-3 py-1"><SeletorLocal /></div>}
             <button onClick={() => { auth.signOut(); router.replace('/login'); }}
               className="w-full text-left px-3 py-2 rounded-lg text-sm text-critico font-medium hover:bg-red-50 transition">
-              ↩ Sair
+              <span className="flex items-center gap-2"><NavIcon name="logout" /> Sair</span>
             </button>
           </div>
         )}

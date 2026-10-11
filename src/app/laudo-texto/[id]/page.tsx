@@ -18,6 +18,7 @@ import { TIPOS_LAUDO_PADRAO, TipoLaudo, modalidadeDe } from '@/lib/tipos-laudo';
 import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
 import MolduraA4 from '@/components/laudo/MolduraA4';
+import EditorIcon from '@/components/laudo/EditorIcon';
 import { gerarPdfHtmlTexto } from '@/lib/pdf-texto';
 import { corSegura } from '@/lib/html-escape';
 import { idadeLabel, fmtData, fmtCep, fmtTel } from '@/lib/paciente-fmt';
@@ -280,32 +281,32 @@ export default function LaudoTextoPage() {
   }
 
   return (
-    <div className="min-h-screen bg-surface">
+    <div className="laudo-texto-workspace h-dvh flex flex-col overflow-hidden bg-surface">
       {/* Topo fino — mesmo padrão da mobile-bar do shell */}
-      <div className="sticky top-0 z-40 bg-card border-b border-borda px-4 py-2.5 flex items-center gap-3">
+      <div className="z-40 shrink-0 bg-card border-b border-sidebar-border px-4 py-4 sm:px-6 flex flex-wrap items-center gap-3">
         <button onClick={() => router.push('/agenda')} aria-label="Voltar para a agenda"
-          className="text-ink-2 hover:text-ink text-sm shrink-0 cursor-pointer">← Voltar</button>
-        <div className="flex-1 min-w-0">
-          <div className="font-bold text-p1 text-sm truncate">{(exame?.pacienteNome as string) || 'Carregando…'}</div>
-          <div className="text-xs text-ink-3 truncate">
+          className="inline-flex items-center gap-2 text-p1 text-xs shrink-0 rounded-lg border border-sidebar-border px-3 py-2.5 hover:bg-sidebar focus-visible:outline-2 focus-visible:outline-p2 cursor-pointer"><EditorIcon name="back" /> Voltar</button>
+        <div className="flex-1 min-w-[160px]">
+          <div className="font-semibold text-p1 text-base break-words">{(exame?.pacienteNome as string) || 'Carregando…'}</div>
+          <div className="text-xs text-sidebar-ink mt-1 break-words">
             {tipo?.nome || (exame?.tipoExame as string) || ''}
             {exame?.acc ? ` · ACC ${exame.acc as string}` : ''}
           </div>
         </div>
         <button onClick={handleSalvarRascunho} disabled={salvando || emitindo || docFechado}
           title={docFechado ? 'Laudo emitido — para alterar, use "Reemitir"' : undefined}
-          className="shrink-0 px-3 py-1.5 rounded-lg border border-borda bg-card text-ink text-xs font-semibold hover:bg-surface disabled:opacity-50 cursor-pointer">
-          {salvando ? 'Salvando…' : 'Salvar rascunho'}
+          className="inline-flex items-center gap-2 shrink-0 px-3 py-2.5 rounded-lg border border-sidebar-border bg-card text-p1 text-xs font-medium hover:bg-sidebar focus-visible:outline-2 focus-visible:outline-p2 disabled:opacity-50 cursor-pointer">
+          <EditorIcon name="save" /> {salvando ? 'Salvando…' : 'Salvar rascunho'}
         </button>
         <button onClick={handleEmitir} disabled={salvando || emitindo}
-          className="shrink-0 px-3 py-1.5 rounded-lg bg-p2 text-white text-xs font-semibold hover:bg-p2-deep disabled:opacity-50 cursor-pointer">
+          className="shrink-0 px-4 py-2.5 rounded-lg bg-p2 text-white text-xs font-medium hover:bg-p2-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-p2 disabled:opacity-50 cursor-pointer">
           {emitindo ? 'Emitindo…' : (exame?.status === 'emitido' ? 'Reemitir (consome 1 franquia)' : 'Emitir laudo')}
         </button>
       </div>
 
       {/* Editor dentro da MESMA folha A4 do motor (S5-T10/D6): o médico
           escreve já vendo a moldura que vai sair no PDF. */}
-      <div className="bg-[#D8DEE8] overflow-auto p-5">
+      <div className="min-h-0 flex-1 overflow-auto bg-surface p-3 sm:p-6 lg:p-8 [scrollbar-color:#B8C9DF_#F1F5F9] [&>#laudo-sheet]:shadow-[0_8px_28px_rgba(30,58,95,.10)] [&>#laudo-sheet]:outline [&>#laudo-sheet]:outline-1 [&>#laudo-sheet]:outline-borda">
         <MolduraA4
           p1={p1}
           clinicaNome={clinicaNome}
@@ -333,6 +334,13 @@ export default function LaudoTextoPage() {
             onDirty={() => { dirtyRef.current = true; }} />
         </MolduraA4>
       </div>
+      <style jsx global>{`
+        .laudo-texto-workspace .tiptap h2{font-size:10.5pt;font-weight:600;color:${p1};margin:2mm 0 1.5mm;}
+        .laudo-texto-workspace .tiptap h3{font-size:9.5pt;font-weight:600;color:${p1};margin:2.5mm 0 1mm;}
+        .laudo-texto-workspace .tiptap p{margin-bottom:2px;}
+        .laudo-texto-workspace .tiptap ul{list-style:disc;padding-left:5mm;margin-bottom:2px;}
+        .laudo-texto-workspace .tiptap ol{list-style:decimal;padding-left:5mm;margin-bottom:2px;}
+      `}</style>
     </div>
   );
 }

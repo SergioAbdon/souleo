@@ -5,6 +5,8 @@
 // /pacientes/{id}. Nenhum dado pessoal na URL nem em console.log.
 // ══════════════════════════════════════════════════════════════════
 
+import ListIcon from '@/components/ListIcon';
+
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
@@ -45,21 +47,21 @@ export default function PacientesPage() {
   return (
     <>
       <PageHeader titulo="Pacientes" />
-      <div className="bg-card border border-borda rounded-xl p-4">
+      <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5">
         <div className="flex items-center gap-3 mb-4">
           <input type="text" placeholder="Buscar por nome ou CPF..."
             value={busca} onChange={e => setBusca(e.target.value)}
-            className="flex-1 border border-borda rounded-lg px-3 py-2 text-sm bg-card focus:outline-none focus:border-p1" />
+            className="min-w-0 flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-p1" />
         </div>
 
         {loading ? (
           <div className="text-center py-12 text-ink-3">
-            <span className="text-3xl animate-pulse">🫀</span>
+            <span className="text-3xl animate-pulse"><ListIcon name="file" className="h-7 w-7" /></span>
             <p className="text-sm mt-2">Carregando pacientes...</p>
           </div>
         ) : pacientes.length === 0 ? (
           <div className="text-center py-12 text-ink-3">
-            <p className="text-3xl mb-2">👥</p>
+            <p className="text-3xl mb-2"><ListIcon name="user" className="h-7 w-7" /></p>
             <p className="text-sm">Nenhum paciente ainda — eles entram automaticamente pelo cadastro da Agenda.</p>
           </div>
         ) : filtrados.length === 0 ? (
@@ -68,26 +70,26 @@ export default function PacientesPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[700px] text-sm">
               <thead>
-                <tr className="border-b border-borda text-xs text-ink-3 uppercase">
-                  <th className="py-2 px-3 text-left">Nome</th>
-                  <th className="py-2 px-3 text-left w-40">CPF</th>
-                  <th className="py-2 px-3 text-left w-28">Nascimento</th>
-                  <th className="py-2 px-3 text-left w-36">Telefone</th>
-                  <th className="py-2 px-3 text-right w-32">Ação</th>
+                <tr className="border-b border-slate-200 text-xs text-ink-3 uppercase">
+                  <th className="py-3 px-4 text-left">Nome</th>
+                  <th className="py-3 px-4 text-left w-40">CPF</th>
+                  <th className="py-3 px-4 text-left w-28">Nascimento</th>
+                  <th className="py-3 px-4 text-left w-36">Telefone</th>
+                  <th className="py-3 px-4 text-right w-32">Ação</th>
                 </tr>
               </thead>
               <tbody>
                 {filtrados.map(p => (
-                  <tr key={p.id} className="border-b border-borda hover:bg-ativo transition">
-                    <td className="py-3 px-3 font-semibold text-ink">{p.nome || '—'}</td>
-                    <td className="py-3 px-3 text-ink-2 text-xs font-mono">{maskCpf(p.cpf)}</td>
-                    <td className="py-3 px-3 text-ink-2 text-xs">{fmtData(p.dtnasc)}</td>
-                    <td className="py-3 px-3 text-ink-2 text-xs">{p.telefone || '—'}</td>
-                    <td className="py-3 px-3 text-right">
+                  <tr key={p.id} className="border-b border-slate-200 hover:bg-slate-50 transition">
+                    <td className="py-5 px-4 font-semibold text-ink">{p.nome || '—'}</td>
+                    <td className="py-5 px-4 text-ink-2 text-xs font-mono">{maskCpf(p.cpf)}</td>
+                    <td className="py-5 px-4 text-ink-2 text-xs">{fmtData(p.dtnasc)}</td>
+                    <td className="py-5 px-4 text-ink-2 text-xs">{p.telefone || '—'}</td>
+                    <td className="py-5 px-4 text-right">
                       <button onClick={() => router.push('/pacientes/' + p.id)}
-                        className="bg-p2 text-white px-3 py-1.5 rounded text-xs font-semibold hover:bg-p2-deep transition">
+                        className="bg-p2 text-white px-3 py-2 rounded-lg text-xs font-semibold hover:bg-p2-deep transition">
                         Abrir ficha
                       </button>
                     </td>

@@ -5,6 +5,8 @@
 // Botões por status conforme V7 aprovado
 // ══════════════════════════════════════════════════════════════════
 
+import ListIcon from '@/components/ListIcon';
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { savePaciente, saveExame, listenWorklist, listenNaoRealizados, getExame, getPaciente } from '@/lib/firestore';
@@ -576,69 +578,69 @@ export default function Worklist() {
   return (
     <div>
       {/* Barra de ações */}
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex flex-wrap items-center gap-3 mb-5 rounded-xl border border-slate-200 bg-white p-4">
         <input type="date" value={dataSel} onChange={e => setDataSel(e.target.value)}
-          className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1 w-40" />
+          className="border border-borda rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1 w-40" />
         {dataSel !== dataLocalHoje() && (
           <button onClick={() => setDataSel(dataLocalHoje())}
             className="text-xs text-p2 hover:underline whitespace-nowrap">Hoje</button>
         )}
         <input type="text" placeholder="Buscar por nome ou CPF..."
           value={busca} onChange={e => setBusca(e.target.value)}
-          className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
+          className="min-w-[180px] flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
         <button onClick={abrirNovoPaciente}
           className="bg-p2 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition whitespace-nowrap">
           + Paciente
         </button>
         <button onClick={importarFeegow} disabled={feegowLoading}
-          className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-700 transition whitespace-nowrap disabled:opacity-50">
-          {feegowLoading ? '⏳ Importando...' : '🔗 Feegow'}
+          className="bg-white border border-slate-200 text-[#1E3A5F] px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 transition whitespace-nowrap disabled:opacity-50">
+          {feegowLoading ? 'Importando...' : <><ListIcon name="link" /> Feegow</>}
         </button>
       </div>
 
       {/* Contadores clicáveis (filtro por status) */}
-      <div className="flex gap-2 mb-3 text-xs">
+      <div className="flex flex-wrap gap-2 mb-4 text-xs">
         <button onClick={() => setStatusSel('todos')}
-          className={`px-3 py-1 rounded-full font-semibold transition ${statusSel === 'todos' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+          className={`px-3 py-2 rounded-lg font-semibold transition ${statusSel === 'todos' ? 'bg-[#1E3A5F] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
           Todos ({worklistVisivel.length})
         </button>
         <button onClick={() => setStatusSel('aguardando')}
-          className={`px-3 py-1 rounded-full font-semibold transition ${statusSel === 'aguardando' ? 'bg-yellow-500 text-white' : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'}`}>
-          ⏳ Aguardando ({worklist.filter(i => i.status === 'aguardando').length})
+          className={`px-3 py-2 rounded-lg font-semibold transition ${statusSel === 'aguardando' ? 'bg-yellow-500 text-white' : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'}`}>
+          <ListIcon name="hourglass" /> Aguardando ({worklist.filter(i => i.status === 'aguardando').length})
         </button>
         <button onClick={() => setStatusSel('andamento')}
-          className={`px-3 py-1 rounded-full font-semibold transition ${statusSel === 'andamento' ? 'bg-blue-500 text-white' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}>
-          ✏️ Andamento ({worklist.filter(i => i.status === 'andamento').length})
+          className={`px-3 py-2 rounded-lg font-semibold transition ${statusSel === 'andamento' ? 'bg-blue-500 text-white' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}>
+          <ListIcon name="edit" /> Andamento ({worklist.filter(i => i.status === 'andamento').length})
         </button>
         <button onClick={() => setStatusSel('emitido')}
-          className={`px-3 py-1 rounded-full font-semibold transition ${statusSel === 'emitido' ? 'bg-green-500 text-white' : 'bg-green-50 text-green-600 hover:bg-green-100'}`}>
-          ✅ Emitidos ({worklist.filter(i => i.status === 'emitido').length})
+          className={`px-3 py-2 rounded-lg font-semibold transition ${statusSel === 'emitido' ? 'bg-green-500 text-white' : 'bg-green-50 text-green-600 hover:bg-green-100'}`}>
+          <ListIcon name="badge" /> Emitidos ({worklist.filter(i => i.status === 'emitido').length})
         </button>
         <button onClick={() => setStatusSel('nao-realizado')}
           title="Exames não realizados nos últimos 30 dias (auditoria de no-show)"
-          className={`px-3 py-1 rounded-full font-semibold transition ${statusSel === 'nao-realizado' ? 'bg-gray-500 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-          🚫 Não realizados{statusSel === 'nao-realizado' ? ` (${naoRealizados.length})` : ''}
+          className={`px-3 py-2 rounded-lg font-semibold transition ${statusSel === 'nao-realizado' ? 'bg-gray-500 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+          <ListIcon name="cancel" /> Não realizados{statusSel === 'nao-realizado' ? ` (${naoRealizados.length})` : ''}
         </button>
       </div>
 
       {/* Tabela */}
-      <div className="bg-white rounded-lg overflow-hidden border border-gray-100">
+      <div className="relative bg-white rounded-xl overflow-x-auto border border-slate-200">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[900px] text-sm">
           <thead>
-            <tr className="border-b text-xs text-gray-400 uppercase bg-gray-50">
-              <th className="py-2 px-3 text-left w-16">Hora</th>
-              <th className="py-2 px-3 text-left w-36">ACC</th>
-              <th className="py-2 px-3 text-left">Paciente</th>
-              <th className="py-2 px-3 text-left w-28">Convênio</th>
-              <th className="py-2 px-3 text-center w-20">Espera</th>
-              <th className="py-2 px-3 text-right w-56">Ações</th>
+            <tr className="border-b text-xs text-slate-500 uppercase bg-gray-50">
+              <th className="py-3 px-4 text-left w-16">Hora</th>
+              <th className="py-3 px-4 text-left w-36">ACC</th>
+              <th className="py-3 px-4 text-left">Paciente</th>
+              <th className="py-3 px-4 text-left w-28">Convênio</th>
+              <th className="py-3 px-4 text-center w-20">Espera</th>
+              <th className="py-3 px-4 text-right w-56">Ações</th>
             </tr>
           </thead>
           <tbody>
             {filtrada.length === 0 && (
-              <tr><td colSpan={6} className="py-12 text-center text-gray-300">
-                <p className="text-3xl mb-2">📋</p>
+              <tr><td colSpan={6} className="py-12 text-center text-slate-500">
+                <p className="text-3xl mb-2"><ListIcon name="file" className="h-7 w-7" /></p>
                 <p>{statusSel !== 'todos' ? `Nenhum exame "${statusSel}" nesta data` : 'Nenhum paciente na fila'}</p>
               </td></tr>
             )}
@@ -654,14 +656,14 @@ export default function Worklist() {
                   {/* Hora da CHEGADA real (e data se não-realizado) — a lista é
                       ordenada por chegouEm; mostrar o horário agendado aqui
                       faria a coluna parecer embaralhada (item 2, 31/08/2026). */}
-                  <td className="py-3 px-3 text-gray-500 font-mono text-xs">
+                  <td className="py-5 px-4 text-gray-500 font-mono text-xs">
                     {isNaoRealizado && item.dataExame
-                      ? <><div className="text-[10px] text-gray-400">{(item.dataExame as string).split('-').reverse().slice(0, 2).join('/')}</div><div>{horaChegadaExibicao(item) || '—'}</div></>
+                      ? <><div className="text-[10px] text-slate-500">{(item.dataExame as string).split('-').reverse().slice(0, 2).join('/')}</div><div>{horaChegadaExibicao(item) || '—'}</div></>
                       : (horaChegadaExibicao(item) || '—')}
                   </td>
 
                   {/* ACC — clique pra copiar (transcrição manual no Vivid) */}
-                  <td className="py-3 px-3">
+                  <td className="py-5 px-4">
                     {item.acc ? (
                       <button
                         onClick={() => { navigator.clipboard.writeText(item.acc as string); }}
@@ -671,12 +673,12 @@ export default function Worklist() {
                         {item.acc as string}
                       </button>
                     ) : (
-                      <span className="text-gray-300 text-xs">—</span>
+                      <span className="text-slate-500 text-xs">—</span>
                     )}
                   </td>
 
                   {/* Paciente */}
-                  <td className="py-3 px-3">
+                  <td className="py-5 px-4">
                     {item.pacienteId ? (
                       <button
                         onClick={() => router.push(`/pacientes/${item.pacienteId}`)}
@@ -687,7 +689,7 @@ export default function Worklist() {
                     ) : (
                       <div className="font-semibold text-p1 text-sm">{item.pacienteNome || '—'}</div>
                     )}
-                    <div className="text-xs text-gray-400 flex items-center gap-2 mt-0.5 flex-wrap">
+                    <div className="text-xs text-slate-500 flex items-center gap-2 mt-0.5 flex-wrap">
                       <StatusPill status={item.status as string} />
                       <span>{tiposMap[item.tipoExame as string]?.nome || item.tipoExame}</span>
                       <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${origem === 'FEEGOW' ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-400'}`}>
@@ -721,10 +723,10 @@ export default function Worklist() {
                   </td>
 
                   {/* Convênio */}
-                  <td className="py-3 px-3 text-gray-500 text-xs">{item.convenio || '—'}</td>
+                  <td className="py-5 px-4 text-gray-500 text-xs">{item.convenio || '—'}</td>
 
                   {/* Timer espera */}
-                  <td className="py-3 px-3 text-center">
+                  <td className="py-5 px-4 text-center">
                     {espera.texto && (
                       <span className={`text-xs font-bold px-2 py-0.5 rounded ${espera.alerta ? 'bg-red-100 text-red-600 animate-pulse' : 'text-gray-400'}`}>
                         {espera.texto}
@@ -733,7 +735,7 @@ export default function Worklist() {
                   </td>
 
                   {/* Ações */}
-                  <td className="py-3 px-3 text-right">
+                  <td className="py-5 px-4 text-right">
                     <div className="flex items-center justify-end gap-1.5 flex-wrap">
                       {(() => {
                         // Normalização defensiva de status (fix 15/05/2026):
@@ -761,10 +763,10 @@ export default function Worklist() {
                         if (grupo === 'aguardando') {
                           return (
                             <>
-                              <Btn cor="blue" onClick={() => abrirLaudo(item)}>📋 Laudar</Btn>
-                              <Btn cor="gray" onClick={() => editarPaciente(item)}>👤 Editar</Btn>
+                              <Btn cor="blue" onClick={() => abrirLaudo(item)}><ListIcon name="file" /> Laudar</Btn>
+                              <Btn cor="gray" onClick={() => editarPaciente(item)}><ListIcon name="user" /> Editar</Btn>
                               {podeRemoverDaFila(papel) && (
-                                <Btn cor="red" onClick={() => removerDaFila(item)}>🗑</Btn>
+                                <Btn cor="red" onClick={() => removerDaFila(item)}><ListIcon name="trash" /><span className="sr-only">Remover da fila</span></Btn>
                               )}
                             </>
                           );
@@ -772,8 +774,8 @@ export default function Worklist() {
                         if (grupo === 'andamento') {
                           return (
                             <>
-                              <Btn cor="blue" onClick={() => abrirLaudo(item)}>▶ Continuar</Btn>
-                              <Btn cor="gray" onClick={() => editarPaciente(item)}>👤 Editar</Btn>
+                              <Btn cor="blue" onClick={() => abrirLaudo(item)}><ListIcon name="play" /> Continuar</Btn>
+                              <Btn cor="gray" onClick={() => editarPaciente(item)}><ListIcon name="user" /> Editar</Btn>
                             </>
                           );
                         }
@@ -781,13 +783,13 @@ export default function Worklist() {
                         return (
                           <>
                             {podeEditarLaudo(profile, item, user?.uid || '') && (
-                              <Btn cor="amber" onClick={() => editarLaudoEmitido(item)}>✏️ Editar</Btn>
+                              <Btn cor="amber" onClick={() => editarLaudoEmitido(item)}><ListIcon name="edit" /> Editar</Btn>
                             )}
                             {/* Correção administrativa (S5-T5/D4): convênio errado
                                 é erro de recepção — ela corrige sem chamar o médico,
                                 sem crédito e sem encostar no corpo do laudo. */}
                             {podeCorrigirAdministrativo(papel) && (
-                              <Btn cor="gray" onClick={() => abrirCorrecaoAdm(item)}>✏️ convênio/solicitante</Btn>
+                              <Btn cor="gray" onClick={() => abrirCorrecaoAdm(item)}><ListIcon name="edit" /> convênio/solicitante</Btn>
                             )}
                             {/* P4/E4 (Task 6): laudo emitido (franquia ja cobrada) sem
                                 PDF — a rota marcou pdfErro no catch. Regenera do
@@ -798,10 +800,10 @@ export default function Worklist() {
                                 medico que pagou a franquia nao via o proprio botao. */}
                             {(podeCorrigirAdministrativo(papel) || item.medicoUid === user?.uid) && item.pdfErro && !item.pdfUrl && (
                               <Btn cor="red" onClick={() => regerarPdf(item)}>
-                                {regerandoPdf === item.id ? 'Regerando...' : '🔁 Regerar PDF'}
+                                {regerandoPdf === item.id ? 'Regerando...' : <><ListIcon name="refresh" /> Regerar PDF</>}
                               </Btn>
                             )}
-                            <Btn cor="gray" onClick={() => imprimirPdf(item.id)}>🖨️ Imprimir</Btn>
+                            <Btn cor="gray" onClick={() => imprimirPdf(item.id)}><ListIcon name="print" /> Imprimir</Btn>
                           </>
                         );
                       })()}
@@ -819,7 +821,7 @@ export default function Worklist() {
                           paciente: (item.pacienteNome as string) || '',
                           tipo: tiposMap[(item.tipoExame as string) || '']?.nome || (item.tipoExame as string) || '',
                         })}>
-                          📸 Imagens ({(item.imagensDicom as unknown[]).length})
+                          <ListIcon name="image" /> Imagens ({(item.imagensDicom as unknown[]).length})
                         </Btn>
                       )}
                     </div>
@@ -839,7 +841,7 @@ export default function Worklist() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => !admSalvando && setCorrigirAdm(null)}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
             <div className="bg-p1 text-white px-5 py-3 rounded-t-xl">
-              <h2 className="font-bold text-sm">✏️ Corrigir convênio / solicitante</h2>
+              <h2 className="font-bold text-sm"><ListIcon name="edit" /> Corrigir convênio / solicitante</h2>
             </div>
             <div className="p-5 space-y-3">
               <p className="text-xs text-gray-500">
@@ -848,12 +850,12 @@ export default function Worklist() {
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Convênio</label>
                 <input type="text" value={admConvenio} onChange={e => setAdmConvenio(e.target.value)}
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
+                  className="w-full border border-borda rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Médico solicitante</label>
                 <input type="text" value={admSolicitante} onChange={e => setAdmSolicitante(e.target.value)}
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
+                  className="w-full border border-borda rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
               </div>
             </div>
             <div className="flex justify-end gap-2 px-5 pb-5">
@@ -875,7 +877,7 @@ export default function Worklist() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setModalPac(false)}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
             <div className="bg-p1 text-white px-5 py-3 rounded-t-xl">
-              <h2 className="font-bold text-sm">{editExameId ? '✏️ Editar Paciente' : '+ Novo Paciente'}</h2>
+              <h2 className="font-bold text-sm">{editExameId ? <><ListIcon name="edit" /> Editar Paciente</> : '+ Novo Paciente'}</h2>
             </div>
             <div className="p-5 space-y-3">
               {pacErro && <div className="bg-red-50 text-red-700 text-sm p-2 rounded">{pacErro}</div>}
@@ -883,7 +885,7 @@ export default function Worklist() {
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Nome completo *</label>
                 <input type="text" value={pacNome} onChange={e => setPacNome(e.target.value)}
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
+                  className="w-full border border-borda rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
               </div>
 
               <div className="grid grid-cols-3 gap-3">
@@ -901,7 +903,7 @@ export default function Worklist() {
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Sexo</label>
                   <select value={pacSexo} onChange={e => setPacSexo(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1">
+                    className="w-full border border-borda rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1">
                     <option value="">—</option>
                     <option value="M">Masculino</option>
                     <option value="F">Feminino</option>
@@ -910,7 +912,7 @@ export default function Worklist() {
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Nascimento</label>
                   <input type="date" value={pacDtnasc} onChange={e => setPacDtnasc(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
+                    className="w-full border border-borda rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
                 </div>
               </div>
 
@@ -918,31 +920,31 @@ export default function Worklist() {
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Tipo exame</label>
                   <select value={pacTipoExame} onChange={e => setPacTipoExame(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1">
+                    className="w-full border border-borda rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1">
                     {tiposAtivos.map(t => <option key={t.id} value={t.id}>{t.icone} {t.nome}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Convênio</label>
                   <input type="text" value={pacConvenio} onChange={e => setPacConvenio(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
+                    className="w-full border border-borda rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Solicitante</label>
                   <input type="text" value={pacSolicitante} onChange={e => setPacSolicitante(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
+                    className="w-full border border-borda rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1" />
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Telefone</label>
                 <input type="text" value={pacTel} onChange={e => setPacTel(e.target.value)}
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1"
+                  className="w-full border border-borda rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1"
                   placeholder="(00) 00000-0000" />
               </div>
             </div>
             <div className="px-5 py-3 border-t flex justify-end gap-3">
-              <button onClick={() => setModalPac(false)} className="px-4 py-2 text-sm text-gray-500 border rounded-lg hover:bg-gray-50">Cancelar</button>
+              <button onClick={() => setModalPac(false)} className="px-4 py-2 text-sm text-gray-500 border border-borda rounded-lg hover:bg-gray-50">Cancelar</button>
               <button onClick={handleSalvarPaciente} disabled={pacLoading}
                 className="px-6 py-2 text-sm bg-p2 text-white rounded-lg font-semibold hover:bg-blue-700 transition disabled:opacity-50">
                 {pacLoading ? 'Salvando...' : 'Salvar'}
@@ -1009,7 +1011,7 @@ function Btn({ cor, onClick, children }: { cor: 'blue' | 'green' | 'gray' | 'red
   };
   return (
     <button onClick={onClick}
-      className={`px-2.5 py-1 rounded text-xs font-semibold transition ${cores[cor]}`}>
+      className={`px-3 py-2 rounded-lg text-xs font-semibold transition ${cores[cor]}`}>
       {children}
     </button>
   );
