@@ -42,8 +42,7 @@ export class DicomIngestWorker {
   private tickEmAndamento = false;
   private execCount = 0;
   private lastTickAt: Date | null = null;
-  // Vigia (spec §6): FIM do tick, com ou sem erro — gravado no finally.
-  // NÃO reusar lastTickAt: ele marca o INÍCIO e esconderia a trava (Ruflo 7).
+  // Vigia (spec §6 + D2): FIM do tick (finally) ou PROGRESSO (estudo processado) — qualquer um prova que o laço não travou. NÃO reusar lastTickAt (início do tick).
   private ultimoTickOkEm: Date | null = null;
   // Aviso "sem Orthanc" (spec §9): última resposta do /changes.
   private ultimoOrthancOkEm: Date | null = null;
@@ -256,6 +255,7 @@ export class DicomIngestWorker {
             forceSr,
           });
           this.lastResults.push(result);
+          this.ultimoTickOkEm = new Date(); // progresso: estudo processado (vigia, D2)
           if (this.lastResults.length > 20) this.lastResults = this.lastResults.slice(-20);
 
           if (result.matched) {

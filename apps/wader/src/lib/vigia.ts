@@ -19,13 +19,20 @@ export function iniciarVigia(o: VigiaOpts): () => void {
   const intervalo = o.intervaloMs ?? 30_000;
   const agora = o.agora ?? Date.now;
   let base = agora();
+  let disparou = false;
   const timer = setInterval(() => {
     if (!o.ligado()) {
       base = agora(); // desligado não conta; ao religar, conta do zero
       return;
     }
-    const referencia = o.ultimoTickOkEm()?.getTime() ?? base;
-    if (agora() - referencia > limite) o.aoTravar();
+    // Nunca mais velho que o reset de base: carimbo antigo de antes do worker
+    // ser desligado não pode disparar o vigia no instante em que religa.
+    const referencia = Math.max(o.ultimoTickOkEm()?.getTime() ?? 0, base);
+    if (agora() - referencia > limite && !disparou) {
+      disparou = true; // one-shot: aoTravar sai do processo; não re-dispara
+      clearInterval(timer);
+      o.aoTravar();
+    }
   }, intervalo);
   return () => clearInterval(timer);
 }

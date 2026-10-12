@@ -358,4 +358,25 @@ describe("vigia: carimbos do tick", () => {
     await (w as any).tick();
     expect(w.getUltimoOrthancOkEm()).toBeInstanceOf(Date);
   });
+
+  it("carimba PROGRESSO a cada estudo processado — tick longo com vários estudos não parece travado (D2)", async () => {
+    const w = makeRetryWorker("progresso", { nInstances: 2, emitStable: false });
+    (w as any).opts.client.changes = async () => ({
+      Changes: [
+        { ChangeType: "StableStudy", ResourceType: "Study", ID: "S1", Seq: 1 },
+        { ChangeType: "StableStudy", ResourceType: "Study", ID: "S2", Seq: 2 },
+      ],
+      Done: true,
+      Last: 2,
+    });
+    const vistos: Array<Date | null> = [];
+    processarEstudoImpl = async () => {
+      vistos.push(w.getUltimoTickOkEm()); // visto DENTRO do tick, antes do finally
+      return resultado(2, 0);
+    };
+    await (w as any).tick();
+    expect(vistos).toHaveLength(2);
+    expect(vistos[0]).toBeNull();
+    expect(vistos[1]).toBeInstanceOf(Date);
+  });
 });
