@@ -122,3 +122,24 @@ Rodada sobre o HEAD 5b7a3a6 (diff master…branch, 55 arquivos), 12/10. Quatro �
 **Efeito colateral aceito da guarda central:** um Wader não-líder (ou em `WADER_UI_ONLY`) também recusa `POST /api/agendamentos` (cadastro manual da recepção) com 409 `nao_lider` — não-líder é só leitura, como a spec §7 manda; a recepção usa a máquina líder.
 
 **Commits da onda:** cd8a14f (lançador/instalador/migrar/ADR) e 37bfe8a (TypeScript/LEO). Suítes no HEAD: Wader vitest 186/186 (24 arquivos), Pester 17/17, LEO unit 790/790, typecheck limpo nos dois.
+
+
+## Ensaio da instalação — FEITO 12/10/2026 (notebook, admin via UAC)
+
+Instalador `Wader-Setup-v1.0.0.exe` (exe rebuildado no HEAD 5a8b4a1). Sergio rodou o Setup e preencheu o assistente (`wader-dev`, `C:\Users\sergi\.wader\worklists`, PIN, `sa.json`); o resto foi um roteiro elevado (`ensaio-admin.ps1`, log em `C:\Users\Public\wader-ensaio.log`).
+
+| Passo | Resultado |
+|---|---|
+| Serviço | `Wader` Running, conta `NT AUTHORITY\NetworkService`, início Auto; subiu de primeira após o Setup (config escrita antes do start) |
+| `/health` | schema 1, `versao 1.0.0`, `lider true`, `aviso null` |
+| **Estudo casado com imagens (gate)** | exame `poc-ensaio-fase-a` (ACC POC0001) recuperado pelo ACC worker, `status andamento`, 1 imagem em `dicom/wader-dev/poc-ensaio-fase-a/…jpg` no Storage — **`firebase-admin/storage` funciona dentro do exe** |
+| ACL `ProgramData\Wader` | só SERVIÇO DE REDE (OI)(CI)(M), SISTEMA F, Administradores F; sem herança; shell comum recebe "Permission denied" |
+| ACL `sa.json` | SERVIÇO DE REDE (R), SISTEMA/Administradores F |
+| ACL `Program Files\Wader` | sem SERVIÇO DE REDE; `bin` com SERVIÇO DE REDE (OI)(CI)(M) |
+| Matar `wader.exe` | serviço Running de novo em < 25 s; `lancador.json` `quedasSeguidas: 1`, `ultimaSaida.motivo: codigo--1` (código -1 do kill — cosmético) |
+| Atualização forjada (pedido + cópia do exe como v1.0.0) | lançador aplicou no laço interno (geração 4 do cadeado), `versaoAplicada 1.0.0`, pedido consumido, quedas 0, sem `.prev` (exe idêntico, esperado) |
+| `Stop-Service` 70 s / `Start-Service` | Stopped sem reiniciar sozinho, `/health` sem resposta; volta Running em 20 s |
+| Tarefa `Wader-Aviso` | Running |
+| `err.log` | só o DEP0040 (`punycode`) do Node 24 |
+
+Pendente de confirmação visual do Sergio: os dois toasts ("Wader parado" / "Wader de volta (v1.0.0)"). Não feitos: instalação por cima (passo 7), desinstalação (8), espera de 5 min (13) — ver abaixo se executados.
