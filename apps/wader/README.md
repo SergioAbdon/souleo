@@ -16,14 +16,16 @@ Agente local DICOM do LEO. Programa Windows que roda na clínica como serviço, 
 - ✅ Endpoints `/health` e `/version`
 - ✅ Graceful shutdown (SIGINT/SIGTERM)
 
-## O que NÃO está pronto
+## Instalação na clínica (Fase A, 10/2026)
 
-- ❌ Cadastro manual real (F2)
-- ❌ Sync de worklist (F3)
-- ❌ Captura DICOM via Orthanc (F4)
-- ❌ Forwarder de SR (F5)
-- ❌ Build em `.exe` via pkg (fase posterior)
-- ❌ Instalador NSIS (fase posterior)
+Serviço do Windows + atualização com um clique. Spec: `docs/superpowers/specs/2026-10-11-wader-fase-a-design.md`.
+
+1. Baixar `Wader-Setup-vX.Y.Z.exe` da release `wader-vX.Y.Z` no GitHub.
+2. Clínica que já roda o Wader antigo em `C:\Wader`: antes, `scripts\migrar-medcardio.ps1 -Commit` como admin.
+3. Rodar o Setup (SmartScreen → "Mais informações → Executar assim mesmo"). Primeira vez pede wsId, pasta de worklists, PIN e `sa.json`.
+4. Conferir `http://127.0.0.1:8043/admin` → cartão "Atualização".
+
+Dados em `C:\ProgramData\Wader` (sobrevivem a desinstalar). Logs em `C:\ProgramData\Wader\logs`.
 
 ---
 

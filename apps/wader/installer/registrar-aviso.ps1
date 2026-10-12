@@ -6,9 +6,12 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $nome = 'Wader-Aviso'
+# valida ANTES de mexer: uso errado nao apaga a tarefa
+if (-not $Remover -and -not $Instalar) { throw 'use -Instalar <caminho do wader-aviso.ps1> ou -Remover' }
+# para o loop antigo antes de remover (senao segue rodando apos upgrade/desinstalar)
+Stop-ScheduledTask -TaskName $nome -ErrorAction SilentlyContinue
 Unregister-ScheduledTask -TaskName $nome -Confirm:$false -ErrorAction SilentlyContinue
 if ($Remover) { Write-Host "tarefa $nome removida"; exit 0 }
-if (-not $Instalar) { throw 'use -Instalar <caminho do wader-aviso.ps1> ou -Remover' }
 $acao = New-ScheduledTaskAction -Execute 'powershell.exe' `
   -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Instalar`""
 $gatilho = New-ScheduledTaskTrigger -AtLogOn

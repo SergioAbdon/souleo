@@ -1,0 +1,33 @@
+<service>
+  <id>Wader</id>
+  <name>Wader</name>
+  <description>Agente local DICOM do LEO: le o Orthanc e sobe imagens e medidas pra nuvem.</description>
+
+  <!-- O servico roda o LANCADOR; o lancador aplica atualizacao/rollback e so entao sobe o wader.exe (spec A, secao 4). %BASE% = pasta deste exe. -->
+  <executable>powershell.exe</executable>
+  <arguments>-NoProfile -ExecutionPolicy Bypass -File "%BASE%\wader-launch.ps1"</arguments>
+  <workingdirectory>C:\ProgramData\Wader</workingdirectory>
+  <startmode>Automatic</startmode>
+  <stopparentprocessfirst>true</stopparentprocessfirst>
+
+  <!-- Escada, nao loop: 10 s, 1 min, 10 min; zera apos 1 h de vida (Codex 2). -->
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="1 min"/>
+  <onfailure action="restart" delay="10 min"/>
+  <resetfailure>1 hour</resetfailure>
+
+  <!-- Conta embutida, sem senha, sem admin, com rede (Codex 1). -->
+  <serviceaccount>
+    <domain>NT AUTHORITY</domain>
+    <user>NetworkService</user>
+  </serviceaccount>
+
+  <!-- Sem isto o logger tenta pino-pretty e o exe cai na subida (Ruflo 1). -->
+  <env name="NODE_ENV" value="production"/>
+
+  <logpath>C:\ProgramData\Wader\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+</service>
