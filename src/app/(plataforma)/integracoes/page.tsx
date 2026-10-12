@@ -673,13 +673,10 @@ export default function IntegracoesPage() {
                 {t.id === 'wader' && (
                   <div className="space-y-1">
                     <p className="text-xs text-ink-3">{i.versao ? `v${i.versao}` : 'Versão desconhecida'} · {i.maquina || 'máquina desconhecida'}</p>
-                    {/* O batimento (heartbeat.ts) detecta e grava os dois; sem
-                        isto ficavam só no Firestore e no log do Wader — o dono
-                        nunca via. 2 Waders = worklist e ingestão brigando. */}
-                    {i.conflito && (
-                      <p className="text-xs text-red-600">
-                        ⚠️ 2 Waders ativos: {i.maquina || 'esta máquina'} + {i.conflito}
-                      </p>
+                    {/* Um escritor só no doc (spec Wader A §7): o cartão mostra quem é
+                        o líder; "2 Waders" agora é aviso local na clínica (fase C traz pra cá). */}
+                    {i.lider && i.lider.maquina !== i.maquina && (
+                      <p className="text-xs text-amber-600">⚠️ Líder: {i.lider.maquina} (batimento de {i.maquina || '?'})</p>
                     )}
                     {i.ultimoErroIngest && (
                       <p className="text-xs text-red-600" title={i.ultimoErroIngest}>

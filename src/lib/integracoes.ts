@@ -17,8 +17,9 @@ export type Integracao = {
   visto?: number | null;             // wader
   versao?: string;                   // wader
   maquina?: string;                  // wader
-  /** Wader: hostname de OUTRO Wader batendo no mesmo workspace (heartbeat.ts). */
-  conflito?: string | null;          // wader
+  /** Wader: cadeado de líder (apps/wader/src/adapters/lider.ts) — quem está processando. */
+  lider?: { agentId: string; maquina: string; ate: number; geracao: number } | null; // wader
+  agentId?: string;                  // wader
   /** Wader: último erro do tick de ingestão DICOM (heartbeat.ts). */
   ultimoErroIngest?: string | null;  // wader
   credencialCadastradaEm?: number | null; // feegow/orthanc — Task 4, nunca o segredo em si

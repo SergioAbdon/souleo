@@ -41,6 +41,8 @@ export interface UiServerExtras {
   versao?: string;
   /** O que o lançador deixou (lancador.json). Temporário: a Task 5 troca por `estado`. */
   lancador?: Lancador | null;
+  /** Cadeado (spec §7): não-líder não liga worker pelo botão. */
+  souLider?: () => boolean;
 }
 
 export async function startUiServer(
@@ -67,8 +69,8 @@ export async function startUiServer(
   registerAgendamentosRoutes(app, config);
   registerProcedimentosRoutes(app, config);
   registerOrthancConfigRoutes(app, config, workspaceRepo);
-  registerWorklistRoutes(app, config, extras.worklistWorker);
-  registerDicomRoutes(app, config, extras.dicomWorker ?? null, orthancClient);
+  registerWorklistRoutes(app, config, extras.worklistWorker, extras.souLider);
+  registerDicomRoutes(app, config, extras.dicomWorker ?? null, orthancClient, extras.souLider);
   registerReconciliacaoRoutes(app, config, orthancClient, extras.dicomWorker ?? null);
 
   await app.listen({ host: '127.0.0.1', port: config.ui.port });
