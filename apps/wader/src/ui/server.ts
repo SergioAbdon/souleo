@@ -14,6 +14,7 @@ import { registerOrthancConfigRoutes } from './api/orthanc-config';
 import { registerWorklistRoutes } from './api/worklist';
 import { registerDicomRoutes } from './api/dicom';
 import { registerReconciliacaoRoutes } from './api/reconciliacao';
+import type { Lancador } from '../lib/saida';
 
 const log = createLogger({ module: 'ui-server' });
 const PAGES_DIR = path.join(__dirname, 'pages');
@@ -38,6 +39,8 @@ export interface UiServerExtras {
   workspaceRepo?: WorkspaceRepo | null;
   /** Versão real do package.json (index.ts) — /version deixa de mentir "0.1.0". */
   versao?: string;
+  /** O que o lançador deixou (lancador.json). Temporário: a Task 5 troca por `estado`. */
+  lancador?: Lancador | null;
 }
 
 export async function startUiServer(

@@ -19,6 +19,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { loadConfig, ConfigError } from './config/load';
 import { logger, createLogger } from './logger';
+import { CODIGO, sairCom, lerLancador } from './lib/saida';
 import { startUiServer } from './ui/server';
 import { initFirebase } from './adapters/firebase';
 import { OrthancClient } from './adapters/orthanc-client';
@@ -66,7 +67,7 @@ async function main(): Promise<void> {
   } catch (err) {
     if (err instanceof ConfigError) {
       log.fatal(err.message);
-      process.exit(1);
+      sairCom(CODIGO.CONFIG, { motivo: 'config' });
     }
     throw err;
   }
@@ -75,8 +76,13 @@ async function main(): Promise<void> {
     initFirebase(config.firebase);
   } catch (err) {
     log.fatal({ err }, 'Falha ao inicializar Firebase');
-    process.exit(1);
+    sairCom(CODIGO.CONFIG, { motivo: 'config' });
   }
+
+  // O que o lançador deixou pra nós (spec §5): publicado no /health e no
+  // batimento pelas tarefas seguintes. Não apagar — o arquivo é do lançador.
+  const lancador = lerLancador();
+  if (lancador) log.info({ lancador }, 'lancador.json lido na subida');
 
   // Modo UI-only (WADER_UI_ONLY=1): sobe servidor + console SEM os workers.
   // Permite rodar uma instância de DEV noutra porta sem dois Waders
@@ -145,6 +151,7 @@ async function main(): Promise<void> {
     orthancClient,
     workspaceRepo,
     versao: lerVersaoPackage(),
+    lancador,
   });
 
   registerShutdownHandlers(app, { worklistWorker, dicomWorker, accWorker, pararBatimento });
@@ -197,6 +204,11 @@ function registerShutdownHandlers(
 }
 
 main().catch((err) => {
+  // Porta ocupada = outro Wader nesta máquina (spec §12): código 2, mensagem clara.
+  if ((err as NodeJS.ErrnoException)?.code === 'EADDRINUSE') {
+    logger.fatal({ err }, 'Porta ocupada — já existe um Wader rodando nesta máquina?');
+    sairCom(CODIGO.CONFIG, { motivo: 'config' });
+  }
   logger.fatal({ err }, 'Erro fatal no startup do Wader');
   process.exit(1);
 });
