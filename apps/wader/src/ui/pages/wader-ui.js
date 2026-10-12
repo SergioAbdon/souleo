@@ -18,3 +18,10 @@ async function fetchJson(url, init) {
   const body = await res.json().catch(() => ({}));
   return { httpStatus: res.status, ...body };
 }
+
+/** Escapa texto pra entrar em innerHTML (valor de servidor/Firestore nunca vai cru). */
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}

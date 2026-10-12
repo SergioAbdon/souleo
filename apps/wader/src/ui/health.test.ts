@@ -10,7 +10,7 @@ const estado: EstadoWader = {
   versaoDisponivel: { versao: '1.0.1', assets: {} },
   souLider: () => true,
   outraMaquina: () => null,
-  ultimoOrthancOkEm: () => new Date(),
+  ultimoOrthancOkEm: () => new Date('2026-10-11T11:59:00.000Z'),
   lancador: { quedasSeguidas: 0, ultimaSaida: { motivo: 'atualizacao', em: '2026-10-11T11:00:00.000Z' } },
   prevExiste: () => true,
 };
@@ -24,7 +24,7 @@ describe('contrato do /health', () => {
     expect(h).toEqual(fixture);
   });
   it('sem lançador e sem versão nova → nulos, não undefined (JSON precisa ter as chaves)', () => {
-    const h = montarHealth({ ...estado, versaoDisponivel: null, lancador: null, prevExiste: () => false });
+    const h = montarHealth({ ...estado, versaoDisponivel: null, lancador: null, prevExiste: () => false }, new Date('2026-10-11T12:00:00.000Z'));
     expect(h.versaoDisponivel).toBeNull();
     expect(h.ultimaSaida).toBeNull();
     expect(h.versaoRejeitada).toBeNull();

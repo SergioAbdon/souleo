@@ -137,6 +137,7 @@ async function main(): Promise<void> {
   };
 
   const subirWorkers = () => {
+    estado.iniciadoEm = Date.now(); // base do aviso "sem Orthanc": quando virei líder, não o boot
     worklistWorker?.start();
     dicomWorker.start();
     accWorker.start();
@@ -190,8 +191,9 @@ async function main(): Promise<void> {
     });
   }
 
-  // Checagem de release a cada 1 h (spec §5). Sem rede = null = silêncio.
+  // Checagem de release a cada 1 h (spec §5). Sem rede (undefined) = silêncio: não apaga versão já achada.
   const pararRelease = iniciarChecagemRelease(versao, (info) => {
+    if (info === undefined) return;
     if (info && estado.versaoDisponivel?.versao !== info.versao) log.info({ versao: info.versao }, 'Versão nova disponível');
     estado.versaoDisponivel = info;
   });

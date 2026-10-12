@@ -66,6 +66,18 @@ describe('POST /api/admin/atualizar', () => {
     await esperarSaida();
     expect(sair).not.toHaveBeenCalled();
   });
+  it('dois cliques seguidos: um baixa (200), o outro leva 409 em_andamento', async () => {
+    baixar = vi.fn(() => new Promise<void>((r) => setTimeout(r, 200)));
+    const app = makeApp();
+    const h = { 'x-wader-pin': '123456' };
+    const p1 = post(app, '/api/admin/atualizar', h);
+    const p2 = post(app, '/api/admin/atualizar', h);
+    const rs = await Promise.all([p1, p2]);
+    expect(rs.map((r) => r.statusCode).sort()).toEqual([200, 409]);
+    expect(rs.find((r) => r.statusCode === 409)!.json()).toEqual({ ok: false, error: 'em_andamento' });
+    expect(baixar).toHaveBeenCalledTimes(1);
+    await esperarSaida();
+  });
   it('sem adminPin na config → 503', async () => {
     const app = Fastify();
     registerAtualizacaoRoutes(app, { ui: { port: 8043 } } as any, { release: () => release, baixar, sair: sair as any, prevExiste: () => true, dirUpdates: () => 'X' });

@@ -96,7 +96,7 @@ function validate(cfg: WaderConfig, source: string): void {
     errors.push('ui.port deve estar entre 1 e 65535');
   }
 
-  if (cfg.adminPin !== undefined && !/^\d{6}$/.test(cfg.adminPin)) {
+  if (cfg.adminPin !== undefined && (typeof cfg.adminPin !== 'string' || !/^\d{6}$/.test(cfg.adminPin))) {
     errors.push('adminPin deve ter exatamente 6 dígitos');
   }
 

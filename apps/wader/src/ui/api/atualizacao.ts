@@ -22,6 +22,7 @@ export interface AtualizacaoDeps {
  * O lançador faz o resto. Ambos: X-Wader-Pin + Origin (lib/pin.ts).
  */
 export function registerAtualizacaoRoutes(app: FastifyInstance, config: WaderConfig, deps: AtualizacaoDeps): void {
+  let emVoo = false; // um download por vez: duplo clique não pisa no mesmo .tmp
   const guarda = config.adminPin ? new GuardaPin(config.adminPin) : null;
 
   const autorizar = (req: FastifyRequest, reply: FastifyReply): FastifyReply | null => {
@@ -41,11 +42,15 @@ export function registerAtualizacaoRoutes(app: FastifyInstance, config: WaderCon
     if (negado) return negado;
     const info = deps.release();
     if (!info) return reply.status(409).send({ ok: false, error: 'sem_versao_nova' });
+    if (emVoo) return reply.status(409).send({ ok: false, error: 'em_andamento' });
+    emVoo = true;
     try {
       await deps.baixar(info, deps.dirUpdates());
     } catch (err) {
       log.error({ err }, 'Download da release falhou');
       return reply.status(502).send({ ok: false, error: 'download', message: (err as Error).message });
+    } finally {
+      emVoo = false;
     }
     log.warn({ versao: info.versao }, 'Atualização pedida pelo painel — saindo pro lançador aplicar');
     sairDepois({ atualizar: info.versao, motivo: 'atualizacao' });
