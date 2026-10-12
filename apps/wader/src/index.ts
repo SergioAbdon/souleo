@@ -9,13 +9,16 @@
  */
 
 import os from 'os';
-import { readFileSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, existsSync } from 'fs';
+import { join, dirname } from 'path';
 import { loadConfig, ConfigError } from './config/load';
 import { logger, createLogger } from './logger';
-import { CODIGO, sairCom, lerLancador } from './lib/saida';
+import { CODIGO, sairCom, lerLancador, dirUpdates } from './lib/saida';
 import { iniciarVigia } from './lib/vigia';
+import type { EstadoWader } from './lib/estado';
+import { baixarRelease, iniciarChecagemRelease } from './lib/release';
 import { startUiServer } from './ui/server';
+import { montarHealth } from './ui/health';
 import { initFirebase, getDb } from './adapters/firebase';
 import { iniciarLider } from './adapters/lider';
 import { OrthancClient } from './adapters/orthanc-client';
@@ -120,13 +123,30 @@ async function main(): Promise<void> {
   let pararVigia: (() => void) | null = null;
   let lider: ReturnType<typeof iniciarLider> | null = null;
 
+  const versao = lerVersaoPackage();
+  const estado: EstadoWader = {
+    versao,
+    iniciadoEm: Date.now(),
+    versaoDisponivel: null,
+    souLider: () => lider?.souLider() ?? false,
+    outraMaquina: () => lider?.outraMaquina() ?? null,
+    ultimoOrthancOkEm: () => dicomWorker.getUltimoOrthancOkEm(),
+    lancador,
+    // .prev mora ao lado do exe (Program Files), não na pasta de dados.
+    prevExiste: () => existsSync(join(dirname(process.execPath), 'wader.exe.prev')),
+  };
+
   const subirWorkers = () => {
     worklistWorker?.start();
     dicomWorker.start();
     accWorker.start();
-    pararBatimento = iniciarBatimento(config.wsId, lerVersaoPackage(), workspaceRepo, orthancClient, {
+    pararBatimento = iniciarBatimento(config.wsId, versao, workspaceRepo, orthancClient, {
       agentId: config.agentId,
       ultimoErroIngest: () => dicomWorker.getUltimoErro(),
+      campos: () => {
+        const h = montarHealth(estado);
+        return { versaoDisponivel: h.versaoDisponivel, aviso: h.aviso, ultimaSaida: h.ultimaSaida, versaoRejeitada: h.versaoRejeitada };
+      },
     });
     pararVigia = iniciarVigia({
       ultimoTickOkEm: () => dicomWorker.getUltimoTickOkEm(),
@@ -144,8 +164,14 @@ async function main(): Promise<void> {
     dicomWorker: uiOnly ? null : dicomWorker,
     orthancClient,
     workspaceRepo,
-    versao: lerVersaoPackage(),
-    lancador,
+    estado,
+    atualizacao: {
+      release: () => estado.versaoDisponivel,
+      baixar: baixarRelease,
+      sair: sairCom,
+      prevExiste: estado.prevExiste,
+      dirUpdates,
+    },
     souLider: () => lider?.souLider() ?? false,
   });
 
@@ -164,11 +190,17 @@ async function main(): Promise<void> {
     });
   }
 
+  // Checagem de release a cada 1 h (spec §5). Sem rede = null = silêncio.
+  const pararRelease = iniciarChecagemRelease(versao, (info) => {
+    if (info && estado.versaoDisponivel?.versao !== info.versao) log.info({ versao: info.versao }, 'Versão nova disponível');
+    estado.versaoDisponivel = info;
+  });
+
   registerShutdownHandlers(app, {
     worklistWorker,
     dicomWorker,
     accWorker,
-    pararBatimento: () => { pararBatimento?.(); pararVigia?.(); lider?.parar(); },
+    pararBatimento: () => { pararBatimento?.(); pararVigia?.(); lider?.parar(); pararRelease(); },
   });
 
   log.info('Wader rodando. Acesse http://localhost:%d', config.ui.port);

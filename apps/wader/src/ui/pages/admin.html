@@ -91,6 +91,17 @@
         <div id="status-geral"></div>
       </section>
 
+      <!-- Atualização com ok (spec Fase A §5): versão, botão Atualizar, botão Voltar. -->
+      <section class="card">
+        <h2>Atualização</h2>
+        <p class="subtitle">Nada acontece sem clique. O serviço reinicia sozinho em ~10 s depois de confirmar.</p>
+        <div id="atualizacao"></div>
+        <div class="actions">
+          <button id="btn-atualizar" onclick="atualizar()" disabled>⬆ Atualizar</button>
+          <button id="btn-voltar" class="secondary" onclick="voltar()" disabled>↩ Voltar pra versão anterior</button>
+        </div>
+      </section>
+
       <div class="grid-2">
         <!-- Worklist Sync Worker -->
         <section class="card">
@@ -147,22 +158,49 @@
 
       async function refreshAll() {
         try {
-          const [status, wl, di, oc, wp] = await Promise.all([
+          const [status, wl, di, oc, wp, h] = await Promise.all([
             fetchJson('/api/status'),
             fetchJson('/api/worklist/worker'),
             fetchJson('/api/dicom/worker'),
             fetchJson('/api/orthanc/config'),
             fetchJson('/api/worklist/path-status'),
+            fetchJson('/health'),
           ]);
           renderStatus(status);
           renderWorklistWorker(wl);
           renderDicomWorker(di);
           renderOrthancConfig(oc);
           renderWorklistPath(wp);
+          renderAtualizacao(h);
         } catch (e) {
           console.error('refreshAll falhou:', e);
         }
       }
+
+      function renderAtualizacao(h) {
+        $('atualizacao').innerHTML =
+          fmtField('Versão instalada', `v${h.versao}`) +
+          fmtField('Versão disponível', h.versaoDisponivel ? `<span class="pill green">v${h.versaoDisponivel}</span>` : 'nenhuma') +
+          fmtField('Líder', h.lider ? '<span class="pill green">SIM</span>' : `<span class="pill red">NÃO</span> ${h.outraMaquina ? '(' + h.outraMaquina + ')' : ''}`) +
+          (h.versaoRejeitada ? fmtField('Versão rejeitada', `v${h.versaoRejeitada} (caiu 3× — voltou)`) : '') +
+          (h.erroLancador ? `<pre class="error">Lançador: ${h.erroLancador}</pre>` : '') +
+          (h.ultimaSaida ? fmtField('Última saída', `${h.ultimaSaida.motivo} em ${new Date(h.ultimaSaida.em).toLocaleString('pt-BR')}`) : '') +
+          (h.aviso ? `<pre class="error">${h.aviso}</pre>` : '');
+        $('btn-atualizar').disabled = !h.versaoDisponivel;
+        $('btn-atualizar').textContent = h.versaoDisponivel ? `⬆ Atualizar pra v${h.versaoDisponivel}` : '⬆ Atualizar';
+        $('btn-voltar').disabled = !h.prevExiste;
+      }
+
+      async function comPin(url) {
+        const pin = prompt('PIN do painel (6 dígitos):');
+        if (!pin) return;
+        const r = await fetchJson(url, { method: 'POST', headers: { 'X-Wader-Pin': pin } });
+        if (r.ok) alert('Confirmado. O Wader vai reiniciar — esta página volta sozinha em ~10 s.');
+        else alert('Recusado: ' + (r.message || r.error || r.httpStatus));
+        await refreshAll();
+      }
+      function atualizar() { return comPin('/api/admin/atualizar'); }
+      function voltar() { if (confirm('Voltar pra versão anterior?')) return comPin('/api/admin/voltar'); }
 
       function renderStatus(status) {
         $('status-geral').innerHTML =

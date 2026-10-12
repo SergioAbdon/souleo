@@ -2,6 +2,7 @@
   "version": "1.0",
   "wsId": "medcardio",
   "agentId": "wader-001",
+  "adminPin": "123456",
 
   "firebase": {
     "serviceAccountPath": "C:\\ProgramData\\Wader\\sa.enc",

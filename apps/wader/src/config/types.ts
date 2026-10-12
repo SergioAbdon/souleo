@@ -26,6 +26,8 @@ export interface WaderConfig {
   version: string;
   wsId: string;
   agentId: string;
+  /** PIN de 6 dígitos dos botões Atualizar/Voltar do /admin (spec §5). Definido no instalador. */
+  adminPin?: string;
 
   firebase: FirebaseConfig;
   orthanc: OrthancLocalConfig;
