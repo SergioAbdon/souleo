@@ -20,6 +20,9 @@ describe('guarda central de não-líder', () => {
     expect(r.json()).toEqual({ ok: false, error: 'nao_lider' });
     expect((await montar(true).inject({ method: 'POST', url: '/api/x' })).statusCode).toBe(200);
   });
+  it('URL com escape (/%61pi/x) não escapa do cadeado: casa a rota /api/x → 409', async () => {
+    expect((await montar(false).inject({ method: 'POST', url: '/%61pi/x' })).statusCode).toBe(409);
+  });
   it('GET passa; /api/admin/* passa; */worker/stop passa', async () => {
     const app = montar(false);
     expect((await app.inject({ method: 'GET', url: '/api/x' })).statusCode).toBe(200);

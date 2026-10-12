@@ -136,28 +136,35 @@ async function main(): Promise<void> {
     prevExiste: () => existsSync(process.execPath + '.prev'),
   };
 
+  // Falha aqui é culpa do binário: exit 1 SEM pedido = queda contada (3 seguidas → lançador volta pro .prev).
+  // Não pode virar saída 3 'lider' (essa não conta) — release com worker quebrado nunca voltaria.
   const subirWorkers = () => {
-    estado.iniciadoEm = Date.now(); // base do aviso "sem Orthanc": quando virei líder, não o boot
-    worklistWorker?.start();
-    dicomWorker.start();
-    accWorker.start();
-    pararBatimento = iniciarBatimento(config.wsId, versao, workspaceRepo, orthancClient, {
-      agentId: config.agentId,
-      ultimoErroIngest: () => dicomWorker.getUltimoErro(),
-      campos: () => {
-        const h = montarHealth(estado);
-        return { versaoDisponivel: h.versaoDisponivel, aviso: h.aviso, ultimaSaida: h.ultimaSaida, versaoRejeitada: h.versaoRejeitada };
-      },
-    });
-    pararVigia = iniciarVigia({
-      ultimoTickOkEm: () => dicomWorker.getUltimoTickOkEm(),
-      ligado: () => dicomWorker.isRunning(),
-      limiteMs: (config.polling.vigiaSeg ?? 300) * 1000,
-      aoTravar: () => {
-        log.fatal({ ultimoTickOkEm: dicomWorker.getUltimoTickOkEm() }, 'Ingestão travada — saindo pro serviço reiniciar');
-        sairCom(CODIGO.VIGIA, { motivo: 'travado' });
-      },
-    });
+    try {
+      estado.iniciadoEm = Date.now(); // base do aviso "sem Orthanc": quando virei líder, não o boot
+      worklistWorker?.start();
+      dicomWorker.start();
+      accWorker.start();
+      pararBatimento = iniciarBatimento(config.wsId, versao, workspaceRepo, orthancClient, {
+        agentId: config.agentId,
+        ultimoErroIngest: () => dicomWorker.getUltimoErro(),
+        campos: () => {
+          const h = montarHealth(estado);
+          return { versaoDisponivel: h.versaoDisponivel, aviso: h.aviso, ultimaSaida: h.ultimaSaida, versaoRejeitada: h.versaoRejeitada };
+        },
+      });
+      pararVigia = iniciarVigia({
+        ultimoTickOkEm: () => dicomWorker.getUltimoTickOkEm(),
+        ligado: () => dicomWorker.isRunning(),
+        limiteMs: (config.polling.vigiaSeg ?? 300) * 1000,
+        aoTravar: () => {
+          log.fatal({ ultimoTickOkEm: dicomWorker.getUltimoTickOkEm() }, 'Ingestão travada — saindo pro serviço reiniciar');
+          sairCom(CODIGO.VIGIA, { motivo: 'travado' });
+        },
+      });
+    } catch (err) {
+      log.fatal({ err }, 'Falha ao subir os workers — saindo (queda contada)');
+      process.exit(1);
+    }
   };
 
   const app = await startUiServer(config, {

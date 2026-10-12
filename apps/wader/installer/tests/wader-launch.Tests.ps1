@@ -12,11 +12,11 @@ BeforeAll {
     Set-Content -Path $Caminho -Value "@echo off`r`necho $Marca`r`nexit /b $Codigo" -Encoding ASCII
   }
   function Sha($p) { (Get-FileHash -Path $p -Algorithm SHA256).Hash.ToLower() }
-  function Rodar($a) {
+  function Rodar($a, [hashtable]$Extra = @{}) {
     # o lancador faz Set-Location: sem Push/Pop o cwd do Pester fica sujo
     Push-Location
     try {
-      & $script:Launch -ProgramDir $a.Prog -DataDir $a.Dados -ExeNome 'stub.cmd' 2>&1
+      & $script:Launch -ProgramDir $a.Prog -DataDir $a.Dados -ExeNome 'stub.cmd' @Extra 2>&1
       $global:CodigoSaida = $LASTEXITCODE
     } finally { Pop-Location }
   }
@@ -146,6 +146,14 @@ Describe 'wader-launch.ps1' {
     @($saida | Where-Object { "$_" -match 'RODOU' }).Count | Should -Be 2
   }
 
+  It 'saida 10 sem fim: desiste apos 5 voltas com saida 1' {
+    $a = New-Ambiente
+    New-Stub (Join-Path $a.Prog 'stub.cmd') 10 'RODOU'
+    $saida = Rodar $a
+    $global:CodigoSaida | Should -Be 1
+    @($saida | Where-Object { "$_" -match 'RODOU' }).Count | Should -Be 5
+  }
+
   It 'retoma troca interrompida (atualizando): .prev continua o velho, exe vira o novo' {
     $a = New-Ambiente
     New-Stub (Join-Path $a.Prog 'stub.cmd.prev') 0 'VELHO'
@@ -161,6 +169,29 @@ Describe 'wader-launch.ps1' {
     $l = Lanc $a
     $l.versaoAplicada | Should -Be '1.0.1'
     $l.atualizando | Should -BeNullOrEmpty
+  }
+
+  It '3 quedas sem .prev nao bloqueia atualizar: aplica a versao nova, sem erro' {
+    $a = New-Ambiente
+    New-Stub (Join-Path $a.Prog 'stub.cmd') 0 'VELHO'
+    $novo = Join-Path $a.Upd 'wader-v1.0.1.exe'
+    New-Stub $novo 0 'NOVO'
+    Set-Content "$novo.sha256" -Value ((Sha $novo) + '  wader.exe') -Encoding ASCII
+    Set-Content (Join-Path $a.Upd 'lancador.json') -Value '{"quedasSeguidas":3}' -Encoding ASCII
+    Set-Content (Join-Path $a.Upd 'pedido.json') -Value '{"atualizar":"1.0.1","motivo":"atualizacao","em":"x"}' -Encoding ASCII
+    ((Rodar $a) -join "`n") | Should -Match 'NOVO'
+    $l = Lanc $a
+    $l.versaoAplicada | Should -Be '1.0.1'
+    $l.erro | Should -BeNullOrEmpty
+  }
+
+  It 'vida >= VidaMinSeg zera quedasSeguidas mesmo saindo com erro (7)' {
+    $a = New-Ambiente
+    New-Stub (Join-Path $a.Prog 'stub.cmd') 7 'CAIU'
+    Set-Content (Join-Path $a.Upd 'lancador.json') -Value '{"quedasSeguidas":2}' -Encoding ASCII
+    Rodar $a @{ VidaMinSeg = 0 } | Out-Null
+    $global:CodigoSaida | Should -Be 7
+    (Lanc $a).quedasSeguidas | Should -Be 0
   }
 
   It 'apos aplicar, apaga binarios baixados de outras versoes e mantem os da aplicada' {

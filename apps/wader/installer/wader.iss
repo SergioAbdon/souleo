@@ -48,7 +48,7 @@ Name: "{app}\bin"; Permissions: networkservice-modify
 [Run]
 ; O "stopwait" da atualizacao por cima fica em PrepareToInstall (antes de copiar arquivos).
 ; Config + ACL de ProgramData ficam em CurStepChanged(ssInstall); se falharam, o servico NAO sobe.
-Filename: "{app}\wader-service.exe"; Parameters: "install"; Flags: runhidden waituntilterminated; Check: not ServicoExiste
+Filename: "{app}\wader-service.exe"; Parameters: "install"; Flags: runhidden waituntilterminated; Check: DadosOk and not ServicoExiste
 Filename: "{app}\wader-service.exe"; Parameters: "start";   Flags: runhidden waituntilterminated; Check: DadosOk; BeforeInstall: AclBin
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\registrar-aviso.ps1"" -Instalar ""{app}\wader-aviso.ps1"""; Flags: runhidden waituntilterminated
 
@@ -222,6 +222,9 @@ end;
 
 // BeforeInstall do "start": bin\ existe depois de [Files]. So ali NetworkService escreve.
 procedure AclBin;
+var R: Integer;
 begin
+  // layout antigo dava M ao NetworkService em {app} inteiro: tira. Codigo ignorado (a ACE pode nem existir).
+  Exec('icacls.exe', '"' + ExpandConstant('{app}') + '" /remove:g *S-1-5-20', '', SW_HIDE, ewWaitUntilTerminated, R);
   Icacls(ExpandConstant('{app}\bin'), '/grant *S-1-5-20:(OI)(CI)M');
 end;

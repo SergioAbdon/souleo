@@ -8,7 +8,8 @@ import type { FastifyInstance } from 'fastify';
 export function registrarGuardaLider(app: FastifyInstance, souLider: () => boolean): void {
   app.addHook('onRequest', async (req, reply) => {
     if (req.method === 'GET' || req.method === 'HEAD') return;
-    const url = req.url.split('?')[0];
+    // rota CASADA (padrão), não a URL crua: /%61pi/... ou ';' não escapam do cadeado
+    const url = (req.routeOptions?.url ?? req.url).split('?')[0];
     if (!url.startsWith('/api/') || url.startsWith('/api/admin/') || url.endsWith('/worker/stop')) return;
     if (!souLider()) return reply.code(409).send({ ok: false, error: 'nao_lider' });
   });

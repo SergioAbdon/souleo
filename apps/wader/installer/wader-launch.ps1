@@ -13,7 +13,9 @@
 param(
   [string]$ProgramDir = 'C:\Program Files\Wader\bin',
   [string]$DataDir    = 'C:\ProgramData\Wader',
-  [string]$ExeNome    = 'wader.exe'
+  [string]$ExeNome    = 'wader.exe',
+  # vida minima (s) para a saida zerar quedasSeguidas; parametro so para o Pester
+  [int]$VidaMinSeg    = 300
 )
 $ErrorActionPreference = 'Stop'
 
@@ -34,13 +36,16 @@ function Gravar-Json($p, $obj) {
   Move-Item -Force $tmp $p
 }
 function Sha256($p) { (Get-FileHash -Path $p -Algorithm SHA256).Hash.ToLower() }
-# troca atomica: copia pra .tmp e renomeia por cima (rename no NTFS nunca deixa exe truncado)
+# troca: copia pra .tmp e renomeia por cima do existente. PS 5.1 pode apagar-e-mover
+# (janela sem exe); a restauracao do .prev no inicio do laco cobre essa janela.
 function Instalar($origem) {
   Copy-Item -Force $origem "$exe.tmp"
   Move-Item -Force "$exe.tmp" $exe
 }
 
+$passes = 0
 do {
+  $passes++
   # 1. le os dois bilhetes (de novo a cada volta: o exe acabou de gravar o pedido)
   $pedido = Ler-Json $pedidoPath
   $lanc = @{ quedasSeguidas = 0 }
@@ -57,8 +62,8 @@ do {
 
   # 2. voltar: pedido explicito ou 3 quedas seguidas, e existe .prev
   $porQuedas = [int]$lanc.quedasSeguidas -ge 3
-  $querVoltar = ($pedido -and $pedido.voltar) -or $porQuedas
-  if ($querVoltar -and (Test-Path $prev)) {
+  $pedeVoltar = [bool]($pedido -and $pedido.voltar)
+  if (($pedeVoltar -or $porQuedas) -and (Test-Path $prev)) {
     Instalar $prev
     # versaoRejeitada so no rollback automatico; voltar manual nao rejeita nada
     if ($porQuedas -and $lanc.versaoAplicada) { $lanc.versaoRejeitada = $lanc.versaoAplicada }
@@ -67,8 +72,9 @@ do {
     $lanc.quedasSeguidas = 0
     Write-Host "lancador: voltou para a versao anterior"
   }
-  # voltar pedido mas nao ha .prev: registra o erro e NAO tenta atualizar neste inicio
-  elseif ($querVoltar) {
+  # voltar pedido PELO USUARIO sem .prev: registra o erro e NAO atualiza neste inicio.
+  # (3 quedas sem .prev segue pro atualizar abaixo: uma versao nova ainda pode consertar)
+  elseif ($pedeVoltar) {
     $lanc.erro = 'prev'
     Write-Host "lancador: voltar pedido mas nao existe .prev"
   }
@@ -125,16 +131,19 @@ do {
   # 2 = config/credencial/porta, 10 = atualizacao pedida, 3+lider = rede: nao e culpa do binario
   $pedPos = Ler-Json $pedidoPath
   $naoConta = ($codigo -eq 2) -or ($codigo -eq 10) -or ($pedPos -and $pedPos.motivo -eq 'lider')
-  if (-not $naoConta) {
-    if ($viveuSeg -lt 300) { $lanc.quedasSeguidas = [int]$lanc.quedasSeguidas + 1 }
-    else { $lanc.quedasSeguidas = 0 }
-  }
+  # vida longa (>= VidaMinSeg) zera para QUALQUER codigo; saida cedo so conta se nao e naoConta
+  if ($viveuSeg -ge $VidaMinSeg) { $lanc.quedasSeguidas = 0 }
+  elseif (-not $naoConta) { $lanc.quedasSeguidas = [int]$lanc.quedasSeguidas + 1 }
   # sem pedido o motivo e o proprio codigo (com pedido, o proximo inicio grava o motivo dele)
   if ((-not $pedPos) -and ($codigo -ne 0)) {
     $lanc.ultimaSaida = @{ motivo = "codigo-$codigo"; em = (Get-Date).ToUniversalTime().ToString('o') }
   }
   Gravar-Json $lancPath $lanc
   Write-Host "lancador: exe saiu com $codigo apos $([int]$viveuSeg)s (quedasSeguidas=$($lanc.quedasSeguidas))"
+  if (($codigo -eq 10) -and ($passes -ge 5)) {
+    Write-Host "lancador: saida 10 em $passes voltas seguidas -- desistindo (saida 1)"
+    exit 1
+  }
 } while ($codigo -eq 10)
 
 exit $codigo
