@@ -142,4 +142,6 @@ Instalador `Wader-Setup-v1.0.0.exe` (exe rebuildado no HEAD 5a8b4a1). Sergio rod
 | Tarefa `Wader-Aviso` | Running |
 | `err.log` | só o DEP0040 (`punycode`) do Node 24 |
 
-Pendente de confirmação visual do Sergio: os dois toasts ("Wader parado" / "Wader de volta (v1.0.0)"). Não feitos: instalação por cima (passo 7), desinstalação (8), espera de 5 min (13) — ver abaixo se executados.
+Toasts: os dois do roteiro foram engolidos porque o Windows do notebook estava com **"Não incomodar" ativado** (só prioridade/alarmes passam). Com o modo desligado, um toast de teste disparado pela mesma função `Show-Toast` do `wader-aviso.ps1` instalado apareceu e o Sergio confirmou ("chegou o teste!"). **Runbook da clínica:** conferir que "Não incomodar"/"Assistente de foco" está desligado na PC da recepção, senão o aviso nunca aparece. **Instalação por cima (passo 7) FEITA 07:31:** Sergio rodou o mesmo Setup de novo; sem pedir dados, sem "arquivo em uso" (`stopwait` em `PrepareToInstall`), serviço voltou `Running` sozinho, `/health` com `ultimaSaida: null` e `erroLancador: null` (o `[InstallDelete]` zerou `lancador.json`/`pedido.json` — âncora zero, D5), `bin\` só com `wader.exe`, tarefa `Wader-Aviso` Running. Não feitos (baixo risco, ficam para a visita): desinstalação (8) e espera de 5 min (13).
+
+**Veredito do ensaio: APROVADO** — merge na master + tag `wader-v1.0.0` autorizados pelo Sergio em 12/10 ("1 e 2 - vamos fazer").
