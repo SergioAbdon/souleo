@@ -32,7 +32,8 @@ export function loadConfig(cwd: string = process.cwd()): WaderConfig {
     );
   }
 
-  const raw = fs.readFileSync(configPath, 'utf-8');
+  // PowerShell 5.1 'Set-Content -Encoding UTF8' grava BOM; JSON.parse não tolera.
+  const raw = fs.readFileSync(configPath, 'utf-8').replace(/^\uFEFF/, '');
   let parsed: Partial<WaderConfig>;
 
   try {
