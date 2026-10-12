@@ -122,6 +122,41 @@ describe('iniciarLider', () => {
     l.parar();
   });
 
+  it('aquisição que conclui depois da validade (transação de 100 s) → recusada; tenta de novo no ciclo seguinte', async () => {
+    vi.useFakeTimers();
+    const f = dbFalso();
+    const rapido = f.db.runTransaction;
+    let lenta = true;
+    const db = {
+      doc: f.db.doc,
+      runTransaction: async <T,>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
+        if (!lenta) return rapido(fn);
+        lenta = false;
+        await new Promise((r) => setTimeout(r, 100_000));
+        return rapido(fn);
+      },
+    };
+    const aoVirarLider = vi.fn();
+    const l = iniciarLider({ db: db as any, wsId: 'ws1', eu: EU, aoVirarLider, aoPerder: () => {} });
+    await vi.advanceTimersByTimeAsync(100_000);
+    expect(aoVirarLider).not.toHaveBeenCalled();
+    expect(l.souLider()).toBe(false);
+    await vi.advanceTimersByTimeAsync(20_000); // ciclo de 120 s: transação rápida
+    expect(aoVirarLider).toHaveBeenCalledTimes(1);
+    l.parar();
+  });
+
+  it('aoVirarLider lança → aoPerder("lider") (não fica com cadeado sem workers)', async () => {
+    vi.useFakeTimers();
+    const f = dbFalso();
+    const aoPerder = vi.fn();
+    const l = iniciarLider({ db: f.db as any, wsId: 'ws1', eu: EU, aoVirarLider: () => { throw new Error('boom'); }, aoPerder });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(aoPerder).toHaveBeenCalledWith('lider');
+    expect(l.souLider()).toBe(false);
+    l.parar();
+  });
+
   it('aquisição não sobrepõe: com a 1ª em voo, o intervalo de 1 min não dispara outra', async () => {
     vi.useFakeTimers();
     const f = dbFalso();

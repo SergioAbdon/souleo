@@ -16,6 +16,7 @@ import { registerDicomRoutes } from './api/dicom';
 import { registerReconciliacaoRoutes } from './api/reconciliacao';
 import { registerAtualizacaoRoutes, AtualizacaoDeps } from './api/atualizacao';
 import { montarHealth } from './health';
+import { registrarGuardaLider } from './guarda-lider';
 import type { EstadoWader } from '../lib/estado';
 
 const log = createLogger({ module: 'ui-server' });
@@ -43,7 +44,7 @@ export interface UiServerExtras {
   estado: EstadoWader;
   /** Botões Atualizar/Voltar do /admin (spec §5). */
   atualizacao: AtualizacaoDeps;
-  /** Cadeado (spec §7): não-líder não liga worker pelo botão. */
+  /** Cadeado (spec §7): não-líder só lê — guarda central em guarda-lider.ts. */
   souLider?: () => boolean;
 }
 
@@ -65,15 +66,16 @@ export async function startUiServer(
     decorateReply: false,
   });
 
+  if (extras.souLider) registrarGuardaLider(app, extras.souLider);
   registerHealthRoutes(app, extras.estado);
   registerPageRoutes(app);
   registerApiRoutes(app, config);
   registerAgendamentosRoutes(app, config);
   registerProcedimentosRoutes(app, config);
   registerOrthancConfigRoutes(app, config, workspaceRepo);
-  registerWorklistRoutes(app, config, extras.worklistWorker, extras.souLider);
-  registerDicomRoutes(app, config, extras.dicomWorker ?? null, orthancClient, extras.souLider);
-  registerReconciliacaoRoutes(app, config, orthancClient, extras.dicomWorker ?? null, extras.souLider);
+  registerWorklistRoutes(app, config, extras.worklistWorker);
+  registerDicomRoutes(app, config, extras.dicomWorker ?? null, orthancClient);
+  registerReconciliacaoRoutes(app, config, orthancClient, extras.dicomWorker ?? null);
   registerAtualizacaoRoutes(app, config, extras.atualizacao);
 
   await app.listen({ host: '127.0.0.1', port: config.ui.port });

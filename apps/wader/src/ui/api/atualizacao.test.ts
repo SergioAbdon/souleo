@@ -98,3 +98,26 @@ describe('POST /api/admin/voltar', () => {
     expect(sair).not.toHaveBeenCalled();
   });
 });
+
+describe('saída agendada bloqueia as duas rotas', () => {
+  const h = { 'x-wader-pin': '123456' };
+  it('/atualizar 200 → /voltar imediato leva 409 saindo; sai uma vez só', async () => {
+    const app = makeApp();
+    expect((await post(app, '/api/admin/atualizar', h)).statusCode).toBe(200);
+    const r = await post(app, '/api/admin/voltar', h);
+    expect(r.statusCode).toBe(409);
+    expect(r.json()).toEqual({ ok: false, error: 'saindo' });
+    await esperarSaida();
+    expect(sair).toHaveBeenCalledTimes(1);
+  });
+  it('/voltar 200 → /atualizar leva 409 saindo e não baixa', async () => {
+    const app = makeApp();
+    expect((await post(app, '/api/admin/voltar', h)).statusCode).toBe(200);
+    const r = await post(app, '/api/admin/atualizar', h);
+    expect(r.statusCode).toBe(409);
+    expect(r.json()).toEqual({ ok: false, error: 'saindo' });
+    expect(baixar).not.toHaveBeenCalled();
+    await esperarSaida();
+    expect(sair).toHaveBeenCalledTimes(1);
+  });
+});

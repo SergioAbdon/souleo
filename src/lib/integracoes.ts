@@ -19,6 +19,8 @@ export type Integracao = {
   maquina?: string;                  // wader
   /** Wader: cadeado de líder (apps/wader/src/adapters/lider.ts) — quem está processando. */
   lider?: { agentId: string; maquina: string; ate: number; geracao: number } | null; // wader
+  /** Legado: Wader antigo (< 1.0) ainda grava; some quando a clínica migrar. */
+  conflito?: string | null;          // wader
   agentId?: string;                  // wader
   /** Wader: último erro do tick de ingestão DICOM (heartbeat.ts). */
   ultimoErroIngest?: string | null;  // wader

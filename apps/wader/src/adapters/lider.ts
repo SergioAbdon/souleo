@@ -111,13 +111,24 @@ export function iniciarLider(o: LiderOpts): { parar(): void; souLider(): boolean
         log.warn({ outra }, 'Outro Wader ativo — só UI; tento de novo em 1 min');
         return;
       }
+      // Transação que demorou mais que a validade devolve um `ate` já vencido:
+      // outro Wader pode ter pegado. Recusa e tenta no próximo ciclo.
+      if (agora() - t >= VALIDADE_MS) {
+        log.warn('Aquisição concluiu fora da validade — recusada; tento de novo');
+        return;
+      }
       geracao = r.geracao;
       outra = null;
       ultimaRenovacaoOk = t;
       if (timer) clearInterval(timer);
       timer = setInterval(() => void renovarAgora(), o.intervaloRenovacaoMs ?? 30_000);
       log.info({ geracao }, 'Sou o líder deste workspace');
-      o.aoVirarLider();
+      try {
+        o.aoVirarLider();
+      } catch (e) {
+        log.fatal({ err: (e as Error).message }, 'Workers não subiram — larga o cadeado');
+        perder();
+      }
     } catch (e) {
       log.warn({ err: (e as Error).message }, 'Aquisição do cadeado falhou — tento de novo');
     } finally {

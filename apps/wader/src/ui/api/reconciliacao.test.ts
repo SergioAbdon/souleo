@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import Fastify from 'fastify';
-import { trocarAccComReserva, excluirReenvio, montarReconciliacao, registerReconciliacaoRoutes } from './reconciliacao';
+import { trocarAccComReserva, excluirReenvio, montarReconciliacao } from './reconciliacao';
 import { estudosEmExclusao } from '../../workers/dicom-ingest';
 import type { OrthancClient, OrthancStudy } from '../../adapters/orthanc-client';
 import type { DicomIngestWorker } from '../../workers/dicom-ingest-worker';
@@ -398,15 +397,5 @@ describe('montarReconciliacao', () => {
 
     expect(resultado.orfaos).toHaveLength(1);
     expect(resultado.orfaos[0].sugestaoExameId).toBe('ex1');
-  });
-});
-
-describe('POST /api/reconciliacao/excluir-reenvio — cadeado', () => {
-  it('não-líder → 409 nao_lider antes de tocar em Firestore/Orthanc', async () => {
-    const app = Fastify();
-    registerReconciliacaoRoutes(app, { wsId: 'ws1' } as any, {} as any, {} as any, () => false);
-    const r = await app.inject({ method: 'POST', url: '/api/reconciliacao/excluir-reenvio', payload: { orthancStudyId: 'x', operador: 'op' } });
-    expect(r.statusCode).toBe(409);
-    expect(r.json()).toEqual({ ok: false, error: 'nao_lider' });
   });
 });

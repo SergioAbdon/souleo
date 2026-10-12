@@ -42,7 +42,7 @@ export class DicomIngestWorker {
   private tickEmAndamento = false;
   private execCount = 0;
   private lastTickAt: Date | null = null;
-  // Vigia (spec §6 + D2): FIM do tick (finally) ou PROGRESSO (estudo processado) — qualquer um prova que o laço não travou. NÃO reusar lastTickAt (início do tick).
+  // Vigia (spec §6 + D2): FIM do tick (finally) ou PROGRESSO em qualquer laço (medidas NewSeries, StableStudy, flag reprocessarDicom) — qualquer um prova que o laço não travou. NÃO reusar lastTickAt (início do tick).
   private ultimoTickOkEm: Date | null = null;
   // Aviso "sem Orthanc" (spec §9): última resposta do /changes.
   private ultimoOrthancOkEm: Date | null = null;
@@ -167,6 +167,7 @@ export class DicomIngestWorker {
                 forceSr: true,
                 soMedidas: true,
               });
+              this.ultimoTickOkEm = new Date(); // progresso: medidas extraídas (vigia)
             }
           } catch {
             // Estudo pode ter sumido entre o change e agora — StableStudy cobre depois.
@@ -333,6 +334,7 @@ export class DicomIngestWorker {
               dicomUltimoErroEm: FieldValue.serverTimestamp(),
             });
           }
+          this.ultimoTickOkEm = new Date(); // progresso: flag consumida (vigia)
         }
       } catch (err) {
         log.warn({ err }, 'Falha ao consumir flag reprocessarDicom — tentará no próximo tick');

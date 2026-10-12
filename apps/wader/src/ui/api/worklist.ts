@@ -21,7 +21,6 @@ export function registerWorklistRoutes(
   app: FastifyInstance,
   config: WaderConfig,
   worker: WorklistSyncWorker | null = null,
-  souLider?: () => boolean,
 ): void {
   app.post<{ Body?: { data?: string } }>('/api/worklist/sync', async (req, reply) => {
     try {
@@ -85,8 +84,6 @@ export function registerWorklistRoutes(
         message: 'Worker não foi inicializado (pasta inválida?). Reinicie o Wader após corrigir.',
       });
     }
-    // Não-líder não liga worker nem pelo botão (spec §7): seria o 2º escritor.
-    if (souLider && !souLider()) return reply.status(409).send({ ok: false, error: 'nao_lider' });
     worker.start();
     return reply.send({ ok: true, ...worker.getStatus() });
   });

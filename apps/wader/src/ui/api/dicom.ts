@@ -23,7 +23,6 @@ export function registerDicomRoutes(
   config: WaderConfig,
   worker: DicomIngestWorker | null,
   client: OrthancClient,
-  souLider?: () => boolean,
 ): void {
   app.get('/api/dicom/test', async (_req, reply) => {
     const result = await client.testConnection();
@@ -78,8 +77,6 @@ export function registerDicomRoutes(
     if (!worker) {
       return reply.status(409).send({ ok: false, error: 'worker_nao_configurado' });
     }
-    // Não-líder não liga worker nem pelo botão (spec §7): seria o 2º escritor.
-    if (souLider && !souLider()) return reply.status(409).send({ ok: false, error: 'nao_lider' });
     worker.start();
     return reply.send({ ok: true, ...worker.getStatus() });
   });
@@ -96,7 +93,6 @@ export function registerDicomRoutes(
     if (!worker) {
       return reply.status(409).send({ ok: false, error: 'worker_nao_configurado' });
     }
-    if (souLider && !souLider()) return reply.status(409).send({ ok: false, error: 'nao_lider' });
     worker.resetCursor();
     return reply.send({ ok: true, ...worker.getStatus() });
   });

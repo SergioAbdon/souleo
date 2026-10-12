@@ -675,8 +675,12 @@ export default function IntegracoesPage() {
                     <p className="text-xs text-ink-3">{i.versao ? `v${i.versao}` : 'Versão desconhecida'} · {i.maquina || 'máquina desconhecida'}</p>
                     {/* Um escritor só no doc (spec Wader A §7): o cartão mostra quem é
                         o líder; "2 Waders" agora é aviso local na clínica (fase C traz pra cá). */}
-                    {i.lider && i.lider.maquina !== i.maquina && (
-                      <p className="text-xs text-amber-600">⚠️ Líder: {i.lider.maquina} (batimento de {i.maquina || '?'})</p>
+                    {i.lider && <p className="text-xs text-ink-3">Líder: {i.lider.maquina}</p>}
+                    {/* Legado: Wader < 1.0 ainda grava `conflito` (sem cadeado) — some na migração. */}
+                    {!i.lider && i.conflito && (
+                      <p className="text-xs text-red-600">
+                        ⚠️ 2 Waders ativos: {i.maquina || 'esta máquina'} + {i.conflito}
+                      </p>
                     )}
                     {i.ultimoErroIngest && (
                       <p className="text-xs text-red-600" title={i.ultimoErroIngest}>

@@ -10,7 +10,7 @@
 
 import os from 'os';
 import { readFileSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
+import { join } from 'path';
 import { loadConfig, ConfigError } from './config/load';
 import { logger, createLogger } from './logger';
 import { CODIGO, sairCom, lerLancador, dirUpdates } from './lib/saida';
@@ -132,8 +132,8 @@ async function main(): Promise<void> {
     outraMaquina: () => lider?.outraMaquina() ?? null,
     ultimoOrthancOkEm: () => dicomWorker.getUltimoOrthancOkEm(),
     lancador,
-    // .prev mora ao lado do exe (Program Files), não na pasta de dados.
-    prevExiste: () => existsSync(join(dirname(process.execPath), 'wader.exe.prev')),
+    // .prev mora ao lado do exe (Program Files) e acompanha o nome real do binário, como o lançador.
+    prevExiste: () => existsSync(process.execPath + '.prev'),
   };
 
   const subirWorkers = () => {
@@ -152,6 +152,7 @@ async function main(): Promise<void> {
     pararVigia = iniciarVigia({
       ultimoTickOkEm: () => dicomWorker.getUltimoTickOkEm(),
       ligado: () => dicomWorker.isRunning(),
+      limiteMs: (config.polling.vigiaSeg ?? 300) * 1000,
       aoTravar: () => {
         log.fatal({ ultimoTickOkEm: dicomWorker.getUltimoTickOkEm() }, 'Ingestão travada — saindo pro serviço reiniciar');
         sairCom(CODIGO.VIGIA, { motivo: 'travado' });

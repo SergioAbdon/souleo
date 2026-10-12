@@ -379,4 +379,19 @@ describe("vigia: carimbos do tick", () => {
     expect(vistos[0]).toBeNull();
     expect(vistos[1]).toBeInstanceOf(Date);
   });
+
+  it("carimba PROGRESSO a cada reprocessarDicom consumido — laço de flags longo não parece travado", async () => {
+    exames["r1"] = { reprocessarDicom: true, dicomOrthancStudyId: "S1" };
+    exames["r2"] = { reprocessarDicom: true, dicomOrthancStudyId: "S2" };
+    const w = makeWorker("progresso-flags");
+    const vistos: Array<Date | null> = [];
+    processarEstudoImpl = async () => {
+      vistos.push(w.getUltimoTickOkEm()); // visto DENTRO do tick, antes do finally
+      return resultado(2, 0);
+    };
+    await (w as any).tick();
+    expect(vistos).toHaveLength(2);
+    expect(vistos[0]).toBeNull();
+    expect(vistos[1]).toBeInstanceOf(Date);
+  });
 });

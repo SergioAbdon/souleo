@@ -184,7 +184,7 @@
           fmtField('Líder', h.lider ? '<span class="pill green">SIM</span>' : `<span class="pill red">NÃO</span> ${h.outraMaquina ? '(' + escapeHtml(h.outraMaquina) + ')' : ''}`) +
           (h.versaoRejeitada ? fmtField('Versão rejeitada', `v${escapeHtml(h.versaoRejeitada)} (caiu 3× — voltou)`) : '') +
           (h.erroLancador ? `<pre class="error">Lançador: ${escapeHtml(h.erroLancador)}</pre>` : '') +
-          (h.ultimaSaida ? fmtField('Última saída', `${escapeHtml(h.ultimaSaida.motivo)} em${new Date(h.ultimaSaida.em).toLocaleString('pt-BR')}`) : '') +
+          (h.ultimaSaida ? fmtField('Última saída', `${escapeHtml(h.ultimaSaida.motivo)} em ${new Date(h.ultimaSaida.em).toLocaleString('pt-BR')}`) : '') +
           (h.aviso ? `<pre class="error">${escapeHtml(h.aviso)}</pre>` : '');
         // a versão que acabou de cair 3× não se oferece de novo
         $('btn-atualizar').disabled = !h.versaoDisponivel || h.versaoRejeitada === h.versaoDisponivel;

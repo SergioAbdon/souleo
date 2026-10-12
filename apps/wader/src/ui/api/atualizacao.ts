@@ -23,6 +23,7 @@ export interface AtualizacaoDeps {
  */
 export function registerAtualizacaoRoutes(app: FastifyInstance, config: WaderConfig, deps: AtualizacaoDeps): void {
   let emVoo = false; // um download por vez: duplo clique não pisa no mesmo .tmp
+  let saidaAgendada = false; // pedido já vai sair: o 2º pedido (atualizar×voltar) não sobrescreve
   const guarda = config.adminPin ? new GuardaPin(config.adminPin) : null;
 
   const autorizar = (req: FastifyRequest, reply: FastifyReply): FastifyReply | null => {
@@ -31,11 +32,18 @@ export function registerAtualizacaoRoutes(app: FastifyInstance, config: WaderCon
     const v = guarda.verificar(req.headers['x-wader-pin'] as string | undefined);
     if (v === 'bloqueado') return reply.status(429).send({ ok: false, error: 'bloqueado', message: '5 erros: tente em 15 min' });
     if (v === 'errado') return reply.status(401).send({ ok: false, error: 'pin' });
+    if (saidaAgendada) return reply.status(409).send({ ok: false, error: 'saindo' });
     return null;
   };
 
   // Responde antes de sair: o navegador precisa do 200 pra mostrar "reiniciando".
-  const sairDepois = (pedido: Omit<Pedido, 'em'>) => setTimeout(() => deps.sair(CODIGO.ATUALIZACAO, pedido), 300);
+  // false = outra saída já agendada (ex.: /voltar chegou durante o download do /atualizar).
+  const sairDepois = (pedido: Omit<Pedido, 'em'>): boolean => {
+    if (saidaAgendada) return false;
+    saidaAgendada = true;
+    setTimeout(() => deps.sair(CODIGO.ATUALIZACAO, pedido), 300);
+    return true;
+  };
 
   app.post('/api/admin/atualizar', async (req, reply) => {
     const negado = autorizar(req, reply);
@@ -43,17 +51,16 @@ export function registerAtualizacaoRoutes(app: FastifyInstance, config: WaderCon
     const info = deps.release();
     if (!info) return reply.status(409).send({ ok: false, error: 'sem_versao_nova' });
     if (emVoo) return reply.status(409).send({ ok: false, error: 'em_andamento' });
-    emVoo = true;
+    emVoo = true; // só solta se o download falhar: com saída agendada, o processo vai embora
     try {
       await deps.baixar(info, deps.dirUpdates());
     } catch (err) {
+      emVoo = false;
       log.error({ err }, 'Download da release falhou');
       return reply.status(502).send({ ok: false, error: 'download', message: (err as Error).message });
-    } finally {
-      emVoo = false;
     }
+    if (!sairDepois({ atualizar: info.versao, motivo: 'atualizacao' })) return reply.status(409).send({ ok: false, error: 'saindo' });
     log.warn({ versao: info.versao }, 'Atualização pedida pelo painel — saindo pro lançador aplicar');
-    sairDepois({ atualizar: info.versao, motivo: 'atualizacao' });
     return reply.send({ ok: true, versao: info.versao });
   });
 
@@ -61,8 +68,8 @@ export function registerAtualizacaoRoutes(app: FastifyInstance, config: WaderCon
     const negado = autorizar(req, reply);
     if (negado) return negado;
     if (!deps.prevExiste()) return reply.status(409).send({ ok: false, error: 'sem_prev' });
+    if (!sairDepois({ voltar: true, motivo: 'rollback' })) return reply.status(409).send({ ok: false, error: 'saindo' });
     log.warn('Rollback pedido pelo painel — saindo pro lançador voltar');
-    sairDepois({ voltar: true, motivo: 'rollback' });
     return reply.send({ ok: true });
   });
 }
