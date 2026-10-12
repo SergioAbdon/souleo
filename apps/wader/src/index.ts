@@ -139,13 +139,14 @@ async function main(): Promise<void> {
   };
 
   const app = await startUiServer(config, {
-    worklistWorker,
-    dicomWorker,
+    // UI-only nunca é dono dos workers: null restaura as guardas 409 worker_nao_configurado.
+    worklistWorker: uiOnly ? null : worklistWorker,
+    dicomWorker: uiOnly ? null : dicomWorker,
     orthancClient,
     workspaceRepo,
     versao: lerVersaoPackage(),
     lancador,
-    souLider: () => (uiOnly ? true : lider?.souLider() ?? false),
+    souLider: () => lider?.souLider() ?? false,
   });
 
   if (uiOnly) {

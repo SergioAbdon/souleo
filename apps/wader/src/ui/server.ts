@@ -71,7 +71,7 @@ export async function startUiServer(
   registerOrthancConfigRoutes(app, config, workspaceRepo);
   registerWorklistRoutes(app, config, extras.worklistWorker, extras.souLider);
   registerDicomRoutes(app, config, extras.dicomWorker ?? null, orthancClient, extras.souLider);
-  registerReconciliacaoRoutes(app, config, orthancClient, extras.dicomWorker ?? null);
+  registerReconciliacaoRoutes(app, config, orthancClient, extras.dicomWorker ?? null, extras.souLider);
 
   await app.listen({ host: '127.0.0.1', port: config.ui.port });
 

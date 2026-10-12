@@ -96,6 +96,7 @@ export function registerDicomRoutes(
     if (!worker) {
       return reply.status(409).send({ ok: false, error: 'worker_nao_configurado' });
     }
+    if (souLider && !souLider()) return reply.status(409).send({ ok: false, error: 'nao_lider' });
     worker.resetCursor();
     return reply.send({ ok: true, ...worker.getStatus() });
   });

@@ -4,11 +4,12 @@ import { tentarAdquirir, renovar, iniciarLider, VALIDADE_MS } from './lider';
 /** Firestore de mentira: 1 doc, transação serializada (o que importa aqui é a lógica). */
 function dbFalso(inicial: Record<string, unknown> = {}) {
   let doc: Record<string, unknown> = { ...inicial };
-  let falhar = false;
+  let falhar: false | 'rejeita' | 'trava' = false;
   const ref = { path: 'workspaces/ws1/integracoes/wader' };
   const db = {
     doc: () => ref,
     runTransaction: async <T,>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
+      if (falhar === 'trava') return new Promise<T>(() => {}); // rede pendurada: nunca resolve
       if (falhar) throw new Error('UNAVAILABLE');
       const tx = {
         get: async () => ({ data: () => doc }),
@@ -17,7 +18,7 @@ function dbFalso(inicial: Record<string, unknown> = {}) {
       return fn(tx);
     },
   };
-  return { db, lider: () => doc.lider as { agentId: string; maquina: string; ate: number; geracao: number } | undefined, setFalhar: (v: boolean) => { falhar = v; } };
+  return { db, lider: () => doc.lider as { agentId: string; maquina: string; ate: number; geracao: number } | undefined, setFalhar: (v: false | 'rejeita' | 'trava') => { falhar = v; } };
 }
 
 const EU = { agentId: 'pc-1234', maquina: 'PC' };
@@ -107,17 +108,29 @@ describe('iniciarLider', () => {
     l.parar();
   });
 
-  it('sem rede por 90 s → aoPerder("lider"); falha curta não derruba', async () => {
+  it.each(['trava', 'rejeita'] as const)('sem rede por 90 s (%s) → aoPerder("lider") por relógio; falha curta não derruba', async (modo) => {
     vi.useFakeTimers();
     const f = dbFalso();
     const aoPerder = vi.fn();
     const l = iniciarLider({ db: f.db as any, wsId: 'ws1', eu: EU, aoVirarLider: () => {}, aoPerder });
     await vi.advanceTimersByTimeAsync(0);
-    f.setFalhar(true);
-    await vi.advanceTimersByTimeAsync(60_000); // 2 renovações falhas (30 s, 60 s)
+    f.setFalhar(modo);
+    await vi.advanceTimersByTimeAsync(60_000); // 2 renovações falhas/penduradas (30 s, 60 s)
     expect(aoPerder).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(30_000); // 90 s sem renovar
     expect(aoPerder).toHaveBeenCalledWith('lider');
+    l.parar();
+  });
+
+  it('aquisição não sobrepõe: com a 1ª em voo, o intervalo de 1 min não dispara outra', async () => {
+    vi.useFakeTimers();
+    const f = dbFalso();
+    f.setFalhar('trava');
+    const aoVirarLider = vi.fn();
+    const spy = vi.spyOn(f.db, 'runTransaction');
+    const l = iniciarLider({ db: f.db as any, wsId: 'ws1', eu: EU, aoVirarLider, aoPerder: () => {} });
+    await vi.advanceTimersByTimeAsync(180_000);
+    expect(spy).toHaveBeenCalledTimes(1);
     l.parar();
   });
 });

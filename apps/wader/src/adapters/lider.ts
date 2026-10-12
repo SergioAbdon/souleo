@@ -79,19 +79,33 @@ export function iniciarLider(o: LiderOpts): { parar(): void; souLider(): boolean
   };
 
   const renovarAgora = async () => {
+    // Prazo por relógio: uma transação pendurada (rede morta) nunca rejeita, então
+    // o teste tem de rodar a cada tick, antes de tentar — não só quando falha.
+    if (agora() - ultimaRenovacaoOk >= VALIDADE_MS) {
+      log.warn('90 s sem renovar o cadeado — saindo');
+      perder();
+      return;
+    }
+    const t = agora(); // o `ate` gravado nasce de t; é a partir dele que o prazo conta
     try {
-      const ok = await renovar(o.db, o.wsId, o.eu, geracao!, agora());
+      const ok = await renovar(o.db, o.wsId, o.eu, geracao!, t);
       if (!ok) { log.warn('Outro Wader tomou a liderança'); perder(); return; }
-      ultimaRenovacaoOk = agora();
+      ultimaRenovacaoOk = t;
     } catch (e) {
       log.warn({ err: (e as Error).message }, 'Renovação do cadeado falhou');
-      if (agora() - ultimaRenovacaoOk >= VALIDADE_MS) perder();
     }
   };
 
+  let emVoo = false;
   const adquirirAgora = async () => {
+    if (parado || emVoo) return;
+    emVoo = true;
     try {
-      const r = await tentarAdquirir(o.db, o.wsId, o.eu, agora());
+      const t = agora();
+      // `l.ate < agoraMs` compara relógios de máquinas diferentes: skew desloca a
+      // tomada pelo tamanho do skew (aceito — a janela é 90 s).
+      const r = await tentarAdquirir(o.db, o.wsId, o.eu, t);
+      if (parado) return;
       if (!r.ok) {
         outra = r.maquina;
         log.warn({ outra }, 'Outro Wader ativo — só UI; tento de novo em 1 min');
@@ -99,13 +113,15 @@ export function iniciarLider(o: LiderOpts): { parar(): void; souLider(): boolean
       }
       geracao = r.geracao;
       outra = null;
-      ultimaRenovacaoOk = agora();
+      ultimaRenovacaoOk = t;
       if (timer) clearInterval(timer);
       timer = setInterval(() => void renovarAgora(), o.intervaloRenovacaoMs ?? 30_000);
       log.info({ geracao }, 'Sou o líder deste workspace');
       o.aoVirarLider();
     } catch (e) {
       log.warn({ err: (e as Error).message }, 'Aquisição do cadeado falhou — tento de novo');
+    } finally {
+      emVoo = false;
     }
   };
 

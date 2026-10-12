@@ -45,17 +45,18 @@ export function iniciarBatimento(
     // Só o líder bate (spec §7) — um escritor só, o cartão não pisca. A
     // detecção de 2 Waders mudou de lugar: cadeado (lider.ts) + aviso local.
     try {
-      const extra = extras.campos?.() ?? {};
-      delete extra.lider; // cinto: a chave lider é das transações do cadeado
+      // cinto: a chave lider é das transações do cadeado (cópia, não muta o chamador)
+      const { lider: _ignorado, ...extra } = extras.campos?.() ?? {};
+      void _ignorado;
       await ref.set(
         {
+          ...extra, // primeiro: campos nunca sobrescreve o núcleo abaixo
           tipo: 'wader',
           visto: new Date(),
           versao,
           maquina: os.hostname(),
           agentId: extras.agentId,
           ultimoErroIngest: extras.ultimoErroIngest?.() ?? null,
-          ...extra,
         },
         { merge: true },
       );

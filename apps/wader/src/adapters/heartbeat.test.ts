@@ -180,12 +180,14 @@ describe('iniciarBatimento', () => {
     const client = { system: async () => ({}) };
     const parar = iniciarBatimento('ws1', '1.2.3', repo, client, {
       agentId: 'ag-1',
-      campos: () => ({ versaoDisponivel: '1.0.1', aviso: null, lider: { agentId: 'hack' } }),
+      campos: () => ({ versaoDisponivel: '1.0.1', aviso: null, lider: { agentId: 'hack' }, maquina: 'hack', agentId: 'hack' }),
     });
     await vi.advanceTimersByTimeAsync(0);
     const data = callFor('workspaces/ws1/integracoes/wader')[0].data as Record<string, unknown>;
     expect(data.versaoDisponivel).toBe('1.0.1');
     expect(data).not.toHaveProperty('lider');
+    expect(data.maquina).not.toBe('hack'); // campos nunca sobrescreve o núcleo
+    expect(data.agentId).toBe('ag-1');
     parar();
     vi.useRealTimers();
   });

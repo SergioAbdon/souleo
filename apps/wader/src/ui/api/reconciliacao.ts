@@ -70,6 +70,7 @@ export function registerReconciliacaoRoutes(
   config: WaderConfig,
   client: OrthancClient | null,
   dicomWorker: DicomIngestWorker | null,
+  souLider?: () => boolean,
 ): void {
   app.get<{ Querystring: { data?: string } }>('/api/reconciliacao', async (req, reply) => {
     const data = req.query.data || hojeClinica();
@@ -178,6 +179,8 @@ export function registerReconciliacaoRoutes(
       operador?: string;
     };
   }>('/api/reconciliacao/excluir-reenvio', async (req, reply) => {
+    // Worker null cai na guarda "UI-only" dentro de excluirReenvio; não-líder não exclui (spec §7).
+    if (dicomWorker && souLider && !souLider()) return reply.status(409).send({ ok: false, error: 'nao_lider' });
     try {
       const result = await excluirReenvio(getDb(), client, dicomWorker, config.wsId, req.body ?? {});
       const { status, ...body } = result;
