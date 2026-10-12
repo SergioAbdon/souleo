@@ -50,6 +50,37 @@ Describe 'wader-launch.ps1' {
     Test-Path (Join-Path $a.Prog 'stub.cmd.prev') | Should -BeFalse
   }
 
+  It 'e idempotente: exe ja e o novo (queda apos a copia) nao sobrescreve o .prev' {
+    $a = New-Ambiente
+    New-Stub (Join-Path $a.Prog 'stub.cmd.prev') 0 'VELHO'
+    $novo = Join-Path $a.Upd 'wader-v1.0.1.exe'
+    New-Stub $novo 0 'NOVO'
+    New-Stub (Join-Path $a.Prog 'stub.cmd') 0 'NOVO'
+    Set-Content "$novo.sha256" -Value ((Sha $novo) + '  wader.exe') -Encoding ASCII
+    Set-Content (Join-Path $a.Upd 'pedido.json') -Value '{"atualizar":"1.0.1","motivo":"atualizacao","em":"x"}' -Encoding ASCII
+    $saida = Rodar $a
+    ($saida -join "`n") | Should -Match 'NOVO'
+    Get-Content (Join-Path $a.Prog 'stub.cmd.prev') -Raw | Should -Match 'VELHO'
+    Test-Path (Join-Path $a.Upd 'pedido.json') | Should -BeFalse
+    (Lanc $a).versaoAplicada | Should -Be '1.0.1'
+  }
+
+  It 'voltar pedido sem .prev: segue com o exe atual e grava erro=prev' {
+    $a = New-Ambiente
+    New-Stub (Join-Path $a.Prog 'stub.cmd') 0 'ATUAL'
+    Set-Content (Join-Path $a.Upd 'pedido.json') -Value '{"voltar":true,"motivo":"rollback","em":"x"}' -Encoding ASCII
+    ((Rodar $a) -join "`n") | Should -Match 'ATUAL'
+    (Lanc $a).erro | Should -Be 'prev'
+    Test-Path (Join-Path $a.Upd 'pedido.json') | Should -BeFalse
+  }
+
+  It 'exe ausente conta como queda (codigo 1) em vez de matar o lancador' {
+    $a = New-Ambiente
+    Rodar $a | Out-Null
+    $global:CodigoSaida | Should -Be 1
+    (Lanc $a).quedasSeguidas | Should -Be 1
+  }
+
   It 'volta pra .prev por pedido voltar e por 3 quedas seguidas (versaoRejeitada = versaoAplicada)' {
     # por pedido
     $a = New-Ambiente

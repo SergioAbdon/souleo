@@ -49,6 +49,11 @@ if ($querVoltar -and (Test-Path $prev)) {
   $lanc.quedasSeguidas = 0
   Write-Host "lancador: voltou para a versao anterior"
 }
+# voltar pedido mas nao ha .prev: registra o erro e NAO tenta atualizar neste inicio
+elseif ($querVoltar) {
+  $lanc.erro = 'prev'
+  Write-Host "lancador: voltar pedido mas nao existe .prev"
+}
 # 3. senao, atualizar: binario baixado + SHA-256 conferido (unica conferencia de SHA)
 elseif ($pedido -and $pedido.atualizar) {
   $v = [string]$pedido.atualizar
@@ -58,7 +63,8 @@ elseif ($pedido -and $pedido.atualizar) {
         ((Get-Content $shaPath -Raw) -match '^\s*([0-9a-fA-F]{64})') -and
         ($Matches[1].ToLower() -eq (Sha256 $novo))
   if ($ok) {
-    Copy-Item -Force $exe $prev
+    # idempotente: se o exe ja e o novo (queda de luz apos a copia), nao sobrescreve o .prev
+    if ((Sha256 $exe) -ne (Sha256 $novo)) { Copy-Item -Force $exe $prev }
     Copy-Item -Force $novo $exe
     $lanc.versaoAplicada = $v
     $lanc.Remove('versaoRejeitada')
@@ -73,14 +79,17 @@ elseif ($pedido -and $pedido.atualizar) {
 # 4. ultimaSaida vem do pedido; pedido atendido some
 if ($pedido) {
   if ($pedido.motivo) { $lanc.ultimaSaida = @{ motivo = [string]$pedido.motivo; em = [string]$pedido.em } }
-  Remove-Item -Force $pedidoPath
 }
+# lancador.json ANTES de apagar o pedido: queda entre os dois nunca deixa exe novo sem versaoAplicada
 Gravar-Json $lancPath $lanc
+if ($pedido) { Remove-Item -Force $pedidoPath }
 
 # 5. roda o exe e espera (stdout/stderr herdados -> log do WinSW)
+# cwd = DataDir: o exe resolve updates/ a partir do process.cwd()
 $inicio = Get-Date
-& $exe
-$codigo = $LASTEXITCODE
+Set-Location $DataDir
+try { & $exe; $codigo = $LASTEXITCODE }
+catch { Write-Host "lancador: nao consegui executar $exe : $($_.Exception.Message)"; $codigo = 1 }
 if ($null -eq $codigo) { $codigo = 1 }
 $viveuSeg = ((Get-Date) - $inicio).TotalSeconds
 if ($codigo -eq 10) { $lanc.quedasSeguidas = 0 }          # saida planejada nao e queda
