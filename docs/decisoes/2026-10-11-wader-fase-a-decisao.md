@@ -58,11 +58,14 @@ Já provado sem admin (12/10): `wader.exe` rodado de uma pasta de dados **sem `N
 1. Se o exe mudou: `cd apps\wader; npm run build; npm run pkg`; WinSW 2.12.0 x64 em `build\wader-service.exe`; `& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" /Q /DVersao=0.0.1 installer\wader.iss`. Rodar `build\Wader-Setup-v0.0.1.exe` como admin (SmartScreen → "Mais informações → Executar assim mesmo"). Preencher `wader-dev`, worklists `C:\Users\sergi\.wader\worklists`, PIN `123456`, `sa.json` = `C:\Users\sergi\.wader\sa.json`.
 2. `Get-Service Wader` → `Running`. `Get-Content C:\ProgramData\Wader\logs\wader-service.out.log -Tail 20` → "Sou o líder", "UI server iniciado". `curl.exe -s http://127.0.0.1:8043/health` → `schema: 1`.
 3. **ACL:** `Get-Acl C:\ProgramData\Wader | fl` → só Administradores, SYSTEM e NETWORK SERVICE (nada de Usuários, nada herdado). `icacls C:\ProgramData\Wader\sa.json` → idem, NetworkService só leitura (R).
-4. **Matar e ver levantar:** `Stop-Process -Name wader -Force` → em ~10 s `Get-Service Wader` volta a `Running`; `C:\ProgramData\Wader\lancador.json` tem `quedasSeguidas: 1`.
+4. **Matar e ver levantar:** `Stop-Process -Name wader -Force` → em ~10 s `Get-Service Wader` volta a `Running`; `C:\ProgramData\Wader\updates\lancador.json` tem `quedasSeguidas: 1`.
 5. **Vigia:** coberto por teste unitário. (Opcional: apontar `integracoes/orthanc.url` do `wader-dev` pra um IP que não responde e ver `aviso: "Wader sem Orthanc"` no `/health` após 5 min.)
 6. **Toast:** logoff/logon (a tarefa dispara ao logon) ou `Start-ScheduledTask Wader-Aviso`; `Stop-Service Wader` → toast "Wader parado"; `Start-Service Wader` → "Wader de volta".
 7. **Atualização por cima:** rodar o mesmo Setup de novo → não pede dados (config existe), sem "arquivo em uso" (o serviço para em `PrepareToInstall`, antes da cópia), serviço volta a `Running`.
 8. **Desinstalar** pelo Painel de Controle → serviço some, tarefa `Wader-Aviso` some, `C:\ProgramData\Wader` continua.
+9. **Atualização de verdade (lançador):** forjar `C:\ProgramData\Wader\updates\pedido.json` = `{"atualizar":"0.0.1","motivo":"atualizacao","em":"<agora ISO>"}` com `updates\wader-v0.0.1.exe` (cópia do próprio `C:\Program Files\Wader\wader.exe`) + `updates\wader-v0.0.1.exe.sha256` correto (`(Get-FileHash ... -Algorithm SHA256).Hash`) → `Restart-Service Wader` → serviço volta `Running`, `pedido.json` sumiu, `updates\lancador.json` tem `versaoAplicada = 0.0.1`. (Prova que NetworkService escreve em `{app}`: o lançador copiou por cima de `wader.exe`.) Atenção: com cópia **idêntica** o `wader.exe.prev` NÃO é criado (guarda de idempotência do lançador: SHA igual não sobrescreve o `.prev`); ele só aparece quando o exe novo é diferente (ex.: o exe de uma build nova).
+
+Nota: upgrade **não** re-executa `wader-service.exe install` (o `Check: not ServicoExiste` pula). Mudança no xml que mexe no registro do serviço (conta, `startmode`, `onfailure`) exige `wader-service.exe uninstall` + `install` manual, como admin.
 
 Anotar aqui qualquer desvio (ex.: WinSW recusou NetworkService → contorno `sc.exe config Wader obj= "NT AUTHORITY\NetworkService"`).
 

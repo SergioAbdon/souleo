@@ -20,4 +20,7 @@ $principal = New-ScheduledTaskPrincipal -GroupId 'S-1-5-32-545' -RunLevel Limite
 $cfg = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew `
   -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 Register-ScheduledTask -TaskName $nome -Action $acao -Trigger $gatilho -Principal $principal -Settings $cfg | Out-Null
+# liga o loop do toast ja (apos upgrade nao espera o proximo logon). O instalador roda
+# elevado, mas a tarefa roda sob o principal do grupo Users, nao como admin.
+Start-ScheduledTask -TaskName $nome -ErrorAction SilentlyContinue
 Write-Host "tarefa $nome registrada"

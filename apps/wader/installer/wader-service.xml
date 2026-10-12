@@ -5,7 +5,7 @@
 
   <!-- O servico roda o LANCADOR; o lancador aplica atualizacao/rollback e so entao sobe o wader.exe (spec A, secao 4). %BASE% = pasta deste exe. -->
   <executable>powershell.exe</executable>
-  <arguments>-NoProfile -ExecutionPolicy Bypass -File "%BASE%\wader-launch.ps1"</arguments>
+  <arguments>-NoProfile -ExecutionPolicy Bypass -File "%BASE%\wader-launch.ps1" -ProgramDir "%BASE%"</arguments>
   <workingdirectory>C:\ProgramData\Wader</workingdirectory>
   <startmode>Automatic</startmode>
   <stopparentprocessfirst>true</stopparentprocessfirst>

@@ -22,6 +22,9 @@ Write-Host "=== migrar-medcardio [$modo] ===" -ForegroundColor Cyan
 foreach ($f in 'wader.config.json', 'sa.json') {
   if (-not (Test-Path (Join-Path $Origem $f))) { throw "Nao achei $Origem\$f" }
 }
+$cfg = Get-Content (Join-Path $Origem 'wader.config.json') -Raw | ConvertFrom-Json
+$wlExiste = Test-Path $cfg.orthanc.worklistPath
+if (-not $wlExiste) { Write-Warning "pasta de worklists nao existe: $($cfg.orthanc.worklistPath) (permissao dela sera pulada)" }
 
 # 1. mata o Wader antigo
 $procs = Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -like '*tsx*src*index*' }
@@ -47,8 +50,6 @@ foreach ($f in 'wader.config.json', 'sa.json', '.wader-ingest-state.json') {
 }
 
 # 3. reescreve config
-$cfgPath = Join-Path $Origem 'wader.config.json'
-$cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
 $cfg.firebase.serviceAccountPath = Join-Path $Destino 'sa.json'
 if (-not $cfg.agentId) { $cfg | Add-Member -NotePropertyName agentId -NotePropertyValue 'wader-001' -Force }
 if (-not $cfg.adminPin) {
@@ -60,10 +61,16 @@ Write-Host "3. config: serviceAccountPath=$($cfg.firebase.serviceAccountPath) ag
 if ($Commit) {
   # UTF-8 sem BOM (Set-Content -Encoding UTF8 do 5.1 grava BOM)
   [IO.File]::WriteAllText((Join-Path $Destino 'wader.config.json'), ($cfg | ConvertTo-Json -Depth 6), (New-Object Text.UTF8Encoding $false))
-  icacls (Join-Path $Destino 'sa.json') /inheritance:r /grant:r '*S-1-5-32-544:F' '*S-1-5-18:F' '*S-1-5-20:R' | Out-Null
+  $sa = Join-Path $Destino 'sa.json'
+  icacls $sa /inheritance:r /grant:r '*S-1-5-32-544:F' '*S-1-5-18:F' '*S-1-5-20:R' | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "icacls falhou em $sa" }
   # corta heranca de ProgramData: Users nao pode plantar updates\ (rodaria como NetworkService)
   icacls $Destino /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' '*S-1-5-20:(OI)(CI)M' | Out-Null
-  icacls $cfg.orthanc.worklistPath /grant '*S-1-5-20:(OI)(CI)M' | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "icacls falhou em $Destino" }
+  if ($wlExiste) {
+    icacls $cfg.orthanc.worklistPath /grant '*S-1-5-20:(OI)(CI)M' | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "icacls falhou em $($cfg.orthanc.worklistPath)" }
+  }
 }
 
 Write-Host "4. $Origem fica intacto (rollback). Agora rode o Wader-Setup-vX.exe." -ForegroundColor Green

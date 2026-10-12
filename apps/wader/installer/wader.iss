@@ -30,19 +30,22 @@ Source: "registrar-aviso.ps1";        DestDir: "{app}"; Flags: ignoreversion
 
 [Dirs]
 ; Dados sobrevivem a desinstalar/reinstalar. NetworkService precisa escrever aqui.
-; (O icacls em CurStepChanged corta a heranca -- Users nao pode plantar updates\.)
+; (O icacls em PrepararDados corta a heranca -- Users nao pode plantar updates\.)
 Name: "{commonappdata}\Wader";         Permissions: admins-full networkservice-modify
 Name: "{commonappdata}\Wader\updates"
 Name: "{commonappdata}\Wader\logs"
+; O lancador (roda como NetworkService) troca wader.exe <-> wader.exe.prev aqui.
+Name: "{app}"; Permissions: networkservice-modify
 
 [Run]
-; O "stop" da atualizacao por cima fica em PrepareToInstall (antes de copiar arquivos).
+; O "stopwait" da atualizacao por cima fica em PrepareToInstall (antes de copiar arquivos).
+; [Run] roda ANTES de ssPostInstall: config + ACL vao no BeforeInstall do "start".
 Filename: "{app}\wader-service.exe"; Parameters: "install"; Flags: runhidden waituntilterminated; Check: not ServicoExiste
-Filename: "{app}\wader-service.exe"; Parameters: "start";   Flags: runhidden waituntilterminated
+Filename: "{app}\wader-service.exe"; Parameters: "start";   Flags: runhidden waituntilterminated; BeforeInstall: PrepararDados
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\registrar-aviso.ps1"" -Instalar ""{app}\wader-aviso.ps1"""; Flags: runhidden waituntilterminated
 
 [UninstallRun]
-Filename: "{app}\wader-service.exe"; Parameters: "stop";      Flags: runhidden waituntilterminated; RunOnceId: "parar"
+Filename: "{app}\wader-service.exe"; Parameters: "stopwait";  Flags: runhidden waituntilterminated; RunOnceId: "parar"
 Filename: "{app}\wader-service.exe"; Parameters: "uninstall"; Flags: runhidden waituntilterminated; RunOnceId: "desinstalar"
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\registrar-aviso.ps1"" -Remover"; Flags: runhidden waituntilterminated; RunOnceId: "aviso"
 
@@ -69,8 +72,8 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 var R: Integer;
 begin
   if ServicoExiste then begin
-    Exec(ExpandConstant('{app}\wader-service.exe'), 'stop', '', SW_HIDE, ewWaitUntilTerminated, R);
-    Sleep(2000);
+    // stopwait = para e espera o servico parar de verdade (WinSW 2.x)
+    Exec(ExpandConstant('{app}\wader-service.exe'), 'stopwait', '', SW_HIDE, ewWaitUntilTerminated, R);
   end;
   Result := '';
 end;
@@ -93,14 +96,26 @@ begin
   Result := (not Primeira) and ((PageID = PgDados.ID) or (PageID = PgSa.ID));
 end;
 
+function PinValido(const S: String): Boolean;
+var I: Integer;
+begin
+  Result := Length(S) = 6;
+  for I := 1 to Length(S) do
+    if (S[I] < '0') or (S[I] > '9') then Result := False;
+end;
+
 function NextButtonClick(PageID: Integer): Boolean;
 begin
   Result := True;
-  if PageID = PgDados.ID then
-    if (Trim(PgDados.Values[0]) = '') or (Trim(PgDados.Values[1]) = '') or (Length(PgDados.Values[2]) <> 6) then begin
-      MsgBox('Preencha wsId, pasta de worklists e um PIN de 6 digitos.', mbError, MB_OK);
+  if PageID = PgDados.ID then begin
+    if (Trim(PgDados.Values[0]) = '') or (Trim(PgDados.Values[1]) = '') or (not PinValido(PgDados.Values[2])) then begin
+      MsgBox('Preencha wsId, pasta de worklists e um PIN de 6 digitos (so numeros).', mbError, MB_OK);
+      Result := False;
+    end else if not DirExists(Trim(PgDados.Values[1])) then begin
+      MsgBox('Pasta de worklists nao existe: ' + Trim(PgDados.Values[1]), mbError, MB_OK);
       Result := False;
     end;
+  end;
   if (PageID = PgSa.ID) and (not FileExists(PgSa.Values[0])) then begin
     MsgBox('sa.json nao encontrado.', mbError, MB_OK);
     Result := False;
@@ -114,19 +129,27 @@ begin
   StringChangeEx(Result, '"', '\"', True);
 end;
 
+// icacls com checagem: falha vira MsgBox (a instalacao segue; o operador le a mensagem)
+procedure Icacls(const Alvo, Args: String);
+var R: Integer;
+begin
+  if not (Exec('icacls.exe', '"' + Alvo + '" ' + Args, '', SW_HIDE, ewWaitUntilTerminated, R) and (R = 0)) then
+    MsgBox('icacls falhou em ' + Alvo + ' (codigo ' + IntToStr(R) + '). Corrija a permissao a mao.', mbError, MB_OK);
+end;
+
 procedure EscreverConfig;
 var
   SaDest, Wl, Agent, J: String;
-  R: Integer;
 begin
   SaDest := ExpandConstant('{commonappdata}\Wader\sa.json');
   Wl := Trim(PgDados.Values[1]);
   Agent := Lowercase(GetComputerNameString) + '-' + IntToStr(1000 + Random(9000));
-  FileCopy(PgSa.Values[0], SaDest, False);
+  if not CopyFile(PgSa.Values[0], SaDest, False) then
+    MsgBox('Nao consegui copiar o sa.json para ' + SaDest + '. Copie a mao.', mbError, MB_OK);
   // sa.json: so Administrators, SYSTEM e NetworkService (SIDs: Windows pt-BR traduz nomes)
-  Exec('icacls.exe', '"' + SaDest + '" /inheritance:r /grant:r *S-1-5-32-544:F *S-1-5-18:F *S-1-5-20:R', '', SW_HIDE, ewWaitUntilTerminated, R);
+  Icacls(SaDest, '/inheritance:r /grant:r *S-1-5-32-544:F *S-1-5-18:F *S-1-5-20:R');
   // pasta de worklists do Orthanc: NetworkService precisa escrever .wl
-  Exec('icacls.exe', '"' + Wl + '" /grant *S-1-5-20:(OI)(CI)M', '', SW_HIDE, ewWaitUntilTerminated, R);
+  Icacls(Wl, '/grant *S-1-5-20:(OI)(CI)M');
   J := '{' + #13#10 +
     '  "version": "1.0",' + #13#10 +
     '  "wsId": "' + Json(Trim(PgDados.Values[0])) + '",' + #13#10 +
@@ -136,16 +159,17 @@ begin
     '  "orthanc": { "worklistPath": "' + Json(Wl) + '" },' + #13#10 +
     '  "ui": { "port": 8043 }' + #13#10 +
     '}' + #13#10;
-  SaveStringToFile(ConfigPath, J, False);
+  if not SaveStringToFile(ConfigPath, J, False) then
+    MsgBox('Nao consegui gravar ' + ConfigPath + '.', mbError, MB_OK);
 end;
 
-procedure CurStepChanged(CurStep: TSetupStep);
-var R: Integer;
+// BeforeInstall do "start" em [Run]: config + ACL tem que existir antes do servico subir.
+procedure PrepararDados;
 begin
-  if CurStep = ssPostInstall then begin
-    // Toda instalacao: corta heranca de ProgramData (Users nao cria arquivo aqui; senao
-    // planta updates\wader-vX.exe + pedido.json e roda como NetworkService).
-    Exec('icacls.exe', '"' + ExpandConstant('{commonappdata}\Wader') + '" /inheritance:r /grant:r *S-1-5-32-544:(OI)(CI)F *S-1-5-18:(OI)(CI)F *S-1-5-20:(OI)(CI)M', '', SW_HIDE, ewWaitUntilTerminated, R);
-    if Primeira then EscreverConfig;
-  end;
+  // Toda instalacao: corta heranca de ProgramData (Users nao cria arquivo aqui; senao
+  // planta updates\wader-vX.exe + pedido.json e roda como NetworkService).
+  Icacls(ExpandConstant('{commonappdata}\Wader'), '/inheritance:r /grant:r *S-1-5-32-544:(OI)(CI)F *S-1-5-18:(OI)(CI)F *S-1-5-20:(OI)(CI)M');
+  // {app}: o lancador troca wader.exe <-> wader.exe.prev (sem cortar heranca de Program Files)
+  Icacls(ExpandConstant('{app}'), '/grant *S-1-5-20:(OI)(CI)M');
+  if Primeira then EscreverConfig;
 end;
