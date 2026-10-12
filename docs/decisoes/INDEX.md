@@ -37,6 +37,7 @@ Ordem cronológica. Ler o(s) recente(s) antes de mexer na área relacionada.
 | 2026-10-11 | [Coluna do laudo unificada](2026-10-11-coluna-laudo-unificada.md) 🎨 geometria antiga (390px, cabeçalho navy) + pele minimalista em ECO e laudo de texto; emitido em 2 linhas; tríade Codex/Ruflo/Ponytail — ✅ NO AR 11/10 (merge 21ee2ce, aval Sergio) | Design / laudo / editor |
 | 2026-10-11 | [Imagens e SR em todo laudo](2026-10-11-imagens-e-sr-em-todo-laudo.md) 🖼️ ECO emitido mostra Imagens + Importar (3ª linha, galeria só leitura); laudo de texto emite igual ao ECO (galeria, seleção, popup, imagens no PDF); saneamento no servidor + regra; replay amarrado ao conteúdo (fecha o C1 de 30/08); tríade pré-merge ✅ NO AR 11/10 (merge a63f3fa, regra publicada, aval Sergio) | Laudo / imagens / emissão / regras |
 | 2026-10-11 | [PDF abortava em toda emissão com imagem — guard de URL assinada](2026-10-11-pdf-guard-url-assinada.md) 🚨 guard de 22/08 confundia signed URL com canônica; produção sem PDF desde 31/08 (eco 47/69 com pdfErro); fix + log pdf_erro + seleção no texto — branch claude/pdf-guard-url-assinada, aguarda aval | PDF / emissão / produção |
+| 2026-10-11 | [Wader nova versão — Fase A desenhada](2026-10-11-wader-fase-a-decisao.md) 🛠️ decomposição A→B→C, abordagem exe único + Inno + WinSW (pensando em vender), atualização com ok, toast na clínica; spec rev.2 após tríade Codex/Ruflo/Ponytail — próximo: writing-plans | Wader / produto / infra |
 
 
 ## Validação local — 09/10/2026
