@@ -25,7 +25,7 @@ Serviço do Windows + atualização com um clique. Spec: `docs/superpowers/specs
 3. Rodar o Setup (SmartScreen → "Mais informações → Executar assim mesmo"). Primeira vez pede wsId, pasta de worklists, PIN e `sa.json`.
 4. Conferir `http://127.0.0.1:8043/admin` → cartão "Atualização".
 
-Dados em `C:\ProgramData\Wader` (sobrevivem a desinstalar). Logs em `C:\ProgramData\Wader\logs`.
+Programa em `C:\Program Files\Wader` (o `wader.exe` fica em `bin\`, a única pasta onde o serviço pode gravar — é ali que o lançador troca a versão). Dados em `C:\ProgramData\Wader` (sobrevivem a desinstalar). Logs em `C:\ProgramData\Wader\logs`.
 
 ---
 

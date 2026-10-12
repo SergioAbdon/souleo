@@ -3,9 +3,9 @@
   <name>Wader</name>
   <description>Agente local DICOM do LEO: le o Orthanc e sobe imagens e medidas pra nuvem.</description>
 
-  <!-- O servico roda o LANCADOR; o lancador aplica atualizacao/rollback e so entao sobe o wader.exe (spec A, secao 4). %BASE% = pasta deste exe. -->
+  <!-- O servico roda o LANCADOR; o lancador aplica atualizacao/rollback e so entao sobe o wader.exe (spec A, secao 4). %BASE% = pasta deste exe; wader.exe fica em %BASE%\bin (unica pasta gravavel pelo servico). -->
   <executable>powershell.exe</executable>
-  <arguments>-NoProfile -ExecutionPolicy Bypass -File "%BASE%\wader-launch.ps1" -ProgramDir "%BASE%"</arguments>
+  <arguments>-NoProfile -ExecutionPolicy Bypass -File "%BASE%\wader-launch.ps1" -ProgramDir "%BASE%\bin"</arguments>
   <workingdirectory>C:\ProgramData\Wader</workingdirectory>
   <startmode>Automatic</startmode>
   <stopparentprocessfirst>true</stopparentprocessfirst>
