@@ -6,7 +6,10 @@ import pino from 'pino';
  * Em desenvolvimento usa pino-pretty (legível no terminal).
  * Em produção (NODE_ENV=production) emite JSON estruturado pra ingest no Sentry/cloud.
  */
-const isDev = process.env.NODE_ENV !== 'production';
+// Dentro do pkg (`process.pkg` existe) nunca há pino-pretty (worker thread fora
+// do snapshot) — cair pra JSON mesmo sem NODE_ENV. O xml do serviço também
+// seta NODE_ENV=production; aqui é o cinto, lá o suspensório.
+const isDev = process.env.NODE_ENV !== 'production' && !('pkg' in process);
 
 export const logger = pino({
   level: process.env.WADER_LOG_LEVEL || (isDev ? 'debug' : 'info'),

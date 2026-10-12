@@ -48,3 +48,8 @@ test('tomEstado e rotuloEstado nao podem divergir no wader (cor x texto)', () =>
     if (tom === 'neutro') assert.match(texto, /nunca apareceu/i);
   }
 });
+
+test('tipo wader aceita lider e nao depende mais de conflito', () => {
+  const i = { tipo: 'wader', visto: AGORA - 60_000, lider: { agentId: 'a', maquina: 'PC', ate: AGORA + 90_000, geracao: 1 } };
+  assert.match(rotuloEstado(i, AGORA), /no ar/i);
+});

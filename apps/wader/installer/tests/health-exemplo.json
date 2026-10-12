@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "status": "ok",
+  "service": "wader",
+  "timestamp": "2026-10-11T12:00:00.000Z",
+  "versao": "1.0.0",
+  "versaoDisponivel": "1.0.1",
+  "lider": true,
+  "outraMaquina": null,
+  "aviso": "Wader v1.0.1 disponível — abra o painel pra atualizar",
+  "versaoRejeitada": null,
+  "erroLancador": null,
+  "ultimaSaida": { "motivo": "atualizacao", "em": "2026-10-11T11:00:00.000Z" },
+  "prevExiste": true
+}

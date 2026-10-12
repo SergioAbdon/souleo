@@ -42,6 +42,10 @@ export class DicomIngestWorker {
   private tickEmAndamento = false;
   private execCount = 0;
   private lastTickAt: Date | null = null;
+  // Vigia (spec §6 + D2): FIM do tick (finally) ou PROGRESSO em qualquer laço (medidas NewSeries, StableStudy, flag reprocessarDicom) — qualquer um prova que o laço não travou. NÃO reusar lastTickAt (início do tick).
+  private ultimoTickOkEm: Date | null = null;
+  // Aviso "sem Orthanc" (spec §9): última resposta do /changes.
+  private ultimoOrthancOkEm: Date | null = null;
   private lastError: string | null = null;
   private estudosProcessados = 0;
   private estudosOrfaos = 0;
@@ -108,6 +112,14 @@ export class DicomIngestWorker {
     return this.lastError;
   }
 
+  getUltimoTickOkEm(): Date | null {
+    return this.ultimoTickOkEm;
+  }
+
+  getUltimoOrthancOkEm(): Date | null {
+    return this.ultimoOrthancOkEm;
+  }
+
   private async tick(): Promise<void> {
     // Tick que dura mais que intervalSec não pode ganhar um irmão em
     // paralelo — dois ticks veriam a mesma assinatura e processariam o
@@ -120,6 +132,7 @@ export class DicomIngestWorker {
     try {
       const desde = this.store.getLastSeq();
       const changes = await this.opts.client.changes(desde, 100);
+      this.ultimoOrthancOkEm = new Date();
 
       // Achado 10: se o Orthanc foi restaurado de um backup antigo (ou o
       // banco foi recriado), o cursor persistido fica À FRENTE do feed real
@@ -154,6 +167,7 @@ export class DicomIngestWorker {
                 forceSr: true,
                 soMedidas: true,
               });
+              this.ultimoTickOkEm = new Date(); // progresso: medidas extraídas (vigia)
             }
           } catch {
             // Estudo pode ter sumido entre o change e agora — StableStudy cobre depois.
@@ -242,6 +256,7 @@ export class DicomIngestWorker {
             forceSr,
           });
           this.lastResults.push(result);
+          this.ultimoTickOkEm = new Date(); // progresso: estudo processado (vigia, D2)
           if (this.lastResults.length > 20) this.lastResults = this.lastResults.slice(-20);
 
           if (result.matched) {
@@ -319,6 +334,7 @@ export class DicomIngestWorker {
               dicomUltimoErroEm: FieldValue.serverTimestamp(),
             });
           }
+          this.ultimoTickOkEm = new Date(); // progresso: flag consumida (vigia)
         }
       } catch (err) {
         log.warn({ err }, 'Falha ao consumir flag reprocessarDicom — tentará no próximo tick');
@@ -334,6 +350,7 @@ export class DicomIngestWorker {
       log.warn({ err: this.lastError }, 'Tick falhou (Orthanc inacessível?)');
     } finally {
       this.tickEmAndamento = false;
+      this.ultimoTickOkEm = new Date();
     }
   }
 }

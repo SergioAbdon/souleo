@@ -138,12 +138,6 @@
       let exames = [];
       let orfaos = [];
 
-      function escapeHtml(s) {
-        return String(s ?? '').replace(/[&<>"']/g, (c) => (
-          { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-        ));
-      }
-
       /**
        * Valor vindo do servidor entrando como ARGUMENTO JS dentro de um
        * atributo `onclick="..."`. escapeHtml sozinho NÃO basta aqui: o parser

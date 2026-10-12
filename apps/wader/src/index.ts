@@ -6,21 +6,21 @@
  *   2. Inicia logger
  *   3. Sobe servidor web local (UI)
  *   4. Registra graceful shutdown (SIGINT/SIGTERM)
- *
- * Em fases posteriores virá:
- *   - Worker de sync de worklist (Firestore → .wl)
- *   - Worker de monitoramento Orthanc /changes
- *   - Worker de upload (Firebase Storage + OneDrive)
- *   - Forwarder de DICOM SR pro servidor LEO
- *   - Heartbeat pro LEO (badge online/offline)
  */
 
-import { readFileSync } from 'fs';
+import os from 'os';
+import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { loadConfig, ConfigError } from './config/load';
 import { logger, createLogger } from './logger';
+import { CODIGO, sairCom, lerLancador, dirUpdates } from './lib/saida';
+import { iniciarVigia } from './lib/vigia';
+import type { EstadoWader } from './lib/estado';
+import { baixarRelease, iniciarChecagemRelease } from './lib/release';
 import { startUiServer } from './ui/server';
-import { initFirebase } from './adapters/firebase';
+import { montarHealth } from './ui/health';
+import { initFirebase, getDb } from './adapters/firebase';
+import { iniciarLider } from './adapters/lider';
 import { OrthancClient } from './adapters/orthanc-client';
 import { WorkspaceRepo } from './adapters/workspace-repo';
 import { iniciarBatimento } from './adapters/heartbeat';
@@ -66,7 +66,7 @@ async function main(): Promise<void> {
   } catch (err) {
     if (err instanceof ConfigError) {
       log.fatal(err.message);
-      process.exit(1);
+      sairCom(CODIGO.CONFIG, { motivo: 'config' });
     }
     throw err;
   }
@@ -75,79 +75,143 @@ async function main(): Promise<void> {
     initFirebase(config.firebase);
   } catch (err) {
     log.fatal({ err }, 'Falha ao inicializar Firebase');
-    process.exit(1);
+    sairCom(CODIGO.CONFIG, { motivo: 'config' });
   }
+
+  // O que o lançador deixou pra nós (spec §5): publicado no /health e no
+  // batimento pelas tarefas seguintes. Não apagar — o arquivo é do lançador.
+  const lancador = lerLancador();
+  if (lancador) log.info({ lancador }, 'lancador.json lido na subida');
 
   // Modo UI-only (WADER_UI_ONLY=1): sobe servidor + console SEM os workers.
   // Permite rodar uma instância de DEV noutra porta sem dois Waders
   // processarem os mesmos exames (escrita dupla). Ver ADR 2026-06-26.
   const uiOnly = process.env.WADER_UI_ONLY === '1' || process.env.WADER_UI_ONLY === 'true';
 
-  // OrthancClient é sempre necessário (UI server + endpoint de reconciliação).
   const workspaceRepo = new WorkspaceRepo(config.wsId);
   const orthancClient = new OrthancClient(workspaceRepo);
 
-  let worklistWorker: WorklistSyncWorker | null = null;
-  let dicomWorker: DicomIngestWorker | null = null;
-  let accWorker: AccRecoveryWorker | null = null;
-  let pararBatimento: (() => void) | null = null;
-
-  if (uiOnly) {
-    log.warn('WADER_UI_ONLY ativo — workers DESLIGADOS (modo dev/console; não processa exames)');
-  } else {
-    // Valida pasta de worklists. Falhar NÃO derruba Wader — só desativa worklist sync.
-    const wlPathValidation = validarWorklistPath(config.orthanc.worklistPath);
-    if (!wlPathValidation.ok) {
-      log.warn(
-        { path: config.orthanc.worklistPath, error: wlPathValidation.error, hint: wlPathValidation.hint },
-        'Pasta worklists inválida — sync de worklist ficará desativado',
-      );
-    } else {
-      worklistWorker = new WorklistSyncWorker({
+  // Construir é inerte (nenhum worker faz I/O no construtor). Quem chama
+  // start() é o cadeado (spec §7) — os workers não sabem o que é líder.
+  const wlPathValidation = validarWorklistPath(config.orthanc.worklistPath);
+  const worklistWorker = wlPathValidation.ok
+    ? new WorklistSyncWorker({
         wsId: config.wsId,
         worklistPath: config.orthanc.worklistPath,
         intervalSec: config.polling.worklistSyncSec,
         scheduledStationName: config.orthanc.scheduledStationName,
+      })
+    : null;
+  if (!wlPathValidation.ok) {
+    log.warn(
+      { path: config.orthanc.worklistPath, error: wlPathValidation.error, hint: wlPathValidation.hint },
+      'Pasta worklists inválida — sync de worklist ficará desativado',
+    );
+  }
+  const dicomWorker = new DicomIngestWorker({
+    wsId: config.wsId,
+    client: orthancClient,
+    intervalSec: config.polling.orthancChangesSec,
+  });
+  const accWorker = new AccRecoveryWorker({
+    wsId: config.wsId,
+    client: orthancClient,
+    intervalSec: config.polling.accRecoverySec ?? 20,
+  });
+
+  let pararBatimento: (() => void) | null = null;
+  let pararVigia: (() => void) | null = null;
+  let lider: ReturnType<typeof iniciarLider> | null = null;
+
+  const versao = lerVersaoPackage();
+  const estado: EstadoWader = {
+    versao,
+    iniciadoEm: Date.now(),
+    versaoDisponivel: null,
+    souLider: () => lider?.souLider() ?? false,
+    outraMaquina: () => lider?.outraMaquina() ?? null,
+    ultimoOrthancOkEm: () => dicomWorker.getUltimoOrthancOkEm(),
+    lancador,
+    // .prev mora ao lado do exe (Program Files) e acompanha o nome real do binário, como o lançador.
+    prevExiste: () => existsSync(process.execPath + '.prev'),
+  };
+
+  // Falha aqui é culpa do binário: exit 1 SEM pedido = queda contada (3 seguidas → lançador volta pro .prev).
+  // Não pode virar saída 3 'lider' (essa não conta) — release com worker quebrado nunca voltaria.
+  const subirWorkers = () => {
+    try {
+      estado.iniciadoEm = Date.now(); // base do aviso "sem Orthanc": quando virei líder, não o boot
+      worklistWorker?.start();
+      dicomWorker.start();
+      accWorker.start();
+      pararBatimento = iniciarBatimento(config.wsId, versao, workspaceRepo, orthancClient, {
+        agentId: config.agentId,
+        ultimoErroIngest: () => dicomWorker.getUltimoErro(),
+        campos: () => {
+          const h = montarHealth(estado);
+          return { versaoDisponivel: h.versaoDisponivel, aviso: h.aviso, ultimaSaida: h.ultimaSaida, versaoRejeitada: h.versaoRejeitada };
+        },
       });
-      worklistWorker.start();
+      pararVigia = iniciarVigia({
+        ultimoTickOkEm: () => dicomWorker.getUltimoTickOkEm(),
+        ligado: () => dicomWorker.isRunning(),
+        limiteMs: (config.polling.vigiaSeg ?? 300) * 1000,
+        aoTravar: () => {
+          log.fatal({ ultimoTickOkEm: dicomWorker.getUltimoTickOkEm() }, 'Ingestão travada — saindo pro serviço reiniciar');
+          sairCom(CODIGO.VIGIA, { motivo: 'travado' });
+        },
+      });
+    } catch (err) {
+      log.fatal({ err }, 'Falha ao subir os workers — saindo (queda contada)');
+      process.exit(1);
     }
+  };
 
-    // DICOM ingest worker — não derruba se Orthanc estiver fora; tenta a cada tick
-    dicomWorker = new DicomIngestWorker({
+  const app = await startUiServer(config, {
+    // UI-only nunca é dono dos workers: null restaura as guardas 409 worker_nao_configurado.
+    worklistWorker: uiOnly ? null : worklistWorker,
+    dicomWorker: uiOnly ? null : dicomWorker,
+    orthancClient,
+    workspaceRepo,
+    estado,
+    atualizacao: {
+      release: () => estado.versaoDisponivel,
+      baixar: baixarRelease,
+      sair: sairCom,
+      prevExiste: estado.prevExiste,
+      dirUpdates,
+    },
+    souLider: () => lider?.souLider() ?? false,
+  });
+
+  if (uiOnly) {
+    log.warn('WADER_UI_ONLY ativo — workers DESLIGADOS (modo dev/console; não processa exames)');
+  } else {
+    lider = iniciarLider({
+      db: getDb(),
       wsId: config.wsId,
-      client: orthancClient,
-      intervalSec: config.polling.orthancChangesSec,
-    });
-    dicomWorker.start();
-
-    // ACC recovery worker (ADR 2026-05-18, Fix 3) — recuperação dirigida:
-    // acha exame aguardando sem DICOM e busca o estudo no Orthanc por ACC.
-    // ADR 2026-06-22 (Fix C): intervalo próprio (default 20s).
-    accWorker = new AccRecoveryWorker({
-      wsId: config.wsId,
-      client: orthancClient,
-      intervalSec: config.polling.accRecoverySec ?? 20,
-    });
-    accWorker.start();
-
-    // Batimento (Sub-plano 5, D4) — diz "estou aqui" pro cartão de Integrações
-    // distinguir "Wader parado" de "sem exame hoje". Não derruba nada se falhar.
-    // Task 8 (D1): também verifica o Orthanc daqui de dentro da rede da clínica
-    // (a nuvem não alcança mais ele — Task 7).
-    pararBatimento = iniciarBatimento(config.wsId, lerVersaoPackage(), workspaceRepo, orthancClient, {
-      ultimoErroIngest: () => dicomWorker?.getUltimoErro() ?? null,
+      eu: { agentId: config.agentId, maquina: os.hostname() },
+      aoVirarLider: subirWorkers,
+      aoPerder: () => {
+        log.fatal('Perdi a liderança — saindo pro serviço reiniciar');
+        sairCom(CODIGO.VIGIA, { motivo: 'lider' });
+      },
     });
   }
 
-  const app = await startUiServer(config, {
-    worklistWorker,
-    dicomWorker,
-    orthancClient,
-    workspaceRepo,
-    versao: lerVersaoPackage(),
+  // Checagem de release a cada 1 h (spec §5). Sem rede (undefined) = silêncio: não apaga versão já achada.
+  const pararRelease = iniciarChecagemRelease(versao, (info) => {
+    if (info === undefined) return;
+    if (info && estado.versaoDisponivel?.versao !== info.versao) log.info({ versao: info.versao }, 'Versão nova disponível');
+    estado.versaoDisponivel = info;
   });
 
-  registerShutdownHandlers(app, { worklistWorker, dicomWorker, accWorker, pararBatimento });
+  registerShutdownHandlers(app, {
+    worklistWorker,
+    dicomWorker,
+    accWorker,
+    pararBatimento: () => { pararBatimento?.(); pararVigia?.(); lider?.parar(); pararRelease(); },
+  });
 
   log.info('Wader rodando. Acesse http://localhost:%d', config.ui.port);
 }
@@ -197,6 +261,11 @@ function registerShutdownHandlers(
 }
 
 main().catch((err) => {
+  // Porta ocupada = outro Wader nesta máquina (spec §12): código 2, mensagem clara.
+  if ((err as NodeJS.ErrnoException)?.code === 'EADDRINUSE') {
+    logger.fatal({ err }, 'Porta ocupada — já existe um Wader rodando nesta máquina?');
+    sairCom(CODIGO.CONFIG, { motivo: 'config' });
+  }
   logger.fatal({ err }, 'Erro fatal no startup do Wader');
   process.exit(1);
 });

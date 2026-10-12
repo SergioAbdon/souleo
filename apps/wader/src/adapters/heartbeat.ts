@@ -31,40 +31,32 @@ export function iniciarBatimento(
   versao: string,
   repo: OrthancConnChecker,
   client: OrthancPinger,
-  extras?: { ultimoErroIngest?: () => string | null },
+  extras: {
+    /** Identidade única (spec §7): mesma chave do cadeado. */
+    agentId: string;
+    ultimoErroIngest?: () => string | null;
+    /** Campos extras do batimento (Task 5: versaoDisponivel, aviso, ultimaSaida, versaoRejeitada). NUNCA a chave `lider`. */
+    campos?: () => Record<string, unknown>;
+  },
 ): () => void {
   const bater = async () => {
     const ref = getDb().doc(`workspaces/${wsId}/integracoes/wader`);
-    const eu = os.hostname();
 
-    // Detecção de 2 Waders ativos no mesmo workspace (achado 11): lê o doc
-    // ANTES de sobrescrever. Máquina diferente + visto há < 10min = a outra
-    // instância ainda está batendo — vira conflito visível no cartão de
-    // Integrações. Vive num try PRÓPRIO: falha na leitura nunca derruba a
-    // gravação de `visto` do batimento (só segue sem detectar conflito).
-    let conflito: string | null = null;
+    // Só o líder bate (spec §7) — um escritor só, o cartão não pisca. A
+    // detecção de 2 Waders mudou de lugar: cadeado (lider.ts) + aviso local.
     try {
-      const atual = (await ref.get()).data() as
-        | { maquina?: string; visto?: { toDate?: () => Date } }
-        | undefined;
-      const vistoDate = atual?.visto?.toDate?.();
-      if (atual?.maquina && atual.maquina !== eu && vistoDate && Date.now() - vistoDate.getTime() < 10 * 60 * 1000) {
-        conflito = atual.maquina;
-        log.warn({ outro: conflito }, '⚠️ DOIS Waders ativos no mesmo workspace');
-      }
-    } catch (e) {
-      log.warn({ err: (e as Error).message }, 'Leitura pré-batimento falhou (segue sem detectar conflito)');
-    }
-
-    try {
+      // cinto: a chave lider é das transações do cadeado (cópia, não muta o chamador)
+      const { lider: _ignorado, ...extra } = extras.campos?.() ?? {};
+      void _ignorado;
       await ref.set(
         {
+          ...extra, // primeiro: campos nunca sobrescreve o núcleo abaixo
           tipo: 'wader',
           visto: new Date(),
           versao,
-          maquina: eu,
-          conflito,
-          ultimoErroIngest: extras?.ultimoErroIngest?.() ?? null,
+          maquina: os.hostname(),
+          agentId: extras.agentId,
+          ultimoErroIngest: extras.ultimoErroIngest?.() ?? null,
         },
         { merge: true },
       );

@@ -14,6 +14,10 @@ import { registerOrthancConfigRoutes } from './api/orthanc-config';
 import { registerWorklistRoutes } from './api/worklist';
 import { registerDicomRoutes } from './api/dicom';
 import { registerReconciliacaoRoutes } from './api/reconciliacao';
+import { registerAtualizacaoRoutes, AtualizacaoDeps } from './api/atualizacao';
+import { montarHealth } from './health';
+import { registrarGuardaLider } from './guarda-lider';
+import type { EstadoWader } from '../lib/estado';
 
 const log = createLogger({ module: 'ui-server' });
 const PAGES_DIR = path.join(__dirname, 'pages');
@@ -36,13 +40,17 @@ export interface UiServerExtras {
   orthancClient?: OrthancClient | null;
   /** Instância única compartilhada (fim das cópias em dicom.ts/orthanc-config.ts). */
   workspaceRepo?: WorkspaceRepo | null;
-  /** Versão real do package.json (index.ts) — /version deixa de mentir "0.1.0". */
-  versao?: string;
+  /** Versão, release, líder, lançador — o que /health e /version publicam (spec §9). */
+  estado: EstadoWader;
+  /** Botões Atualizar/Voltar do /admin (spec §5). */
+  atualizacao: AtualizacaoDeps;
+  /** Cadeado (spec §7): não-líder só lê — guarda central em guarda-lider.ts. */
+  souLider?: () => boolean;
 }
 
 export async function startUiServer(
   config: WaderConfig,
-  extras: UiServerExtras = { worklistWorker: null, dicomWorker: null },
+  extras: UiServerExtras,
 ): Promise<FastifyInstance> {
   const workspaceRepo = extras.workspaceRepo ?? new WorkspaceRepo(config.wsId);
   const orthancClient = extras.orthancClient ?? new OrthancClient(workspaceRepo);
@@ -58,7 +66,8 @@ export async function startUiServer(
     decorateReply: false,
   });
 
-  registerHealthRoutes(app, extras.versao);
+  if (extras.souLider) registrarGuardaLider(app, extras.souLider);
+  registerHealthRoutes(app, extras.estado);
   registerPageRoutes(app);
   registerApiRoutes(app, config);
   registerAgendamentosRoutes(app, config);
@@ -67,6 +76,7 @@ export async function startUiServer(
   registerWorklistRoutes(app, config, extras.worklistWorker);
   registerDicomRoutes(app, config, extras.dicomWorker ?? null, orthancClient);
   registerReconciliacaoRoutes(app, config, orthancClient, extras.dicomWorker ?? null);
+  registerAtualizacaoRoutes(app, config, extras.atualizacao);
 
   await app.listen({ host: '127.0.0.1', port: config.ui.port });
 
@@ -74,19 +84,10 @@ export async function startUiServer(
   return app;
 }
 
-function registerHealthRoutes(app: FastifyInstance, versao?: string): void {
-  app.get('/health', async () => ({
-    status: 'ok',
-    service: 'wader',
-    timestamp: new Date().toISOString(),
-  }));
-
-  // Achado 11/pacote de latência: versão REAL do package.json (index.ts),
-  // não o literal '0.1.0' congelado desde a F1 — o cartão de Integrações
-  // precisa saber qual versão está rodando de fato pra depurar clínica a clínica.
-  app.get('/version', async () => ({
-    version: versao ?? '0.0.0',
-  }));
+function registerHealthRoutes(app: FastifyInstance, estado: EstadoWader): void {
+  // Contrato schema 1 (spec §9): quem lê é o wader-aviso.ps1 e o ensaio.
+  app.get('/health', async () => montarHealth(estado));
+  app.get('/version', async () => ({ version: estado.versao }));
 }
 
 function registerPageRoutes(app: FastifyInstance): void {

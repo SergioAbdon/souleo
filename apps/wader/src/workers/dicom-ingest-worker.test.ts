@@ -340,3 +340,58 @@ describe('DicomIngestWorker — retry limitado de falha transitória de imagem',
     expect(processarEstudo).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("vigia: carimbos do tick", () => {
+  it("ultimoTickOkEm é gravado no finally — mesmo quando /changes falha; ultimoOrthancOkEm só quando responde", async () => {
+    const w = makeWorker("carimbos");
+    expect(w.getUltimoTickOkEm()).toBeNull();
+    expect(w.getUltimoOrthancOkEm()).toBeNull();
+
+    // 1º tick: Orthanc fora
+    (w as any).opts.client.changes = async () => { throw new Error("ECONNREFUSED"); };
+    await (w as any).tick();
+    expect(w.getUltimoTickOkEm()).toBeInstanceOf(Date);
+    expect(w.getUltimoOrthancOkEm()).toBeNull();
+
+    // 2º tick: Orthanc de volta
+    (w as any).opts.client.changes = async () => ({ Changes: [], Done: true, Last: 0 });
+    await (w as any).tick();
+    expect(w.getUltimoOrthancOkEm()).toBeInstanceOf(Date);
+  });
+
+  it("carimba PROGRESSO a cada estudo processado — tick longo com vários estudos não parece travado (D2)", async () => {
+    const w = makeRetryWorker("progresso", { nInstances: 2, emitStable: false });
+    (w as any).opts.client.changes = async () => ({
+      Changes: [
+        { ChangeType: "StableStudy", ResourceType: "Study", ID: "S1", Seq: 1 },
+        { ChangeType: "StableStudy", ResourceType: "Study", ID: "S2", Seq: 2 },
+      ],
+      Done: true,
+      Last: 2,
+    });
+    const vistos: Array<Date | null> = [];
+    processarEstudoImpl = async () => {
+      vistos.push(w.getUltimoTickOkEm()); // visto DENTRO do tick, antes do finally
+      return resultado(2, 0);
+    };
+    await (w as any).tick();
+    expect(vistos).toHaveLength(2);
+    expect(vistos[0]).toBeNull();
+    expect(vistos[1]).toBeInstanceOf(Date);
+  });
+
+  it("carimba PROGRESSO a cada reprocessarDicom consumido — laço de flags longo não parece travado", async () => {
+    exames["r1"] = { reprocessarDicom: true, dicomOrthancStudyId: "S1" };
+    exames["r2"] = { reprocessarDicom: true, dicomOrthancStudyId: "S2" };
+    const w = makeWorker("progresso-flags");
+    const vistos: Array<Date | null> = [];
+    processarEstudoImpl = async () => {
+      vistos.push(w.getUltimoTickOkEm()); // visto DENTRO do tick, antes do finally
+      return resultado(2, 0);
+    };
+    await (w as any).tick();
+    expect(vistos).toHaveLength(2);
+    expect(vistos[0]).toBeNull();
+    expect(vistos[1]).toBeInstanceOf(Date);
+  });
+});

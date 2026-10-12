@@ -26,6 +26,8 @@ export interface WaderConfig {
   version: string;
   wsId: string;
   agentId: string;
+  /** PIN de 6 dígitos dos botões Atualizar/Voltar do /admin (spec §5). Definido no instalador. */
+  adminPin?: string;
 
   firebase: FirebaseConfig;
   orthanc: OrthancLocalConfig;
@@ -75,6 +77,8 @@ export interface PollingConfig {
    * rápido quando a recepção cadastra/reenvia. Query barata (single-field).
    */
   accRecoverySec?: number;
+  /** Segundos sem progresso de ingestão antes do vigia reiniciar o Wader. Default 300. */
+  vigiaSeg?: number;
 }
 
 export interface UiConfig {
@@ -90,6 +94,7 @@ export const DEFAULT_CONFIG: Partial<WaderConfig> = {
     worklistSyncSec: 60,
     orthancChangesSec: 5,
     accRecoverySec: 20,
+    vigiaSeg: 300,
   } as PollingConfig,
   ui: {
     port: 8043,
