@@ -35,3 +35,14 @@ Sergio perguntou se "a nova versão do Wader" estava pronta. Levantamento mostro
 ## Infra desta sessão
 
 Codex CLI atualizado (0.144 → 0.162; o MCP recusava o modelo); Ruflo MCP dava timeout no npx a frio → `MCP_TIMEOUT=120000` em `~/.claude/settings.json`. Detalhe em memória local `reference_mcps_triade_manutencao`.
+
+## PoC do executável (Task 1 do plano) — 11/10
+
+- Empacotador: **`@yao-pkg/pkg` 6.23.0** (alvo node24-win-x64). Funcionou de primeira — plano B (Node SEA) não foi preciso. Precisou de `"bin": "dist/index.js"` no `package.json` (o `pkg .` recusa sem `bin`; o plano não tinha).
+- Tamanho do exe: **185 MB** (184.997.186 bytes — acima dos 90–120 MB previstos; é o firebase-admin/google-cloud inteiro dentro). Avisos do pkg (só 3): `Cannot find module firebase-admin/app`, `firebase-admin/firestore`, `firebase-admin/storage` (em `dist/adapters/firebase.js`) — **inofensivos**: o exe inicializou o Firebase e leu o Firestore normalmente. Em runtime só aparece `DEP0040 punycode` no stderr (aviso de depreciação, sem efeito).
+- Provas (exe rodando com Node fora do PATH, `where node` sem resultado, pasta `%LOCALAPPDATA%\wader-poc`):
+  - /version = `{"version":"1.0.0"}` — **sim**, sem precisar de `versao.json`.
+  - /conferencia → **200**.
+  - Firebase **autenticou**: log `Firebase inicializado` + leituras reais do Firestore (`Orthanc connection carregada`, `syncWorklists concluído` do workspace `wader-dev`). Log saiu em JSON (logger sem pino-pretty dentro do exe).
+  - 1 estudo do Orthanc local: **NÃO feito.** O `wader-dev` no Firestore aponta `integracoes/orthanc` pro Orthanc da MedCardio (`192.168.15.27:8042`, gravado pelo `apontar-orthanc-medcardio.ts`), não pro `localhost:8042`. O exe tentou ler (`/api/dicom/worker` com `running: true`, `execCount` subindo) e deu timeout no IP da clínica — prova que o worker roda e chama o Orthanc de dentro do exe, mas não que lê um estudo. Re-apontar o `wader-dev` pro localhost mexe em dado compartilhado com a PC da clínica → fica pro Sergio decidir (ou fazer na clínica, onde o IP responde).
+- Achado pra Tarefa 7 (instalador/migração): `Set-Content -Encoding UTF8` do **Windows PowerShell 5.1** grava BOM, e `loadConfig` (`JSON.parse` puro) quebra com BOM. No PoC o BOM foi tirado à mão; script que gerar `wader.config.json` precisa gravar sem BOM (ou o loader tolerar).
