@@ -340,3 +340,22 @@ describe('DicomIngestWorker — retry limitado de falha transitória de imagem',
     expect(processarEstudo).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("vigia: carimbos do tick", () => {
+  it("ultimoTickOkEm é gravado no finally — mesmo quando /changes falha; ultimoOrthancOkEm só quando responde", async () => {
+    const w = makeWorker("carimbos");
+    expect(w.getUltimoTickOkEm()).toBeNull();
+    expect(w.getUltimoOrthancOkEm()).toBeNull();
+
+    // 1º tick: Orthanc fora
+    (w as any).opts.client.changes = async () => { throw new Error("ECONNREFUSED"); };
+    await (w as any).tick();
+    expect(w.getUltimoTickOkEm()).toBeInstanceOf(Date);
+    expect(w.getUltimoOrthancOkEm()).toBeNull();
+
+    // 2º tick: Orthanc de volta
+    (w as any).opts.client.changes = async () => ({ Changes: [], Done: true, Last: 0 });
+    await (w as any).tick();
+    expect(w.getUltimoOrthancOkEm()).toBeInstanceOf(Date);
+  });
+});

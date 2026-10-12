@@ -42,6 +42,11 @@ export class DicomIngestWorker {
   private tickEmAndamento = false;
   private execCount = 0;
   private lastTickAt: Date | null = null;
+  // Vigia (spec §6): FIM do tick, com ou sem erro — gravado no finally.
+  // NÃO reusar lastTickAt: ele marca o INÍCIO e esconderia a trava (Ruflo 7).
+  private ultimoTickOkEm: Date | null = null;
+  // Aviso "sem Orthanc" (spec §9): última resposta do /changes.
+  private ultimoOrthancOkEm: Date | null = null;
   private lastError: string | null = null;
   private estudosProcessados = 0;
   private estudosOrfaos = 0;
@@ -108,6 +113,14 @@ export class DicomIngestWorker {
     return this.lastError;
   }
 
+  getUltimoTickOkEm(): Date | null {
+    return this.ultimoTickOkEm;
+  }
+
+  getUltimoOrthancOkEm(): Date | null {
+    return this.ultimoOrthancOkEm;
+  }
+
   private async tick(): Promise<void> {
     // Tick que dura mais que intervalSec não pode ganhar um irmão em
     // paralelo — dois ticks veriam a mesma assinatura e processariam o
@@ -120,6 +133,7 @@ export class DicomIngestWorker {
     try {
       const desde = this.store.getLastSeq();
       const changes = await this.opts.client.changes(desde, 100);
+      this.ultimoOrthancOkEm = new Date();
 
       // Achado 10: se o Orthanc foi restaurado de um backup antigo (ou o
       // banco foi recriado), o cursor persistido fica À FRENTE do feed real
@@ -334,6 +348,7 @@ export class DicomIngestWorker {
       log.warn({ err: this.lastError }, 'Tick falhou (Orthanc inacessível?)');
     } finally {
       this.tickEmAndamento = false;
+      this.ultimoTickOkEm = new Date();
     }
   }
 }

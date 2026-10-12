@@ -20,6 +20,7 @@ import { join } from 'path';
 import { loadConfig, ConfigError } from './config/load';
 import { logger, createLogger } from './logger';
 import { CODIGO, sairCom, lerLancador } from './lib/saida';
+import { iniciarVigia } from './lib/vigia';
 import { startUiServer } from './ui/server';
 import { initFirebase } from './adapters/firebase';
 import { OrthancClient } from './adapters/orthanc-client';
@@ -97,6 +98,7 @@ async function main(): Promise<void> {
   let dicomWorker: DicomIngestWorker | null = null;
   let accWorker: AccRecoveryWorker | null = null;
   let pararBatimento: (() => void) | null = null;
+  let pararVigia: (() => void) | null = null;
 
   if (uiOnly) {
     log.warn('WADER_UI_ONLY ativo — workers DESLIGADOS (modo dev/console; não processa exames)');
@@ -126,6 +128,17 @@ async function main(): Promise<void> {
     });
     dicomWorker.start();
 
+    // Vigia (spec §6): tick parado > 2 min → pedido.json {travado} + saída 3.
+    const dicomVigiado = dicomWorker;
+    pararVigia = iniciarVigia({
+      ultimoTickOkEm: () => dicomVigiado.getUltimoTickOkEm(),
+      ligado: () => dicomVigiado.isRunning(),
+      aoTravar: () => {
+        log.fatal({ ultimoTickOkEm: dicomVigiado.getUltimoTickOkEm() }, 'Ingestão travada — saindo pro serviço reiniciar');
+        sairCom(CODIGO.VIGIA, { motivo: 'travado' });
+      },
+    });
+
     // ACC recovery worker (ADR 2026-05-18, Fix 3) — recuperação dirigida:
     // acha exame aguardando sem DICOM e busca o estudo no Orthanc por ACC.
     // ADR 2026-06-22 (Fix C): intervalo próprio (default 20s).
@@ -154,7 +167,7 @@ async function main(): Promise<void> {
     lancador,
   });
 
-  registerShutdownHandlers(app, { worklistWorker, dicomWorker, accWorker, pararBatimento });
+  registerShutdownHandlers(app, { worklistWorker, dicomWorker, accWorker, pararBatimento, pararVigia });
 
   log.info('Wader rodando. Acesse http://localhost:%d', config.ui.port);
 }
@@ -166,11 +179,13 @@ function registerShutdownHandlers(
     dicomWorker: DicomIngestWorker | null;
     accWorker: AccRecoveryWorker | null;
     pararBatimento: (() => void) | null;
+    pararVigia: (() => void) | null;
   } = {
     worklistWorker: null,
     dicomWorker: null,
     accWorker: null,
     pararBatimento: null,
+    pararVigia: null,
   },
 ): void {
   const shutdown = async (signal: string) => {
@@ -180,6 +195,7 @@ function registerShutdownHandlers(
       workers.dicomWorker?.stop();
       workers.accWorker?.stop();
       workers.pararBatimento?.();
+      workers.pararVigia?.();
       await app.close();
       log.info('Servidor encerrado com sucesso.');
       process.exit(0);
