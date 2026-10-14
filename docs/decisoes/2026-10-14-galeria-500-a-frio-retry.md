@@ -22,6 +22,12 @@ A faixa amarela é exatamente o `erroAssinadas` de `DicomGallery.tsx`: a rota fa
 
 Como foi testado: token de ID do Sergio gerado via custom token do Admin SDK (`sa.json` do Wader) + `signInWithCustomToken` com a web API key pública, chamando a rota como a galeria faz. Scripts ficaram no scratchpad da sessão (não versionados).
 
+## Causa raiz (achada 17:40, depois do F5 não resolver)
+
+Sergio reportou que persistia após F5 e em outro exame (Artur, 8 imagens). A rota voltou a dar 500 pra mim, sem deploy novo, após ter dado 200 catorze vezes. Padrão de **instância**: `src/app/api/laudo/calcular/route.ts` (chamada o tempo todo pela tela do laudo) e `src/app/api/marina/route.ts` faziam `initializeApp()` próprio **sem `storageBucket`** no escopo do módulo. Na instância da Vercel em que `calcular` carrega primeiro, `getApps()[0]` é o app sem bucket; `auth-admin.ts` reaproveita esse app e `adminStorage().bucket()` estoura → 500 em `/api/exame/imagens-urls` naquela instância, para sempre. Instâncias em que a galeria carregou primeiro respondem 200 — por isso a oscilação, e por isso o médico (que sempre abre o laudo antes da galeria) via SEMPRE falhar. É exatamente o bug que o cabeçalho de `auth-admin.ts` descreve ("storageBucket diferente conforme QUEM inicializava primeiro"); estas duas rotas tinham ficado de fora da consolidação.
+
+**Fix:** as duas rotas passam a usar `adminAuth()`/`adminDb()` de `auth-admin.ts` (um init só, com bucket). O retry no cliente fica (ajuda em falha transitória real), mas não era a solução.
+
 ## Decisão
 
 1. **Cliente tolera a falha a frio:** `buscarUrlsAssinadas` passa a tentar até 3× (pausas 0,8 s e 2 s) em 5xx/erro de rede; 4xx não repete. Helper puro `src/lib/retry.ts` (`tentar`, `ErroHttp`, `retentavel`) com 7 testes em `tests/unit/retry.test.mjs`.

@@ -5,8 +5,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+import { Timestamp } from 'firebase-admin/firestore';
+import { adminDb } from '@/lib/auth-admin';
 // E11 achado extra (ADR 2026-08-30, §1a): a assinatura da conta criada pelo
 // cadastro novo mora em `subscriptions/{contaId}`, SEM `workspaceId`
 // (signup-server.ts — deliberado, ver comentario la). `resolverAssinatura` e
@@ -22,16 +22,9 @@ import { resolverAssinatura } from '@/lib/billing-admin';
 import { vigente } from '@/lib/ciclo';
 
 // ── Firebase Admin (server-side) ──
-if (!getApps().length) {
-  initializeApp({
-    credential: cert({
-      projectId: 'leo-sistema-laudos',
-      clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL!,
-      privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-  });
-}
-const dbAdmin = getFirestore();
+// 14/10/2026: init SEM storageBucket aqui podia ser o primeiro da instância
+// e quebrar a assinatura de imagens (ver auth-admin.ts). Um init só.
+const dbAdmin = adminDb();
 
 // ── Anthropic Client ──
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });

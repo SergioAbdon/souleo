@@ -14,8 +14,7 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { NextRequest, NextResponse } from 'next/server';
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
+import { adminAuth } from '@/lib/auth-admin';
 import { calcular } from '@/senna90/motor';
 import type { MedidasEcoTT } from '@/senna90/types';
 
@@ -24,16 +23,11 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // ── Firebase Admin (server-side) ──
-if (!getApps().length) {
-  initializeApp({
-    credential: cert({
-      projectId: 'leo-sistema-laudos',
-      clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL!,
-      privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-  });
-}
-const fbAuth = getAuth();
+// 14/10/2026 (clínica): este init SEM storageBucket, carregado primeiro na
+// instância, deixava getApps()[0] sem bucket — /api/exame/imagens-urls
+// (galeria) estourava 500 naquela instância e o médico via miniaturas
+// pretas. Um init só, com bucket: auth-admin.ts.
+const fbAuth = adminAuth();
 
 // ── Rate Limiter (in-memory por UID; janela fixa, por instância) ──
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
