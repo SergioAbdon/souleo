@@ -34,6 +34,22 @@ Sergio reportou que persistia após F5 e em outro exame (Artur, 8 imagens). A ro
 2. **Workaround imediato na clínica:** F5 na página do exame.
 3. **Pendente (notebook):** ler o erro real nos logs da Vercel; se for init a frio do Admin SDK, considerar aquecer/ordenar o init em `auth-admin.ts`. Não mexer em `storageBucket`/credencial sem ver o log.
 
+## Handoff pro notebook — decidido pelo Sergio 14/10 17:55: "vamos fazer mais tarde os ajustes pelo notebook"
+
+**Estado ao sair da clínica:** galeria continua sem imagens na tela (miniaturas pretas) em TODO exame, até o hotfix ir pro ar. **Os dados estão íntegros**: Orthanc, Firestore (`imagensDicom`/`imagensDicomDetalhes`) e Storage conferidos exame a exame (Patricia 10/10, Luiz 9/9, Artur 8). Nada a reprocessar no Wader. Emissão de PDF com imagens provavelmente também falha (`pdf-server.ts` usa o mesmo `assinarImagensExame` → mesmo app sem bucket na instância ruim) — confirmar.
+
+**Branch pronta:** `hotfix/galeria-bucket-admin` (commit `d94ddbb`, a partir de `origin/master` 999d042; só 7 arquivos). O mesmo conteúdo também está em `feat/wader-console` (`b33613f` + `483ca14`), mas essa branch carrega o Feegow-por-nome não testado — **mesclar o hotfix, não a feature**.
+
+Checklist no notebook, nesta ordem:
+1. `git fetch && git checkout hotfix/galeria-bucket-admin` → `npm run typecheck` → `npm run test:unit` (inclui `retry.test.mjs`) → `npm run build`. Se o typecheck reclamar de `adminDb()`/`adminAuth()` em `marina`/`calcular`, é só tipo de retorno (Firestore/Auth) — mesmas funções já usadas em `/api/exame`.
+2. Reproduzir ANTES do merge, com a produção atual: chamar `POST /api/exame/imagens-urls` (token da conta Yahoo, membro do `LDRtedkanx3bUvxpdmiL`) logo após chamar `POST /api/laudo/calcular` algumas vezes → deve dar 500 na mesma instância; é o teste adversarial da causa raiz. Ler o `console.error('API /exame/imagens-urls:')` nos logs da Vercel de 14/10 16:55–17:45 — a mensagem esperada é algo como "Bucket name not specified or invalid" (confirma ou refuta de vez).
+3. Codex: revisão do diff (pequeno) + pergunta específica: sobra algum `initializeApp` fora de `auth-admin.ts` em código que roda na Vercel? (grep na sessão: só `calcular`, `marina` e scripts de teste `src/lib/teste-*.ts`/`src/senna90/valida-exames-reais.ts`, que não são rotas.)
+4. Merge no master com aval do Sergio → Vercel → abrir o laudo da Patricia (`fg-69453-2026-10-14`) e a galeria: 10 miniaturas. Emitir um PDF de teste com imagens.
+5. Depois do fix: considerar guarda em `auth-admin.ts` — se `getApps()[0]` existir sem `storageBucket`, logar erro alto (ou lançar), pra esse bug não voltar silencioso. Ponytail decide se vale.
+6. Pendências da mesma visita que ficaram: toasts do Wader não confirmados; "Não incomodar" na recepção; cartão Wader em Integrações; senha do Orthanc fora do histórico (ela está lá: `ortancPass` aparece em `git log -S`, foi assim que a achei); merge `feat/wader-console` → master (Feegow por nome) continua pendente desde 07/10; espelho Obsidian desta sessão e da instalação do Wader.
+
+**Scripts de diagnóstico** (scratchpad da sessão da clínica, não versionados; recriar se precisar): leitura do doc do exame + conferência dos objetos no Storage; token de ID via `createCustomToken` + `signInWithCustomToken` com a web API key pública; martelar a rota e baixar as URLs assinadas devolvidas. Todos usam `C:\Wader\sa.json` + `C:\Wader\node_modules\firebase-admin`.
+
 ## Arquivos
 
 - `src/lib/retry.ts` (novo), `tests/unit/retry.test.mjs` (novo), `src/components/laudo/DicomGallery.tsx` (usa `tentar`).
