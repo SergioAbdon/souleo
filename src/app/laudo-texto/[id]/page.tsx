@@ -18,8 +18,16 @@ import { TIPOS_LAUDO_PADRAO, TipoLaudo, modalidadeDe } from '@/lib/tipos-laudo';
 import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
 import MolduraA4 from '@/components/laudo/MolduraA4';
+import EditorIcon from '@/components/laudo/EditorIcon';
+import CabecalhoLaudo from '@/components/laudo/CabecalhoLaudo';
+import DicomGallery, { buscarUrlsAssinadas } from '@/components/laudo/DicomGallery';
+import { renderPaginasPdf } from '@/lib/pdf-imagens';
+import { PopupSalvarEmitir, ModoEmitido } from '@/components/laudo/PopupEmitir';
+import { precisaConfirmarEmissao, SEM_SELECAO_PREFIXO } from '@/lib/emissao-guarda';
 import { gerarPdfHtmlTexto } from '@/lib/pdf-texto';
-import { corSegura } from '@/lib/html-escape';
+import { corSegura, escaparHtml } from '@/lib/html-escape';
+import { imprimirHtmlEmJanela } from '@/lib/pdfUtils';
+import { copiarHtml, copiarTextoSimples } from '@/lib/clipboard';
 import { idadeLabel, fmtData, fmtCep, fmtTel } from '@/lib/paciente-fmt';
 
 export default function LaudoTextoPage() {
@@ -30,6 +38,12 @@ export default function LaudoTextoPage() {
   const [tipo, setTipo] = useState<TipoLaudo | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [emitindo, setEmitindo] = useState(false);
+  // Imagens DICOM (spec 2026-10-11-imagens-e-sr): mesmo padrão de emissão do ECO.
+  // ponytail: estado inline — a próxima tela com imagens extrai o hook (não copia).
+  const [galeriaOpen, setGaleriaOpen] = useState(false);
+  const [popupOpen, setPopupOpen] = useState(false);
+  const [imagensSelecionadasPdf, setImagensSelecionadasPdf] = useState<string[]>([]);
+  const [incluirImagensNoPdf, setIncluirImagensNoPdf] = useState(true);
   const editorRef = useRef<EditorLaudoRef>(null);
   const pendingHtml = useRef<string | null>(null);
   // S7-T0.3 (E1): mesma trava do laudo do motor — chave por TENTATIVA de
@@ -53,6 +67,9 @@ export default function LaudoTextoPage() {
   const sigTexto = profile
     ? `${profile.nome || ''}\n${especialidade}\nCRM/${profile.ufCrm || ''} ${profile.crm || ''}`
     : '';
+  const medicoInfo = profile
+    ? `${profile.nome || ''} · CRM/${profile.ufCrm || ''} ${profile.crm || ''}`
+    : '';
   // Idade NA DATA DO EXAME (paridade com o motor) — ver paciente-fmt.
   const idade = idadeLabel(exame?.pacienteDtnasc as string | undefined, exame?.dataExame as string | undefined);
   // Documento FECHADO pro rascunho (trava o "Salvar rascunho").
@@ -68,6 +85,12 @@ export default function LaudoTextoPage() {
   // de qualquer jeito; sem isso aqui o médico só descobria pelo erro cru do
   // servidor em vez de uma mensagem honesta na hora do clique).
   const docFechado = ['emitido', 'cancelado'].includes((exame?.status as string) || '');
+  // Ciclo do emitido igual ao ECO: fechado → Editar (reedição) → Reemitir.
+  // Guardado POR exame: navegar A→B sem desmontar não herda a reedição de A (sem setState em effect).
+  const [reedicaoDe, setReedicaoDe] = useState<string | null>(null);
+  const reedicao = reedicaoDe === exameId;
+  const emitidoFechado = (exame?.status as string) === 'emitido' && !reedicao;
+  const imagensDicom = (exame?.imagensDicom as string[] | undefined) || [];
   const clinicaEnd = fmtCep((workspace?.endereco as string) || '');
   // 2º telefone do local entrava no rodapé do motor e sumia no laudo-texto —
   // uma folha só, mesmo rodapé (S5-T10).
@@ -95,6 +118,11 @@ export default function LaudoTextoPage() {
     (async () => {
       const ex = await getExame(workspace.id, exameId) as Record<string, unknown> | null;
       setExame(ex);
+      // ponytail: getExame é foto única — imagem nova do Wader só aparece após recarregar; onSnapshot quando o médico sentir falta.
+      const todas = (ex?.imagensDicom as string[] | undefined) || [];
+      const salvas = ex?.imagensSelecionadasPdf;
+      setImagensSelecionadasPdf(Array.isArray(salvas) ? (salvas as string[]).filter((u) => todas.includes(u)) : todas.slice(0, 8));
+      setIncluirImagensNoPdf((ex?.incluirImagensNoPdf as boolean | undefined) ?? true);
       const tipoId = (ex?.tipoExame as string) || '';
       let t: TipoLaudo | null = null;
       try {
@@ -136,14 +164,14 @@ export default function LaudoTextoPage() {
   // perder ao sair.
   useEffect(() => {
     function handleBeforeUnload(e: BeforeUnloadEvent) {
-      if (dirtyRef.current && !docFechado) {
+      if (dirtyRef.current && (!docFechado || reedicao)) {
         e.preventDefault();
         e.returnValue = '';
       }
     }
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [docFechado]);
+  }, [docFechado, reedicao]);
 
   function toast(msg: string) {
     const el = document.createElement('div');
@@ -182,18 +210,28 @@ export default function LaudoTextoPage() {
     toast(ok ? 'Rascunho salvo' : 'Erro ao salvar rascunho');
   }
 
-  async function handleEmitir() {
-    if (!workspace?.id || !user?.uid || !exame) return;
-    const jaEmitido = (exame.status as string) === 'emitido';
-    const msg = jaEmitido
-      ? 'Reemitir o laudo? Uma NOVA franquia será consumida (1 laudo).'
-      : 'Emitir o laudo? A emissão consome 1 laudo da franquia.';
-    if (!confirm(msg)) return;
-    setEmitindo(true);
+  // Seleção como no ECO (ordem = ordem do clique). No emitido FECHADO a galeria
+  // é só leitura; Editar reabre a seleção, que vive só na tela (a regra do
+  // Firestore nega o autosave em emitido) e ganha validade na reemissão, em
+  // dadosFinais — igual à reedição do ECO.
+  async function handleToggleSelecaoImagem(url: string) {
+    if (!workspace?.id || !user?.uid) return;
+    const nova = imagensSelecionadasPdf.includes(url)
+      ? imagensSelecionadasPdf.filter((u) => u !== url)
+      : [...imagensSelecionadasPdf, url];
+    setImagensSelecionadasPdf(nova);
+    if (docFechado) { dirtyRef.current = true; return; } // reedição: só local até reemitir (e conta como alteração)
+    try {
+      await saveExame(workspace.id, { id: exameId, imagensSelecionadasPdf: nova }, user.uid);
+    } catch (e) {
+      console.warn('Falha ao salvar seleção de imagens:', e);
+    }
+  }
 
-    const laudoTextoHtml = editorRef.current?.getHTML() || '';
-
-    const pdfHtml = gerarPdfHtmlTexto({
+  /** HTML do PDF (moldura + corpo + páginas de imagem) — emissão e botão PDF do emitido. */
+  function montarPdfHtml(incluirImagens: boolean): string {
+    if (!workspace || !exame) return '';
+    return gerarPdfHtmlTexto({
       p1,
       clinicaNome,
       clinicaSlogan: (workspace.slogan as string) || '',
@@ -208,7 +246,10 @@ export default function LaudoTextoPage() {
         solicitante: (exame.solicitante as string) || '',
         dataExame: (exame.dataExame as string) || '',
       },
-      htmlCorpo: laudoTextoHtml,
+      htmlCorpo: editorRef.current?.getHTML() || '',
+      htmlPosTabela: incluirImagens
+        ? renderPaginasPdf(imagensSelecionadasPdf, (exame.pacienteNome as string) || '', (exame.tipoExame as string) || '', p1)
+        : '',
       assinatura: {
         nome: (profile?.nome as string) || '',
         especialidade: (profile?.especialidade as string) || '',
@@ -217,6 +258,70 @@ export default function LaudoTextoPage() {
         sigB64: (profile?.sigB64 as string) || '',
       },
     });
+  }
+
+  // ── Bloco do emitido (ModoEmitido) — mesmos atos do ECO ──
+  function handleVoltar() {
+    if (reedicao && dirtyRef.current) {
+      const ok = confirm(
+        '⚠️ Você desbloqueou um laudo já emitido e editou, mas NÃO reemitiu.\n\n' +
+        'As alterações serão PERDIDAS — o laudo emitido original continua valendo.\n\n' +
+        'Para salvar as mudanças, cancele e clique em "Reemitir" (consome 1 crédito).\n\n' +
+        'Sair mesmo assim e descartar a edição?'
+      );
+      if (!ok) return;
+      dirtyRef.current = false;
+    }
+    router.push('/agenda');
+  }
+  function handleFinalizar() {
+    toast('Atendimento finalizado');
+    router.push('/dashboard');
+  }
+  function handleEditar() {
+    if (!confirm('Ao editar e reemitir, será consumido 1 crédito da sua franquia.\n\nDeseja desbloquear para edição?')) return;
+    setReedicaoDe(exameId);
+    toast('Laudo desbloqueado para edição');
+  }
+  /** "Gerar novamente" / PDF sem assinado: imprime o HTML atual com as imagens assinadas. */
+  function handleImprimir() {
+    return imprimirHtmlEmJanela(() => montarPdfHtml(incluirImagensNoPdf), async (html) => {
+      if (workspace?.id && incluirImagensNoPdf && imagensSelecionadasPdf.length > 0) {
+        const assinadas = await buscarUrlsAssinadas(workspace.id, exameId, imagensSelecionadasPdf);
+        if (assinadas) for (const [canonica, assinada] of Object.entries(assinadas)) html = html.replaceAll(canonica, assinada);
+      }
+      return html;
+    });
+  }
+  function handleCopiarFormatado() {
+    const copiou = copiarHtml(`
+      <div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;">${escaparHtml(tituloExame)}</div>
+      <div style="border:1px solid #ddd;border-top:none;padding:4px 8px;">${editorRef.current?.getHTML() || ''}</div>
+    `, 'font-family:IBM Plex Sans,Arial,sans-serif;font-size:8.5pt;color:#1a1a1a;');
+    toast(copiou ? 'Copiado — cole com Ctrl+V no Word, Tasy ou MV' : 'Falha ao copiar — selecione e copie manualmente');
+  }
+  function handleCopiarTexto() {
+    copiarTextoSimples(`${tituloExame}\n\n${editorRef.current?.getText().trim() || ''}`)
+      .then((ok) => toast(ok ? 'Copiado texto simples — cole no prontuário' : 'Falha ao copiar — selecione e copie manualmente'));
+  }
+
+  async function handleEmitir(incluirImagens: boolean) {
+    if (!workspace?.id || !user?.uid || !exame) return;
+    const jaEmitido = (exame.status as string) === 'emitido';
+    if (jaEmitido && !confirm('Reemitir o laudo? Uma NOVA franquia será consumida (1 laudo).')) return;
+    // Mesma guarda clínica do ECO: imagens que não chegaram / nada selecionado.
+    const pendenciaDicom = precisaConfirmarEmissao(exame, imagensSelecionadasPdf);
+    if (pendenciaDicom && !confirm(
+      pendenciaDicom.startsWith(SEM_SELECAO_PREFIXO)
+        ? `${pendenciaDicom}. Emitir mesmo assim?`
+        : `Imagens do exame ainda não chegaram ou falharam (${pendenciaDicom}). Emitir mesmo assim?`
+    )) return;
+    setPopupOpen(false); // depois das guardas (fix F4 do ECO): cancelar o confirm mantém o popup
+    setIncluirImagensNoPdf(incluirImagens);
+    setEmitindo(true);
+
+    const laudoTextoHtml = editorRef.current?.getHTML() || '';
+    const pdfHtml = montarPdfHtml(incluirImagens);
 
     let resultado: { ok: boolean; motivo?: string; pdfErro?: string };
     try {
@@ -233,6 +338,8 @@ export default function LaudoTextoPage() {
             pacienteNome: (exame.pacienteNome as string) || '',
             tipoExame: (exame.tipoExame as string) || '',
             convenio: (exame.convenio as string) || '',
+            incluirImagensNoPdf: incluirImagens,
+            imagensSelecionadasPdf,
             // `reemissao` não vai mais no corpo — o servidor deriva sozinho
             // (exameSnap × dadosFinais na transação); mandar o flag daqui só
             // reabriria o canal que o achado E3 fechou do lado do cliente.
@@ -264,8 +371,12 @@ export default function LaudoTextoPage() {
         exame_de_outro_medico: 'Este laudo é de outro médico. Peça a transferência ao responsável.',
         nao_encontrado: 'Exame não encontrado. Recarregue a lista.',
         cancelado: 'Este laudo foi cancelado. Emitir de novo exige recriar o exame.',
+        conteudo_divergente: 'Este laudo já foi emitido com o conteúdo anterior. Para alterar, use Editar e reemita.',
       };
       alert(msgs[resultado.motivo || ''] || 'Erro ao emitir. Tente novamente.');
+      // Esta tela carrega o exame uma vez (getExame): recarrega pra mostrar
+      // o laudo como emitido, com Reemitir — senão o próximo clique repete o 409.
+      if (resultado.motivo === 'conteudo_divergente') window.location.reload();
       return;
     }
 
@@ -280,32 +391,61 @@ export default function LaudoTextoPage() {
   }
 
   return (
-    <div className="min-h-screen bg-surface">
-      {/* Topo fino — mesmo padrão da mobile-bar do shell */}
-      <div className="sticky top-0 z-40 bg-card border-b border-borda px-4 py-2.5 flex items-center gap-3">
-        <button onClick={() => router.push('/agenda')} aria-label="Voltar para a agenda"
-          className="text-ink-2 hover:text-ink text-sm shrink-0 cursor-pointer">← Voltar</button>
-        <div className="flex-1 min-w-0">
-          <div className="font-bold text-p1 text-sm truncate">{(exame?.pacienteNome as string) || 'Carregando…'}</div>
-          <div className="text-xs text-ink-3 truncate">
-            {tipo?.nome || (exame?.tipoExame as string) || ''}
-            {exame?.acc ? ` · ACC ${exame.acc as string}` : ''}
+    <div className="laudo-workspace laudo-texto-workspace">
+      <div className="laudo-coluna">
+        <CabecalhoLaudo titulo={tipo?.nome || (exame?.tipoExame as string) || 'Laudo'} clinicaNome={clinicaNome} medicoInfo={medicoInfo} onVoltar={handleVoltar} />
+        <div className="laudo-command-line">
+          {emitidoFechado ? (
+            <ModoEmitido
+              onFinalizar={handleFinalizar}
+              onEditar={handleEditar}
+              onImprimir={handleImprimir}
+              onCopiarFormatado={handleCopiarFormatado}
+              onCopiarTexto={handleCopiarTexto}
+              pdfUrl={exame?.pdfUrl as string | undefined}
+            />
+          ) : (
+            <>
+              <button onClick={handleSalvarRascunho} disabled={salvando || emitindo || docFechado}
+                title={docFechado ? 'Laudo emitido — para alterar, use "Reemitir"' : undefined}
+                className="laudo-command-secondary">
+                <EditorIcon name="save" /> {salvando ? 'Salvando…' : 'Salvar rascunho'}
+              </button>
+              <button onClick={() => setPopupOpen(true)} disabled={salvando || emitindo} className="laudo-command-primary">
+                <EditorIcon name="check" /> {emitindo ? 'Emitindo…' : (exame?.status === 'emitido' ? 'Reemitir (consome 1 franquia)' : 'Emitir laudo')}
+              </button>
+            </>
+          )}
+          <button onClick={() => setGaleriaOpen(true)} disabled={imagensDicom.length === 0}
+            title={imagensDicom.length > 0 ? `Ver ${imagensDicom.length} imagens DICOM do exame` : 'Sem imagens DICOM ainda — aguarde Wader processar'}
+            className={`laudo-command-secondary ${imagensDicom.length > 0 ? '' : 'bg-gray-200 text-gray-500'}`}>
+            <EditorIcon name="image" /> {imagensDicom.length > 0 ? `Imagens (${imagensDicom.length})` : 'Imagens'}
+          </button>
+        </div>
+        <div className="laudo-fields">
+          <div className="laudo-cartao">
+            <div className="laudo-cartao-titulo"><EditorIcon name="sec-id" /> Identificação</div>
+            <div className="grid gap-3 px-3.5 pb-5 text-[13px] text-[#1E3A5F]">
+              {exame?.acc ? (
+                <div className="laudo-nota flex items-center justify-between gap-3"><span className="font-medium">ACC</span><span className="min-w-0 break-all text-right font-mono text-[12px]">{exame.acc as string}</span></div>
+              ) : null}
+              <Dado label="Nome completo">{(exame?.pacienteNome as string) || 'Carregando…'}</Dado>
+              <div className="grid grid-cols-2 gap-3">
+                <Dado label="Idade">{idade || '—'}</Dado>
+                <Dado label="Data de nascimento">{fmtData(exame?.pacienteDtnasc as string | undefined) || '—'}</Dado>
+              </div>
+              <Dado label="Convênio">{(exame?.convenio as string) || '—'}</Dado>
+              <Dado label="Médico solicitante">{(exame?.solicitante as string) || '—'}</Dado>
+              <Dado label="Data do exame">{fmtData(exame?.dataExame as string | undefined) || '—'}</Dado>
+            </div>
           </div>
         </div>
-        <button onClick={handleSalvarRascunho} disabled={salvando || emitindo || docFechado}
-          title={docFechado ? 'Laudo emitido — para alterar, use "Reemitir"' : undefined}
-          className="shrink-0 px-3 py-1.5 rounded-lg border border-borda bg-card text-ink text-xs font-semibold hover:bg-surface disabled:opacity-50 cursor-pointer">
-          {salvando ? 'Salvando…' : 'Salvar rascunho'}
-        </button>
-        <button onClick={handleEmitir} disabled={salvando || emitindo}
-          className="shrink-0 px-3 py-1.5 rounded-lg bg-p2 text-white text-xs font-semibold hover:bg-p2-deep disabled:opacity-50 cursor-pointer">
-          {emitindo ? 'Emitindo…' : (exame?.status === 'emitido' ? 'Reemitir (consome 1 franquia)' : 'Emitir laudo')}
-        </button>
       </div>
 
       {/* Editor dentro da MESMA folha A4 do motor (S5-T10/D6): o médico
           escreve já vendo a moldura que vai sair no PDF. */}
-      <div className="bg-[#D8DEE8] overflow-auto p-5">
+      <div className="laudo-folha">
+        <p className="laudo-folha-legenda">Pré-visualização — edite os textos diretamente no laudo</p>
         <MolduraA4
           p1={p1}
           clinicaNome={clinicaNome}
@@ -329,10 +469,48 @@ export default function LaudoTextoPage() {
             ],
           ]}
         >
-          <EditorLaudo ref={editorRef} placeholder="Digite o laudo…"
+          <EditorLaudo ref={editorRef} placeholder="Digite o laudo…" editable={!emitidoFechado}
             onDirty={() => { dirtyRef.current = true; }} />
         </MolduraA4>
       </div>
+      <PopupSalvarEmitir
+        open={popupOpen}
+        onClose={() => setPopupOpen(false)}
+        onRascunho={() => { setPopupOpen(false); handleSalvarRascunho(); }}
+        onEmitir={handleEmitir}
+        totalImagensSelecionadas={imagensSelecionadasPdf.length}
+        incluirImagensInicial={incluirImagensNoPdf}
+      />
+      <DicomGallery
+        open={galeriaOpen}
+        onClose={() => setGaleriaOpen(false)}
+        imagens={imagensDicom}
+        wsId={workspace?.id}
+        exameId={exameId}
+        pacienteNome={exame?.pacienteNome as string | undefined}
+        tipoExame={exame?.tipoExame as string | undefined}
+        permitirSelecao={!emitidoFechado}
+        selecionadas={imagensSelecionadasPdf}
+        onToggleSelecao={handleToggleSelecaoImagem}
+      />
+      <style jsx global>{`
+        .laudo-texto-workspace .tiptap h2{font-size:10.5pt;font-weight:600;color:${p1};margin:2mm 0 1.5mm;}
+        .laudo-texto-workspace .tiptap h3{font-size:9.5pt;font-weight:600;color:${p1};margin:2.5mm 0 1mm;}
+        .laudo-texto-workspace .tiptap p{margin-bottom:2px;}
+        .laudo-texto-workspace .tiptap ul{list-style:disc;padding-left:5mm;margin-bottom:2px;}
+        .laudo-texto-workspace .tiptap ol{list-style:decimal;padding-left:5mm;margin-bottom:2px;}
+      `}</style>
+    </div>
+  );
+}
+
+// Linha do cartão de identificação (só leitura — os dados vêm do exame e já
+// aparecem na moldura; aqui é a cópia que dá conteúdo à coluna).
+function Dado({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-[11px] font-medium text-[#526277]">{label}</span>
+      <span className="break-words">{children}</span>
     </div>
   );
 }

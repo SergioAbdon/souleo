@@ -26,8 +26,8 @@ type Props = {
 
 export default function SheetA4({ p1, clinicaNome, clinicaSlogan, clinicaEnd, clinicaTel, sigTexto, logoB64, sigB64, titulo, editorLaudo }: Props) {
   const result = <>
-    <div className="bg-[#D8DEE8] overflow-y-auto p-5 flex-1">
-      <p className="text-[10px] text-[#6B7280] font-semibold uppercase tracking-wider mb-3 text-center">
+    <div className="laudo-folha">
+      <p className="laudo-folha-legenda">
         Pré-visualização — edite os textos diretamente no laudo
       </p>
 

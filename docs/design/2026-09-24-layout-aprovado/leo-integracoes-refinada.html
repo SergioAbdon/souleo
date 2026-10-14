@@ -1,0 +1,262 @@
+<div id="leo-integracoes-refinada" data-variant="d" aria-label="Paletas D e F da Agenda">
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+#leo-integracoes-refinada {font-family:'IBM Plex Sans',Arial,sans-serif;color:#243449;font-size:14px;}
+#leo-integracoes-refinada * {box-sizing:border-box;}
+#leo-integracoes-refinada .choice {display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff;padding:12px;border-bottom:1px solid #e2e8f0;}
+#leo-integracoes-refinada button {font:inherit;cursor:pointer;color:inherit;background:white;border:1px solid #e2e8f0;border-radius:7px;padding:8px 12px;min-height:36px;display:inline-flex;align-items:center;gap:8px;}
+#leo-integracoes-refinada button:focus-visible,#leo-integracoes-refinada input:focus-visible {outline:2px solid #2563eb;outline-offset:3px;}
+#leo-integracoes-refinada .choice button[aria-pressed=true] {background:#eef2f8;color:#1e3a5f;border-color:#a5b9d7;}
+#leo-integracoes-refinada .note {color:#64748b;font-size:12px;margin-left:auto;}
+#leo-integracoes-refinada .shell {display:grid;grid-template-columns:180px minmax(0,1fr);background:#f1f5f9;border:1px solid #e2e8f0;min-height:630px;}
+#leo-integracoes-refinada aside {background:#fff;border-right:1px solid #e2e8f0;padding:24px 12px;display:flex;flex-direction:column;gap:24px;}
+#leo-integracoes-refinada .brand {width:98px;height:46px;margin-left:12px;}
+#leo-integracoes-refinada .place {padding:0 12px;font-size:12px;color:#64748b;}
+#leo-integracoes-refinada .place strong {display:block;color:#1e3a5f;font-size:14px;font-weight:500;margin-bottom:4px;}
+#leo-integracoes-refinada nav {display:grid;gap:5px;}
+#leo-integracoes-refinada .navitem {display:flex;align-items:center;gap:10px;padding:9px 12px;font-size:13px;color:#637083;border-radius:7px;}
+#leo-integracoes-refinada .navitem.active {background:#eef2f8;color:#1e3a5f;font-weight:600;}
+#leo-integracoes-refinada .account {margin-top:auto;border-top:1px solid #e2e8f0;padding:18px 10px 0;display:flex;gap:10px;align-items:center;font-size:12px;}
+#leo-integracoes-refinada .avatar {border-radius:50%;background:#eef2f8;color:#1e3a5f;padding:9px;}
+#leo-integracoes-refinada main {min-width:0;padding:0 24px 24px;}
+#leo-integracoes-refinada .crumb {font-size:12px;color:#64748b;padding:17px 0;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:8px;}
+#leo-integracoes-refinada .pagehead {display:flex;justify-content:space-between;align-items:center;gap:16px;padding:25px 0 22px;flex-wrap:wrap;}
+#leo-integracoes-refinada h2 {font-size:25px;letter-spacing:-.8px;color:#1e3a5f;margin:0 0 4px;font-weight:600;}
+#leo-integracoes-refinada .sub {font-size:13px;color:#64748b;}
+#leo-integracoes-refinada button.primary {background:#2563eb;border-color:#2563eb;color:#fff;}
+#leo-integracoes-refinada .head-actions {display:flex;gap:8px;flex-wrap:wrap;}
+#leo-integracoes-refinada .workspace {background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;}
+#leo-integracoes-refinada .filters {display:flex;gap:5px;padding:12px 14px;border-bottom:1px solid #e2e8f0;flex-wrap:wrap;}
+#leo-integracoes-refinada .filters button {border:0;padding:6px 9px;font-size:12px;color:#64748b;}
+#leo-integracoes-refinada .filters button[aria-pressed=true] {background:#eef2f8;color:#1e3a5f;font-weight:500;}
+#leo-integracoes-refinada .count {font-size:11px;opacity:.7;}
+#leo-integracoes-refinada .searchrow {display:flex;gap:10px;padding:12px 16px;align-items:center;border-bottom:1px solid #e2e8f0;}
+#leo-integracoes-refinada input {border:0;outline:none;min-width:0;width:100%;font:inherit;font-size:13px;color:#243449;background:#fff;}
+#leo-integracoes-refinada table {width:100%;border-collapse:collapse;text-align:left;font-size:13px;}
+#leo-integracoes-refinada th {font-weight:400;font-size:11px;color:#64748b;background:#fafbfd;padding:10px 12px;}
+#leo-integracoes-refinada td {border-top:1px solid #edf0f4;padding:8px 12px;height:46px;}
+#leo-integracoes-refinada .roomy td {padding-top:19px;padding-bottom:19px;height:76px;}
+#leo-integracoes-refinada .name {display:block;color:#1e3a5f;font-weight:500;}
+#leo-integracoes-refinada .secondary {color:#64748b;font-size:11px;margin-top:3px;}
+#leo-integracoes-refinada .time {font-variant-numeric:tabular-nums;color:#64748b;}
+#leo-integracoes-refinada .pill {display:inline-flex;align-items:center;gap:5px;padding:3px 7px;border-radius:5px;font-size:11px;white-space:nowrap;}
+#leo-integracoes-refinada .pill::before {content:'';width:5px;height:5px;border-radius:50%;background:currentColor;}
+#leo-integracoes-refinada .waiting {background:#fef3c7;color:#92400e;}
+#leo-integracoes-refinada .working {background:#dbeafe;color:#1e40af;}
+#leo-integracoes-refinada .done {background:#d1fae5;color:#065f46;}
+#leo-integracoes-refinada .action {border:0;background:transparent;padding:4px;color:#2563eb;font-size:12px;}
+#leo-integracoes-refinada .foot {padding:13px 16px;color:#64748b;font-size:11px;border-top:1px solid #e2e8f0;}
+#leo-integracoes-refinada .empty {text-align:center;color:#64748b;padding:30px;}
+#leo-integracoes-refinada .sweep {animation:fin-sweep .681818181818s ease-in-out infinite;}
+@keyframes fin-sweep {0%,12%{transform:translateX(-30px)}68%,100%{transform:translateX(235px)}}
+@media(prefers-reduced-motion:reduce){#leo-integracoes-refinada .sweep{animation:none;opacity:0}}
+@media(max-width:800px){#leo-integracoes-refinada .shell{grid-template-columns:145px minmax(0,1fr)}#leo-integracoes-refinada main{padding:0 14px 16px}#leo-integracoes-refinada .optional{display:none}#leo-integracoes-refinada td,#leo-integracoes-refinada th{padding-left:8px;padding-right:8px}}
+@media(max-width:550px){#leo-integracoes-refinada .shell{display:block}#leo-integracoes-refinada aside{display:none}#leo-integracoes-refinada .note{margin-left:0;width:100%}#leo-integracoes-refinada .exam{display:none}#leo-integracoes-refinada .pagehead{padding:18px 0}#leo-integracoes-refinada .head-actions{gap:5px}#leo-integracoes-refinada button{min-height:44px}#leo-integracoes-refinada .filters{gap:0;padding:8px}#leo-integracoes-refinada main{padding:0 10px 12px}#leo-integracoes-refinada td{font-size:12px}}
+#leo-integracoes-refinada .shell{grid-template-columns:184px minmax(0,1fr)}
+#leo-integracoes-refinada .date{width:142px;flex:none;border-right:1px solid #e2e8f0;padding-right:10px}
+#leo-integracoes-refinada .searchrow{padding:18px 16px}
+#leo-integracoes-refinada .workspace{box-shadow:0 2px 8px rgba(30,58,95,.035)}
+#leo-integracoes-refinada tbody tr:hover{background:#f8fafc}
+#leo-integracoes-refinada .examline{display:flex;align-items:center;gap:6px}
+#leo-integracoes-refinada .acc{font-family:monospace;font-size:11px;color:#64748b;margin-top:5px}
+#leo-integracoes-refinada .wait{font-size:11px;color:#92400e;margin-top:5px}
+#leo-integracoes-refinada .mobile-menu{display:none}
+#leo-integracoes-refinada .roomy td{padding-top:20px;padding-bottom:20px}
+@media(max-width:700px){#leo-integracoes-refinada .shell{display:block}#leo-integracoes-refinada aside{display:none}#leo-integracoes-refinada .mobile-menu{display:inline-flex}#leo-integracoes-refinada .shell.menu-open aside{display:flex}#leo-integracoes-refinada .exam{display:table-cell}#leo-integracoes-refinada .searchrow{flex-wrap:wrap}#leo-integracoes-refinada input[type=search]{flex:1}#leo-integracoes-refinada table,#leo-integracoes-refinada tbody{display:block}#leo-integracoes-refinada thead{display:none}#leo-integracoes-refinada tr{display:grid;grid-template-columns:1fr 1fr;padding:14px 4px;border-top:1px solid #e2e8f0}#leo-integracoes-refinada .roomy td{display:block;height:auto;padding:6px 10px;border:0}#leo-integracoes-refinada td.time{grid-column:1/-1}#leo-integracoes-refinada td.optional{display:block}#leo-integracoes-refinada td.exam{grid-column:1}#leo-integracoes-refinada td:nth-child(2){grid-column:1/-1}#leo-integracoes-refinada main{padding:0 12px 16px}}
+#leo-integracoes-refinada .variant-picker{display:flex;gap:8px;flex-wrap:wrap;padding:12px 0}
+#leo-integracoes-refinada .variant-picker button[aria-pressed=true]{background:#1e3a5f;color:white;border-color:#1e3a5f}
+#leo-integracoes-refinada .variant-description{font-size:13px;color:#526277;margin:0 0 16px}
+#leo-integracoes-refinada[data-variant=b] .shell{background:#fff}
+#leo-integracoes-refinada[data-variant=b] .workspace{border:0;border-radius:0;box-shadow:none}
+#leo-integracoes-refinada[data-variant=b] .filters{padding-left:0;padding-bottom:0;gap:12px}
+#leo-integracoes-refinada[data-variant=b] .filters button{border-radius:0;padding:12px 4px;border-bottom:2px solid transparent}
+#leo-integracoes-refinada[data-variant=b] .filters button[aria-pressed=true]{background:transparent;border-bottom-color:#2563eb;color:#1e3a5f}
+#leo-integracoes-refinada[data-variant=b] .searchrow{padding:20px 0}
+#leo-integracoes-refinada[data-variant=b] th{background:#fff}
+#leo-integracoes-refinada[data-variant=b] .pagehead{padding-top:34px;padding-bottom:30px}
+#leo-integracoes-refinada[data-variant=b] .roomy td{padding-top:23px;padding-bottom:23px}
+#leo-integracoes-refinada[data-variant=f] .workspace{background:transparent;border:0;box-shadow:none;overflow:visible}
+#leo-integracoes-refinada[data-variant=f] .filters{padding:0 0 16px;border:0}
+#leo-integracoes-refinada[data-variant=f] .filters button{background:transparent}
+#leo-integracoes-refinada[data-variant=f] .filters button[aria-pressed=true]{background:#1e3a5f;color:#fff}
+#leo-integracoes-refinada[data-variant=f] .searchrow{background:#fff;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:16px}
+#leo-integracoes-refinada[data-variant=f] table,#leo-integracoes-refinada[data-variant=f] tbody{display:block}
+#leo-integracoes-refinada[data-variant=f] thead{display:none}
+#leo-integracoes-refinada[data-variant=f] tr{display:grid;grid-template-columns:minmax(180px,1.5fr) minmax(145px,1fr) minmax(130px,1fr) 90px;align-items:center;gap:4px 14px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:18px;margin-bottom:10px}
+#leo-integracoes-refinada[data-variant=f] .roomy td{padding:0;height:auto;border:0}
+#leo-integracoes-refinada[data-variant=f] td:nth-child(2){grid-column:1;grid-row:1}
+#leo-integracoes-refinada[data-variant=f] td.time{grid-column:1;grid-row:2;font-size:11px}
+#leo-integracoes-refinada[data-variant=f] td.time:before{content:'Chegada '}
+#leo-integracoes-refinada[data-variant=f] td.exam{grid-column:2;grid-row:1}
+#leo-integracoes-refinada[data-variant=f] td.optional{display:block;grid-column:2;grid-row:2;font-size:11px;color:#64748b}
+#leo-integracoes-refinada[data-variant=f] td:nth-child(5){grid-column:3;grid-row:1/3}
+#leo-integracoes-refinada[data-variant=f] td:last-child{grid-column:4;grid-row:1/3}
+#leo-integracoes-refinada[data-variant=f] .name{font-size:15px}
+#leo-integracoes-refinada[data-variant=f] .foot{border:0;padding-left:0}
+@media(max-width:950px){#leo-integracoes-refinada[data-variant=f] tr{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}#leo-integracoes-refinada[data-variant=f] td:nth-child(5){grid-column:1;grid-row:3}#leo-integracoes-refinada[data-variant=f] td:last-child{grid-column:2;grid-row:3}#leo-integracoes-refinada[data-variant=f] tr{gap:14px}}
+#leo-integracoes-refinada[data-variant=d] aside{background:#eaf1fa;border-color:#d6e2f1}
+#leo-integracoes-refinada[data-variant=d] .navitem{color:#445d7b}
+#leo-integracoes-refinada[data-variant=d] .navitem.active{background:#fff;color:#1e3a5f;box-shadow:0 2px 6px rgba(30,58,95,.07)}
+#leo-integracoes-refinada[data-variant=d] .place,#leo-integracoes-refinada[data-variant=d] .account .secondary{color:#506580}
+#leo-integracoes-refinada[data-variant=d] .account{border-color:#cfdced}
+#leo-integracoes-refinada[data-variant=d] .avatar{background:#d6e4f6;color:#1e3a5f}
+#leo-integracoes-refinada[data-variant=f] aside{background:#1e3a5f;border-color:#1e3a5f}
+#leo-integracoes-refinada[data-variant=f] .navitem{color:#d5e1f0}
+#leo-integracoes-refinada[data-variant=f] .navitem.active{background:#34577f;color:#fff}
+#leo-integracoes-refinada[data-variant=f] .place,#leo-integracoes-refinada[data-variant=f] .account .secondary{color:#c3d3e6}
+#leo-integracoes-refinada[data-variant=f] .place strong,#leo-integracoes-refinada[data-variant=f] .account{color:#fff}
+#leo-integracoes-refinada[data-variant=f] .account{border-color:#46617f}
+#leo-integracoes-refinada[data-variant=f] .avatar{background:#34577f;color:#fff}
+#leo-integracoes-refinada[data-variant=f] .brand{background:#fff;border-radius:8px;padding:5px;width:108px;height:54px}
+#leo-integracoes-refinada .patient-detail{background:white;border:1px solid #e2e8f0;border-radius:12px;margin-top:20px;padding:24px}
+#leo-integracoes-refinada .patient-detail h3{color:#1e3a5f;font-size:20px;margin:0 0 8px}
+#leo-integracoes-refinada .detailhead{display:flex;justify-content:space-between;align-items:center;gap:12px}
+#leo-integracoes-refinada .history{display:flex;justify-content:space-between;align-items:center;gap:16px;border-top:1px solid #e2e8f0;padding:18px 0;flex-wrap:wrap}
+#leo-integracoes-refinada .patient-detail h4{margin:28px 0 14px;font-size:14px;color:#1e3a5f}
+#leo-integracoes-refinada tr.selected{background:#eef2f8}
+@media(max-width:700px){#leo-integracoes-refinada td:nth-child(2){grid-column:auto}#leo-integracoes-refinada .patient-detail{padding:16px}}
+#leo-integracoes-refinada .report-filters{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:16px;border-bottom:1px solid #e2e8f0} #leo-integracoes-refinada .report-filters label{display:flex;gap:10px;align-items:center;font-size:13px;flex-wrap:wrap} #leo-integracoes-refinada select{font:inherit;color:#1e3a5f;border:1px solid #e2e8f0;border-radius:7px;background:white;padding:8px;max-width:100%} </style>
+
+<div class="shell roomy">
+<aside>
+<svg class="brand" viewBox="-10 0 500 230" role="img" aria-label="LEO">
+<defs><linearGradient id="fin-blue" x2="1" y2="1"><stop stop-color="#284f83"/><stop offset="1" stop-color="#2877ff"/></linearGradient><clipPath id="fin-trace"><path d="M17 153 H48 L68 113 L70 188 L87 159 H200" fill="none" stroke="white" stroke-width="3.5"/></clipPath></defs>
+<g fill="url(#fin-blue)"><path d="M55 10 H128 L91 151 H202 L201 155 H85 L74 171 L72 95 L46 149 H18 Z"/><path d="M16 158 H50 L64 135 L66 202 L86 164 H198 L188 214 H0 Z"/></g>
+<g fill="#1e3a5f" transform="translate(213 104) skewX(-12)"><path d="M0 0 H100 V23 H28 V43 H93 V65 H28 V87 H100 V110 H0 Z"/><path fifin-rule="evenodd" d="M150 0 H202 Q232 0 232 29 V81 Q232 110 202 110 H150 Q120 110 120 81 V29 Q120 0 150 0 Z M158 23 Q148 23 148 35 V75 Q148 87 158 87 H194 Q204 87 204 75 V35 Q204 23 194 23 Z"/></g><g clip-path="url(#fin-trace)"><rect class="sweep" width="28" height="220" fill="#77aaff"/></g></svg>
+<div class="place"><strong>Clínica demonstração</strong>Ambiente de prévia</div>
+<nav aria-label="Navegação ilustrativa"><div class="navitem"><i data-lucide="calendar-days" aria-hidden="true"></i>Agenda</div><div class="navitem"><i data-lucide="users" aria-hidden="true"></i>Pacientes</div><div class="navitem"><i data-lucide="file-text" aria-hidden="true"></i>Laudos</div><div class="navitem"><i data-lucide="chart-no-axes-combined" aria-hidden="true"></i>Financeiro</div><div class="navitem"><i data-lucide="building-2" aria-hidden="true"></i>Clínica</div><div class="navitem active"><i data-lucide="network" aria-hidden="true"></i>Integrações</div></nav>
+<div class="account"><span class="avatar">SM</span><span>Médico exemplo<br><span class="secondary">Minha conta</span></span></div>
+</aside>
+<main>
+<div class="crumb"><button class="mobile-menu" type="button" aria-label="Abrir menu" aria-expanded="false"><i data-lucide="menu" aria-hidden="true"></i></button><i data-lucide="calendar-days" aria-hidden="true"></i>Clínica demonstração / Integrações</div>
+<div class="pagehead"><div><h2>Integrações</h2><div class="sub">Agenda e imagens conectadas ao seu fluxo de trabalho</div></div><div class="head-actions"></div></div>
+<section class="workspace" aria-label="Configurações de integrações"><div class="clinic-tabs" role="tablist" aria-label="Integrações disponíveis"></div><div class="clinic-panel"></div></section><section class="patient-detail" hidden aria-label="Ficha do paciente"></section>
+<p class="sub" id="fin-feedback" role="status"></p>
+</main>
+</div>
+
+</div>
+
+
+
+
+
+<style>
+#leo-integracoes-refinada .layout-choices{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
+#leo-integracoes-refinada .layout-choices button[aria-pressed=true]{background:#1e3a5f;color:white}
+#leo-integracoes-refinada .acc{font-family:monospace;font-size:11px;color:#64748b;margin-top:6px}
+#leo-integracoes-refinada .secondary-actions{display:flex;gap:8px}
+#leo-integracoes-refinada .name{padding:0;font-size:14px;color:#1e3a5f;text-align:left}
+#leo-integracoes-refinada .report-filters .extra-filter{max-width:180px}
+#leo-integracoes-refinada[data-layout=b] table,#leo-integracoes-refinada[data-layout=b] tbody,#leo-integracoes-refinada[data-layout=c] table,#leo-integracoes-refinada[data-layout=c] tbody{display:block}
+#leo-integracoes-refinada[data-layout=b] thead,#leo-integracoes-refinada[data-layout=c] thead{display:none}
+#leo-integracoes-refinada[data-layout=b] tr,#leo-integracoes-refinada[data-layout=c] tr{display:grid;grid-template-columns:minmax(0,1fr) 160px 110px;gap:6px 20px;padding:22px;border-top:1px solid #e2e8f0;align-items:center}
+#leo-integracoes-refinada[data-layout=b] td,#leo-integracoes-refinada[data-layout=c] td{padding:0;height:auto;border:0}
+#leo-integracoes-refinada[data-layout=b] td:first-child,#leo-integracoes-refinada[data-layout=c] td:first-child{grid-column:1;grid-row:1}
+#leo-integracoes-refinada[data-layout=b] td:nth-child(2),#leo-integracoes-refinada[data-layout=c] td:nth-child(2){grid-column:1;grid-row:2}
+#leo-integracoes-refinada[data-layout=b] td:nth-child(3),#leo-integracoes-refinada[data-layout=c] td:nth-child(3){grid-column:2;grid-row:1/3}
+#leo-integracoes-refinada[data-layout=b] td:last-child,#leo-integracoes-refinada[data-layout=c] td:last-child{grid-column:3;grid-row:1/3}
+#leo-integracoes-refinada[data-layout=b] .name,#leo-integracoes-refinada[data-layout=c] .name{font-size:16px}
+#leo-integracoes-refinada[data-layout=c] .workspace{background:transparent;border:0;box-shadow:none}
+#leo-integracoes-refinada[data-layout=c] .searchrow,#leo-integracoes-refinada[data-layout=c] .report-filters{background:#fff}
+#leo-integracoes-refinada[data-layout=c] tr{background:#fff;border:1px solid #e2e8f0;border-radius:12px;margin-top:14px}
+@media(max-width:700px){#leo-integracoes-refinada[data-layout=b] tr,#leo-integracoes-refinada[data-layout=c] tr{grid-template-columns:minmax(0,1fr) 110px}#leo-integracoes-refinada[data-layout=b] td:nth-child(3),#leo-integracoes-refinada[data-layout=c] td:nth-child(3){grid-column:1;grid-row:3}#leo-integracoes-refinada[data-layout=b] td:last-child,#leo-integracoes-refinada[data-layout=c] td:last-child{grid-column:2;grid-row:1/4}}
+</style>
+
+
+<style>
+#leo-integracoes-refinada .layout-choices{display:none}
+#leo-integracoes-refinada .unified-toolbar{display:grid;grid-template-columns:minmax(150px,1.3fr) minmax(130px,1fr) minmax(120px,1fr) minmax(110px,.9fr);gap:8px;align-items:center;padding:16px;border-bottom:1px solid #e2e8f0;background:white}
+#leo-integracoes-refinada .unified-toolbar .searchrow{padding:0;border:0;gap:8px;min-width:0}
+#leo-integracoes-refinada .unified-toolbar label{min-width:0}
+#leo-integracoes-refinada .unified-toolbar select{width:100%;max-width:none;min-width:0;padding:9px 7px;font-size:12px}
+#leo-integracoes-refinada .unified-toolbar input{font-size:12px}
+@media(max-width:850px){#leo-integracoes-refinada .unified-toolbar{grid-template-columns:repeat(3,minmax(0,1fr))}#leo-integracoes-refinada .unified-toolbar .searchrow{grid-column:1/-1;padding-bottom:8px}}
+@media(max-width:450px){#leo-integracoes-refinada .unified-toolbar{grid-template-columns:1fr}#leo-integracoes-refinada .unified-toolbar select{font-size:14px}}
+</style>
+
+
+<style>
+#leo-integracoes-refinada .finance-summary{margin-top:24px;padding:22px;background:white;border:1px solid #e2e8f0;border-radius:12px}
+#leo-integracoes-refinada .finance-summary h3{margin:0;color:#1e3a5f;font-size:17px}
+#leo-integracoes-refinada .summary-title{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+#leo-integracoes-refinada .finance-summary .money{text-align:right;font-variant-numeric:tabular-nums}
+#leo-integracoes-refinada .total-line{display:flex;justify-content:space-between;border-top:1px solid #e2e8f0;padding-top:18px;margin-top:12px;color:#1e3a5f;font-weight:500}
+</style>
+
+
+<style>
+#leo-integracoes-refinada .period-controls{display:flex;gap:12px;align-items:end;flex-wrap:wrap;padding:16px;border-bottom:1px solid #e2e8f0;background:white}
+#leo-integracoes-refinada .period-controls label{display:grid;gap:6px;font-size:12px;color:#526277}
+#leo-integracoes-refinada .period-controls input,#leo-integracoes-refinada .period-controls select{width:auto;max-width:100%;font:inherit;border:1px solid #e2e8f0;border-radius:7px;padding:9px;background:white;color:#1e3a5f}
+#leo-integracoes-refinada .period-controls .dates{width:140px}
+#leo-integracoes-refinada [hidden]{display:none!important}
+#leo-integracoes-refinada .summary-row{display:grid;grid-template-columns:1fr 70px 110px 110px;gap:12px;padding:15px 0;border-top:1px solid #e2e8f0;align-items:center}
+#leo-integracoes-refinada .summary-row span:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}
+@media(max-width:600px){#leo-integracoes-refinada .summary-row{grid-template-columns:1fr 45px 80px 80px;gap:5px;font-size:12px}}
+</style>
+
+
+<style>
+#leo-integracoes-refinada .clinic-tabs{display:flex;gap:8px;flex-wrap:wrap;padding:16px;border-bottom:1px solid #e2e8f0}
+#leo-integracoes-refinada .clinic-tabs button{border:0;background:transparent}
+#leo-integracoes-refinada .clinic-tabs button[aria-selected=true]{background:#eef2f8;color:#1e3a5f}
+#leo-integracoes-refinada .clinic-panel{padding:28px}
+#leo-integracoes-refinada .clinic-panel h3{font-size:19px;color:#1e3a5f;margin:0 0 8px}
+#leo-integracoes-refinada .clinic-panel h4{font-size:14px;color:#1e3a5f;margin:28px 0 18px}
+#leo-integracoes-refinada .clinic-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin:24px 0}
+#leo-integracoes-refinada .clinic-grid label{display:grid;gap:8px;font-size:13px;color:#526277}
+#leo-integracoes-refinada .clinic-grid input{border:1px solid #d5dfeb;border-radius:8px;padding:11px;color:#1e3a5f;width:100%;min-width:0}
+#leo-integracoes-refinada .clinic-row{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:20px 0;border-bottom:1px solid #e2e8f0}
+#leo-integracoes-refinada .clinic-row .lead{display:flex;gap:12px;align-items:center}
+#leo-integracoes-refinada .clinic-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:26px}
+#leo-integracoes-refinada .clinic-note{font-size:12px;color:#64748b;margin-top:20px}
+@media(max-width:550px){#leo-integracoes-refinada .clinic-grid{grid-template-columns:1fr}#leo-integracoes-refinada .clinic-panel{padding:18px}}
+</style>
+
+
+<style>
+#leo-integracoes-refinada .connection-head{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:24px}
+#leo-integracoes-refinada .connection-status{font-size:12px;color:#065f46;background:#d1fae5;padding:7px 10px;border-radius:7px}
+#leo-integracoes-refinada .connection-status.off{color:#526277;background:#eef2f8}
+#leo-integracoes-refinada .connection-detail{margin-top:24px;padding-top:22px;border-top:1px solid #e2e8f0}
+#leo-integracoes-refinada .mapping{display:flex;justify-content:space-between;gap:16px;padding:16px 0;border-bottom:1px solid #e2e8f0;flex-wrap:wrap}
+#leo-integracoes-refinada .clinic-grid input{min-width:0}
+</style>
+<script>
+(()=>{
+const root=document.getElementById('leo-integracoes-refinada'),panel=root.querySelector('.clinic-panel'),tabs=root.querySelector('.clinic-tabs');
+const icon=n=>'<i data-lucide="'+n+'" aria-hidden="true"></i>';
+const configs={feegow:{name:'Feegow',icon:'link',purpose:'Importação da agenda e associação dos procedimentos aos tipos de exame.',status:'Conectado · demonstração',fields:[['Identificação da conta','Clínica demonstração'],['Credencial de acesso','••••••••••••']],detail:'Mapeamento de procedimentos',rows:[['Ecocardiograma','Eco transtorácico'],['Eletrocardiograma','ECG']],action:'Editar mapeamentos'},orthanc:{name:'Orthanc',icon:'server',purpose:'Servidor que recebe e organiza as imagens DICOM dos aparelhos.',status:'Conectado · demonstração',fields:[['Servidor','Servidor de imagens da clínica'],['Endereço','Configurado · demonstração']],detail:'Recebimento de imagens',rows:[['Aparelho de ecocardiografia','Configurado'],['Associação ao paciente','Conferida pelo fluxo de integração']],action:'Configurar servidor'},wader:{name:'Wader',icon:'workflow',purpose:'Programa instalado na clínica que encaminha imagens e medidas ao LEO.',status:'Sem conexão · demonstração',fields:[['Instalação','Computador da clínica'],['Última comunicação','Sem informação nesta prévia']],detail:'Verificação da conexão',rows:[['Programa na clínica','Verificar se está em execução'],['Comunicação com o LEO','Aguardando conexão']],action:'Ver instruções'}};
+function show(key){const c=configs[key];tabs.querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.key===key)));panel.innerHTML='<div class="connection-head"><div><h3>'+c.name+'</h3><div class="sub">'+c.purpose+'</div></div><span class="connection-status '+(key==='wader'?'off':'')+'">'+c.status+'</span></div><div class="clinic-grid">'+c.fields.map(([label,value])=>'<label>'+label+'<input readonly value="'+value+'"></label>').join('')+'</div><div class="clinic-actions"><button type="button" data-test>'+icon('cable')+'Testar conexão</button><button type="button" data-demo="Configurar '+c.name+'">'+icon('settings')+'Configurar</button></div><section class="connection-detail"><h4>'+c.detail+'</h4>'+c.rows.map(([a,b])=>'<div class="mapping"><span>'+a+'</span><span class="name">'+b+'</span></div>').join('')+'<div class="clinic-actions"><button type="button" data-demo="'+c.action+'">'+icon(key==='feegow'?'git-compare-arrows':'settings')+c.action+'</button></div></section><p class="clinic-note">Situações e configurações fictícias para avaliação do layout.</p>';panel.id='integration-panel';panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby','integration-'+key);if(globalThis.lucide)lucide.createIcons({attrs:{width:16,height:16}});}
+Object.entries(configs).forEach(([key,c])=>{const b=document.createElement('button');b.type='button';b.dataset.key=key;b.id='integration-'+key;b.setAttribute('role','tab');b.setAttribute('aria-controls','integration-panel');b.innerHTML=icon(c.icon)+c.name;b.onclick=()=>show(key);tabs.append(b);});
+root.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const feedback=root.querySelector('[role=status]');if(b.hasAttribute('data-test'))feedback.textContent='Teste ilustrativo: nenhuma conexão externa foi realizada.';if(b.dataset.demo)feedback.textContent=b.dataset.demo+' — ação ilustrativa nesta prévia.';if(b.classList.contains('mobile-menu')){const open=root.querySelector('.shell').classList.toggle('menu-open');b.setAttribute('aria-expanded',String(open));}});show('feegow');
+})();
+</script>
+
+<style>
+#leo-integracoes-refinada .connection-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:20px;background:white;border:1px solid #e2e8f0;border-radius:12px;padding:20px}
+#leo-integracoes-refinada .overview-item{display:grid;gap:9px;align-content:start}
+#leo-integracoes-refinada .overview-item strong{font-size:14px;font-weight:500;color:#1e3a5f}
+#leo-integracoes-refinada .overview-item .connection-status{width:fit-content}
+#leo-integracoes-refinada .last-activity{font-size:12px;color:#526277;padding:14px 0;border-bottom:1px solid #e2e8f0}
+#leo-integracoes-refinada .technical{margin-top:24px;border-top:1px solid #e2e8f0;padding-top:18px}
+#leo-integracoes-refinada .technical summary{cursor:pointer;color:#1e3a5f;font-size:14px;padding:8px 0}
+#leo-integracoes-refinada .connection-help{background:#fff7e6;color:#795113;border-radius:10px;padding:18px;margin-top:18px;font-size:13px}
+#leo-integracoes-refinada .connection-help p{margin:8px 0 16px}
+#leo-integracoes-refinada .connection-help button{background:white;color:#1e3a5f}
+@media(max-width:600px){#leo-integracoes-refinada .connection-overview{grid-template-columns:1fr}.overview-item+.overview-item{padding-top:14px;border-top:1px solid #e2e8f0}}
+</style>
+<script>
+(()=>{
+const root=document.getElementById('leo-integracoes-refinada');const workspace=root.querySelector('.workspace');
+const overview=document.createElement('section');overview.className='connection-overview';overview.setAttribute('aria-label','Visão geral das integrações — dados demonstrativos');
+const activity={feegow:'Última sincronização: hoje, 09:42 · exemplo',orthanc:'Últimas imagens recebidas: hoje, 09:38 · exemplo',wader:'Última comunicação: hoje, 08:15 · exemplo'};
+[['feegow','Feegow','Conectado'],['orthanc','Orthanc','Conectado'],['wader','Wader','Sem conexão']].forEach(([key,name,status])=>{const item=document.createElement('div');item.className='overview-item';item.innerHTML='<strong>'+name+'</strong><span class="connection-status '+(key==='wader'?'off':'')+'">'+status+'</span><span class="secondary">'+activity[key]+'</span>';const button=document.createElement('button');button.type='button';button.textContent=key==='wader'?'Verificar conexão':'Ver detalhes';button.onclick=()=>root.querySelector('[data-key='+key+']').click();item.append(button);overview.append(item);});workspace.before(overview);
+function refine(){const panel=root.querySelector('.clinic-panel');if(panel.querySelector('.technical'))return;const key=root.querySelector('.clinic-tabs [aria-selected=true]').dataset.key;const last=document.createElement('div');last.className='last-activity';last.textContent=activity[key];panel.querySelector('.connection-head').after(last);
+const grid=panel.querySelector('.clinic-grid');const actions=grid.nextElementSibling;const technical=document.createElement('details');technical.className='technical';const summary=document.createElement('summary');summary.textContent='Credenciais e configurações técnicas';technical.append(summary,grid);const config=actions.querySelector('[data-demo]');if(config)technical.append(config);panel.append(technical);
+if(key==='wader'){const help=document.createElement('div');help.className='connection-help';help.innerHTML='<strong>O Wader está sem comunicação com o LEO.</strong><p>Confira se o computador da clínica está ligado, conectado à internet e com o Wader em execução.</p><button type="button" data-test>Testar novamente</button> <button type="button" data-instructions>Ver instruções</button><div class="instructions" hidden><p>1. Abra o Wader no computador da clínica.<br>2. Confira o indicador de conexão no programa.<br>3. Se continuar sem conexão, anote a mensagem exibida para o suporte.</p></div>';last.after(help);help.querySelector('[data-instructions]').onclick=()=>{const content=help.querySelector('.instructions');content.hidden=!content.hidden;};}}
+refine();root.querySelector('.clinic-tabs').addEventListener('click',refine);
+})();
+</script>

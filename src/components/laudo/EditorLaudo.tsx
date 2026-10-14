@@ -12,6 +12,7 @@ import Underline from '@tiptap/extension-underline';
 import Placeholder from '@tiptap/extension-placeholder';
 import { useImperativeHandle, forwardRef, useRef, useState, useEffect } from 'react';
 import { linhasAchados, linhasConclusoes, cortarAchadosConclusoes } from '@/lib/laudo-linhas';
+import EditorIcon from './EditorIcon';
 
 // ── Toolbar ──
 function Toolbar({ editor, onAddFrase, editable }: { editor: Editor | null; onAddFrase?: () => void; editable: boolean }) {
@@ -30,30 +31,30 @@ function Toolbar({ editor, onAddFrase, editable }: { editor: Editor | null; onAd
   // gesto nativo do usuário no DOM). Sem isto, Negrito/Lista/Desfazer/Banco de
   // Frases reescreveriam um laudo assinado mesmo com o editor "read-only" —
   // mesmo furo que os botões do Wilkins/diastólica tinham na sidebar (T4).
-  // Esconder a barra inteira segue o mesmo padrão de `#modo-edicao` (CSS
-  // .laudo-locked em page.tsx): a UI de edição some, não fica cinza clicável.
+  // Esconder a barra inteira segue o padrão do bloco de edição da SidebarLaudo:
+  // no emitido ele não monta — a UI de edição some, não fica cinza clicável.
   if (!editable) return null;
 
   const btn = (active: boolean) =>
-    `px-1.5 py-0.5 rounded text-[11px] cursor-pointer transition ${active ? 'bg-[#1E3A5F] text-white' : 'text-gray-500 hover:bg-gray-100'}`;
+    `inline-flex min-w-[30px] h-[30px] items-center justify-center gap-1.5 px-2 rounded text-xs cursor-pointer transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 [@media(pointer:coarse)]:min-w-11 [@media(pointer:coarse)]:h-11 ${active ? 'bg-[#EAF1FA] text-[#1E3A5F]' : 'text-[#526277] hover:bg-[#EEF2F8] hover:text-[#1E3A5F]'}`;
   const dis = (can: boolean) =>
     `${btn(false)} ${!can ? 'opacity-30 cursor-default' : ''}`;
 
   return (
-    <div className="flex items-center gap-0.5 flex-wrap bg-white border border-gray-200 rounded-lg px-2 py-1 mb-1 shadow-md sticky top-0 z-20">
-      <button type="button" onClick={() => editor.chain().focus().toggleBold().run()} className={btn(editor.isActive('bold'))} title="Negrito (Ctrl+B)"><strong>B</strong></button>
+    <div role="toolbar" aria-label="Formatação do laudo" className="flex items-center gap-0.5 flex-wrap bg-white border-b border-[#E8EDF3] py-1.5 mb-3 sticky top-0 z-20">
+      <button type="button" onClick={() => editor.chain().focus().toggleBold().run()} className={btn(editor.isActive('bold'))} title="Negrito (Ctrl+B)"><strong>N</strong></button>
       <button type="button" onClick={() => editor.chain().focus().toggleItalic().run()} className={btn(editor.isActive('italic'))} title="Itálico (Ctrl+I)"><em>I</em></button>
-      <button type="button" onClick={() => editor.chain().focus().toggleUnderline().run()} className={btn(editor.isActive('underline'))} title="Sublinhado (Ctrl+U)"><u>U</u></button>
+      <button type="button" onClick={() => editor.chain().focus().toggleUnderline().run()} className={btn(editor.isActive('underline'))} title="Sublinhado (Ctrl+U)"><u>S</u></button>
       <span className="w-px h-4 bg-gray-200 mx-1" />
-      <button type="button" onClick={() => editor.chain().focus().toggleBulletList().run()} className={btn(editor.isActive('bulletList'))} title="Lista">&#8226;</button>
-      <button type="button" onClick={() => editor.chain().focus().toggleOrderedList().run()} className={btn(editor.isActive('orderedList'))} title="Lista numerada">1.</button>
+      <button type="button" onClick={() => editor.chain().focus().toggleBulletList().run()} className={btn(editor.isActive('bulletList'))} title="Lista"><EditorIcon name="list" /></button>
+      <button type="button" onClick={() => editor.chain().focus().toggleOrderedList().run()} className={btn(editor.isActive('orderedList'))} title="Lista numerada"><EditorIcon name="ordered" /></button>
       <span className="w-px h-4 bg-gray-200 mx-1" />
-      <button type="button" onClick={() => editor.chain().focus().undo().run()} className={dis(editor.can().undo())} title="Desfazer (Ctrl+Z)">↩</button>
-      <button type="button" onClick={() => editor.chain().focus().redo().run()} className={dis(editor.can().redo())} title="Refazer (Ctrl+Y)">↪</button>
+      <button type="button" onClick={() => editor.chain().focus().undo().run()} className={dis(editor.can().undo())} title="Desfazer (Ctrl+Z)"><EditorIcon name="undo" /></button>
+      <button type="button" onClick={() => editor.chain().focus().redo().run()} className={dis(editor.can().redo())} title="Refazer (Ctrl+Y)"><EditorIcon name="redo" /></button>
       {onAddFrase && (
         <>
           <span className="w-px h-4 bg-gray-200 mx-1" />
-          <button type="button" onClick={onAddFrase} className="px-2 py-0.5 rounded text-[11px] cursor-pointer transition text-[#2563EB] hover:bg-blue-50 font-semibold" title="Banco de frases">＋ Banco de Frases</button>
+          <button type="button" onClick={onAddFrase} className={btn(false)} title="Banco de frases"><EditorIcon name="library" /> Frases</button>
         </>
       )}
     </div>
@@ -63,6 +64,8 @@ function Toolbar({ editor, onAddFrase, editable }: { editor: Editor | null; onAd
 // ── Ref exposto ──
 export type EditorLaudoRef = {
   getHTML: () => string;
+  /** Texto simples com quebra por bloco (prontuário) — sem div fantasma. */
+  getText: () => string;
   getAchadosHTML: () => string;
   getConclusoesHTML: () => string;
   getAchadosLines: () => string[];
@@ -130,6 +133,7 @@ const EditorLaudo = forwardRef<EditorLaudoRef, Props>(({ placeholder, onAddFrase
 
   useImperativeHandle(ref, () => ({
     getHTML: () => editor?.getHTML() || '',
+    getText: () => editor?.getText({ blockSeparator: '\n' }) || '',
 
     // X1: corte ÚNICO com laudo-linhas.ts (mesmo critério do merge por linha
     // e do Word/texto) — o walker de DOM que havia aqui cortava no primeiro

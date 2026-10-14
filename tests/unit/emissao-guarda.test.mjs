@@ -2,7 +2,7 @@
 // meio caminho (ou depois de falhar) e o PDF saía sem imagem nenhuma.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { precisaConfirmarEmissao } from '../../src/lib/emissao-guarda.ts';
+import { precisaConfirmarEmissao, sanearSelecaoImagens } from '../../src/lib/emissao-guarda.ts';
 
 describe('precisaConfirmarEmissao', () => {
   test('exame sem DICOM nenhum → não confirma', () => {
@@ -72,5 +72,21 @@ describe('precisaConfirmarEmissao', () => {
       precisaConfirmarEmissao({ dicomUltimoErro: 'sem SR', medidasDicomMeta: {}, imagensDicom: [] }),
       'sem SR',
     );
+  });
+});
+
+const A = 'ws/ex/dicom/a.jpg', B = 'ws/ex/dicom/b.jpg', C = 'ws/ex/dicom/c.jpg';
+describe('sanearSelecaoImagens — servidor só aceita imagens do próprio exame', () => {
+  test('mantém a ordem do médico; descarta URL de fora, duplicata e tipo errado', () => {
+    assert.deepEqual(sanearSelecaoImagens([C, 'https://outro/exame.jpg', A, A, 7, null], [A, B, C]), [C, A]);
+  });
+  test('lista vazia é válida; exame sem imagensDicom → nada sobrevive', () => {
+    assert.deepEqual(sanearSelecaoImagens([], [A]), []);
+    assert.deepEqual(sanearSelecaoImagens([A], undefined), []);
+    assert.deepEqual(sanearSelecaoImagens([A], 'lixo'), []);
+  });
+  test('seleção que não é lista → null (chamador remove o campo)', () => {
+    assert.equal(sanearSelecaoImagens('a.jpg', [A]), null);
+    assert.equal(sanearSelecaoImagens(undefined, [A]), null);
   });
 });

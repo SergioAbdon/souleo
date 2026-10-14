@@ -17,7 +17,8 @@ import { dataLocalHoje } from '@/lib/utils';
 // gerarESalvarPdf legado removido — emissao + PDF agora sao server-side em /api/emitir
 import SidebarLaudo from '@/components/laudo/SidebarLaudo';
 import SheetA4 from '@/components/laudo/SheetA4';
-import DicomGallery, { buscarUrlsAssinadas, renderPaginas } from '@/components/laudo/DicomGallery';
+import DicomGallery, { buscarUrlsAssinadas } from '@/components/laudo/DicomGallery';
+import { renderPaginasPdf } from '@/lib/pdf-imagens';
 import DicomSrImport from '@/components/laudo/DicomSrImport';
 import { normalizarParaImport, prefixoArquivoPorTipo, isSchemaAntigo, InputImport, MedidaSr, MapaSr, SR_TO_MOTOR } from '@/lib/dicom-sr-mapping';
 import { carregarPerfilAparelho } from '@/lib/perfil-aparelho';
@@ -28,7 +29,8 @@ import BancoFrases from '@/components/laudo/BancoFrases';
 import EditorLaudo from '@/components/laudo/EditorLaudo';
 import type { EditorLaudoRef } from '@/components/laudo/EditorLaudo';
 import { gerarDocx } from '@/lib/exportDocx';
-import { abrirPdfUrl } from '@/lib/pdfUtils';
+import { abrirPdfUrl, imprimirHtmlEmJanela } from '@/lib/pdfUtils';
+import { copiarHtml, copiarTextoSimples } from '@/lib/clipboard';
 import { nomeArquivoLaudo } from '@/lib/pdf-path';
 import { PopupSalvarEmitir, ModoEmitido } from '@/components/laudo/PopupEmitir';
 // Shadow Mode (Fase 5): roda Senna90 server-side em paralelo invisível
@@ -1313,6 +1315,10 @@ function LaudoPageInner() {
    */
   function handleImportarDicom() {
     if (!workspace?.id) return;
+    // Spec 2026-10-11-imagens-e-sr: laudo emitido não importa — o botão já
+    // vem disabled, mas a guarda de verdade é esta (Codex: a importação
+    // escreve nos inputs por código, a trava CSS/disabled não a alcança).
+    if (emitido) return;
     // Schema antigo abre o modal MESMO com 0 importáveis — é lá que fica o
     // botão de pedir reprocesso ao Wader (S4-T12). Sem esta exceção o alerta
     // abaixo era o fim da linha pros exames legados.
@@ -1379,6 +1385,7 @@ function LaudoPageInner() {
    */
   function handleConfirmarImportSr(selecionados: InputImport[]) {
     if (selecionados.length === 0) return;
+    if (emitido) { setSrImportOpen(false); return; } // mesma guarda — modal aberto e laudo reemitido no meio
     let preenchidos = 0;
     // Medidas que o médico marcou mas não têm input no DOM (S4-T15 fix D4):
     // mapeamento aponta pra um campo que não existe nesta tela. Antes só ia
@@ -1542,6 +1549,9 @@ function LaudoPageInner() {
       // X2 (Task 17): persiste a escolha do toggle "incluir imagens" — sem
       // isso o state resetava pro default (true) a cada reload/reabertura.
       incluirImagensNoPdf: incluirImagens,
+      // Codex 11/10: a seleção viaja JUNTO com PDF, snapshot e cobrança (antes
+      // dependia do autosave da galeria — que no emitido a regra agora nega).
+      imagensSelecionadasPdf,
       // nº5: pacienteNome NÃO reentra aqui — `...identificacao` (acima) já
       // traz o nome atual do DOM. A linha antiga sobrescrevia com
       // `exame.pacienteNome` (valor STALE do servidor) sempre que existia,
@@ -1625,6 +1635,7 @@ function LaudoPageInner() {
         exame_de_outro_medico: 'Este laudo e de outro medico. Peca a transferencia ao responsavel.',
         nao_encontrado: 'Exame nao encontrado. Recarregue a lista.',
         cancelado: 'Este laudo foi cancelado. Emitir de novo exige recriar o exame.',
+        conteudo_divergente: 'Este laudo já foi emitido com o conteúdo anterior. Para alterar, use Editar e reemita.',
         erro: 'Erro ao emitir. Tente novamente.',
       };
       toast(msgs[resultado.motivo || 'erro'] || 'Erro ao emitir.');
@@ -1676,6 +1687,7 @@ function LaudoPageInner() {
     if (!confirm('Ao editar e reemitir, será consumido 1 crédito da sua franquia.\n\nDeseja desbloquear para edição?')) return;
     setEmitido(false);
     setReedicaoAtiva(true); // marca: emitido reaberto — handleVoltar avisa se não reemitir
+    emissaoKeyRef.current = null; // reedição = intenção nova (cobra); a key antiga, se ficou, só renderia 409
     toast('Laudo desbloqueado para edição');
   }
 
@@ -1804,35 +1816,10 @@ function LaudoPageInner() {
     const outSolic = document.getElementById('out-solicitante')?.textContent || '—';
     const outDtex = document.getElementById('out-dtexame')?.textContent || '—';
 
-    // Seção de imagens DICOM no PDF (decisão 14/05/2026, fix 15/05/2026):
-    //  - Página(s) nova(s) após Conclusão (page-break-before: always)
-    //  - Layout 2 colunas × 4 linhas = 8 imagens por A4
-    //  - SEMPRE 8 slots — última pg pode ter slots vazios (decisão 15/05)
-    //  - Fix CSS: `minmax(0, 1fr)` + `min-height: 0` força 4 linhas mesmo
-    //    se imagem (aspect 4:3) tentar empurrar pra mais (bug 14/05 saía 6/pg)
-    //  - Pulado se imagensIncluidasNoPdf=false (toggle no PopupSalvarEmitir)
-    // S5-T13: as páginas em si (grid 2×4, padding de slots vazios) vêm de
-    // `renderPaginas()` (DicomGallery.tsx) — mesma função que o botão
-    // "Imprimir Seleção" da galeria usa. Reconciliação da deriva S4: essa
-    // função usava classes/wording levemente diferentes (`.dicom-pg`/<h2>/
-    // "Imagens —") da cópia que já vivia na galeria (`.pagina`/<h1>/
-    // "Imagens DICOM —"); a versão da galeria é o padrão-ouro (ver relatório
-    // da task). O CSS aqui só re-branda com a cor da clínica (p1) e usa
-    // page-break-before (a folha do laudo já terminou antes desta seção).
-    let imagensPdfHtml = '';
-    if (incluirImagens && imagensSelecionadasPdf.length > 0) {
-      const tipoLabel = (exame?.tipoExame as string | undefined) || '';
-      const pgsHtml = renderPaginas(imagensSelecionadasPdf, outNome, tipoLabel);
-      imagensPdfHtml = `<style>
-.pagina{page-break-before:always;display:flex;flex-direction:column;height:calc(100vh - 16mm);padding:8mm;font-family:"IBM Plex Sans",sans-serif;}
-.pagina h1{font-size:11pt;font-weight:700;color:${p1};margin-bottom:3mm;padding-bottom:2mm;border-bottom:1.5px solid ${p1};flex-shrink:0;}
-.grid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(4, minmax(0, 1fr));gap:3mm;min-height:0;}
-.slot{background:#000;border-radius:2px;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;min-height:0;}
-.slot-vazio{background:transparent;}
-.slot img{max-width:100%;max-height:100%;width:auto;height:auto;display:block;object-fit:contain;}
-.slot .num{position:absolute;bottom:2mm;right:2mm;background:rgba(0,0,0,.7);color:#fff;font-size:7.5pt;font-weight:600;padding:1mm 2mm;border-radius:2px;}
-</style>${pgsHtml}`;
-    }
+    // Páginas de imagem (CSS + grade 8/A4) — mesma função do laudo de texto.
+    const imagensPdfHtml = incluirImagens
+      ? renderPaginasPdf(imagensSelecionadasPdf, outNome, (exame?.tipoExame as string | undefined) || '', p1)
+      : '';
 
     // S5-T10 (D6): a folha A4 é UMA só — `montarPdfMoldura` monta
     // cabeçalho/identificação/rodapé pro motor e pro laudo-texto. Aqui só
@@ -1885,26 +1872,13 @@ function LaudoPageInner() {
     // ModoEmitido em PopupEmitir.tsx). O botão que abre o PDF assinado usa
     // `abrirPdfUrl` direto e nunca chama `handleImprimir`.
     if (!tabelaProntaOuAvisa('imprimir', false)) return;
-    const win = window.open('', '_blank', 'width=900,height=700');
-    if (!win) return;
-    let html = gerarPdfHtml();
-    if (workspace?.id && imagensIncluidasNoPdf && imagensSelecionadasPdf.length > 0) {
-      const assinadas = await buscarUrlsAssinadas(workspace.id, exameId, imagensSelecionadasPdf);
-      if (assinadas) {
-        for (const [canonica, assinada] of Object.entries(assinadas)) {
-          html = html.split(canonica).join(assinada);
-        }
+    await imprimirHtmlEmJanela(() => gerarPdfHtml(), async (html) => {
+      if (workspace?.id && imagensIncluidasNoPdf && imagensSelecionadasPdf.length > 0) {
+        const assinadas = await buscarUrlsAssinadas(workspace.id, exameId, imagensSelecionadasPdf);
+        if (assinadas) for (const [canonica, assinada] of Object.entries(assinadas)) html = html.replaceAll(canonica, assinada);
       }
-    }
-    // O popup pode ter sido fechado pelo usuário durante o await das URLs
-    // assinadas (S4-T15 fix D5) — escrever num `document` morto lança e
-    // derrubava o handler inteiro, sem aviso nenhum na tela.
-    try {
-      win.document.write(html);
-      win.document.close();
-    } catch {
-      alert('A janela de impressão foi fechada. Clique em Imprimir de novo.');
-    }
+      return html;
+    });
   }
 
   // ── Copiar para Prontuário ──
@@ -1922,26 +1896,14 @@ function LaudoPageInner() {
       ? `<div style="font-size:8.5pt;line-height:1.6;">${concHTMLContent}</div>`
       : coletarConclusoes().map((t, i) => `<div style="font-size:8.5pt;line-height:1.6;"><strong>${i + 1}</strong> ${t}</div>`).join('');
 
-    const temp = document.createElement('div');
-    temp.style.cssText = 'font-family:IBM Plex Sans,Arial,sans-serif;font-size:8.5pt;color:#1a1a1a;';
-    temp.innerHTML = `
+    const copiou = copiarHtml(`
       <div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;">MEDIDAS E PARÂMETROS</div>
       <div style="border:1px solid #ddd;border-top:none;padding:0;">${paramsHTML}</div>
       <div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;margin-top:4px;">COMENTÁRIOS</div>
       <div style="border:1px solid #ddd;border-top:none;padding:4px 8px;">${achadosHTML}</div>
       <div style="background:${p1};color:#fff;font-size:8pt;font-weight:700;padding:3px 8px;margin-top:4px;">CONCLUSÃO</div>
       <div style="border:1px solid #ddd;border-top:none;padding:4px 8px;">${concHTML}</div>
-    `;
-
-    document.body.appendChild(temp);
-    const range = document.createRange();
-    range.selectNodeContents(temp);
-    const sel = window.getSelection();
-    sel?.removeAllRanges();
-    sel?.addRange(range);
-    const copiou = document.execCommand('copy');
-    sel?.removeAllRanges();
-    temp.remove();
+    `, 'font-family:IBM Plex Sans,Arial,sans-serif;font-size:8.5pt;color:#1a1a1a;');
     toast(copiou ? 'Copiado — cole com Ctrl+V no Word, Tasy ou MV' : 'Falha ao copiar — selecione e copie manualmente');
   }
 
@@ -1956,17 +1918,7 @@ function LaudoPageInner() {
 
     const texto = `MEDIDAS E PARÂMETROS\n${'─'.repeat(80)}\n${params}${'─'.repeat(80)}\n${rodapeFontes()}\n\nCOMENTÁRIOS\n${achados}\n\nCONCLUSÃO\n${conclusoes}`;
 
-    navigator.clipboard.writeText(texto).then(() => {
-      toast('Copiado texto simples — cole no prontuário');
-    }).catch(() => {
-      const ta = document.createElement('textarea');
-      ta.value = texto;
-      document.body.appendChild(ta);
-      ta.select();
-      const copiou = document.execCommand('copy');
-      ta.remove();
-      toast(copiou ? 'Copiado texto simples' : 'Falha ao copiar — selecione e copie manualmente');
-    });
+    copiarTextoSimples(texto).then((ok) => toast(ok ? 'Copiado texto simples — cole no prontuário' : 'Falha ao copiar — selecione e copie manualmente'));
   }
 
   async function handleBaixarWord() {
@@ -2108,7 +2060,7 @@ function LaudoPageInner() {
   }
 
   return (
-    <div className={`h-screen grid grid-cols-[390px_1fr] overflow-hidden font-[family-name:var(--font-ibm-plex)] ${emitido ? 'laudo-locked' : ''}`}>
+    <div className={`laudo-workspace ${emitido ? 'laudo-locked' : ''}`}>
       {/* v3: alerta se motor falhou */}
       {motorErro && (
         <div className="fixed top-0 left-0 right-0 z-[9999] bg-red-600 text-white text-center py-2 text-sm font-semibold">
@@ -2230,12 +2182,15 @@ function LaudoPageInner() {
         exameId={exameId}
         pacienteNome={exame?.pacienteNome as string | undefined}
         tipoExame={exame?.tipoExame as string | undefined}
-        permitirSelecao
+        // Emitido = só leitura (Sergio 11/10): o PDF assinado é o documento; Editar → novo laudo → nova seleção.
+        permitirSelecao={!emitido}
         selecionadas={imagensSelecionadasPdf}
-        onToggleSelecao={handleToggleSelecaoImagem}
+        onToggleSelecao={emitido ? undefined : handleToggleSelecaoImagem}
       />
       {/* CSS global */}
       <style jsx global>{`
+        /* Ambiente do editor: a folha e o PDF preservam seus estilos próprios. */
+        /* Casca (.laudo-workspace, coluna, comandos, folha) vive em globals.css. */
         .sf{width:100%;border:1.5px solid #E5E7EB;border-radius:5px;padding:5px 7px;font-size:12px;font-family:'IBM Plex Sans',sans-serif;color:#111827;background:#fff;transition:border-color .15s;}
         .sf:focus{outline:none;border-color:#1E3A5F;}
 
@@ -2325,7 +2280,6 @@ function LaudoPageInner() {
            trava isso comparando as duas, não repetir um id só de um lado. */
         .laudo-locked #laudo-sidebar input:not(#convenio):not(#solicitante):not(#nome):not(#dtnasc):not(#dtexame),.laudo-locked #laudo-sidebar select:not(#convenio):not(#solicitante):not(#nome):not(#dtnasc):not(#dtexame),.laudo-locked #laudo-sidebar textarea:not(#convenio):not(#solicitante):not(#nome):not(#dtnasc):not(#dtexame){pointer-events:none;opacity:.6;background:#f1f5f9;}
         .laudo-locked #laudo-sidebar .section-btn{pointer-events:none;opacity:.5;}
-        .laudo-locked #modo-edicao{display:none;}
       `}</style>
     </div>
   );

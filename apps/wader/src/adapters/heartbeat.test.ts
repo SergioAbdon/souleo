@@ -1,20 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import os from 'os';
 
 let setCalls: Array<{ path: string; data: unknown; opts: unknown }>;
 let shouldThrowWader: boolean;
-let docData: Record<string, unknown>;
-let getShouldThrow: boolean;
 
 vi.mock('./firebase', () => ({
   getDb: () => ({
     doc: (path: string) => ({
-      get: async () => {
-        if (getShouldThrow && path.endsWith('/integracoes/wader')) {
-          throw new Error('firestore indisponível na leitura');
-        }
-        return { data: () => docData[path] };
-      },
       set: async (data: unknown, opts: unknown) => {
         if (shouldThrowWader && path.endsWith('/integracoes/wader')) {
           throw new Error('firestore indisponível');
@@ -37,15 +28,13 @@ describe('iniciarBatimento', () => {
   beforeEach(() => {
     setCalls = [];
     shouldThrowWader = false;
-    docData = {};
-    getShouldThrow = false;
     vi.useFakeTimers();
   });
 
   it('escreve tipo/visto/versao/maquina em integracoes/wader na primeira batida', async () => {
     const repo = { getOrthancConnection: async () => null };
     const client = { system: async () => ({}) };
-    const parar = iniciarBatimento('ws1', '1.2.3', repo, client);
+    const parar = iniciarBatimento('ws1', '1.2.3', repo, client, { agentId: 'ag-1' });
     await vi.advanceTimersByTimeAsync(0); // deixa a batida imediata (não-gated por timer) resolver
 
     const waderCalls = callFor('workspaces/ws1/integracoes/wader');
@@ -56,6 +45,7 @@ describe('iniciarBatimento', () => {
     expect(data.versao).toBe('1.2.3');
     expect(data.visto).toBeInstanceOf(Date);
     expect(typeof data.maquina).toBe('string');
+    expect(data.agentId).toBe('ag-1');
 
     parar();
     vi.useRealTimers();
@@ -65,7 +55,7 @@ describe('iniciarBatimento', () => {
     shouldThrowWader = true;
     const repo = { getOrthancConnection: async () => null };
     const client = { system: async () => ({}) };
-    expect(() => iniciarBatimento('ws1', '1.2.3', repo, client)).not.toThrow();
+    expect(() => iniciarBatimento('ws1', '1.2.3', repo, client, { agentId: 'ag-1' })).not.toThrow();
     await vi.advanceTimersByTimeAsync(0);
     expect(callFor('workspaces/ws1/integracoes/wader')).toHaveLength(0);
 
@@ -75,7 +65,7 @@ describe('iniciarBatimento', () => {
   it('parar() cancela o timer periódico', async () => {
     const repo = { getOrthancConnection: async () => null };
     const client = { system: async () => ({}) };
-    const parar = iniciarBatimento('ws1', '1.2.3', repo, client);
+    const parar = iniciarBatimento('ws1', '1.2.3', repo, client, { agentId: 'ag-1' });
     await vi.advanceTimersByTimeAsync(0);
     expect(callFor('workspaces/ws1/integracoes/wader')).toHaveLength(1);
 
@@ -89,7 +79,7 @@ describe('iniciarBatimento', () => {
   it('orthanc respondendo -> integracoes/orthanc recebe status ok', async () => {
     const repo = { getOrthancConnection: async () => CONN_OK };
     const client = { system: async () => ({ Version: '1.0' }) };
-    const parar = iniciarBatimento('ws1', '1.2.3', repo, client);
+    const parar = iniciarBatimento('ws1', '1.2.3', repo, client, { agentId: 'ag-1' });
     await vi.advanceTimersByTimeAsync(0);
 
     const orthancCalls = callFor('workspaces/ws1/integracoes/orthanc');
@@ -107,7 +97,7 @@ describe('iniciarBatimento', () => {
   it('orthanc caído -> status erro, ultimoErro sem user/pass dentro', async () => {
     const repo = { getOrthancConnection: async () => CONN_OK };
     const client = { system: async () => { throw new Error('fetch failed'); } };
-    const parar = iniciarBatimento('ws1', '1.2.3', repo, client);
+    const parar = iniciarBatimento('ws1', '1.2.3', repo, client, { agentId: 'ag-1' });
     await vi.advanceTimersByTimeAsync(0);
 
     const orthancCalls = callFor('workspaces/ws1/integracoes/orthanc');
@@ -129,7 +119,7 @@ describe('iniciarBatimento', () => {
         throw new Error(`Timeout (10000ms) chamando http://${CONN_OK.user}:${CONN_OK.pass}@orthanc:8042/system`);
       },
     };
-    const parar = iniciarBatimento('ws1', '1.2.3', repo, client);
+    const parar = iniciarBatimento('ws1', '1.2.3', repo, client, { agentId: 'ag-1' });
     await vi.advanceTimersByTimeAsync(0);
 
     const orthancCalls = callFor('workspaces/ws1/integracoes/orthanc');
@@ -147,7 +137,7 @@ describe('iniciarBatimento', () => {
   it('F3: sem conexão resolvida (desligado/não-configurado/sem credencial) -> NADA é gravado em integracoes/orthanc', async () => {
     const repo = { getOrthancConnection: async () => null };
     const client = { system: async () => ({}) };
-    const parar = iniciarBatimento('ws1', '1.2.3', repo, client);
+    const parar = iniciarBatimento('ws1', '1.2.3', repo, client, { agentId: 'ag-1' });
     await vi.advanceTimersByTimeAsync(0);
 
     expect(callFor('workspaces/ws1/integracoes/orthanc')).toHaveLength(0);
@@ -159,7 +149,7 @@ describe('iniciarBatimento', () => {
   it('falha na checagem do orthanc NAO derruba o batimento do wader (visto continua sendo gravado)', async () => {
     const repo = { getOrthancConnection: async () => { throw new Error('firestore indisponível na leitura da conexão'); } };
     const client = { system: async () => ({}) };
-    const parar = iniciarBatimento('ws1', '1.2.3', repo, client);
+    const parar = iniciarBatimento('ws1', '1.2.3', repo, client, { agentId: 'ag-1' });
     await vi.advanceTimersByTimeAsync(0);
 
     expect(callFor('workspaces/ws1/integracoes/wader')).toHaveLength(1);
@@ -169,64 +159,11 @@ describe('iniciarBatimento', () => {
     vi.useRealTimers();
   });
 
-  it('detecta outro Wader ativo: maquina diferente com visto < 10min grava conflito', async () => {
-    docData['workspaces/ws1/integracoes/wader'] = {
-      maquina: 'outra-maquina-xyz',
-      visto: { toDate: () => new Date(Date.now() - 2 * 60 * 1000) },
-    };
-    const repo = { getOrthancConnection: async () => null };
-    const client = { system: async () => ({}) };
-    const parar = iniciarBatimento('ws1', '1.2.3', repo, client);
-    await vi.advanceTimersByTimeAsync(0);
-
-    const waderCalls = callFor('workspaces/ws1/integracoes/wader');
-    expect(waderCalls).toHaveLength(1);
-    const data = waderCalls[0].data as Record<string, unknown>;
-    expect(data.conflito).toBe('outra-maquina-xyz');
-
-    parar();
-    vi.useRealTimers();
-  });
-
-  it('mesma maquina limpa o campo conflito', async () => {
-    docData['workspaces/ws1/integracoes/wader'] = {
-      maquina: os.hostname(),
-      visto: { toDate: () => new Date(Date.now() - 2 * 60 * 1000) },
-    };
-    const repo = { getOrthancConnection: async () => null };
-    const client = { system: async () => ({}) };
-    const parar = iniciarBatimento('ws1', '1.2.3', repo, client);
-    await vi.advanceTimersByTimeAsync(0);
-
-    const waderCalls = callFor('workspaces/ws1/integracoes/wader');
-    expect(waderCalls).toHaveLength(1);
-    const data = waderCalls[0].data as Record<string, unknown>;
-    expect(data.conflito).toBeNull();
-
-    parar();
-    vi.useRealTimers();
-  });
-
-  it('leitura pré-batimento falha: NAO derruba o batimento (visto continua sendo gravado, sem conflito)', async () => {
-    getShouldThrow = true;
-    const repo = { getOrthancConnection: async () => null };
-    const client = { system: async () => ({}) };
-    const parar = iniciarBatimento('ws1', '1.2.3', repo, client);
-    await vi.advanceTimersByTimeAsync(0);
-
-    const waderCalls = callFor('workspaces/ws1/integracoes/wader');
-    expect(waderCalls).toHaveLength(1);
-    const data = waderCalls[0].data as Record<string, unknown>;
-    expect(data.conflito).toBeNull();
-
-    parar();
-    vi.useRealTimers();
-  });
-
   it('ultimoErroIngest do worker vira campo no batimento', async () => {
     const repo = { getOrthancConnection: async () => null };
     const client = { system: async () => ({}) };
     const parar = iniciarBatimento('ws1', '1.2.3', repo, client, {
+      agentId: 'ag-1',
       ultimoErroIngest: () => 'Falha ao subir 2 imagens',
     });
     await vi.advanceTimersByTimeAsync(0);
@@ -235,6 +172,22 @@ describe('iniciarBatimento', () => {
     const data = waderCalls[0].data as Record<string, unknown>;
     expect(data.ultimoErroIngest).toBe('Falha ao subir 2 imagens');
 
+    parar();
+    vi.useRealTimers();
+  });
+  it('campos extras entram no batimento, mas a chave lider nunca', async () => {
+    const repo = { getOrthancConnection: async () => null };
+    const client = { system: async () => ({}) };
+    const parar = iniciarBatimento('ws1', '1.2.3', repo, client, {
+      agentId: 'ag-1',
+      campos: () => ({ versaoDisponivel: '1.0.1', aviso: null, lider: { agentId: 'hack' }, maquina: 'hack', agentId: 'hack' }),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const data = callFor('workspaces/ws1/integracoes/wader')[0].data as Record<string, unknown>;
+    expect(data.versaoDisponivel).toBe('1.0.1');
+    expect(data).not.toHaveProperty('lider');
+    expect(data.maquina).not.toBe('hack'); // campos nunca sobrescreve o núcleo
+    expect(data.agentId).toBe('ag-1');
     parar();
     vi.useRealTimers();
   });

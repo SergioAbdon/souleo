@@ -49,6 +49,36 @@ export function urlPermitidaNoRender(url: string, bucketName: string): boolean {
 // moldura, novo ou legado); se um pdfHtml malformado não tiver `</head>`, o
 // replace vira no-op e o PDF sai em fallback — mesmo comportamento seguro de
 // antes (CDN fora do ar), nunca uma falha dura.
+/**
+ * Alguma imagem DICOM do bucket ficou SEM assinatura no HTML? Só conta a URL
+ * canônica "nua" (sem query). A assinada (`getSignedUrl`) começa com o MESMO
+ * prefixo `https://storage.googleapis.com/<bucket>/dicom/…` e segue com
+ * `?GoogleAccessId=…` — o guard antigo (`includes(prefixo)`) a confundia com
+ * canônica e abortava TODO PDF com imagem (achado 11/10, carótidas fg-69204:
+ * 10/10 assinadas e mesmo assim "imagem não assinada — PDF abortado").
+ */
+const DELIMITADORES_URL = new Set(['"', "'", ' ', String.fromCharCode(10), String.fromCharCode(13), String.fromCharCode(9), '<', '>']);
+export function temImagemNaoAssinada(html: string, bucketName: string): boolean {
+  // Codex 11/10: "tem query" não basta (`?alt=media` não é assinatura → 403 e
+  // imagem em branco); assinada é só a que carrega a assinatura (v2 ou v4).
+  // Prefixo comparado em minúsculas: host/esquema em caixa alta chegaria ao
+  // Chrome igual e também sairia 403.
+  const prefixo = `https://storage.googleapis.com/${bucketName}/dicom`.toLowerCase();
+  const baixo = html.toLowerCase();
+  let i = baixo.indexOf(prefixo);
+  while (i !== -1) {
+    const fim = i + prefixo.length;
+    let j = fim;
+    while (j < baixo.length && !DELIMITADORES_URL.has(baixo[j])) j++;
+    const resto = baixo.slice(fim, j);
+    const v2 = /\?.*googleaccessid=[^&]+.*&expires=[^&]+.*&signature=[^&]+/.test(resto);
+    const v4 = /\?.*x-goog-signature=[0-9a-f]+/.test(resto);
+    if (!v2 && !v4) return true;
+    i = baixo.indexOf(prefixo, j);
+  }
+  return false;
+}
+
 export function injetarFontes(html: string): string {
   return html.includes('</head>') ? html.replace('</head>', `<style>${CSS_FONTES}</style></head>`) : html;
 }
@@ -83,7 +113,7 @@ export async function gerarESalvarPdf(
   // cobre as duas formas.
   // P4/E4: a esta altura a emissão JÁ foi cobrada — o texto antigo ("emissão
   // abortada") mentia dizendo que nada tinha acontecido.
-  if (htmlAssinado.includes(`https://storage.googleapis.com/${bucket.name}/dicom`)) {
+  if (temImagemNaoAssinada(htmlAssinado, bucket.name)) {
     throw new Error('imagem não assinada — PDF abortado');
   }
   // Fontes embutidas (ver injetarFontes acima) — depois da assinatura de
@@ -111,7 +141,31 @@ export async function gerarESalvarPdf(
       // que é o que o PDF precisa —, sem os 500ms de silêncio de rede nem
       // ficar refém de uma conexão pendurada. As fontes (embutidas, sem rede)
       // continuam esperadas explicitamente logo abaixo.
+      // Codex 11/10: uma assinada que volte 403/404 (ou rede) saía como imagem em
+      // branco no PDF publicado. Só as imagens DICOM do bucket contam — um <img>
+      // externo colado no texto já é bloqueado pelo allowlist e segue como antes.
+      const prefixoDicom = `https://storage.googleapis.com/${bucket.name}/dicom`;
+      const imagensFalhadas: string[] = [];
+      page.on('response', (r) => {
+        if (r.url().startsWith(prefixoDicom) && r.status() >= 400) imagensFalhadas.push(`${r.status()} ${r.url().split('?')[0].slice(-40)}`);
+      });
+      page.on('requestfailed', (r) => {
+        if (r.url().startsWith(prefixoDicom)) imagensFalhadas.push(`falha ${r.url().split('?')[0].slice(-40)}`);
+      });
       await page.setContent(htmlComFontes, { waitUntil: 'load', timeout: 30000 });
+      if (imagensFalhadas.length > 0) {
+        throw new Error(`imagem DICOM não carregou no render (${imagensFalhadas.slice(0, 3).join('; ')}) — PDF abortado`);
+      }
+      // Codex 11/10 (rodada 3): 200 com conteúdo corrompido não dispara nada acima —
+      // o <img> fica com naturalWidth 0 e o PDF sairia em branco. `evaluate` funciona
+      // com o JS da página desligado (conferido localmente com o exame real).
+      const imagensVazias = await page.evaluate(
+        (pref: string) => Array.from(document.images).filter((i) => i.src.startsWith(pref) && !(i.complete && i.naturalWidth > 0)).length,
+        prefixoDicom,
+      );
+      if (imagensVazias > 0) {
+        throw new Error(`imagem DICOM vazia no render (${imagensVazias}) — PDF abortado`);
+      }
       let teto: NodeJS.Timeout | undefined;
       await Promise.race([
         page.evaluateHandle('document.fonts.ready'),

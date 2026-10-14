@@ -2,6 +2,7 @@
   "version": "1.0",
   "wsId": "medcardio",
   "agentId": "wader-001",
+  "adminPin": "123456",
 
   "firebase": {
     "serviceAccountPath": "C:\\ProgramData\\Wader\\sa.enc",
@@ -16,7 +17,9 @@
   "polling": {
     "worklistSyncSec": 60,
     "_comentario_orthancChangesSec": "Chamada local barata (Orthanc na rede da clínica) — curto pra latência: médico vê a medida em segundos, não meio minuto.",
-    "orthancChangesSec": 5
+    "orthancChangesSec": 5,
+    "_comentario_vigiaSeg": "Segundos sem progresso de ingestão antes do vigia reiniciar o Wader.",
+    "vigiaSeg": 300
   },
 
   "ui": {

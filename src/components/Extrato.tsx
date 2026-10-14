@@ -6,6 +6,8 @@
 // Billing: 1 extrato grátis/mês/local
 // ══════════════════════════════════════════════════════════════════
 
+import ListIcon from '@/components/ListIcon';
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DocumentSnapshot } from 'firebase/firestore';
 import { useAuth } from '@/contexts/AuthContext';
@@ -295,7 +297,7 @@ export default function Extrato() {
 
   if (!podeVerFinanceiro(papel)) {
     return (
-      <div className="text-center text-gray-400 py-12 text-sm">
+      <div className="text-center text-slate-500 py-12 text-sm">
         O extrato financeiro é restrito a médicos e ao responsável pela conta.
       </div>
     );
@@ -304,21 +306,21 @@ export default function Extrato() {
   return (
     <div>
       {/* Filtros de período */}
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex flex-wrap items-center gap-3 mb-5 rounded-xl border border-slate-200 bg-white p-4">
         <label className="text-xs text-gray-500">De</label>
         <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-          className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] w-40" />
+          className="border border-borda rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] w-40" />
         <label className="text-xs text-gray-500">Até</label>
         <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-          className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] w-40" />
+          className="border border-borda rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F] w-40" />
         <button onClick={handleConsultar} disabled={!dateFrom || !dateTo || loading}
           className="bg-[#2563EB] text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition disabled:opacity-40 whitespace-nowrap">
-          {loading ? 'Consultando...' : '🔍 Consultar'}
+          {loading ? 'Consultando...' : <><ListIcon name="search" /> Consultar</>}
         </button>
       </div>
 
       {/* Info billing do extrato */}
-      <div className="text-xs text-gray-400 mb-3">
+      <div className="text-xs text-slate-500 mb-3">
         {extratoFranquia === -1
           ? `${extratoInfo.emitidos} extrato(s) emitido(s) em ${wsNome} neste mês — ilimitados no seu plano`
           : extratoInfo.emitidos === 0
@@ -328,58 +330,58 @@ export default function Extrato() {
 
       {/* Conteúdo */}
       {loading ? (
-        <div className="text-center py-12 text-gray-300">
-          <span className="text-3xl animate-pulse">🫀</span>
+        <div className="text-center py-12 text-slate-500">
+          <span className="text-3xl animate-pulse"><ListIcon name="file" className="h-7 w-7" /></span>
           <p className="text-sm mt-2">Consultando exames...</p>
         </div>
       ) : !gerado ? (
-        <div className="text-center py-12 text-gray-300">
-          <p className="text-3xl mb-2">📊</p>
+        <div className="text-center py-12 text-slate-500">
+          <p className="text-3xl mb-2"><ListIcon name="chart" className="h-7 w-7" /></p>
           <p className="text-sm">Selecione o período e clique em Consultar</p>
         </div>
       ) : exames.length === 0 ? (
-        <div className="text-center py-12 text-gray-300">
-          <p className="text-3xl mb-2">📊</p>
+        <div className="text-center py-12 text-slate-500">
+          <p className="text-3xl mb-2"><ListIcon name="chart" className="h-7 w-7" /></p>
           <p className="text-sm">Nenhum laudo emitido neste período</p>
         </div>
       ) : (
         <>
           {/* Tabela detalhada */}
-          <div className="bg-white rounded-lg overflow-hidden border border-gray-100 mb-4">
-            <table className="w-full text-sm">
+          <div className="bg-white rounded-xl overflow-x-auto border border-slate-200 mb-4">
+            <table className="w-full min-w-[700px] text-sm">
               <thead>
-                <tr className="border-b text-xs text-gray-400 uppercase bg-gray-50">
-                  <th className="py-2 px-3 text-left w-24">Data exame</th>
-                  <th className="py-2 px-3 text-left w-36">Emitido em</th>
-                  <th className="py-2 px-3 text-left">Paciente</th>
-                  <th className="py-2 px-3 text-left w-20">Tipo</th>
-                  <th className="py-2 px-3 text-left w-28">Convênio</th>
+                <tr className="border-b text-xs text-slate-500 uppercase bg-gray-50">
+                  <th className="py-3 px-4 text-left w-24">Data exame</th>
+                  <th className="py-3 px-4 text-left w-36">Emitido em</th>
+                  <th className="py-3 px-4 text-left">Paciente</th>
+                  <th className="py-3 px-4 text-left w-20">Tipo</th>
+                  <th className="py-3 px-4 text-left w-28">Convênio</th>
                 </tr>
               </thead>
               <tbody>
                 {exames.map(ex => (
                   <tr key={ex.id} className="border-b hover:bg-gray-50 transition">
-                    <td className="py-2.5 px-3 text-gray-500 text-xs font-mono">{fmtDataExame(ex.dataExame)}</td>
-                    <td className="py-2.5 px-3 text-gray-400 text-xs">{fmtDataHora(ex.emitidoEm)}</td>
-                    <td className="py-2.5 px-3 font-semibold text-[#1E3A5F] text-xs">{ex.pacienteNome || '—'}</td>
-                    <td className="py-2.5 px-3 text-gray-500 text-xs">{tiposMap[ex.tipoExame as string]?.nome || ex.tipoExame || '—'}</td>
-                    <td className="py-2.5 px-3 text-gray-500 text-xs">{ex.convenio || '—'}</td>
+                    <td className="py-5 px-4 text-gray-500 text-xs font-mono">{fmtDataExame(ex.dataExame)}</td>
+                    <td className="py-5 px-4 text-slate-500 text-xs">{fmtDataHora(ex.emitidoEm)}</td>
+                    <td className="py-5 px-4 font-semibold text-[#1E3A5F] text-xs">{ex.pacienteNome || '—'}</td>
+                    <td className="py-5 px-4 text-gray-500 text-xs">{tiposMap[ex.tipoExame as string]?.nome || ex.tipoExame || '—'}</td>
+                    <td className="py-5 px-4 text-gray-500 text-xs">{ex.convenio || '—'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <div className="text-center text-xs text-gray-400 py-2">
+            <div className="text-center text-xs text-slate-500 py-2">
               {exames.length} exame{exames.length !== 1 ? 's' : ''} no período
             </div>
           </div>
 
           {/* Resumo por convênio */}
-          <div className="bg-white rounded-lg border border-gray-100 p-4 mb-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold text-[#1E3A5F]">Resumo por Convênio</h3>
+          <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 mb-5">
+            <div className="flex flex-wrap gap-3 items-center justify-between mb-5">
+              <h3 className="text-lg font-semibold text-[#1E3A5F]">Resumo por Convênio</h3>
               <button onClick={() => setEditandoValores(!editandoValores)}
                 className="text-xs text-[#2563EB] font-semibold hover:underline">
-                {editandoValores ? 'Cancelar' : '⚙️ Editar valores'}
+                {editandoValores ? 'Cancelar' : <><ListIcon name="edit" /> Editar valores</>}
               </button>
             </div>
 
@@ -399,19 +401,20 @@ export default function Extrato() {
                         setValorUnicoInput(e.target.value);
                         setHonorarios(prev => ({ ...prev, valorUnico: Math.max(0, parseFloat(e.target.value) || 0) }));
                       }}
-                      className="border rounded px-2 py-1 text-sm w-24 focus:outline-none focus:border-[#1E3A5F]" />
+                      className="border border-borda rounded px-2 py-1 text-sm w-24 focus:outline-none focus:border-[#1E3A5F]" />
                   </div>
                 )}
               </div>
             )}
 
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[480px] text-sm tabular-nums">
               <thead>
-                <tr className="border-b text-xs text-gray-400 uppercase">
-                  <th className="py-2 text-left">Qtd</th>
-                  <th className="py-2 text-left">Convênio</th>
-                  <th className="py-2 text-left w-28">Valor unit.</th>
-                  <th className="py-2 text-right">Total</th>
+                <tr className="border-b text-xs text-slate-500 uppercase">
+                  <th className="py-4 text-left">Qtd</th>
+                  <th className="py-4 text-left">Convênio</th>
+                  <th className="py-4 text-left w-28">Valor unit.</th>
+                  <th className="py-4 text-right">Total</th>
                 </tr>
               </thead>
               <tbody>
@@ -419,30 +422,32 @@ export default function Extrato() {
                   const val = getValor(conv);
                   return (
                     <tr key={conv} className="border-b">
-                      <td className="py-2 font-semibold text-[#1E3A5F]">{qtd}</td>
-                      <td className="py-2 text-gray-600">{conv}</td>
-                      <td className="py-2">
+                      <td className="py-4 font-semibold text-[#1E3A5F]">{qtd}</td>
+                      <td className="py-4 text-gray-600">{conv}</td>
+                      <td className="py-4">
                         {editandoValores && !usarValorUnico ? (
                           <div className="flex items-center gap-1">
-                            <span className="text-xs text-gray-400">R$</span>
+                            <span className="text-xs text-slate-500">R$</span>
                             <input type="number" step="0.01" min="0"
                               value={honorarios.convenios[conv] || ''}
                               onChange={e => setValorConvenio(conv, e.target.value)}
-                              className="border rounded px-2 py-0.5 text-sm w-20 focus:outline-none focus:border-[#1E3A5F]" />
+                              className="border border-borda rounded px-2 py-0.5 text-sm w-20 focus:outline-none focus:border-[#1E3A5F]" />
                           </div>
                         ) : (
                           <span className="text-gray-500">R$ {val.toFixed(2)}</span>
                         )}
                       </td>
-                      <td className="py-2 text-right font-bold text-[#1E3A5F]">R$ {(qtd * val).toFixed(2)}</td>
+                      <td className="py-4 text-right font-bold text-[#1E3A5F]">R$ {(qtd * val).toFixed(2)}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
 
+            </div>
+
             {/* Total geral */}
-            <div className="flex justify-between items-center mt-3 pt-3 border-t-2 border-[#1E3A5F]">
+            <div className="flex flex-wrap gap-3 justify-between items-center mt-3 pt-5 border-t border-slate-200 tabular-nums">
               <span className="font-bold text-[#1E3A5F]">TOTAL: {exames.length} exames</span>
               <span className="font-bold text-lg text-[#1E3A5F]">R$ {totalGeral.toFixed(2)}</span>
             </div>
@@ -462,7 +467,7 @@ export default function Extrato() {
           <div className="flex justify-center">
             <button onClick={handleGerarExtrato} disabled={gerandoExtrato}
               className="bg-[#1E3A5F] text-white px-8 py-3 rounded-lg font-semibold hover:bg-[#2563EB] transition flex items-center gap-2 disabled:opacity-50">
-              {gerandoExtrato ? 'Gerando...' : '🖨️ Gerar Extrato'}
+              {gerandoExtrato ? 'Gerando...' : <><ListIcon name="print" /> Gerar Extrato</>}
             </button>
           </div>
         </>

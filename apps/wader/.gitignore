@@ -1,5 +1,7 @@
 node_modules/
 dist/
+build/
+updates/
 *.log
 
 # Configuração local (cada clínica tem a sua)

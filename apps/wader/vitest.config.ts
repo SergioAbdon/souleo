@@ -7,6 +7,7 @@ export default defineConfig({
   css: { postcss: { plugins: [] } },
   test: {
     environment: 'node',
+    env: { WADER_LOG_LEVEL: 'silent' }, // sem ruído de pino/Fastify na saída do npm test
     include: ['src/**/*.test.ts'],
   },
 });

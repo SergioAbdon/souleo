@@ -1,0 +1,56 @@
+<div id="leo-signup">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+#leo-signup{font-family:'IBM Plex Sans',Arial,sans-serif;color:#1e3a5f;background:#f1f5f9;padding:40px 24px}
+#leo-signup *{box-sizing:border-box}
+#leo-signup .window{max-width:880px;margin:auto;display:grid;grid-template-columns:1fr 1fr;min-height:540px;background:white;border:1px solid #d6e2f1;border-radius:16px;overflow:hidden}
+#leo-signup aside{padding:48px 36px;background:#eaf1fa;display:flex;flex-direction:column;justify-content:space-between}
+#leo-signup .brand{width:110px;height:auto}
+#leo-signup aside h2{font-size:29px;font-weight:500;line-height:1.3;letter-spacing:-.6px;margin:30px 0 14px}
+#leo-signup p{font-size:14px;line-height:1.65;color:#526277;margin:0 0 24px}
+#leo-signup .muted{font-size:12px;color:#526277}
+#leo-signup main{padding:48px 36px;display:flex;flex-direction:column;justify-content:center;min-width:0}
+#leo-signup h3{font-size:25px;font-weight:500;letter-spacing:-.4px;margin:0 0 10px}
+#leo-signup label{display:grid;gap:8px;font-size:13px;margin:18px 0;color:#1e3a5f}
+#leo-signup input{width:100%;min-width:0;border:1px solid #cfdaea;border-radius:8px;padding:12px;font:inherit;background:white;color:#1e3a5f}
+#leo-signup button{font:inherit;border:0;border-radius:8px;background:transparent;color:#2563eb;padding:10px 0;text-align:left}
+#leo-signup button.primary{display:block;width:100%;background:#2563eb;color:white;text-align:center;padding:12px;margin-top:20px}
+#leo-signup button:focus-visible,#leo-signup input:focus-visible{outline:2px solid #2563eb;outline-offset:3px}
+#leo-signup .links{margin-top:20px;font-size:13px;border-top:1px solid #e2e8f0;padding-top:16px}
+#leo-signup .links button{padding:5px 0}
+#leo-signup .feedback{font-size:12px;line-height:1.6;color:#526277;margin-top:16px}
+#leo-signup [hidden]{display:none!important}
+@media(max-width:650px){#leo-signup{padding:14px}#leo-signup .window{grid-template-columns:1fr}#leo-signup aside{padding:24px}#leo-signup aside h2{font-size:22px;margin:18px 0 8px}#leo-signup aside p{margin-bottom:0}#leo-signup aside .muted{display:none}#leo-signup main{padding:28px 24px}}
+</style>
+<div class="window"><aside><div class="brand-slot"><svg class="brand" viewBox="-10 0 500 230" role="img" aria-label="LEO">
+<defs><linearGradient id="access-blue" x2="1" y2="1"><stop stop-color="#284f83"/><stop offset="1" stop-color="#2877ff"/></linearGradient><clipPath id="access-trace"><path d="M17 153 H48 L68 113 L70 188 L87 159 H200" fill="none" stroke="white" stroke-width="3.5"/></clipPath></defs>
+<g fill="url(#access-blue)"><path d="M55 10 H128 L91 151 H202 L201 155 H85 L74 171 L72 95 L46 149 H18 Z"/><path d="M16 158 H50 L64 135 L66 202 L86 164 H198 L188 214 H0 Z"/></g>
+<g fill="#1e3a5f" transform="translate(213 104) skewX(-12)"><path d="M0 0 H100 V23 H28 V43 H93 V65 H28 V87 H100 V110 H0 Z"/><path fill-rule="evenodd" d="M150 0 H202 Q232 0 232 29 V81 Q232 110 202 110 H150 Q120 110 120 81 V29 Q120 0 150 0 Z M158 23 Q148 23 148 35 V75 Q148 87 158 87 H194 Q204 87 204 75 V35 Q204 23 194 23 Z"/></g><g clip-path="url(#access-trace)"><rect class="sweep" width="28" height="220" fill="#77aaff"/></g></svg></div><div><h2>Seu trabalho clínico,<br>em um só lugar.</h2><p>Agenda, pacientes e laudos organizados no LEO.</p></div><span class="muted">LEO · Plataforma de laudos</span></aside><main><div class="signup-tabs" role="tablist" aria-label="Tipo de cadastro"><button type="button" role="tab" id="signup-pf" aria-selected="true" aria-controls="signup-panel" data-mode="pf">Profissional</button><button type="button" role="tab" id="signup-pj" aria-selected="false" aria-controls="signup-panel" data-mode="pj">Clínica</button></div><section id="signup-panel" role="tabpanel" aria-labelledby="signup-pf"></section><div class="feedback" role="status">Demonstração · use apenas dados fictícios.</div></main></div>
+
+</div>
+
+
+<style>
+#leo-signup .window{max-width:980px;grid-template-columns:.8fr 1.2fr}
+#leo-signup main{padding:32px}
+#leo-signup .signup-tabs{display:flex;gap:20px;border-bottom:1px solid #e2e8f0;margin-bottom:26px}
+#leo-signup .signup-tabs button{border-radius:0;padding:10px 0;color:#526277;border-bottom:2px solid transparent}
+#leo-signup .signup-tabs button[aria-selected=true]{color:#1e3a5f;border-bottom-color:#2563eb}
+#leo-signup .field-pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+#leo-signup label{margin:12px 0}
+#leo-signup select{font:inherit;width:100%;padding:11px;border:1px solid #cfdaea;border-radius:8px;background:#fff;color:#1e3a5f}
+#leo-signup h4{font-size:13px;font-weight:500;margin:22px 0 12px;padding-top:18px;border-top:1px solid #e2e8f0}
+#leo-signup label.checkbox{display:flex;align-items:center;gap:9px}
+#leo-signup input[type=checkbox]{width:16px;height:16px}
+#leo-signup .hint{font-size:12px;color:#526277;margin:8px 0}
+@media(max-width:650px){#leo-signup .window{grid-template-columns:1fr}#leo-signup main{padding:24px}#leo-signup .field-pair{grid-template-columns:1fr}}
+</style>
+<script>
+(()=>{
+const root=document.getElementById('leo-signup'),panel=root.querySelector('#signup-panel');
+const input=(label,type='text',required=false,placeholder='')=>'<label>'+label+'<input type="'+type+'" '+(required?'required ':'')+'autocomplete="off" placeholder="'+placeholder+'"></label>';
+const crm=()=>'<div class="field-pair crm">'+input('CRM')+'<label>UF<select><option value="">Selecionar</option>'+['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(s=>'<option>'+s+'</option>').join('')+'</select></label></div>';
+function render(mode){root.querySelectorAll('[data-mode]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.mode===mode)));panel.setAttribute('aria-labelledby','signup-'+mode);panel.innerHTML='<h3>'+(mode==='pf'?'Cadastro profissional':'Cadastro da clínica')+'</h3><p>'+(mode==='pf'?'Crie seu acesso pessoal ao LEO.':'Cadastre a clínica e o responsável pela conta.')+'</p><form>'+(mode==='pf'?'<label>Tipo de profissional<select data-role><option value="medico">Médico</option><option value="assistente">Assistente</option></select></label>'+input('Nome completo','text',true)+crm()+input('Especialidade (opcional)'):'<h4>Dados da clínica</h4>'+input('CNPJ','text',true,'00.000.000/0000-00')+input('Razão social','text',true)+input('Nome do primeiro local (opcional)','text',false,'Unidade Centro')+'<h4>Responsável pela conta</h4>'+input('Seu nome','text',true)+'<label class="checkbox"><input type="checkbox" data-doctor>Sou médico e vou assinar laudos</label>'+crm())+'<h4>Dados de acesso</h4>'+input('E-mail','email',true,'voce@exemplo.com')+input('Senha','password',true,'Mínimo de 6 caracteres')+'<button type="submit" class="primary">'+(mode==='pf'?'Criar conta':'Criar conta da clínica')+'</button></form>';
+const form=panel.querySelector('form');form.querySelector('[type=password]').minLength=6;const group=panel.querySelector('.crm');function toggle(){const show=mode==='pf'?panel.querySelector('[data-role]').value==='medico':panel.querySelector('[data-doctor]').checked;group.hidden=!show;group.querySelectorAll('input,select').forEach(x=>x.disabled=!show);}panel.querySelector('[data-role],[data-doctor]').addEventListener('change',toggle);toggle();form.onsubmit=e=>{e.preventDefault();root.querySelector('[role=status]').textContent='Cadastro simulado. Nenhuma conta foi criada ou informação enviada.';form.querySelector('[type=password]').value='';};}root.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>render(b.dataset.mode));render('pf');
+})();
+</script>

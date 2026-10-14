@@ -1,0 +1,183 @@
+<div id="leo-ficha-opcoes" data-variant="d" aria-label="Paletas D e F da Agenda">
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+#leo-ficha-opcoes {font-family:'IBM Plex Sans',Arial,sans-serif;color:#243449;font-size:14px;}
+#leo-ficha-opcoes * {box-sizing:border-box;}
+#leo-ficha-opcoes .choice {display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff;padding:12px;border-bottom:1px solid #e2e8f0;}
+#leo-ficha-opcoes button {font:inherit;cursor:pointer;color:inherit;background:white;border:1px solid #e2e8f0;border-radius:7px;padding:8px 12px;min-height:36px;display:inline-flex;align-items:center;gap:8px;}
+#leo-ficha-opcoes button:focus-visible,#leo-ficha-opcoes input:focus-visible {outline:2px solid #2563eb;outline-offset:3px;}
+#leo-ficha-opcoes .choice button[aria-pressed=true] {background:#eef2f8;color:#1e3a5f;border-color:#a5b9d7;}
+#leo-ficha-opcoes .note {color:#64748b;font-size:12px;margin-left:auto;}
+#leo-ficha-opcoes .shell {display:grid;grid-template-columns:180px minmax(0,1fr);background:#f1f5f9;border:1px solid #e2e8f0;min-height:630px;}
+#leo-ficha-opcoes aside {background:#fff;border-right:1px solid #e2e8f0;padding:24px 12px;display:flex;flex-direction:column;gap:24px;}
+#leo-ficha-opcoes .brand {width:98px;height:46px;margin-left:12px;}
+#leo-ficha-opcoes .place {padding:0 12px;font-size:12px;color:#64748b;}
+#leo-ficha-opcoes .place strong {display:block;color:#1e3a5f;font-size:14px;font-weight:500;margin-bottom:4px;}
+#leo-ficha-opcoes nav {display:grid;gap:5px;}
+#leo-ficha-opcoes .navitem {display:flex;align-items:center;gap:10px;padding:9px 12px;font-size:13px;color:#637083;border-radius:7px;}
+#leo-ficha-opcoes .navitem.active {background:#eef2f8;color:#1e3a5f;font-weight:600;}
+#leo-ficha-opcoes .account {margin-top:auto;border-top:1px solid #e2e8f0;padding:18px 10px 0;display:flex;gap:10px;align-items:center;font-size:12px;}
+#leo-ficha-opcoes .avatar {border-radius:50%;background:#eef2f8;color:#1e3a5f;padding:9px;}
+#leo-ficha-opcoes main {min-width:0;padding:0 24px 24px;}
+#leo-ficha-opcoes .crumb {font-size:12px;color:#64748b;padding:17px 0;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:8px;}
+#leo-ficha-opcoes .pagehead {display:flex;justify-content:space-between;align-items:center;gap:16px;padding:25px 0 22px;flex-wrap:wrap;}
+#leo-ficha-opcoes h2 {font-size:25px;letter-spacing:-.8px;color:#1e3a5f;margin:0 0 4px;font-weight:600;}
+#leo-ficha-opcoes .sub {font-size:13px;color:#64748b;}
+#leo-ficha-opcoes button.primary {background:#2563eb;border-color:#2563eb;color:#fff;}
+#leo-ficha-opcoes .head-actions {display:flex;gap:8px;flex-wrap:wrap;}
+#leo-ficha-opcoes .workspace {background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;}
+#leo-ficha-opcoes .filters {display:flex;gap:5px;padding:12px 14px;border-bottom:1px solid #e2e8f0;flex-wrap:wrap;}
+#leo-ficha-opcoes .filters button {border:0;padding:6px 9px;font-size:12px;color:#64748b;}
+#leo-ficha-opcoes .filters button[aria-pressed=true] {background:#eef2f8;color:#1e3a5f;font-weight:500;}
+#leo-ficha-opcoes .count {font-size:11px;opacity:.7;}
+#leo-ficha-opcoes .searchrow {display:flex;gap:10px;padding:12px 16px;align-items:center;border-bottom:1px solid #e2e8f0;}
+#leo-ficha-opcoes input {border:0;outline:none;min-width:0;width:100%;font:inherit;font-size:13px;color:#243449;background:#fff;}
+#leo-ficha-opcoes table {width:100%;border-collapse:collapse;text-align:left;font-size:13px;}
+#leo-ficha-opcoes th {font-weight:400;font-size:11px;color:#64748b;background:#fafbfd;padding:10px 12px;}
+#leo-ficha-opcoes td {border-top:1px solid #edf0f4;padding:8px 12px;height:46px;}
+#leo-ficha-opcoes .roomy td {padding-top:19px;padding-bottom:19px;height:76px;}
+#leo-ficha-opcoes .name {display:block;color:#1e3a5f;font-weight:500;}
+#leo-ficha-opcoes .secondary {color:#64748b;font-size:11px;margin-top:3px;}
+#leo-ficha-opcoes .time {font-variant-numeric:tabular-nums;color:#64748b;}
+#leo-ficha-opcoes .pill {display:inline-flex;align-items:center;gap:5px;padding:3px 7px;border-radius:5px;font-size:11px;white-space:nowrap;}
+#leo-ficha-opcoes .pill::before {content:'';width:5px;height:5px;border-radius:50%;background:currentColor;}
+#leo-ficha-opcoes .waiting {background:#fef3c7;color:#92400e;}
+#leo-ficha-opcoes .working {background:#dbeafe;color:#1e40af;}
+#leo-ficha-opcoes .done {background:#d1fae5;color:#065f46;}
+#leo-ficha-opcoes .action {border:0;background:transparent;padding:4px;color:#2563eb;font-size:12px;}
+#leo-ficha-opcoes .foot {padding:13px 16px;color:#64748b;font-size:11px;border-top:1px solid #e2e8f0;}
+#leo-ficha-opcoes .empty {text-align:center;color:#64748b;padding:30px;}
+#leo-ficha-opcoes .sweep {animation:lp-sweep .681818181818s ease-in-out infinite;}
+@keyframes lp-sweep {0%,12%{transform:translateX(-30px)}68%,100%{transform:translateX(235px)}}
+@media(prefers-reduced-motion:reduce){#leo-ficha-opcoes .sweep{animation:none;opacity:0}}
+@media(max-width:800px){#leo-ficha-opcoes .shell{grid-template-columns:145px minmax(0,1fr)}#leo-ficha-opcoes main{padding:0 14px 16px}#leo-ficha-opcoes .optional{display:none}#leo-ficha-opcoes td,#leo-ficha-opcoes th{padding-left:8px;padding-right:8px}}
+@media(max-width:550px){#leo-ficha-opcoes .shell{display:block}#leo-ficha-opcoes aside{display:none}#leo-ficha-opcoes .note{margin-left:0;width:100%}#leo-ficha-opcoes .exam{display:none}#leo-ficha-opcoes .pagehead{padding:18px 0}#leo-ficha-opcoes .head-actions{gap:5px}#leo-ficha-opcoes button{min-height:44px}#leo-ficha-opcoes .filters{gap:0;padding:8px}#leo-ficha-opcoes main{padding:0 10px 12px}#leo-ficha-opcoes td{font-size:12px}}
+#leo-ficha-opcoes .shell{grid-template-columns:184px minmax(0,1fr)}
+#leo-ficha-opcoes .date{width:142px;flex:none;border-right:1px solid #e2e8f0;padding-right:10px}
+#leo-ficha-opcoes .searchrow{padding:18px 16px}
+#leo-ficha-opcoes .workspace{box-shadow:0 2px 8px rgba(30,58,95,.035)}
+#leo-ficha-opcoes tbody tr:hover{background:#f8fafc}
+#leo-ficha-opcoes .examline{display:flex;align-items:center;gap:6px}
+#leo-ficha-opcoes .acc{font-family:monospace;font-size:11px;color:#64748b;margin-top:5px}
+#leo-ficha-opcoes .wait{font-size:11px;color:#92400e;margin-top:5px}
+#leo-ficha-opcoes .mobile-menu{display:none}
+#leo-ficha-opcoes .roomy td{padding-top:20px;padding-bottom:20px}
+@media(max-width:700px){#leo-ficha-opcoes .shell{display:block}#leo-ficha-opcoes aside{display:none}#leo-ficha-opcoes .mobile-menu{display:inline-flex}#leo-ficha-opcoes .shell.menu-open aside{display:flex}#leo-ficha-opcoes .exam{display:table-cell}#leo-ficha-opcoes .searchrow{flex-wrap:wrap}#leo-ficha-opcoes input[type=search]{flex:1}#leo-ficha-opcoes table,#leo-ficha-opcoes tbody{display:block}#leo-ficha-opcoes thead{display:none}#leo-ficha-opcoes tr{display:grid;grid-template-columns:1fr 1fr;padding:14px 4px;border-top:1px solid #e2e8f0}#leo-ficha-opcoes .roomy td{display:block;height:auto;padding:6px 10px;border:0}#leo-ficha-opcoes td.time{grid-column:1/-1}#leo-ficha-opcoes td.optional{display:block}#leo-ficha-opcoes td.exam{grid-column:1}#leo-ficha-opcoes td:nth-child(2){grid-column:1/-1}#leo-ficha-opcoes main{padding:0 12px 16px}}
+#leo-ficha-opcoes .variant-picker{display:flex;gap:8px;flex-wrap:wrap;padding:12px 0}
+#leo-ficha-opcoes .variant-picker button[aria-pressed=true]{background:#1e3a5f;color:white;border-color:#1e3a5f}
+#leo-ficha-opcoes .variant-description{font-size:13px;color:#526277;margin:0 0 16px}
+#leo-ficha-opcoes[data-variant=b] .shell{background:#fff}
+#leo-ficha-opcoes[data-variant=b] .workspace{border:0;border-radius:0;box-shadow:none}
+#leo-ficha-opcoes[data-variant=b] .filters{padding-left:0;padding-bottom:0;gap:12px}
+#leo-ficha-opcoes[data-variant=b] .filters button{border-radius:0;padding:12px 4px;border-bottom:2px solid transparent}
+#leo-ficha-opcoes[data-variant=b] .filters button[aria-pressed=true]{background:transparent;border-bottom-color:#2563eb;color:#1e3a5f}
+#leo-ficha-opcoes[data-variant=b] .searchrow{padding:20px 0}
+#leo-ficha-opcoes[data-variant=b] th{background:#fff}
+#leo-ficha-opcoes[data-variant=b] .pagehead{padding-top:34px;padding-bottom:30px}
+#leo-ficha-opcoes[data-variant=b] .roomy td{padding-top:23px;padding-bottom:23px}
+#leo-ficha-opcoes[data-variant=f] .workspace{background:transparent;border:0;box-shadow:none;overflow:visible}
+#leo-ficha-opcoes[data-variant=f] .filters{padding:0 0 16px;border:0}
+#leo-ficha-opcoes[data-variant=f] .filters button{background:transparent}
+#leo-ficha-opcoes[data-variant=f] .filters button[aria-pressed=true]{background:#1e3a5f;color:#fff}
+#leo-ficha-opcoes[data-variant=f] .searchrow{background:#fff;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:16px}
+#leo-ficha-opcoes[data-variant=f] table,#leo-ficha-opcoes[data-variant=f] tbody{display:block}
+#leo-ficha-opcoes[data-variant=f] thead{display:none}
+#leo-ficha-opcoes[data-variant=f] tr{display:grid;grid-template-columns:minmax(180px,1.5fr) minmax(145px,1fr) minmax(130px,1fr) 90px;align-items:center;gap:4px 14px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:18px;margin-bottom:10px}
+#leo-ficha-opcoes[data-variant=f] .roomy td{padding:0;height:auto;border:0}
+#leo-ficha-opcoes[data-variant=f] td:nth-child(2){grid-column:1;grid-row:1}
+#leo-ficha-opcoes[data-variant=f] td.time{grid-column:1;grid-row:2;font-size:11px}
+#leo-ficha-opcoes[data-variant=f] td.time:before{content:'Chegada '}
+#leo-ficha-opcoes[data-variant=f] td.exam{grid-column:2;grid-row:1}
+#leo-ficha-opcoes[data-variant=f] td.optional{display:block;grid-column:2;grid-row:2;font-size:11px;color:#64748b}
+#leo-ficha-opcoes[data-variant=f] td:nth-child(5){grid-column:3;grid-row:1/3}
+#leo-ficha-opcoes[data-variant=f] td:last-child{grid-column:4;grid-row:1/3}
+#leo-ficha-opcoes[data-variant=f] .name{font-size:15px}
+#leo-ficha-opcoes[data-variant=f] .foot{border:0;padding-left:0}
+@media(max-width:950px){#leo-ficha-opcoes[data-variant=f] tr{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}#leo-ficha-opcoes[data-variant=f] td:nth-child(5){grid-column:1;grid-row:3}#leo-ficha-opcoes[data-variant=f] td:last-child{grid-column:2;grid-row:3}#leo-ficha-opcoes[data-variant=f] tr{gap:14px}}
+#leo-ficha-opcoes[data-variant=d] aside{background:#eaf1fa;border-color:#d6e2f1}
+#leo-ficha-opcoes[data-variant=d] .navitem{color:#445d7b}
+#leo-ficha-opcoes[data-variant=d] .navitem.active{background:#fff;color:#1e3a5f;box-shadow:0 2px 6px rgba(30,58,95,.07)}
+#leo-ficha-opcoes[data-variant=d] .place,#leo-ficha-opcoes[data-variant=d] .account .secondary{color:#506580}
+#leo-ficha-opcoes[data-variant=d] .account{border-color:#cfdced}
+#leo-ficha-opcoes[data-variant=d] .avatar{background:#d6e4f6;color:#1e3a5f}
+#leo-ficha-opcoes[data-variant=f] aside{background:#1e3a5f;border-color:#1e3a5f}
+#leo-ficha-opcoes[data-variant=f] .navitem{color:#d5e1f0}
+#leo-ficha-opcoes[data-variant=f] .navitem.active{background:#34577f;color:#fff}
+#leo-ficha-opcoes[data-variant=f] .place,#leo-ficha-opcoes[data-variant=f] .account .secondary{color:#c3d3e6}
+#leo-ficha-opcoes[data-variant=f] .place strong,#leo-ficha-opcoes[data-variant=f] .account{color:#fff}
+#leo-ficha-opcoes[data-variant=f] .account{border-color:#46617f}
+#leo-ficha-opcoes[data-variant=f] .avatar{background:#34577f;color:#fff}
+#leo-ficha-opcoes[data-variant=f] .brand{background:#fff;border-radius:8px;padding:5px;width:108px;height:54px}
+#leo-ficha-opcoes .patient-detail{background:white;border:1px solid #e2e8f0;border-radius:12px;margin-top:20px;padding:24px}
+#leo-ficha-opcoes .patient-detail h3{color:#1e3a5f;font-size:20px;margin:0 0 8px}
+#leo-ficha-opcoes .detailhead{display:flex;justify-content:space-between;align-items:center;gap:12px}
+#leo-ficha-opcoes .history{display:flex;justify-content:space-between;align-items:center;gap:16px;border-top:1px solid #e2e8f0;padding:18px 0;flex-wrap:wrap}
+#leo-ficha-opcoes .patient-detail h4{margin:28px 0 14px;font-size:14px;color:#1e3a5f}
+#leo-ficha-opcoes tr.selected{background:#eef2f8}
+@media(max-width:700px){#leo-ficha-opcoes td:nth-child(2){grid-column:auto}#leo-ficha-opcoes .patient-detail{padding:16px}}
+#leo-ficha-opcoes [hidden]{display:none!important} #leo-ficha-opcoes .profile-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;padding:18px 0 22px} #leo-ficha-opcoes .detailhead{margin-top:24px} @media(max-width:550px){#leo-ficha-opcoes .profile-fields{grid-template-columns:1fr}} </style>
+
+<div class="shell roomy">
+<aside>
+<svg class="brand" viewBox="-10 0 500 230" role="img" aria-label="LEO">
+<defs><linearGradient id="lp-blue" x2="1" y2="1"><stop stop-color="#284f83"/><stop offset="1" stop-color="#2877ff"/></linearGradient><clipPath id="lp-trace"><path d="M17 153 H48 L68 113 L70 188 L87 159 H200" fill="none" stroke="white" stroke-width="3.5"/></clipPath></defs>
+<g fill="url(#lp-blue)"><path d="M55 10 H128 L91 151 H202 L201 155 H85 L74 171 L72 95 L46 149 H18 Z"/><path d="M16 158 H50 L64 135 L66 202 L86 164 H198 L188 214 H0 Z"/></g>
+<g fill="#1e3a5f" transform="translate(213 104) skewX(-12)"><path d="M0 0 H100 V23 H28 V43 H93 V65 H28 V87 H100 V110 H0 Z"/><path fill-rule="evenodd" d="M150 0 H202 Q232 0 232 29 V81 Q232 110 202 110 H150 Q120 110 120 81 V29 Q120 0 150 0 Z M158 23 Q148 23 148 35 V75 Q148 87 158 87 H194 Q204 87 204 75 V35 Q204 23 194 23 Z"/></g><g clip-path="url(#lp-trace)"><rect class="sweep" width="28" height="220" fill="#77aaff"/></g></svg>
+<div class="place"><strong>Clínica demonstração</strong>Ambiente de prévia</div>
+<nav aria-label="Navegação ilustrativa"><div class="navitem"><i data-lucide="calendar-days" aria-hidden="true"></i>Agenda</div><div class="navitem active"><i data-lucide="users" aria-hidden="true"></i>Pacientes</div><div class="navitem"><i data-lucide="file-text" aria-hidden="true"></i>Laudos</div><div class="navitem"><i data-lucide="chart-no-axes-combined" aria-hidden="true"></i>Financeiro</div><div class="navitem"><i data-lucide="building-2" aria-hidden="true"></i>Clínica</div><div class="navitem"><i data-lucide="network" aria-hidden="true"></i>Integrações</div></nav>
+<div class="account"><span class="avatar">SM</span><span>Médico exemplo<br><span class="secondary">Minha conta</span></span></div>
+</aside>
+<main>
+<div class="crumb"><button class="mobile-menu" type="button" aria-label="Abrir menu" aria-expanded="false"><i data-lucide="menu" aria-hidden="true"></i></button><i data-lucide="calendar-days" aria-hidden="true"></i>Clínica demonstração / Pacientes</div>
+<div class="pagehead"><div><h2>Pacientes</h2><div class="sub">Cadastros e histórico de exames</div></div><div class="head-actions"><button type="button" class="primary" data-demo="Novo paciente"><i data-lucide="user-round-plus" aria-hidden="true"></i>Novo paciente</button></div></div>
+<section class="workspace" aria-label="Lista de pacientes"><div class="searchrow"><i data-lucide="search" aria-hidden="true"></i><input type="search" aria-label="Buscar paciente" placeholder="Buscar paciente por nome ou CPF"></div><table><thead><tr><th>Paciente</th><th>CPF</th><th>Último exame</th><th>Data</th><th></th></tr></thead><tbody></tbody></table><div class="foot" aria-live="polite"></div></section><section class="patient-detail" hidden aria-label="Ficha do paciente"></section>
+<p class="sub" id="lp-feedback" role="status"></p>
+</main>
+</div>
+
+</div>
+<script>
+(()=>{
+const root=document.getElementById('leo-ficha-opcoes');
+const patients=[['Ana Martins','62 anos','Eco transtorácico','08/09/2026'],['Beatriz Costa','47 anos','Doppler de carótidas','08/09/2026'],['Carlos Lima','54 anos','Eco transtorácico','08/09/2026'],['Helena Duarte','59 anos','Eco transtorácico','21/08/2026'],['João Fernandes','72 anos','Doppler de carótidas','15/08/2026'],['Marina Alves','51 anos','Eco transtorácico','12/08/2026'],['Paulo Ribeiro','68 anos','Eco transtorácico','08/09/2026'],['Rafael Souza','43 anos','ECG','01/09/2026']];
+const icons=()=>{if(globalThis.lucide)lucide.createIcons({attrs:{width:16,height:16}});};
+function render(){const query=root.querySelector('input[type=search]').value.toLocaleLowerCase('pt-BR');const selected=patients.filter(p=>p[0].toLocaleLowerCase('pt-BR').includes(query));root.querySelector('tbody').innerHTML=selected.map(p=>`<tr><td><span class="name">${p[0]}</span><div class="secondary">${p[1]}</div></td><td class="secondary">Não informado</td><td>${p[2]}</td><td class="time">${p[3]}</td><td><button type="button" class="action" data-patient="${patients.indexOf(p)}"><i data-lucide="user-round" aria-hidden="true"></i>Abrir ficha</button></td></tr>`).join('')||'<tr><td colspan="5" class="empty">Nenhum paciente encontrado.</td></tr>';root.querySelector('.foot').textContent=selected.length+' pacientes · dados fictícios';icons();}
+root.querySelector('input[type=search]').addEventListener('input',render);
+root.addEventListener('click',e=>{const button=e.target.closest('button');if(!button)return;if(button.dataset.patient!==undefined){const p=patients[Number(button.dataset.patient)];const detail=root.querySelector('.patient-detail');detail.hidden=false;root.querySelector(".workspace").hidden=true;root.querySelector(".pagehead").hidden=true;root.querySelector(".crumb").lastChild.textContent="Clínica demonstração / Pacientes / Ficha";detail.innerHTML=`<button type="button" data-close class="action"><i data-lucide="arrow-left" aria-hidden="true"></i>Voltar para pacientes</button><div class="detailhead"><div><h3>${p[0]}</h3><div class="sub">${p[1]} · Cadastro demonstrativo</div></div><button type="button" data-close aria-label="Fechar ficha"><i data-lucide="x" aria-hidden="true"></i></button></div><h4>Dados cadastrais</h4><div class="profile-fields"><div><span class="secondary">CPF</span><div>Não informado</div></div><div><span class="secondary">Telefone</span><div>Não informado</div></div><div><span class="secondary">E-mail</span><div>Não informado</div></div></div><button type="button" class="action" data-demo="Editar cadastro"><i data-lucide="pencil-line" aria-hidden="true"></i>Editar cadastro</button><h4>Histórico de exames · ficha única do paciente</h4><div class="history"><div><span class="name">${p[2]}</span><div class="secondary">${p[3]} · Clínica demonstração</div></div><span class="pill done">Emitido</span><button type="button" class="action" data-demo="Abrir PDF"><i data-lucide="file-text" aria-hidden="true"></i>Ver PDF</button></div><div class="history"><div><span class="name">Eletrocardiograma</span><div class="secondary">02/08/2026 · Clínica demonstração</div></div><span class="pill done">Emitido</span><button type="button" class="action" data-demo="Abrir PDF do ECG"><i data-lucide="file-text" aria-hidden="true"></i>Ver PDF</button></div><div class="history"><div><span class="name">Teste ergométrico</span><div class="secondary">18/06/2026 · Clínica demonstração</div></div><span class="pill done">Emitido</span><button type="button" class="action" data-demo="Abrir PDF do teste ergométrico"><i data-lucide="file-text" aria-hidden="true"></i>Ver PDF</button></div><div class="history"><div><span class="name">Holter 24 horas</span><div class="secondary">12/03/2026 · Clínica demonstração</div></div><span class="pill done">Emitido</span><button type="button" class="action" data-demo="Abrir PDF do Holter"><i data-lucide="file-text" aria-hidden="true"></i>Ver PDF</button></div>`;icons();detail.scrollIntoView({block:'nearest'});}if(button.hasAttribute('data-close')){root.querySelector('.patient-detail').hidden=true;root.querySelector('.workspace').hidden=false;root.querySelector('.pagehead').hidden=false;root.querySelector('.crumb').lastChild.textContent='Clínica demonstração / Pacientes';}if(button.dataset.demo)root.querySelector('#lp-feedback').textContent=button.dataset.demo+' — ação ilustrativa nesta prévia.';if(button.classList.contains('mobile-menu')){const open=root.querySelector('.shell').classList.toggle('menu-open');button.setAttribute('aria-expanded',String(open));}});
+render();root.querySelector("[data-patient]").click();
+})();
+</script>
+
+
+
+
+
+<style>
+#leo-ficha-opcoes .ficha-choices{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}
+#leo-ficha-opcoes .ficha-choices button[aria-pressed=true]{background:#1e3a5f;color:#fff}
+#leo-ficha-opcoes .patient-detail{padding:28px;border-radius:14px}
+#leo-ficha-opcoes .profile-fields>div{display:grid;gap:6px}
+#leo-ficha-opcoes .history{padding:22px 0}
+#leo-ficha-opcoes .record-columns{display:grid;gap:28px;margin-top:28px}
+#leo-ficha-opcoes .record-columns h4{margin-top:0}
+#leo-ficha-opcoes .record-tabs{display:none;gap:8px;margin-top:24px;border-bottom:1px solid #e2e8f0;padding-bottom:12px}
+#leo-ficha-opcoes[data-ficha=b] .record-columns{grid-template-columns:190px minmax(0,1fr);gap:28px}
+#leo-ficha-opcoes[data-ficha=b] .registration{border-right:1px solid #e2e8f0;padding-right:24px}
+#leo-ficha-opcoes[data-ficha=b] .profile-fields{grid-template-columns:1fr}
+#leo-ficha-opcoes[data-ficha=c] .record-tabs{display:flex;flex-wrap:wrap}
+#leo-ficha-opcoes .record-tabs button[aria-selected=true]{background:#eef2f8;border-color:#cad8ea;color:#1e3a5f}
+#leo-ficha-opcoes[data-ficha=c][data-tab=history] .registration{display:none}
+#leo-ficha-opcoes[data-ficha=c][data-tab=registration] .exam-history{display:none}
+@media(max-width:760px){#leo-ficha-opcoes[data-ficha=b] .record-columns{grid-template-columns:1fr}#leo-ficha-opcoes[data-ficha=b] .registration{border-right:0;border-bottom:1px solid #e2e8f0;padding:0 0 20px}#leo-ficha-opcoes .patient-detail{padding:18px}}
+</style>
+<script>
+(()=>{
+const root=document.getElementById('leo-ficha-opcoes');
+root.dataset.ficha='a';root.dataset.tab='history';
+const choice=document.createElement('div');choice.className='ficha-choices';choice.setAttribute('aria-label','Opções da ficha');
+[['a','A · Visão completa'],['b','B · Resumo lateral'],['c','C · Cadastro e exames em abas']].forEach(([value,label])=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.setAttribute('aria-pressed',String(value==='a'));b.onclick=()=>{root.dataset.ficha=value;choice.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));};choice.append(b);});root.prepend(choice);
+function organize(){const detail=root.querySelector('.patient-detail');if(detail.querySelector('.record-columns'))return;const fields=detail.querySelector('.profile-fields');if(!fields)return;const registration=document.createElement('section');registration.className='registration';const history=document.createElement('section');history.className='exam-history';const headings=detail.querySelectorAll('h4');registration.append(headings[0],fields,detail.querySelector('[data-demo="Editar cadastro"]'));history.append(headings[1],...detail.querySelectorAll('.history'));const columns=document.createElement('div');columns.className='record-columns';columns.append(registration,history);const tabs=document.createElement('div');tabs.className='record-tabs';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Seções da ficha');[['registration','Dados cadastrais'],['history','Histórico de exames · 4']].forEach(([value,label])=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.setAttribute('role','tab');b.setAttribute('aria-selected',String(value===root.dataset.tab));b.onclick=()=>{root.dataset.tab=value;tabs.querySelectorAll('button').forEach(x=>x.setAttribute('aria-selected',String(x===b)));};tabs.append(b);});detail.append(tabs,columns);}
+organize();root.addEventListener('click',e=>{if(e.target.closest('[data-patient]'))organize();});
+})();
+</script>

@@ -60,7 +60,7 @@ function rotuloCadastro(cadastradoEm: number | null | undefined): string {
   return `Cadastrado em ${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
-const campoInput = 'w-full border border-borda rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-p1 bg-card text-ink';
+const campoInput = 'w-full min-w-0 border border-[#D5DFEB] rounded-lg px-3 py-2.5 text-sm focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB] bg-white text-[#1E3A5F]';
 // Variante sem o w-full (que vence w-20/w-14 na ordem do CSS do Tailwind v4
 // e fazia cada input da linha do perfil disputar 100% — colapso a 26px).
 const campoCompacto = campoInput.replace('w-full ', '');
@@ -447,7 +447,7 @@ export default function IntegracoesPage() {
           Esta seção é do responsável pela conta.
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid items-start gap-5 xl:grid-cols-3">
           {TIPOS_INTEGRACAO.map(t => {
             const i = porTipo[t.id] ?? { tipo: t.id };
             const estado = rotuloEstado(i, agora);
@@ -463,7 +463,10 @@ export default function IntegracoesPage() {
                 ) : undefined}>
 
                 {t.id === 'feegow' && (
-                  <div className="space-y-2 border-t border-borda pt-3">
+                  <div className="space-y-4 border-t border-[#E2E8F0] pt-4">
+                    <details className="group">
+                      <summary className="cursor-pointer py-2 text-sm font-medium text-[#1E3A5F] focus-visible:outline-2 focus-visible:outline-[#2563EB]">Credenciais e configurações técnicas</summary>
+                      <div className="space-y-4 pt-4">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-semibold text-ink-3 uppercase">Ativo</label>
                       <button type="button" onClick={() => setFeegowAtivo(v => !v)}
@@ -479,7 +482,7 @@ export default function IntegracoesPage() {
                       <p className="text-[11px] text-ink-3 mt-1">{rotuloCadastro(i.credencialCadastradaEm)}</p>
                     </div>
 
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-xs text-ink-3">{Object.values(feegowProcMap).filter(v => v && v !== 'ignorar').length} procedimento(s) mapeado(s)</p>
                       <button type="button" onClick={carregarProcedimentos} disabled={procsLoading || i.credencialCadastradaEm == null}
                         title={i.credencialCadastradaEm == null ? 'Salve o token primeiro' : undefined}
@@ -507,7 +510,7 @@ export default function IntegracoesPage() {
                       </div>
                     )}
 
-                    <div className="flex items-center justify-between gap-2 pt-1">
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                       <p className="text-xs text-ink-3">{Object.keys(feegowProfMap).length} profissional(is) mapeado(s)</p>
                       <button type="button" onClick={carregarProfissionais} disabled={profsLoading || i.credencialCadastradaEm == null}
                         title={i.credencialCadastradaEm == null ? 'Salve o token primeiro' : undefined}
@@ -531,8 +534,6 @@ export default function IntegracoesPage() {
                       </div>
                     )}
 
-                    {feegowErro && <p className="text-xs text-red-600">{feegowErro}</p>}
-
                     <div className="flex gap-2 pt-1">
                       <button type="button" onClick={salvarFeegow} disabled={feegowSalvando} className={botaoSalvar}>
                         {feegowSalvando ? 'salvando…' : 'Salvar'}
@@ -544,11 +545,17 @@ export default function IntegracoesPage() {
                         </button>
                       )}
                     </div>
+                      </div>
+                    </details>
+                    {feegowErro && <p className="text-xs text-red-600">{feegowErro}</p>}
                   </div>
                 )}
 
                 {t.id === 'orthanc' && (
-                  <div className="space-y-2 border-t border-borda pt-3">
+                  <div className="space-y-4 border-t border-[#E2E8F0] pt-4">
+                    <details className="group">
+                      <summary className="cursor-pointer py-2 text-sm font-medium text-[#1E3A5F] focus-visible:outline-2 focus-visible:outline-[#2563EB]">Credenciais e configurações técnicas</summary>
+                      <div className="space-y-4 pt-4">
                     {/* D1 (corte estrutural, Task 7): a nuvem parou de bater no
                         Orthanc (rede interna da clinica, nunca alcancavel daqui).
                         Quem verifica e reporta agora e o Wader. */}
@@ -580,8 +587,6 @@ export default function IntegracoesPage() {
                       </div>
                     </div>
                     <p className="text-[11px] text-ink-3">{rotuloCadastro(i.credencialCadastradaEm)}</p>
-
-                    {orthancErro && <p className="text-xs text-red-600">{orthancErro}</p>}
 
                     <div className="flex gap-2 pt-1">
                       <button type="button" onClick={salvarOrthanc} disabled={orthancSalvando} className={botaoSalvar}>
@@ -644,7 +649,17 @@ export default function IntegracoesPage() {
                         </div>
                       )}
 
-                      {perfilCamposRepetidos.length > 0 && (
+                      <div className="pt-1">
+                        <button type="button" onClick={salvarPerfilAparelho} disabled={perfilSalvando} className={botaoSalvar}>
+                          {perfilSalvando ? 'salvando…' : 'Salvar perfil'}
+                        </button>
+                      </div>
+                    </div>
+                      </div>
+                    </details>
+                    {orthancErro && <p className="text-xs text-red-600">{orthancErro}</p>}
+                    {perfilErro && <p className="text-xs text-red-600">{perfilErro}</p>}
+                    {perfilCamposRepetidos.length > 0 && (
                         <p className="text-xs text-amber-600">
                           ⚠️ Dois mapeamentos apontam pro mesmo campo ({perfilCamposRepetidos.join(', ')}) — no import, o último vence.
                         </p>
@@ -652,23 +667,17 @@ export default function IntegracoesPage() {
                       {Object.keys(perfilMapa).length === 0 && (
                         <p className="text-xs text-amber-600">⚠️ Sem linhas o sistema volta ao mapa de fábrica.</p>
                       )}
-                      {perfilErro && <p className="text-xs text-red-600">{perfilErro}</p>}
-                      <div className="pt-1">
-                        <button type="button" onClick={salvarPerfilAparelho} disabled={perfilSalvando} className={botaoSalvar}>
-                          {perfilSalvando ? 'salvando…' : 'Salvar perfil'}
-                        </button>
-                      </div>
-                    </div>
                   </div>
                 )}
 
                 {t.id === 'wader' && (
                   <div className="space-y-1">
                     <p className="text-xs text-ink-3">{i.versao ? `v${i.versao}` : 'Versão desconhecida'} · {i.maquina || 'máquina desconhecida'}</p>
-                    {/* O batimento (heartbeat.ts) detecta e grava os dois; sem
-                        isto ficavam só no Firestore e no log do Wader — o dono
-                        nunca via. 2 Waders = worklist e ingestão brigando. */}
-                    {i.conflito && (
+                    {/* Um escritor só no doc (spec Wader A §7): o cartão mostra quem é
+                        o líder; "2 Waders" agora é aviso local na clínica (fase C traz pra cá). */}
+                    {i.lider && <p className="text-xs text-ink-3">Líder: {i.lider.maquina}</p>}
+                    {/* Legado: Wader < 1.0 ainda grava `conflito` (sem cadeado) — some na migração. */}
+                    {!i.lider && i.conflito && (
                       <p className="text-xs text-red-600">
                         ⚠️ 2 Waders ativos: {i.maquina || 'esta máquina'} + {i.conflito}
                       </p>

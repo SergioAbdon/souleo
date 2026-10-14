@@ -1,16 +1,24 @@
 {
   "name": "@souleo/wader",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Wader — agente local DICOM do LEO",
   "main": "dist/index.js",
+  "bin": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
-    "build": "tsc",
+    "build": "tsc && node -e \"require('node:fs').cpSync('src/ui/pages','dist/ui/pages',{recursive:true})\"",
+    "pkg": "pkg . --targets node24-win-x64 --output build/wader.exe",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "reprocessar-legado": "tsx scripts/reprocessar-legado.ts"
+  },
+  "pkg": {
+    "assets": [
+      "dist/ui/pages/**/*",
+      "package.json"
+    ]
   },
   "dependencies": {
     "@fastify/static": "^7.0.4",
@@ -22,11 +30,12 @@
   },
   "devDependencies": {
     "@types/node": "^20.16.10",
+    "@yao-pkg/pkg": "^6.23.0",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
     "vitest": "^2.1.5"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=24"
   }
 }

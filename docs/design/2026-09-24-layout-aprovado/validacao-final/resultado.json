@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-11T14:29:24.701Z",
+  "checks": [
+    "eco: sections mounted, collapse preserves value, real ModoEmitido (Copiar submenu, Editar unlocks)",
+    "eco 1440: no page overflow",
+    "eco 390: no page overflow",
+    "carotidas: real page, populated A4 and editor",
+    "carotidas 1440: no page overflow",
+    "carotidas 390: no page overflow",
+    "ficha 1440: no page overflow",
+    "ficha 390: no page overflow",
+    "financeiro: two fixture exams total 250",
+    "financeiro 1440: no page overflow",
+    "financeiro 390: no page overflow",
+    "integracoes: disclosure preserves unsaved field",
+    "integracoes 1440: no page overflow",
+    "integracoes 390: no page overflow",
+    "login 1440: no page overflow",
+    "login 390: no page overflow",
+    "historico 1440: no page overflow",
+    "historico 390: no page overflow",
+    "agenda 1440: no page overflow",
+    "agenda 390: no page overflow",
+    "clinica 1440: no page overflow",
+    "clinica 390: no page overflow",
+    "pacientes 1440: no page overflow",
+    "pacientes 390: no page overflow",
+    "perfil 1440: no page overflow",
+    "perfil 390: no page overflow"
+  ],
+  "errors": [],
+  "scope": "Real UI components with fictional data and blocked network. Does not test live APIs or actual emission."
+}

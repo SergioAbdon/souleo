@@ -32,7 +32,8 @@ export function loadConfig(cwd: string = process.cwd()): WaderConfig {
     );
   }
 
-  const raw = fs.readFileSync(configPath, 'utf-8');
+  // PowerShell 5.1 'Set-Content -Encoding UTF8' grava BOM; JSON.parse não tolera.
+  const raw = fs.readFileSync(configPath, 'utf-8').replace(/^\uFEFF/, '');
   let parsed: Partial<WaderConfig>;
 
   try {
@@ -93,6 +94,10 @@ function validate(cfg: WaderConfig, source: string): void {
 
   if (cfg.ui.port < 1 || cfg.ui.port > 65535) {
     errors.push('ui.port deve estar entre 1 e 65535');
+  }
+
+  if (cfg.adminPin !== undefined && (typeof cfg.adminPin !== 'string' || !/^\d{6}$/.test(cfg.adminPin))) {
+    errors.push('adminPin deve ter exatamente 6 dígitos');
   }
 
   // Teto de 15s no /changes: o pacote de latência (Task 6) baixou o default

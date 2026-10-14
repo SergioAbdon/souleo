@@ -235,7 +235,12 @@ service cloud.firestore {
                             // emitidoEm/pdfUrl so o servidor grava (emitir-admin.ts:390,
                             // publicarPdfSeAindaDono em :154) — sem isto o autor plantava
                             // metade do carimbo de emissao mesmo com `status` fechado.
-                            && intacto('emitidoEm') && intacto('pdfUrl'))
+                            && intacto('emitidoEm') && intacto('pdfUrl')
+                            // Emitido: a selecao de imagens do PDF so muda dentro da
+                            // emissao (emitir-admin, sanearSelecaoImagens) — o PDF
+                            // assinado e o documento; Editar -> reemitir -> nova lista.
+                            && (resource.data.get('status', '') != 'emitido'
+                                || intacto('imagensSelecionadasPdf')))
                           || (alcancaLocal(wsId) && intacto('medicoUid')
                               && resource.data.get('status', '') != 'emitido'
                               // Qualquer MEMBRO do local (dono, medico, recepcao) mexe

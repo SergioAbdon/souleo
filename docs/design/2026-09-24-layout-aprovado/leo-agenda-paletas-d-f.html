@@ -1,0 +1,166 @@
+<div id="leo-agenda-df" data-variant="d" aria-label="Paletas D e F da Agenda">
+<div class="variant-picker" aria-label="Comparar opções">
+<button type="button" data-variant-choice="d" aria-pressed="true">D · Azul suave</button>
+
+<button type="button" data-variant-choice="f" aria-pressed="false">F · Navy</button>
+</div>
+<p class="variant-description" aria-live="polite">D · Estrutura A com barra lateral azul suave.</p>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+#leo-agenda-df {font-family:'IBM Plex Sans',Arial,sans-serif;color:#243449;font-size:14px;}
+#leo-agenda-df * {box-sizing:border-box;}
+#leo-agenda-df .choice {display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff;padding:12px;border-bottom:1px solid #e2e8f0;}
+#leo-agenda-df button {font:inherit;cursor:pointer;color:inherit;background:white;border:1px solid #e2e8f0;border-radius:7px;padding:8px 12px;min-height:36px;display:inline-flex;align-items:center;gap:8px;}
+#leo-agenda-df button:focus-visible,#leo-agenda-df input:focus-visible {outline:2px solid #2563eb;outline-offset:3px;}
+#leo-agenda-df .choice button[aria-pressed=true] {background:#eef2f8;color:#1e3a5f;border-color:#a5b9d7;}
+#leo-agenda-df .note {color:#64748b;font-size:12px;margin-left:auto;}
+#leo-agenda-df .shell {display:grid;grid-template-columns:180px minmax(0,1fr);background:#f1f5f9;border:1px solid #e2e8f0;min-height:630px;}
+#leo-agenda-df aside {background:#fff;border-right:1px solid #e2e8f0;padding:24px 12px;display:flex;flex-direction:column;gap:24px;}
+#leo-agenda-df .brand {width:98px;height:46px;margin-left:12px;}
+#leo-agenda-df .place {padding:0 12px;font-size:12px;color:#64748b;}
+#leo-agenda-df .place strong {display:block;color:#1e3a5f;font-size:14px;font-weight:500;margin-bottom:4px;}
+#leo-agenda-df nav {display:grid;gap:5px;}
+#leo-agenda-df .navitem {display:flex;align-items:center;gap:10px;padding:9px 12px;font-size:13px;color:#637083;border-radius:7px;}
+#leo-agenda-df .navitem.active {background:#eef2f8;color:#1e3a5f;font-weight:600;}
+#leo-agenda-df .account {margin-top:auto;border-top:1px solid #e2e8f0;padding:18px 10px 0;display:flex;gap:10px;align-items:center;font-size:12px;}
+#leo-agenda-df .avatar {border-radius:50%;background:#eef2f8;color:#1e3a5f;padding:9px;}
+#leo-agenda-df main {min-width:0;padding:0 24px 24px;}
+#leo-agenda-df .crumb {font-size:12px;color:#64748b;padding:17px 0;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:8px;}
+#leo-agenda-df .pagehead {display:flex;justify-content:space-between;align-items:center;gap:16px;padding:25px 0 22px;flex-wrap:wrap;}
+#leo-agenda-df h2 {font-size:25px;letter-spacing:-.8px;color:#1e3a5f;margin:0 0 4px;font-weight:600;}
+#leo-agenda-df .sub {font-size:13px;color:#64748b;}
+#leo-agenda-df button.primary {background:#2563eb;border-color:#2563eb;color:#fff;}
+#leo-agenda-df .head-actions {display:flex;gap:8px;flex-wrap:wrap;}
+#leo-agenda-df .workspace {background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;}
+#leo-agenda-df .filters {display:flex;gap:5px;padding:12px 14px;border-bottom:1px solid #e2e8f0;flex-wrap:wrap;}
+#leo-agenda-df .filters button {border:0;padding:6px 9px;font-size:12px;color:#64748b;}
+#leo-agenda-df .filters button[aria-pressed=true] {background:#eef2f8;color:#1e3a5f;font-weight:500;}
+#leo-agenda-df .count {font-size:11px;opacity:.7;}
+#leo-agenda-df .searchrow {display:flex;gap:10px;padding:12px 16px;align-items:center;border-bottom:1px solid #e2e8f0;}
+#leo-agenda-df input {border:0;outline:none;min-width:0;width:100%;font:inherit;font-size:13px;color:#243449;background:#fff;}
+#leo-agenda-df table {width:100%;border-collapse:collapse;text-align:left;font-size:13px;}
+#leo-agenda-df th {font-weight:400;font-size:11px;color:#64748b;background:#fafbfd;padding:10px 12px;}
+#leo-agenda-df td {border-top:1px solid #edf0f4;padding:8px 12px;height:46px;}
+#leo-agenda-df .roomy td {padding-top:19px;padding-bottom:19px;height:76px;}
+#leo-agenda-df .name {display:block;color:#1e3a5f;font-weight:500;}
+#leo-agenda-df .secondary {color:#64748b;font-size:11px;margin-top:3px;}
+#leo-agenda-df .time {font-variant-numeric:tabular-nums;color:#64748b;}
+#leo-agenda-df .pill {display:inline-flex;align-items:center;gap:5px;padding:3px 7px;border-radius:5px;font-size:11px;white-space:nowrap;}
+#leo-agenda-df .pill::before {content:'';width:5px;height:5px;border-radius:50%;background:currentColor;}
+#leo-agenda-df .waiting {background:#fef3c7;color:#92400e;}
+#leo-agenda-df .working {background:#dbeafe;color:#1e40af;}
+#leo-agenda-df .done {background:#d1fae5;color:#065f46;}
+#leo-agenda-df .action {border:0;background:transparent;padding:4px;color:#2563eb;font-size:12px;}
+#leo-agenda-df .foot {padding:13px 16px;color:#64748b;font-size:11px;border-top:1px solid #e2e8f0;}
+#leo-agenda-df .empty {text-align:center;color:#64748b;padding:30px;}
+#leo-agenda-df .sweep {animation:lf-sweep .681818181818s ease-in-out infinite;}
+@keyframes lf-sweep {0%,12%{transform:translateX(-30px)}68%,100%{transform:translateX(235px)}}
+@media(prefers-reduced-motion:reduce){#leo-agenda-df .sweep{animation:none;opacity:0}}
+@media(max-width:800px){#leo-agenda-df .shell{grid-template-columns:145px minmax(0,1fr)}#leo-agenda-df main{padding:0 14px 16px}#leo-agenda-df .optional{display:none}#leo-agenda-df td,#leo-agenda-df th{padding-left:8px;padding-right:8px}}
+@media(max-width:550px){#leo-agenda-df .shell{display:block}#leo-agenda-df aside{display:none}#leo-agenda-df .note{margin-left:0;width:100%}#leo-agenda-df .exam{display:none}#leo-agenda-df .pagehead{padding:18px 0}#leo-agenda-df .head-actions{gap:5px}#leo-agenda-df button{min-height:44px}#leo-agenda-df .filters{gap:0;padding:8px}#leo-agenda-df main{padding:0 10px 12px}#leo-agenda-df td{font-size:12px}}
+#leo-agenda-df .shell{grid-template-columns:184px minmax(0,1fr)}
+#leo-agenda-df .date{width:142px;flex:none;border-right:1px solid #e2e8f0;padding-right:10px}
+#leo-agenda-df .searchrow{padding:18px 16px}
+#leo-agenda-df .workspace{box-shadow:0 2px 8px rgba(30,58,95,.035)}
+#leo-agenda-df tbody tr:hover{background:#f8fafc}
+#leo-agenda-df .examline{display:flex;align-items:center;gap:6px}
+#leo-agenda-df .acc{font-family:monospace;font-size:11px;color:#64748b;margin-top:5px}
+#leo-agenda-df .wait{font-size:11px;color:#92400e;margin-top:5px}
+#leo-agenda-df .mobile-menu{display:none}
+#leo-agenda-df .roomy td{padding-top:20px;padding-bottom:20px}
+@media(max-width:700px){#leo-agenda-df .shell{display:block}#leo-agenda-df aside{display:none}#leo-agenda-df .mobile-menu{display:inline-flex}#leo-agenda-df .shell.menu-open aside{display:flex}#leo-agenda-df .exam{display:table-cell}#leo-agenda-df .searchrow{flex-wrap:wrap}#leo-agenda-df input[type=search]{flex:1}#leo-agenda-df table,#leo-agenda-df tbody{display:block}#leo-agenda-df thead{display:none}#leo-agenda-df tr{display:grid;grid-template-columns:1fr 1fr;padding:14px 4px;border-top:1px solid #e2e8f0}#leo-agenda-df .roomy td{display:block;height:auto;padding:6px 10px;border:0}#leo-agenda-df td.time{grid-column:1/-1}#leo-agenda-df td.optional{display:block}#leo-agenda-df td.exam{grid-column:1}#leo-agenda-df td:nth-child(2){grid-column:1/-1}#leo-agenda-df main{padding:0 12px 16px}}
+#leo-agenda-df .variant-picker{display:flex;gap:8px;flex-wrap:wrap;padding:12px 0}
+#leo-agenda-df .variant-picker button[aria-pressed=true]{background:#1e3a5f;color:white;border-color:#1e3a5f}
+#leo-agenda-df .variant-description{font-size:13px;color:#526277;margin:0 0 16px}
+#leo-agenda-df[data-variant=b] .shell{background:#fff}
+#leo-agenda-df[data-variant=b] .workspace{border:0;border-radius:0;box-shadow:none}
+#leo-agenda-df[data-variant=b] .filters{padding-left:0;padding-bottom:0;gap:12px}
+#leo-agenda-df[data-variant=b] .filters button{border-radius:0;padding:12px 4px;border-bottom:2px solid transparent}
+#leo-agenda-df[data-variant=b] .filters button[aria-pressed=true]{background:transparent;border-bottom-color:#2563eb;color:#1e3a5f}
+#leo-agenda-df[data-variant=b] .searchrow{padding:20px 0}
+#leo-agenda-df[data-variant=b] th{background:#fff}
+#leo-agenda-df[data-variant=b] .pagehead{padding-top:34px;padding-bottom:30px}
+#leo-agenda-df[data-variant=b] .roomy td{padding-top:23px;padding-bottom:23px}
+#leo-agenda-df[data-variant=f] .workspace{background:transparent;border:0;box-shadow:none;overflow:visible}
+#leo-agenda-df[data-variant=f] .filters{padding:0 0 16px;border:0}
+#leo-agenda-df[data-variant=f] .filters button{background:transparent}
+#leo-agenda-df[data-variant=f] .filters button[aria-pressed=true]{background:#1e3a5f;color:#fff}
+#leo-agenda-df[data-variant=f] .searchrow{background:#fff;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:16px}
+#leo-agenda-df[data-variant=f] table,#leo-agenda-df[data-variant=f] tbody{display:block}
+#leo-agenda-df[data-variant=f] thead{display:none}
+#leo-agenda-df[data-variant=f] tr{display:grid;grid-template-columns:minmax(180px,1.5fr) minmax(145px,1fr) minmax(130px,1fr) 90px;align-items:center;gap:4px 14px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:18px;margin-bottom:10px}
+#leo-agenda-df[data-variant=f] .roomy td{padding:0;height:auto;border:0}
+#leo-agenda-df[data-variant=f] td:nth-child(2){grid-column:1;grid-row:1}
+#leo-agenda-df[data-variant=f] td.time{grid-column:1;grid-row:2;font-size:11px}
+#leo-agenda-df[data-variant=f] td.time:before{content:'Chegada '}
+#leo-agenda-df[data-variant=f] td.exam{grid-column:2;grid-row:1}
+#leo-agenda-df[data-variant=f] td.optional{display:block;grid-column:2;grid-row:2;font-size:11px;color:#64748b}
+#leo-agenda-df[data-variant=f] td:nth-child(5){grid-column:3;grid-row:1/3}
+#leo-agenda-df[data-variant=f] td:last-child{grid-column:4;grid-row:1/3}
+#leo-agenda-df[data-variant=f] .name{font-size:15px}
+#leo-agenda-df[data-variant=f] .foot{border:0;padding-left:0}
+@media(max-width:950px){#leo-agenda-df[data-variant=f] tr{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}#leo-agenda-df[data-variant=f] td:nth-child(5){grid-column:1;grid-row:3}#leo-agenda-df[data-variant=f] td:last-child{grid-column:2;grid-row:3}#leo-agenda-df[data-variant=f] tr{gap:14px}}
+#leo-agenda-df[data-variant=d] aside{background:#eaf1fa;border-color:#d6e2f1}
+#leo-agenda-df[data-variant=d] .navitem{color:#445d7b}
+#leo-agenda-df[data-variant=d] .navitem.active{background:#fff;color:#1e3a5f;box-shadow:0 2px 6px rgba(30,58,95,.07)}
+#leo-agenda-df[data-variant=d] .place,#leo-agenda-df[data-variant=d] .account .secondary{color:#506580}
+#leo-agenda-df[data-variant=d] .account{border-color:#cfdced}
+#leo-agenda-df[data-variant=d] .avatar{background:#d6e4f6;color:#1e3a5f}
+#leo-agenda-df[data-variant=f] aside{background:#1e3a5f;border-color:#1e3a5f}
+#leo-agenda-df[data-variant=f] .navitem{color:#d5e1f0}
+#leo-agenda-df[data-variant=f] .navitem.active{background:#34577f;color:#fff}
+#leo-agenda-df[data-variant=f] .place,#leo-agenda-df[data-variant=f] .account .secondary{color:#c3d3e6}
+#leo-agenda-df[data-variant=f] .place strong,#leo-agenda-df[data-variant=f] .account{color:#fff}
+#leo-agenda-df[data-variant=f] .account{border-color:#46617f}
+#leo-agenda-df[data-variant=f] .avatar{background:#34577f;color:#fff}
+#leo-agenda-df[data-variant=f] .brand{background:#fff;border-radius:8px;padding:5px;width:108px;height:54px}
+</style>
+
+<div class="shell roomy">
+<aside>
+<svg class="brand" viewBox="-10 0 500 230" role="img" aria-label="LEO">
+<defs><linearGradient id="lf-blue" x2="1" y2="1"><stop stop-color="#284f83"/><stop offset="1" stop-color="#2877ff"/></linearGradient><clipPath id="lf-trace"><path d="M17 153 H48 L68 113 L70 188 L87 159 H200" fill="none" stroke="white" stroke-width="3.5"/></clipPath></defs>
+<g fill="url(#lf-blue)"><path d="M55 10 H128 L91 151 H202 L201 155 H85 L74 171 L72 95 L46 149 H18 Z"/><path d="M16 158 H50 L64 135 L66 202 L86 164 H198 L188 214 H0 Z"/></g>
+<g fill="#1e3a5f" transform="translate(213 104) skewX(-12)"><path d="M0 0 H100 V23 H28 V43 H93 V65 H28 V87 H100 V110 H0 Z"/><path fill-rule="evenodd" d="M150 0 H202 Q232 0 232 29 V81 Q232 110 202 110 H150 Q120 110 120 81 V29 Q120 0 150 0 Z M158 23 Q148 23 148 35 V75 Q148 87 158 87 H194 Q204 87 204 75 V35 Q204 23 194 23 Z"/></g><g clip-path="url(#lf-trace)"><rect class="sweep" width="28" height="220" fill="#77aaff"/></g></svg>
+<div class="place"><strong>Clínica demonstração</strong>Ambiente de prévia</div>
+<nav aria-label="Navegação ilustrativa"><div class="navitem active"><i data-lucide="calendar-days" aria-hidden="true"></i>Agenda</div><div class="navitem"><i data-lucide="users" aria-hidden="true"></i>Pacientes</div><div class="navitem"><i data-lucide="file-text" aria-hidden="true"></i>Laudos</div><div class="navitem"><i data-lucide="chart-no-axes-combined" aria-hidden="true"></i>Financeiro</div><div class="navitem"><i data-lucide="building-2" aria-hidden="true"></i>Clínica</div><div class="navitem"><i data-lucide="network" aria-hidden="true"></i>Integrações</div></nav>
+<div class="account"><span class="avatar">SM</span><span>Médico exemplo<br><span class="secondary">Minha conta</span></span></div>
+</aside>
+<main>
+<div class="crumb"><button class="mobile-menu" type="button" aria-label="Abrir menu" aria-expanded="false"><i data-lucide="menu" aria-hidden="true"></i></button><i data-lucide="calendar-days" aria-hidden="true"></i>Clínica demonstração / Agenda</div>
+<div class="pagehead"><div><h2>Agenda</h2><div class="sub">Terça-feira, 8 de setembro · fila de atendimento</div></div><div class="head-actions"><button type="button" data-demo="Importar Feegow"><i data-lucide="link" aria-hidden="true"></i>Importar Feegow</button><button type="button" class="primary" data-demo="Novo paciente"><i data-lucide="user-round-plus" aria-hidden="true"></i>Novo paciente</button></div></div>
+<section class="workspace" aria-label="Fila de exames">
+<div class="filters"><button type="button" data-filter="Todos" aria-pressed="true">Todos <span class="count">8</span></button><button type="button" data-filter="Aguardando" aria-pressed="false">Aguardando <span class="count">4</span></button><button type="button" data-filter="Em andamento" aria-pressed="false">Em andamento <span class="count">2</span></button><button type="button" data-filter="Emitido" aria-pressed="false">Emitidos <span class="count">2</span></button><button type="button" data-filter="Não realizado" aria-pressed="false">Não realizados</button></div>
+<div class="searchrow"><input class="date" aria-label="Data dos exames" type="date" value="2026-09-08"><i data-lucide="search" aria-hidden="true"></i><input aria-label="Buscar por nome ou CPF" placeholder="Buscar por nome ou CPF…" type="search"></div>
+<table><thead><tr><th>Chegada</th><th>Paciente</th><th class="exam">Exame / ACC</th><th class="optional">Convênio</th><th>Status / espera</th><th></th></tr></thead><tbody></tbody></table>
+<div class="foot" aria-live="polite">8 exames · dados fictícios</div>
+</section>
+<p class="sub" id="lf-feedback" role="status"></p>
+</main>
+</div>
+<script>
+(()=>{
+const root=document.getElementById('leo-agenda-df');
+const descriptions={d:'D · Estrutura A com barra lateral azul suave.',f:'F · Estrutura C com barra lateral navy.'};
+const design={variant:'d'};
+function changeVariant(){root.dataset.variant=design.variant;root.querySelectorAll('[data-variant-choice]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.variantChoice===design.variant)));root.querySelector('.variant-description').textContent=descriptions[design.variant];}
+root.querySelectorAll('[data-variant-choice]').forEach(b=>b.addEventListener('click',()=>{design.variant=b.dataset.variantChoice;changeVariant();}));
+if(globalThis.Tweak){const tweak=new Tweak({container:root,onChange:changeVariant});tweak.addSelect(design,'variant',{label:'Organização da Agenda',options:[{label:'D · Azul suave',value:'d'},{label:'F · Navy',value:'f'}]});}
+const rows=[['08:00','Ana Martins','62 anos','Eco transtorácico','Particular','Emitido'],['08:20','Carlos Lima','54 anos','Eco transtorácico','Unimed','Emitido'],['08:40','Beatriz Costa','47 anos','Doppler de carótidas','Particular','Em andamento'],['09:00','Paulo Ribeiro','68 anos','Eco transtorácico','Unimed','Em andamento'],['09:20','Helena Duarte','59 anos','Eco transtorácico','Particular','Aguardando'],['09:40','Rafael Souza','43 anos','ECG','Unimed','Aguardando'],['10:00','Marina Alves','51 anos','Eco transtorácico','Particular','Aguardando'],['10:20','João Fernandes','72 anos','Doppler de carótidas','Unimed','Aguardando']];
+let filter='Todos';
+function render(){
+ const q=root.querySelector('input[type=search]').value.toLocaleLowerCase('pt-BR');
+ const selected=rows.filter(r=>(filter==='Todos'||r[5]===filter)&&r[1].toLocaleLowerCase('pt-BR').includes(q)&&root.querySelector('.date').value==='2026-09-08');
+ root.querySelector('tbody').innerHTML=selected.map(r=>`<tr><td class="time">${r[0]}</td><td><span class="name">${r[1]}</span><div class="secondary">${r[2]}</div></td><td class="exam"><div class="examline"><i data-lucide="${r[3]==='ECG'?'activity':r[3].startsWith('Doppler')?'waves':'monitor'}" aria-hidden="true"></i>${r[3]}</div><div class="acc">ACC DEMO-${String(rows.indexOf(r)+1).padStart(3,'0')}</div></td><td class="optional">${r[4]}</td><td><span class="pill ${r[5]==='Emitido'?'done':r[5]==='Em andamento'?'working':'waiting'}">${r[5]}</span>${r[5]==='Aguardando'?'<div class="wait">Espera: '+[28,20,12,4][rows.indexOf(r)-4]+' min</div>':''}</td><td><button type="button" class="action" data-demo="${r[1]}"><i data-lucide="${r[5]==='Emitido'?'file-text':'file-pen-line'}" aria-hidden="true"></i>${r[5]==='Emitido'?'Ver PDF':'Laudar'}</button></td></tr>`).join('')||'<tr><td class="empty" colspan="6">Nenhum exame encontrado para esta seleção.</td></tr>';
+ root.querySelector('.foot').textContent=filter==='Não realizado'?'Não realizados · últimos 30 dias · dados fictícios':`${selected.length} exames · dados fictícios`;
+ if(globalThis.lucide)lucide.createIcons({attrs:{width:16,height:16}});
+}
+root.querySelector('.date').addEventListener('change',render);
+root.querySelector('.mobile-menu').addEventListener('click',e=>{const open=root.querySelector('.shell').classList.toggle('menu-open');e.currentTarget.setAttribute('aria-expanded',String(open));});
+root.querySelector('input[type=search]').addEventListener('input',render);
+root.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.density){root.querySelector('.shell').classList.toggle('roomy',b.dataset.density==='roomy');root.querySelectorAll('[data-density]').forEach(el=>el.setAttribute('aria-pressed',String(el===b)));}if(b.dataset.filter){filter=b.dataset.filter;root.querySelectorAll('[data-filter]').forEach(el=>el.setAttribute('aria-pressed',String(el===b)));render();}if(b.dataset.demo)root.querySelector('#lf-feedback').textContent=`${b.dataset.demo} — ação ilustrativa nesta prévia.`;});
+render();
+if(globalThis.lucide)lucide.createIcons({attrs:{width:16,height:16}});
+})();
+</script>
+</div>

@@ -24,6 +24,7 @@ const MENSAGENS_ERRO: Record<string, string> = {
   exame_de_outro_medico: 'Este exame já tem outro médico como autor.',
   sem_permissao: 'Sem permissão para emitir neste local.',
   cancelado: 'Este exame foi cancelado. Anexar de novo exige recriar o exame.',
+  conteudo_divergente: 'Este exame já foi emitido com outro PDF. Para trocar, reemita pelo laudo.',
 };
 
 // X21: `tipoExame` aqui é o ID do catálogo (vai em `dadosFinais` pro
@@ -116,6 +117,7 @@ export default function AnexarPdfModal({ open, onClose, exame, wsId, medicoUid }
       });
       const data = await res.json();
       if (!data.ok) {
+        if (data.motivo === 'conteudo_divergente') emissaoKeyRef.current = null; // já emitido: próximo anexo é reemissão
         setErro(MENSAGENS_ERRO[data.motivo as string] || 'Erro ao anexar o PDF. Tente novamente.');
         return;
       }

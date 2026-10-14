@@ -7,6 +7,8 @@
 
 import { useState, useEffect, ReactNode } from 'react';
 import { auth } from '@/lib/firebase';
+import EditorIcon from './EditorIcon';
+import CabecalhoLaudo from './CabecalhoLaudo';
 import type { AlertaUI } from '@/senna90/types';
 // F3-T6: o campo condicional PSMAP era revelado por `motorCall('refluxoPulmonar')`
 // — função do motor legado, invisível pro regex do Contrato da Ponte (ponto cego).
@@ -90,6 +92,8 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
   // vivo do lock (handleDesbloquear zera, handleEmitir levanta) — derivar
   // outro estado daqui era duplicar o dono.
   const motorBloqueado = !!readOnlyMotor;
+  const temMedidas = (totalMedidasDicom ?? 0) > 0;
+  const temImagens = (totalImagensDicom ?? 0) > 0;
 
   // S5-T6: trava única do emitido. Um campo por vez, sem branch separado pra
   // bloquear/desbloquear — `el.disabled = motorBloqueado` é sempre o valor
@@ -198,89 +202,66 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
     }
   }
   return (
-    <div id="laudo-sidebar" className="bg-white border-r border-[#E5E7EB] flex flex-col h-screen">
+    <div id="laudo-sidebar" className="laudo-coluna">
 
-      {/* ═══ HEADER ═══ */}
-      <div className="sticky top-0 z-10 bg-[#1E3A5F] px-5 py-3.5 shrink-0">
-        <div className="flex items-center justify-between mb-0.5">
-          <h1 className="text-white text-[12.5px] font-semibold tracking-wide">
-            🫀 Laudo ECO · <span id="hdr-clinica">{clinicaNome}</span>
-          </h1>
-          <div className="flex gap-1.5">
-            <button onClick={onVoltar}
-              className="bg-white/[.13] border border-white/[.22] text-white text-[10.5px] px-2.5 py-1 rounded-[5px] font-medium whitespace-nowrap hover:bg-white/25 transition cursor-pointer">
-              ← Voltar
-            </button>
-          </div>
-        </div>
-        <p id="hdr-subtitulo" className="text-[#93C5FD] text-[10px] mt-0.5">{medicoInfo}</p>
-      </div>
-
-      {/* ═══ BOTÕES FIXOS NO TOPO ═══ */}
-      <div className="shrink-0 border-b border-[#E5E7EB] bg-white">
+      {/* ═══ CABEÇALHO (navy) + COMANDOS — spec 2026-10-11-coluna-laudo-unificada ═══ */}
+      <CabecalhoLaudo titulo="Laudo ECO" clinicaNome={clinicaNome} medicoInfo={medicoInfo} onVoltar={onVoltar} />
+      <div className="laudo-command-line">
+        {/* Bloco de ESTADO: rascunho = Salvar/Emitir + Limpar; emitido = ModoEmitido
+            (selo + PDF/Copiar/Editar + Finalizar). */}
         {emitido ? (
           modoEmitido
         ) : (
-          <div id="modo-edicao" className="flex items-center gap-2 px-5 py-2">
-            {ortancAtivo && onImportarDicom && (() => {
-              // Botão habilita quando Wader já populou `medidasDicom` (totalMedidasDicom > 0).
-              // Quando ainda não há medidas, mostramos o botão cinza/desabilitado
-              // com tooltip explicando — assim o médico sabe que a feature existe.
-              const temMedidas = (totalMedidasDicom ?? 0) > 0;
-              return (
-                <button
-                  onClick={onImportarDicom}
-                  disabled={dicomImportado || !temMedidas}
-                  title={
-                    dicomImportado
-                      ? 'Medidas já importadas'
-                      : temMedidas
-                        ? `Importar ${totalMedidasDicom} medidas do Vivid (DICOM SR) — abre modal pra validar antes`
-                        : 'Sem medidas DICOM ainda — aguarde Wader processar o exame'
-                  }
-                  className={`px-3 py-2 rounded-md text-[11px] font-semibold cursor-pointer transition border-none whitespace-nowrap ${
-                    dicomImportado
-                      ? 'bg-green-100 text-green-700'
-                      : temMedidas
-                        ? 'bg-purple-600 text-white hover:bg-purple-700'
-                        : 'bg-gray-200 text-gray-500'
-                  } disabled:opacity-50`}>
-                  {dicomImportado ? '✅ Importado' : temMedidas ? `📡 Importar (${totalMedidasDicom})` : '📡 Importar'}
-                </button>
-              );
-            })()}
-            {/* Botão "🖼️ Imagens (N)" — abre <DicomGallery /> com previews JPG.
-                Adicionado em 14/05/2026 (antes médico via só a contagem no
-                Worklist sem como abrir as imagens dentro do laudo). */}
-            {onAbrirGaleria && (() => {
-              const temImagens = (totalImagensDicom ?? 0) > 0;
-              return (
-                <button
-                  onClick={onAbrirGaleria}
-                  disabled={!temImagens}
-                  title={
-                    temImagens
-                      ? `Ver ${totalImagensDicom} imagens DICOM do exame`
-                      : 'Sem imagens DICOM ainda — aguarde Wader processar'
-                  }
-                  className={`px-3 py-2 rounded-md text-[11px] font-semibold cursor-pointer transition border-none whitespace-nowrap ${
-                    temImagens
-                      ? 'bg-cyan-600 text-white hover:bg-cyan-700'
-                      : 'bg-gray-200 text-gray-500'
-                  } disabled:opacity-50`}>
-                  {temImagens ? `🖼️ Imagens (${totalImagensDicom})` : '🖼️ Imagens'}
-                </button>
-              );
-            })()}
-            <button onClick={onSalvarEmitir}
-              className="flex-1 py-2 rounded-md font-semibold text-white text-[11px] cursor-pointer hover:brightness-110 transition border-none bg-[#1E3A5F]">
-              💾 Salvar / Emitir
+          <div id="modo-edicao" className="contents">
+            <button onClick={onSalvarEmitir} className="laudo-command-primary">
+              <EditorIcon name="save" /> Salvar / Emitir
             </button>
-            <button onClick={onLimpar}
-              className="px-3 py-2 rounded-md border border-[#E5E7EB] bg-white text-[#6B7280] text-[11px] font-medium cursor-pointer hover:bg-gray-50 transition">
-              🗑️
+            <button onClick={onLimpar} title="Limpar campos" aria-label="Limpar campos"
+              className="laudo-command-secondary">
+              <EditorIcon name="trash" />
             </button>
           </div>
+        )}
+        {/* DADOS DO EXAME (spec 2026-10-11-imagens-e-sr): Importar e Imagens existem em
+            rascunho E emitido (3ª linha, opção A). Importar desabilitado no emitido —
+            a guarda real é o handler da page. */}
+        {ortancAtivo && onImportarDicom && (
+            <button
+              onClick={onImportarDicom}
+              disabled={emitido || dicomImportado || !temMedidas}
+              title={
+                emitido
+                  ? 'Laudo emitido — clique em Editar para importar e reemitir'
+                  : dicomImportado
+                    ? 'Medidas já importadas'
+                    : temMedidas
+                      ? `Importar ${totalMedidasDicom} medidas do Vivid (DICOM SR) — abre modal pra validar antes`
+                      : 'Sem medidas DICOM ainda — aguarde Wader processar o exame'
+              }
+              className={`laudo-command-secondary ${
+                dicomImportado
+                  ? 'bg-green-100 text-green-700'
+                  : temMedidas
+                    ? ''
+                    : 'bg-gray-200 text-gray-500'
+              }`}>
+              <EditorIcon name="download" />
+              {dicomImportado ? 'Importado' : temMedidas ? `Importar medidas (${totalMedidasDicom})` : 'Importar medidas'}
+            </button>
+        )}
+        {onAbrirGaleria && (
+            <button
+              onClick={onAbrirGaleria}
+              disabled={!temImagens}
+              title={
+                temImagens
+                  ? `Ver ${totalImagensDicom} imagens DICOM do exame`
+                  : 'Sem imagens DICOM ainda — aguarde Wader processar'
+              }
+              className={`laudo-command-secondary ${temImagens ? '' : 'bg-gray-200 text-gray-500'}`}>
+              <EditorIcon name="image" />
+              {temImagens ? `Imagens (${totalImagensDicom})` : 'Imagens'}
+            </button>
         )}
       </div>
 
@@ -288,7 +269,7 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
       {/* Atalhos de teclado (spec layout 03/05): ENTER→próximo campo,
           SHIFT+ENTER→campo anterior, ESC→limpa o campo atual. TAB/SHIFT+TAB
           já são nativos do browser. Ver navTeclado() no fim do arquivo. */}
-      <div className="flex-1 overflow-y-auto pb-10" onKeyDown={navTeclado}>
+      <div className="laudo-fields" onKeyDown={navTeclado}>
 
       {/* ═══ ALERTAS DO MOTOR (F3 Task 2) ═══
           Os alertas estruturados chegavam pela
@@ -307,73 +288,59 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
       )}
 
       {/* ═══ IDENTIFICAÇÃO ═══ */}
-      <Sec id="sec-id" title="👤 Identificação" defaultOpen single>
+      <Sec id="sec-id" title="Identificação" defaultOpen single>
         {exameAcc && (
-          <div className="mb-2 rounded-lg border-2 border-[#2563EB] bg-blue-50 p-2.5">
-            <div className="text-[9px] text-[#2563EB] font-semibold uppercase tracking-wide mb-1">
-              🏥 ACC (AccessionNumber DICOM)
-            </div>
+          <div className="laudo-nota mb-2 flex items-center justify-between gap-3">
+            <span className="font-medium">ACC</span>
             <button
               type="button"
               onClick={() => { navigator.clipboard.writeText(exameAcc); }}
               title="Clique para copiar"
-              className="font-mono text-base font-bold text-[#1E3A5F] tracking-wide hover:bg-blue-100 px-1.5 py-0.5 rounded transition cursor-pointer block w-full text-left"
+              className="min-w-0 break-all font-mono text-[12px] font-medium hover:bg-[#D6E2F1] px-1.5 py-0.5 rounded transition cursor-pointer text-right"
             >
               {exameAcc}
             </button>
-            <div className="text-[10px] text-gray-600 mt-1.5 leading-relaxed">
-              <strong>Em caso de cadastro manual no Vivid:</strong> copie este código e cole em
-              <em> Patient → Edit → AccessionNumber</em> antes de enviar as imagens.
-              Sem isso, o LEO não casa as imagens com este exame.
-            </div>
           </div>
         )}
         {idBloqueado && exameOrigem === 'FEEGOW' && (
-          <div className="mb-2 rounded-lg border border-purple-300 bg-purple-50 p-2.5">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-purple-600 text-sm">🔗</span>
-              <span className="text-[10.5px] text-purple-700 font-semibold flex-1">Veio do Feegow — laudo emitido</span>
-            </div>
-            <p className="text-[9.5px] text-purple-600">🔒 <b>Nome e datas</b> travados (segurança). <b>Convênio e médico solicitante:</b> corrija aqui e clique &quot;Salvar correção&quot; — <b>sem custo</b>. Editar no Feegow <b>não</b> atualiza este exame.</p>
+          <div className="laudo-nota mb-2">
+            <p className="flex items-center gap-1.5 font-medium"><EditorIcon name="link" /> Veio do Feegow · laudo emitido</p>
+            <p className="mt-1 text-[#526277]">Nome e datas travados. Convênio e médico solicitante: corrija aqui e clique em &quot;Salvar correção&quot;, sem custo. Editar no Feegow não atualiza este exame.</p>
           </div>
         )}
         {idBloqueado && exameOrigem !== 'FEEGOW' && (
-          <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-amber-600 text-sm">🔒</span>
-              <span className="text-[10.5px] text-amber-700 font-semibold flex-1">Laudo já emitido</span>
-            </div>
-            <p className="text-[9.5px] text-amber-600 mb-2">🔒 <b>Nome e datas:</b> desbloqueie p/ corrigir (consome 1 crédito). <b>Convênio e médico solicitante:</b> corrija aqui e &quot;Salvar correção&quot; — <b>sem custo</b>.</p>
-            <button onClick={handleDesbloquearId} disabled={feegowLoading}
-              className="w-full py-1.5 rounded-md bg-amber-500 text-white text-[10.5px] font-semibold hover:bg-amber-600 transition disabled:opacity-50">
-              {feegowLoading ? '⏳ Consultando Feegow...' : '🔓 Desbloquear nome/datas (1 crédito)'}
+          <div className="laudo-nota mb-2 border-l-[#D97706] text-[#92400E]">
+            <p className="flex items-center gap-1.5 font-medium"><EditorIcon name="lock" /> Laudo já emitido</p>
+            <p className="mt-1">Nome e datas: desbloqueie para corrigir (consome 1 crédito). Convênio e médico solicitante: corrija aqui e clique em &quot;Salvar correção&quot;, sem custo.</p>
+            <button type="button" onClick={handleDesbloquearId} disabled={feegowLoading}
+              className="laudo-command-secondary mt-2 w-full border-[#FCD34D] text-[#92400E] disabled:opacity-50">
+              {feegowLoading ? 'Consultando Feegow…' : 'Desbloquear nome e datas (1 crédito)'}
             </button>
           </div>
         )}
-        <F label={idBloqueado ? '🔒 Nome completo' : 'Nome completo'}><input type="text" id="nome" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
+        <F label="Nome completo"><input type="text" id="nome" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
         <div className="grid grid-cols-2 gap-x-3 gap-y-[7px] mt-[7px]">
-          <F label={idBloqueado ? '🔒 Data de nascimento' : 'Data de nascimento'}><input type="date" id="dtnasc" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
+          <F label="Data de nascimento"><input type="date" id="dtnasc" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
           {/* nº6: SEM defaultValue — com o default fixo em "hoje" o campo
               nascia preenchido e `preencherExame()` (que só escreve campo
               VAZIO) nunca sobrescrevia com a data real do exame salvo.
               Vazio no mount → preencherExame cai em exame.dataExame, com
               fallback pra dataLocalHoje() só quando o exame não tem data. */}
-          <F label={idBloqueado ? '🔒 Data do exame' : 'Data do exame'}><input type="date" id="dtexame" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
+          <F label="Data do exame"><input type="date" id="dtexame" className={`sf ${idBloqueado ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`} disabled={idBloqueado} /></F>
         </div>
         {/* E (17/05): convênio + solicitante editáveis MESMO em emitido,
             sem crédito. Identidade (nome/datas acima) segue travada. */}
         <F label="Convênio"><input type="text" id="convenio" className="sf" /></F>
         <F label="Médico solicitante"><input type="text" id="solicitante" className="sf" /></F>
         {readOnlyIdentificacao && onCorrigirAdmin && (
-          <button type="button" onClick={onCorrigirAdmin}
-            className="w-full mt-2 py-1.5 rounded-md bg-emerald-600 text-white text-[10.5px] font-semibold hover:bg-emerald-700 transition">
-            💾 Salvar correção (convênio/solicitante) — sem custo
+          <button type="button" onClick={onCorrigirAdmin} className="laudo-command-secondary mt-2 w-full">
+            <EditorIcon name="save" /> Salvar correção (convênio e solicitante), sem custo
           </button>
         )}
       </Sec>
 
       {/* ═══ MEDIDAS GERAIS ═══ */}
-      <Sec id="sec-med" title="📏 Medidas Gerais" defaultOpen>
+      <Sec id="sec-med" title="Medidas Gerais" defaultOpen>
         <F label="Sexo"><select id="sexo" className="sf"><option value="">—</option><option value="M">Masculino</option><option value="F">Feminino</option></select></F>
         <F label="Ritmo"><select id="ritmo" className="sf"><option value="S">Regular</option><option value="N">Irregular</option></select></F>
         <F label="Peso" u="kg"><input type="number" id="peso" step="0.1" className="sf" /></F>
@@ -383,7 +350,7 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
       </Sec>
 
       {/* ═══ CÂMARAS ═══ */}
-      <Sec id="sec-cam" title="📐 Câmaras" defaultOpen>
+      <Sec id="sec-cam" title="Câmaras" defaultOpen>
         <F label="Raiz Aórtica" u="mm"><input type="number" id="b7" step="0.1" className="sf" /></F>
         <F label="Átrio Esquerdo" u="mm"><input type="number" id="b8" step="0.1" className="sf" /></F>
         <F label="DDVE" u="mm"><input type="number" id="b9" step="0.1" className="sf" /></F>
@@ -407,7 +374,7 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
       </Sec>
 
       {/* ═══ DIASTÓLICA ═══ */}
-      <Sec id="sec-diast" title="📊 Função Diastólica" defaultOpen>
+      <Sec id="sec-diast" title="Função Diastólica" defaultOpen>
         {/* Toggle Auto/Manual */}
         <div className="col-span-2 mb-1">
           <div className="flex items-center gap-1.5 bg-[#F3F4F6] rounded-md p-1">
@@ -477,7 +444,7 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
       </Sec>
 
       {/* ═══ VÁLVULAS ═══ */}
-      <Sec id="sec-valv" title="🔵 Válvulas">
+      <Sec id="sec-valv" title="Válvulas">
         {/* Ordem aprovada (spec layout 03/05): Mitral → Aórtica → Tricúspide → Pulmonar */}
         <F label="V. Mitral"><VSel id="b34" /></F>
         <F label="Refluxo Mitral"><RSel id="b35" /></F>
@@ -590,7 +557,7 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
       {/* ═══ SISTÓLICA ═══ */}
       {/* Spec layout 03/05: seção FECHADA por padrão; ordem Proposta A
           (Simpson|TAPSE · GLS VE|GLS VD · Disfunção VD) */}
-      <Sec id="sec-sist" title="💓 Função Sistólica" collapsed>
+      <Sec id="sec-sist" title="Função Sistólica" collapsed>
         <F label="Simpson VE" u="%"><input type="number" id="b54" step="0.1" className="sf" placeholder="se disponível" /></F>
         <F label="TAPSE" u="mm · VR≥17"><input type="number" id="b33" step="0.1" className="sf" /></F>
         <F label="GLS VE" u="% · VR≥-18"><input type="number" id="gls_ve" step="0.1" className="sf" placeholder="ex: -21" /></F>
@@ -599,7 +566,7 @@ export default function SidebarLaudo({ clinicaNome, medicoInfo, onVoltar, onSalv
       </Sec>
 
       {/* ═══ SEGMENTAR ═══ */}
-      <Sec id="sec-seg" title="🗺️ Contratilidade Segmentar" collapsed>
+      <Sec id="sec-seg" title="Contratilidade Segmentar" collapsed>
         <div className="col-span-2 text-[10px] text-[#6B7280] italic pb-1">H=Hipocin · A=Acin · D=Discin · B=basal · M=média · A=apical</div>
         {/* Ordem AHA anti-horário (spec layout 03/05) + CORREÇÃO C3 (15/05):
             o motor antigo lia b59=Lateral/b60=Inferior/b61=Inferolateral (ERRADO
@@ -662,11 +629,12 @@ function navTeclado(e: React.KeyboardEvent<HTMLDivElement>) {
 function Sec({ id, title, children, defaultOpen, collapsed, single }: { id: string; title: string; children: ReactNode; defaultOpen?: boolean; collapsed?: boolean; single?: boolean }) {
   const [open, setOpen] = useState(defaultOpen ?? !collapsed);
   return (
-    <div id={id} className="border-b border-[#E5E7EB]">
-      <button onClick={() => setOpen(!open)}
-        className="section-btn w-full flex items-center gap-2 px-5 py-[9px] bg-[#F9FAFB] text-[11px] font-semibold uppercase tracking-[0.7px] text-[#1E3A5F] cursor-pointer select-none hover:bg-[#F3F4F6] transition">
+    <div id={id} className="laudo-cartao mb-3">
+      <button onClick={() => setOpen(!open)} aria-expanded={open}
+        className="section-btn laudo-cartao-titulo w-full cursor-pointer select-none hover:bg-[#F1F5F9] transition">
+        <EditorIcon name={id} />
         {title}
-        <span className="ml-auto text-[#6B7280] text-[15px]">{open ? '▾' : '▸'}</span>
+        <EditorIcon name="chevron" className={`ml-auto text-[#526277] transition-transform ${open ? '' : '-rotate-90'}`} />
       </button>
       {/* nº4: filhos SEMPRE montados, só `hidden` (Tailwind Preflight faz
           `[hidden]{display:none!important}` — vence a classe `grid`, então
@@ -676,16 +644,16 @@ function Sec({ id, title, children, defaultOpen, collapsed, single }: { id: stri
           `coletarMedidas()` por id também perdia essas medidas ao salvar com
           a seção fechada (Sistólica/Segmentar nascem `collapsed`). Mantidos
           montados, os valores sobrevivem a abrir/fechar e entram no save. */}
-      <div hidden={!open} className={`grid ${single ? 'grid-cols-1' : 'grid-cols-2'} gap-x-3 gap-y-[7px] px-5 py-2.5`}>{children}</div>
+      <div hidden={!open} className={`grid ${single ? 'grid-cols-1' : 'grid-cols-2'} gap-x-3 gap-y-3.5 px-3.5 pb-5`}>{children}</div>
     </div>
   );
 }
 
 function F({ label, u, children }: { label: string; u?: string; children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-[3px]">
-      <label className="text-[10.5px] text-[#6B7280] font-medium">
-        {label}{u && <span className="text-[9.5px] text-[#9CA3AF] font-normal ml-[3px]">{u}</span>}
+    <div className="min-w-0 flex flex-col gap-[3px]">
+      <label className="text-[11.5px] text-[#526277] font-medium">
+        {label}{u && <span className="text-[10px] text-[#526277] font-normal ml-[3px]">{u}</span>}
       </label>
       {children}
     </div>
@@ -693,7 +661,7 @@ function F({ label, u, children }: { label: string; u?: string; children: ReactN
 }
 
 function C({ id }: { id: string }) {
-  return <div id={id} className="text-[11px] text-[#1E3A5F] bg-[#EEF2F8] px-1.5 py-[3px] rounded font-mono font-medium">—</div>;
+  return <div id={id} className="min-h-9 text-xs text-[#526277] bg-[#F1F5F9] px-2.5 py-2 rounded-lg font-mono font-medium">—</div>;
 }
 
 function VSel({ id }: { id: string }) {

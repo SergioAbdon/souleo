@@ -4,6 +4,7 @@
 // ══════════════════════════════════════════════════════════════════
 
 import { useState } from 'react';
+import LeoLogo from '@/components/shell/LeoLogo';
 import { useRouter } from 'next/navigation';
 import { auth } from '@/lib/firebase';
 import {
@@ -221,34 +222,35 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-600 via-blue-800 to-[#1E3A5F] flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <span className="text-5xl">🫀</span>
-          <h1 className="text-3xl font-bold text-white mt-2">SOULEO</h1>
-          <p className="text-blue-200 text-sm">Sistema de Laudos Médicos</p>
-        </div>
-
-        {/* Card */}
-        <div className="bg-white rounded-xl shadow-2xl overflow-hidden">
+    <div className="min-h-screen bg-[#F1F5F9] text-[#1E3A5F] flex items-center justify-center p-4 sm:p-8">
+      <div className="w-full max-w-[960px] grid md:grid-cols-[0.9fr_1.1fr] bg-white border border-[#D6E2F1] rounded-2xl overflow-hidden">
+        <aside className="bg-[#EAF1FA] p-7 md:p-10 flex flex-col justify-between gap-8 md:min-h-[580px]">
+          <LeoLogo className="w-28 h-auto" />
+          <div>
+            <h1 className="text-2xl md:text-[29px] font-medium leading-tight tracking-tight mb-4">Seu trabalho clínico,<br />em um só lugar.</h1>
+            <p className="text-sm leading-relaxed text-[#526277]">Agenda, pacientes e laudos organizados no LEO.</p>
+          </div>
+          <p className="hidden md:block text-xs text-[#526277]">LEO · Plataforma de laudos</p>
+        </aside>
+        <div className="min-w-0 p-6 sm:p-9 md:py-12 flex flex-col justify-center">
+          <h2 className="text-2xl font-medium tracking-tight mb-2">{tab === 'login' ? 'Entrar no LEO' : tab === 'cadastroPF' ? 'Cadastro profissional' : 'Cadastro da clínica'}</h2>
           {/* Tabs */}
-          <div className="flex border-b">
+          <div className="flex border-b border-[#D6E2F1] mt-5">
             <button
               onClick={() => { setTab('login'); setErro(''); }}
-              className={`flex-1 py-3 text-sm font-semibold transition ${tab === 'login' ? 'text-[#1E3A5F] border-b-2 border-[#1E3A5F]' : 'text-gray-400'}`}
+              className={`flex-1 px-1 py-3 text-xs sm:text-sm font-medium transition ${tab === 'login' ? 'text-[#2563EB] border-b-2 border-[#2563EB]' : 'text-[#526277] hover:text-[#1E3A5F]'}`}
             >Entrar</button>
             <button
               onClick={() => { setTab('cadastroPF'); setErro(''); }}
-              className={`flex-1 py-3 text-sm font-semibold transition ${tab === 'cadastroPF' ? 'text-[#1E3A5F] border-b-2 border-[#1E3A5F]' : 'text-gray-400'}`}
-            >Cadastro PF</button>
+              className={`flex-1 px-1 py-3 text-xs sm:text-sm font-medium transition ${tab === 'cadastroPF' ? 'text-[#2563EB] border-b-2 border-[#2563EB]' : 'text-[#526277] hover:text-[#1E3A5F]'}`}
+            >Profissional</button>
             <button
               onClick={() => { setTab('cadastroPJ'); setErro(''); }}
-              className={`flex-1 py-3 text-sm font-semibold transition ${tab === 'cadastroPJ' ? 'text-[#1E3A5F] border-b-2 border-[#1E3A5F]' : 'text-gray-400'}`}
-            >Cadastro PJ</button>
+              className={`flex-1 px-1 py-3 text-xs sm:text-sm font-medium transition ${tab === 'cadastroPJ' ? 'text-[#2563EB] border-b-2 border-[#2563EB]' : 'text-[#526277] hover:text-[#1E3A5F]'}`}
+            >Clínica</button>
           </div>
 
-          <div className="p-6">
+          <div className="pt-6">
             {/* Mensagens */}
             {erro && <div className="bg-red-50 text-red-700 text-sm p-3 rounded-lg mb-4 flex items-center gap-2"><span>⚠️</span>{erro}</div>}
             {sucesso && <div className="bg-green-50 text-green-700 text-sm p-3 rounded-lg mb-4 flex items-center gap-2"><span>✅</span>{sucesso}</div>}
@@ -257,19 +259,19 @@ export default function LoginPage() {
             {tab === 'login' && (
               <form onSubmit={handleLogin} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Email</label>
+                  <label className="block text-sm font-medium text-[#526277] mb-2">Email</label>
                   <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]"
+                    className="w-full min-w-0 border border-[#CFDAEA] bg-white text-[#1E3A5F] rounded-lg px-3 py-2.5 text-sm focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]"
                     placeholder="seu@email.com" required />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Senha</label>
+                  <label className="block text-sm font-medium text-[#526277] mb-2">Senha</label>
                   <input type="password" value={senha} onChange={e => setSenha(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]"
+                    className="w-full min-w-0 border border-[#CFDAEA] bg-white text-[#1E3A5F] rounded-lg px-3 py-2.5 text-sm focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]"
                     placeholder="••••••" required />
                 </div>
                 <button type="submit" disabled={loading}
-                  className="w-full bg-[#1E3A5F] text-white py-3 rounded-lg font-semibold text-sm hover:bg-[#2563EB] transition disabled:opacity-50">
+                  className="w-full bg-[#2563EB] text-white py-3 rounded-lg font-semibold text-sm hover:bg-[#1D4ED8] transition disabled:opacity-50">
                   {loading ? 'Entrando...' : 'Entrar'}
                 </button>
 
@@ -292,55 +294,55 @@ export default function LoginPage() {
 
             {/* ── TAB CADASTRO PF ── */}
             {tab === 'cadastroPF' && (
-              <form onSubmit={handleCadastroPF} className="space-y-3">
+              <form onSubmit={handleCadastroPF} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Tipo de profissional</label>
+                  <label className="block text-sm font-medium text-[#526277] mb-2">Tipo de profissional</label>
                   <select value={pfTipo} onChange={e => setPfTipo(e.target.value as 'medico' | 'assistente')}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]">
+                    className="w-full min-w-0 border border-[#CFDAEA] bg-white text-[#1E3A5F] rounded-lg px-3 py-2.5 text-sm focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]">
                     <option value="medico">Médico</option>
                     <option value="assistente">Assistente</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Nome completo</label>
+                  <label className="block text-sm font-medium text-[#526277] mb-2">Nome completo</label>
                   <input type="text" value={pfNome} onChange={e => setPfNome(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]"
+                    className="w-full min-w-0 border border-[#CFDAEA] bg-white text-[#1E3A5F] rounded-lg px-3 py-2.5 text-sm focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]"
                     required />
                 </div>
                 {pfTipo === 'medico' && (
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">CRM</label>
+                      <label className="block text-sm font-medium text-[#526277] mb-2">CRM</label>
                       <input type="text" value={pfCrm} onChange={e => setPfCrm(e.target.value)}
-                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+                        className="w-full min-w-0 border border-[#CFDAEA] bg-white text-[#1E3A5F] rounded-lg px-3 py-2.5 text-sm focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]" />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">UF</label>
+                      <label className="block text-sm font-medium text-[#526277] mb-2">UF</label>
                       <input type="text" value={pfUf} onChange={e => setPfUf(e.target.value.toUpperCase())}
-                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]"
+                        className="w-full min-w-0 border border-[#CFDAEA] bg-white text-[#1E3A5F] rounded-lg px-3 py-2.5 text-sm focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]"
                         maxLength={2} placeholder="PA" />
                     </div>
                   </div>
                 )}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Especialidade</label>
+                  <label className="block text-sm font-medium text-[#526277] mb-2">Especialidade</label>
                   <input type="text" value={pfEsp} onChange={e => setPfEsp(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+                    className="w-full min-w-0 border border-[#CFDAEA] bg-white text-[#1E3A5F] rounded-lg px-3 py-2.5 text-sm focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Email</label>
+                  <label className="block text-sm font-medium text-[#526277] mb-2">Email</label>
                   <input type="email" value={pfEmail} onChange={e => setPfEmail(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]"
+                    className="w-full min-w-0 border border-[#CFDAEA] bg-white text-[#1E3A5F] rounded-lg px-3 py-2.5 text-sm focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]"
                     required />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Senha</label>
+                  <label className="block text-sm font-medium text-[#526277] mb-2">Senha</label>
                   <input type="password" value={pfSenha} onChange={e => setPfSenha(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]"
+                    className="w-full min-w-0 border border-[#CFDAEA] bg-white text-[#1E3A5F] rounded-lg px-3 py-2.5 text-sm focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]"
                     placeholder="Mínimo 6 caracteres" required />
                 </div>
                 <button type="submit" disabled={loading}
-                  className="w-full bg-[#1E3A5F] text-white py-3 rounded-lg font-semibold text-sm hover:bg-[#2563EB] transition disabled:opacity-50">
+                  className="w-full bg-[#2563EB] text-white py-3 rounded-lg font-semibold text-sm hover:bg-[#1D4ED8] transition disabled:opacity-50">
                   {loading ? 'Cadastrando...' : 'Criar conta'}
                 </button>
               </form>
@@ -348,26 +350,26 @@ export default function LoginPage() {
 
             {/* ── TAB CADASTRO PJ ── */}
             {tab === 'cadastroPJ' && (
-              <form onSubmit={handleCadastroPJ} className="space-y-3">
+              <form onSubmit={handleCadastroPJ} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">CNPJ</label>
+                  <label className="block text-sm font-medium text-[#526277] mb-2">CNPJ</label>
                   <input type="text" value={pjCnpj} onChange={e => setPjCnpj(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" placeholder="00.000.000/0000-00" required />
+                    className="w-full min-w-0 border border-[#CFDAEA] bg-white text-[#1E3A5F] rounded-lg px-3 py-2.5 text-sm focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]" placeholder="00.000.000/0000-00" required />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Razão social</label>
+                  <label className="block text-sm font-medium text-[#526277] mb-2">Razão social</label>
                   <input type="text" value={pjRazao} onChange={e => setPjRazao(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" required />
+                    className="w-full min-w-0 border border-[#CFDAEA] bg-white text-[#1E3A5F] rounded-lg px-3 py-2.5 text-sm focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]" required />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Nome do primeiro local</label>
+                  <label className="block text-sm font-medium text-[#526277] mb-2">Nome do primeiro local</label>
                   <input type="text" value={pjLocal} onChange={e => setPjLocal(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" placeholder="Unidade Centro" />
+                    className="w-full min-w-0 border border-[#CFDAEA] bg-white text-[#1E3A5F] rounded-lg px-3 py-2.5 text-sm focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]" placeholder="Unidade Centro" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Seu nome</label>
+                  <label className="block text-sm font-medium text-[#526277] mb-2">Seu nome</label>
                   <input type="text" value={pjNome} onChange={e => setPjNome(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" required />
+                    className="w-full min-w-0 border border-[#CFDAEA] bg-white text-[#1E3A5F] rounded-lg px-3 py-2.5 text-sm focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]" required />
                 </div>
                 <label className="flex items-center gap-2 text-sm text-gray-600">
                   <input type="checkbox" checked={pjEhMedico} onChange={e => setPjEhMedico(e.target.checked)} />
@@ -376,39 +378,35 @@ export default function LoginPage() {
                 {pjEhMedico && (
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">CRM</label>
+                      <label className="block text-sm font-medium text-[#526277] mb-2">CRM</label>
                       <input type="text" value={pjCrm} onChange={e => setPjCrm(e.target.value)}
-                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" />
+                        className="w-full min-w-0 border border-[#CFDAEA] bg-white text-[#1E3A5F] rounded-lg px-3 py-2.5 text-sm focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]" />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">UF</label>
+                      <label className="block text-sm font-medium text-[#526277] mb-2">UF</label>
                       <input type="text" value={pjUf} onChange={e => setPjUf(e.target.value.toUpperCase())}
-                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" maxLength={2} placeholder="PA" />
+                        className="w-full min-w-0 border border-[#CFDAEA] bg-white text-[#1E3A5F] rounded-lg px-3 py-2.5 text-sm focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]" maxLength={2} placeholder="PA" />
                     </div>
                   </div>
                 )}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Email</label>
+                  <label className="block text-sm font-medium text-[#526277] mb-2">Email</label>
                   <input type="email" value={pjEmail} onChange={e => setPjEmail(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" required />
+                    className="w-full min-w-0 border border-[#CFDAEA] bg-white text-[#1E3A5F] rounded-lg px-3 py-2.5 text-sm focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]" required />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Senha</label>
+                  <label className="block text-sm font-medium text-[#526277] mb-2">Senha</label>
                   <input type="password" value={pjSenha} onChange={e => setPjSenha(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1E3A5F]" placeholder="Mínimo 6 caracteres" required />
+                    className="w-full min-w-0 border border-[#CFDAEA] bg-white text-[#1E3A5F] rounded-lg px-3 py-2.5 text-sm focus:outline-2 focus:outline-offset-2 focus:outline-[#2563EB]" placeholder="Mínimo 6 caracteres" required />
                 </div>
                 <button type="submit" disabled={loading}
-                  className="w-full bg-[#1E3A5F] text-white py-3 rounded-lg font-semibold text-sm hover:bg-[#2563EB] transition disabled:opacity-50">
+                  className="w-full bg-[#2563EB] text-white py-3 rounded-lg font-semibold text-sm hover:bg-[#1D4ED8] transition disabled:opacity-50">
                   {loading ? 'Cadastrando...' : 'Criar conta da clínica'}
                 </button>
               </form>
             )}
           </div>
         </div>
-
-        <p className="text-center text-blue-200 text-xs mt-6">
-          SOULEO v2.0 · www.souleo.com.br
-        </p>
       </div>
     </div>
   );
