@@ -25,6 +25,7 @@ import { auth } from '@/lib/firebase';
 // Mesmo escape da moldura do PDF — estas páginas viram HTML do laudo assinado.
 import { escaparHtml } from '@/lib/html-escape';
 import { renderPaginas } from '@/lib/pdf-imagens';
+import { tentar, ErroHttp, retentavel } from '@/lib/retry';
 
 // Cache do mapa {url canônica → url assinada} por exame. As assinadas valem
 // 1h (imagens-dicom-admin.ts); expiramos com folga em 45min pra galeria
@@ -55,14 +56,18 @@ export async function buscarUrlsAssinadas(
     return cached.urls;
   }
   try {
-    const token = await auth.currentUser?.getIdToken();
-    const res = await fetch('/api/exame/imagens-urls', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
-      body: JSON.stringify({ wsId, exameId }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const r = await res.json();
+    // Até 3 tentativas em 5xx/rede (14/10/2026: um 500 único a frio na
+    // Vercel deixava 10 miniaturas pretas até o F5). 4xx não repete.
+    const r = await tentar(async () => {
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/exame/imagens-urls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
+        body: JSON.stringify({ wsId, exameId }),
+      });
+      if (!res.ok) throw new ErroHttp(res.status);
+      return res.json();
+    }, { retentar: retentavel });
     if (!r?.ok || !r.urls) return null;
     cacheAssinadas.set(exameId, { em: Date.now(), urls: r.urls });
     return r.urls;
