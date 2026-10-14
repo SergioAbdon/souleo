@@ -151,3 +151,24 @@ Toasts: os dois do roteiro foram engolidos porque o Windows do notebook estava c
 Merge `d7e72bf` na master + tag `wader-v1.0.0`. Workflow `wader-release` (primeiro CI do repo) passou de primeira — run 38237081307, 17 passos verdes (tag×package.json, `npm ci`, vitest, Pester 5.7.1 no PowerShell 5.1, build, pkg, WinSW, Inno, SHA-256, release). Assets: `Wader-Setup-v1.0.0.exe` 38,2 MB, `wader.exe` 173,9 MB, `wader.exe.sha256`. O Wader instalado no notebook já lê `releases/latest` e, como a tag é igual à versão, não oferece atualização (`versaoDisponivel: null`) — correto.
 
 **Próximo:** visita à clínica (`migrar-medcardio.ps1 -Commit` → Setup da release → "Não incomodar" desligado → senha do Orthanc fora do histórico) e, na primeira mudança real, o ensaio de atualização 1.0.0 → 1.0.1 pelo botão com PIN.
+
+## Instalação na MedCardio — 14/10/2026 (PC da clínica, Claude da clínica + Sergio)
+
+**Antes:** `C:\Wader` rodava `82ad34c` (feat/wader-console, deploy manual de 16/09). O `npm start` antigo estava **parado desde 09/10 12:21** (log termina limpo, PC sem reboot desde 05/10 — alguém fechou a janela). Cursor `lastSeq 5956`. Sem autostart antigo em lugar nenhum (Startup, Run, tarefas agendadas). Config real: `wsId LDRtedkanx3bUvxpdmiL`, `agentId wader-medcardio-001` (o runbook dizia `medcardio`/`wader-001`; o migrar preserva, sem problema). Sem `wader.config.local.json`. Master mesclado em feat/wader-console (`4d990d6`); `update-wader.ps1` removido no merge (obsoleto).
+
+| Hora | Passo | Resultado |
+|---|---|---|
+| 15:45 | Download `Wader-Setup-v1.0.0.exe` (curl, 40.078.654 bytes = Content-Length da release) | OK, sem Zone.Identifier |
+| 15:47 | `migrar-medcardio.ps1 -Commit` (roteiro elevado via UAC, PIN digitado pelo Sergio) | OK — config/sa/cursor em ProgramData, ACL fechada |
+| 15:48 | Setup chamado por `Start-Process` **de dentro do PowerShell já elevado** | **"Acesso negado"** (Win32 5). Não era Defender/ASR/AppLocker/SRP/SmartScreen — o exe `requireAdministrator` lançado a partir de outro processo elevado falhou. **Lição: chamar o Setup pelo caminho normal (duplo clique / `Start-Process` não elevado → UAC).** |
+| 15:50 | Entre os dois, o `npm start` antigo foi iniciado em `C:\Wader` e ocupou a 8043 | Claude derrubou os 3 node (15:53) antes de o serviço subir — senão código 2 por porta ocupada |
+| 15:51 | Setup relançado não elevado → UAC → assistente sem pedir dados | serviço `Wader` Running ~16:06 |
+| 16:06 | `/health` | schema 1, `versao 1.0.0`, `lider true`, `aviso null`, `erroLancador null`; `lastSeq 5956` (cursor migrado); tarefa `Wader-Aviso` Running; `Program Files\Wader\bin\wader.exe` |
+| 16:06 | Primeiros exames pelo exe | `fg-69443` (9 imgs + 29 medidas) e `fg-69436` (11 imgs + 29 medidas) → `andamento`; acc-recovery rodando |
+| 16:07 | ACLs (admin) | `ProgramData\Wader`: NETWORK SERVICE (OI)(CI)(M), SYSTEM F, Administrators F, sem herança; `sa.json`: NETWORK SERVICE R; `bin`: NETWORK SERVICE (OI)(CI)(M) |
+| 16:07 | `Stop-Service` 20 s → `Start-Service` | Stopped → Running, `/health` ok, `lancador.json {"quedasSeguidas":0}`; `err.log` só o DEP0040 |
+| 16:07 | Atalho `Wader - Conferencia.url` na área de trabalho → `http://127.0.0.1:8043/conferencia` | criado |
+
+**Pendente da visita (Sergio confirma):** toasts "Wader parado"/"Wader de volta" apareceram? "Não incomodar" desligado na recepção? Cartão Wader em Integrações no LEO web ("No ar", 1.0.0, líder = `370XDH2`). Senha do Orthanc fora do histórico (tarefa separada). Espelho Obsidian fica pro notebook (vault não existe na PC da clínica).
+
+**Risco que fica:** `C:\Wader` intacto como rollback, mas **ninguém pode mais rodar `npm start` lá** — o antigo não conhece o cadeado de líder e briga pela 8043. Apagar depois de uma semana estável. Logs: `C:\Users\Public\wader-instalacao.log` e `wader-conferencia.log`.
